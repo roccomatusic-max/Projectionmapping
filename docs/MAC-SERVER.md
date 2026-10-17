@@ -23,7 +23,7 @@ starting after a reboot, and installing an update from GitHub.
 
 You need the Mac's password once.
 
-**1. Download it.** On the server Mac, sign in to GitHub in Safari and open
+**1. Download it.** On the server Mac, open
 the [Mac app release](https://github.com/roccomatusic-max/Projectionmapping/releases/tag/mac-latest).
 Download the zip for the Mac's chip. To check which chip it has: Apple menu
 → **About This Mac**. "Apple M1/M2/M3/M4…" → `ProjectorControl-Mac-AppleSilicon.zip`;
@@ -105,11 +105,11 @@ to **Settings → App updates**:
   has controlled the projectors for 10 minutes. The panel says what it is
   waiting for. A version that failed to start is not retried by itself.
 
-**The first time only**, the panel asks for a GitHub key, because the
-repository is private. Press **Open GitHub's key page**, choose **Only select
-repositories** → Projectionmapping, set **Contents** to **Read-only**, press
-**Generate token**, and paste it into the panel. (If the repository is ever
-made public, this step goes away.)
+No GitHub key or sign-in is needed: the repository is public, so the Mac
+reads its releases directly. (If the repository is ever made private again,
+the panel asks for a read-only GitHub key and links to the page that makes
+one: choose **Only select repositories** → Projectionmapping, leave
+**Contents** on **Read-only**, press **Generate token** and paste it in.)
 
 You can also update by downloading the newest zip and running step 2 again:
 opening a newer copy installs it over the old one.

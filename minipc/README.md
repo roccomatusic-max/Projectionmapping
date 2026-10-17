@@ -31,8 +31,8 @@ Without it the Players tab says that no mini PC can reach it.
 
 1. Download **MiniPC-Setup.exe** from the repository's
    [minipc-latest release](https://github.com/roccomatusic-max/Projectionmapping/releases/tag/minipc-latest)
-   (sign in to GitHub first: the repository is private). Copying it to the
-   mini PC on a USB stick works too.
+   (no GitHub account needed). Copying it to the mini PC on a USB stick
+   works too.
 2. Run it on the mini PC. Windows may say it protected the PC, because the
    installer is not signed: **More info → Run anyway**.
 3. The projector shows a pairing code. Approve it on **Mapping → Players**.
