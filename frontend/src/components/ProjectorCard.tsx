@@ -176,7 +176,7 @@ export function ProjectorCard({
               ● {warning}
             </p>
           ))}
-          {state.last_error && !state.online && (
+          {state.last_error && !state.online && !state.errors.includes(state.last_error) && (
             <p className="break-words text-xs text-slate-500">{state.last_error}</p>
           )}
         </div>

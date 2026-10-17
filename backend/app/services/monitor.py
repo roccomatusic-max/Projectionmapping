@@ -25,6 +25,10 @@ from app.services.device_manager import Priority, manager
 log = logging.getLogger(__name__)
 
 
+#: Do not enqueue another poll when this many items are already waiting.
+MAX_QUEUED_POLLS = 3
+
+
 class Tier:
     CONNECTIVITY = "connectivity"
     OPERATIONAL = "operational"
@@ -89,9 +93,17 @@ class MonitoringService:
         tasks = []
         for index, worker in enumerate(workers):
             interval = self._interval_for(worker, tier, default_interval)
+            interval = self._backoff(worker, interval)
             key = (worker.projector_id, tier)
             last = self._last_poll.get(key, 0.0)
             if time.monotonic() - last < interval:
+                continue
+            # An unreachable projector burns a full connect timeout per poll.
+            # If its queue is already backed up, adding another poll only
+            # delays the operator's next command behind it.
+            if worker.queue_depth >= MAX_QUEUED_POLLS:
+                log.debug("skipping %s poll for %s: queue depth %d",
+                          tier, worker.name, worker.queue_depth)
                 continue
             self._last_poll[key] = time.monotonic()
             tasks.append(self._poll_device(worker, tier, delay=index * spacing))
@@ -115,6 +127,20 @@ class MonitoringService:
             log.warning("ignoring invalid poll override %r for %s/%s",
                         override, worker.name, tier)
             return float(default_interval)
+
+    @staticmethod
+    def _backoff(worker: Any, interval: float) -> float:
+        """Poll a failing device less often, up to a 60 s cap.
+
+        Recovery is still noticed within a minute, but a projector that is
+        powered down for the winter no longer costs a connect timeout every
+        ten seconds.
+        """
+        failures = int(getattr(worker, "consecutive_failures", 0) or 0)
+        if failures < settings.offline_threshold:
+            return interval
+        factor = 2 ** min(failures - settings.offline_threshold + 1, 3)
+        return min(interval * factor, max(interval, 60.0))
 
     async def _poll_device(self, worker: Any, tier: str, delay: float = 0.0) -> None:
         if delay:

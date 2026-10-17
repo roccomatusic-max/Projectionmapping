@@ -29,3 +29,6 @@ frontend/.vite/
 .DS_Store
 .vscode/
 .idea/
+
+# Built SPA copied in by deploy/Dockerfile; never committed
+backend/static/

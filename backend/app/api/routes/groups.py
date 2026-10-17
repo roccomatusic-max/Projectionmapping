@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -97,6 +98,61 @@ async def create_group(payload: GroupCreate, session: SessionDep,
     return _group_out(await _load(session, group.id))
 
 
+# Static paths are declared before the /{group_id} routes on purpose: FastAPI
+# matches routes in declaration order, and "all" or "selection" would
+# otherwise be parsed as a group id and rejected with a 422.
+
+@router.post("/all/commands", response_model=GroupCommandResult,
+             dependencies=[Depends(command_rate_limit)])
+async def all_command(payload: GroupCommand, session: SessionDep,
+                      user: RequireOperator) -> GroupCommandResult:
+    """Dispatch to every enabled projector."""
+    projector_ids = list((await session.execute(
+        select(Projector.id).where(Projector.enabled.is_(True)).order_by(Projector.name)
+    )).scalars().all())
+    if not projector_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="No enabled projectors are registered")
+    if _is_disruptive(projector_ids, payload.capability):
+        require_confirmation(payload.confirm,
+                             f"{payload.capability} on ALL {len(projector_ids)} projectors")
+
+    dispatched_at = datetime.now(UTC)
+    results = await manager.dispatch_many(
+        projector_ids, payload.capability, payload.params, priority=Priority.USER
+    )
+    await log_command_results(results, payload.capability, payload.params,
+                              source="ui", username=user.username, user_id=user.id)
+    return _summarise(dispatched_at, payload.capability, results)
+
+
+@router.post("/selection/commands", response_model=GroupCommandResult,
+             dependencies=[Depends(command_rate_limit)])
+async def selection_command(
+    payload: GroupCommand,
+    session: SessionDep,
+    user: RequireOperator,
+    projector_ids: Annotated[list[int], Query(min_length=1)],
+) -> GroupCommandResult:
+    """Dispatch to an ad-hoc selection, for the Control Center."""
+    if not projector_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="No projectors selected")
+    await _validate_members(session, projector_ids)
+    if _is_disruptive(projector_ids, payload.capability):
+        require_confirmation(
+            payload.confirm,
+            f"{payload.capability} on {len(projector_ids)} selected projector(s)",
+        )
+    dispatched_at = datetime.now(UTC)
+    results = await manager.dispatch_many(
+        projector_ids, payload.capability, payload.params, priority=Priority.USER
+    )
+    await log_command_results(results, payload.capability, payload.params,
+                              source="ui", username=user.username, user_id=user.id)
+    return _summarise(dispatched_at, payload.capability, results)
+
+
 @router.get("/{group_id}", response_model=GroupOut)
 async def get_group(group_id: int, session: SessionDep, _: RequireViewer) -> GroupOut:
     return _group_out(await _load(session, group_id))
@@ -162,53 +218,6 @@ async def group_command(group_id: int, payload: GroupCommand, session: SessionDe
             f"{payload.capability} on {len(projector_ids)} projector(s) in {group.name!r}",
         )
 
-    dispatched_at = datetime.now(UTC)
-    results = await manager.dispatch_many(
-        projector_ids, payload.capability, payload.params, priority=Priority.USER
-    )
-    await log_command_results(results, payload.capability, payload.params,
-                              source="ui", username=user.username, user_id=user.id)
-    return _summarise(dispatched_at, payload.capability, results)
-
-
-@router.post("/all/commands", response_model=GroupCommandResult,
-             dependencies=[Depends(command_rate_limit)])
-async def all_command(payload: GroupCommand, session: SessionDep,
-                      user: RequireOperator) -> GroupCommandResult:
-    """Dispatch to every enabled projector."""
-    projector_ids = list((await session.execute(
-        select(Projector.id).where(Projector.enabled.is_(True)).order_by(Projector.name)
-    )).scalars().all())
-    if not projector_ids:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="No enabled projectors are registered")
-    if _is_disruptive(projector_ids, payload.capability):
-        require_confirmation(payload.confirm,
-                             f"{payload.capability} on ALL {len(projector_ids)} projectors")
-
-    dispatched_at = datetime.now(UTC)
-    results = await manager.dispatch_many(
-        projector_ids, payload.capability, payload.params, priority=Priority.USER
-    )
-    await log_command_results(results, payload.capability, payload.params,
-                              source="ui", username=user.username, user_id=user.id)
-    return _summarise(dispatched_at, payload.capability, results)
-
-
-@router.post("/selection/commands", response_model=GroupCommandResult,
-             dependencies=[Depends(command_rate_limit)])
-async def selection_command(projector_ids: list[int], payload: GroupCommand,
-                            session: SessionDep, user: RequireOperator) -> GroupCommandResult:
-    """Dispatch to an ad-hoc selection, for the Control Center."""
-    if not projector_ids:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="No projectors selected")
-    await _validate_members(session, projector_ids)
-    if _is_disruptive(projector_ids, payload.capability):
-        require_confirmation(
-            payload.confirm,
-            f"{payload.capability} on {len(projector_ids)} selected projector(s)",
-        )
     dispatched_at = datetime.now(UTC)
     results = await manager.dispatch_many(
         projector_ids, payload.capability, payload.params, priority=Priority.USER

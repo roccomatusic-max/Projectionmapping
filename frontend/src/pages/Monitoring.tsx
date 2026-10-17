@@ -233,7 +233,8 @@ export default function Monitoring({ session }: { session: Session }) {
                     type="monotone"
                     dataKey={metric}
                     stroke={['#38bdf8', '#22c55e', '#f59e0b', '#a78bfa'][index % 4]}
-                    dot={false}
+                    // A single day of data has no line to draw; show the points.
+                    dot={lampRows.length < 3}
                     strokeWidth={2}
                   />
                 ))}

@@ -291,6 +291,42 @@ async def test_group_power_requires_confirmation(api):
     assert response.status_code == 428
 
 
+async def test_selection_dispatch_reaches_each_projector(api):
+    """The Control Center's ad-hoc selection path.
+
+    Regression: the static /selection/ path was declared after /{group_id},
+    so FastAPI parsed "selection" as a group id and answered 422.
+    """
+    headers = await login(api)
+    good = await add_projector(api, headers, name="Sel A")
+    bad = await add_projector(api, headers, name="Sel B", port=1, command_timeout=1.0)
+    response = await api.post(
+        f"/api/groups/selection/commands?projector_ids={good}&projector_ids={bad}",
+        headers=headers, json={"capability": "power.get", "confirm": True},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["summary"] == {"total": 2, "succeeded": 1, "failed": 1}
+    assert {r["name"] for r in body["results"]} == {"Sel A", "Sel B"}
+
+
+async def test_selection_dispatch_requires_at_least_one_id(api):
+    headers = await login(api)
+    response = await api.post("/api/groups/selection/commands", headers=headers,
+                              json={"capability": "power.get", "confirm": True})
+    assert response.status_code == 422
+
+
+async def test_all_dispatch_hits_every_enabled_projector(api):
+    headers = await login(api)
+    await add_projector(api, headers, name="All A")
+    await add_projector(api, headers, name="All B")
+    response = await api.post("/api/groups/all/commands", headers=headers,
+                              json={"capability": "shutter.get", "confirm": True})
+    assert response.status_code == 200, response.text
+    assert response.json()["summary"]["total"] == 2
+
+
 async def test_empty_group_is_rejected(api):
     headers = await login(api)
     group_id = (await api.post("/api/groups", headers=headers,

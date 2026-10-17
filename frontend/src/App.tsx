@@ -74,7 +74,7 @@ export default function App() {
                 end={item.end}
                 className={({ isActive }) =>
                   classNames(
-                    'rounded-md px-3 py-1.5 text-sm transition-colors',
+                    'whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors xl:px-3',
                     isActive
                       ? 'bg-panel-800 text-slate-100'
                       : 'text-slate-400 hover:bg-panel-900 hover:text-slate-200',
@@ -87,7 +87,7 @@ export default function App() {
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-xs text-slate-500 sm:inline">
+            <span className="hidden whitespace-nowrap text-xs text-slate-500 sm:inline">
               {session.username} · {session.role}
             </span>
             <button className="btn-ghost text-xs" onClick={signOut}>
