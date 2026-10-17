@@ -12,6 +12,11 @@ remote all talk to it. The Mac app sets that up by itself:
 
 There is no Terminal, git or build step on the server.
 
+**Tested:** installed on a real Mac server on 2026-10-17 by following the
+steps below: the download, the one-line Terminal step, the password prompt,
+the first sign-in and the dashboard all worked. Not yet exercised there:
+starting after a reboot, and installing an update from GitHub.
+
 ---
 
 ## Install it

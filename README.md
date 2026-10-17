@@ -229,6 +229,7 @@ in hardware that works when this software does not. See
 | 4 | Telemetry history, scheduling, alerts, scenes | Implemented |
 | 5 | Enclosure monitoring, MQTT, Home Assistant | Sensor ingest, alerting and HA discovery implemented; no vendor-specific sensor drivers |
 | 6 | Hardening: tests, auth, deployment, recovery | Implemented; CI builds the image; not yet load-tested at 25 devices |
+| — | Mac server app ([docs/MAC-SERVER.md](docs/MAC-SERVER.md)) | **Tested on a real Mac server** (2026-10-17): download, install, start and dashboard work. Restart-on-boot and update-from-GitHub not yet exercised |
 
 Known gaps, stated plainly:
 
