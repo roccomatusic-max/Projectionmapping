@@ -46,6 +46,7 @@ from app.services.discovery import discovery
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
+from app.services.updates import start_auto_updates
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -121,11 +122,14 @@ async def lifespan(_: FastAPI):
     await mqtt_publisher.start()
     if settings.advertise_port:
         await discovery.start(port=settings.discovery_port, http_port=settings.advertise_port)
+    auto_updates = start_auto_updates()
     log.info("startup complete")
     try:
         yield
     finally:
         log.info("shutting down")
+        if auto_updates:
+            auto_updates.cancel()
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
         await discovery.stop()

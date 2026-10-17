@@ -16,6 +16,10 @@ class KeyIn(BaseModel):
     key: str = Field(default="", max_length=400)
 
 
+class AutoIn(BaseModel):
+    enabled: bool
+
+
 class InstallIn(BaseModel):
     confirm: bool = False
 
@@ -29,6 +33,9 @@ async def update_status(_: RequireAdmin, check: bool = False) -> dict:
 @router.put("/key")
 async def set_key(body: KeyIn, _: RequireAdmin) -> dict:
     updater = get_updater()
+    if not updater.supported:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Updates are only installed by the Mac app.")
     updater.save_key(body.key)
     return await updater.check(force=True)
 
@@ -40,3 +47,14 @@ async def install(body: InstallIn, _: RequireAdmin) -> dict:
         return await get_updater().install()
     except UpdateError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+
+
+@router.put("/auto")
+async def set_auto(body: AutoIn, _: RequireAdmin) -> dict:
+    """Install new versions by themselves whenever no show is running."""
+    updater = get_updater()
+    if not updater.supported:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Updates are only installed by the Mac app.")
+    updater.set_auto(body.enabled)
+    return updater.status()
