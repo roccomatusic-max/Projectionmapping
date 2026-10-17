@@ -1,163 +1,198 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import type { Projector } from '@/api/types'
-import { classNames, relativeTime, renderTelemetry } from '@/lib/format'
+import { classNames } from '@/lib/format'
 import {
-  InputBadge,
-  LampMeter,
-  PowerGlyph,
-  ProjectorMark,
-  ShutterGlyph,
-  type Tone,
-} from './graphics'
-import { ChevronIcon, PowerIcon, ShutterIcon, WarningIcon } from './icons'
+  attentionItems,
+  attentionTone,
+  deviceTone,
+  isLive,
+  isTransitioning,
+  lampReadings,
+  peakLampHours,
+} from '@/lib/status'
+import { phaseIsActive, type TrackedCommand } from '@/live/LiveProvider'
+import { useTicker } from '@/hooks/useLiveData'
+import { LampMeter } from './graphics'
+import { ChevronIcon, PowerIcon, ShutterIcon } from './icons'
+import { CommandLine, Freshness, InputLabel, LinkBadge, PowerBadge, ShutterBadge } from './status'
+import { StatusDot } from './ui'
+import { TONE_EDGE, TONE_TEXT } from './tone'
 
-/** Connection tone. A stale device is never green: liveness is observed,
- *  not remembered. */
-export function connectionTone(projector: Projector): Tone {
-  const { state } = projector
-  if (!projector.enabled) return 'idle'
-  if (state.stale || !state.online) return 'fault'
-  if (state.health === 'error') return 'fault'
-  if (state.health === 'warning') return 'warn'
-  return 'ok'
+export { connectionTone } from '@/lib/status'
+
+export type QuickAction = 'power-on' | 'power-off' | 'shutter-open' | 'shutter-closed'
+
+/** The last command on this projector, while it is still worth showing:
+ *  in flight, recently settled, or a problem the operator has not yet
+ *  replaced with another command. */
+export function CommandStrip({ command, className }: { command?: TrackedCommand; className?: string }) {
+  useTicker(3000)
+  if (!command) return null
+  const age = Date.now() - command.updatedAt
+  const sticky = command.phase === 'failed' || command.phase === 'unverified' || command.phase === 'unavailable'
+  if (!phaseIsActive(command.phase) && !(sticky && age < 120_000) && age > 12_000) return null
+  return <CommandLine command={command} className={className} />
 }
 
-export function ProjectorCard({
+/**
+ * Quick controls the card offers, worked out from confirmed state. A
+ * projector that is offline, warming, cooling or already has a command in
+ * flight offers nothing to press.
+ */
+export function quickControls(projector: Projector, command: TrackedCommand | undefined, canControl: boolean) {
+  const live = isLive(projector)
+  const busy = command !== undefined && phaseIsActive(command.phase)
+  const { power, shutter } = projector.state
+  const transitioning = isTransitioning(projector)
+  const base = !canControl ? 'Your role is view-only' : !live ? 'Projector is not responding' : busy ? 'A command is still in progress' : null
+  return {
+    power: {
+      next: (power === 'on' ? 'off' : 'on') as 'on' | 'off',
+      label: power === 'on' ? 'Power off' : 'Power on',
+      disabled: Boolean(base) || transitioning || power === 'unknown',
+      reason: base ?? (transitioning ? 'Wait for the projector to finish warming up or cooling down' : undefined),
+    },
+    shutter: {
+      next: (shutter === 'closed' ? 'open' : 'closed') as 'open' | 'closed',
+      label: shutter === 'closed' ? 'Open' : 'Close',
+      disabled: Boolean(base) || power !== 'on' || shutter === 'unknown',
+      reason: base ?? (power !== 'on' ? 'Shutter control needs the projector powered on' : undefined),
+    },
+  }
+}
+
+export const ProjectorCard = memo(function ProjectorCard({
   projector,
-  onPower,
-  onShutter,
+  command,
   canControl,
-  busy,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+  onAction,
 }: {
   projector: Projector
-  onPower: (projector: Projector, state: 'on' | 'off') => void
-  onShutter: (projector: Projector, state: 'open' | 'closed') => void
+  command?: TrackedCommand
   canControl: boolean
-  busy?: boolean
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: (projector: Projector) => void
+  onAction: (projector: Projector, action: QuickAction) => void
 }) {
   const { state } = projector
-  const live = state.online && !state.stale
-  const transitioning = state.power === 'warming' || state.power === 'cooling'
-  const input = renderTelemetry(state.active_input, (value) =>
-    typeof value === 'string' ? value : value.label,
-  )
-  const inputCode =
-    state.active_input.availability === 'available' && typeof state.active_input.value === 'object'
-      ? state.active_input.value?.code ?? ''
-      : ''
-  const lamps = state.lamp_hours
-  const lampValues =
-    lamps.availability === 'available' && Array.isArray(lamps.value)
-      ? lamps.value.map((lamp) => lamp.hours).filter((h): h is number => h != null)
-      : []
-  const peakLampHours = lampValues.length > 0 ? Math.max(...lampValues) : null
-  const problems = [...state.errors, ...state.warnings]
-  const offlineReason = !state.online && state.last_error && !state.errors.includes(state.last_error)
-    ? state.last_error
-    : null
+  const tone = deviceTone(projector)
+  const live = isLive(projector)
+  const lamps = lampReadings(projector)
+  const peak = peakLampHours(projector)
+  const issues = attentionItems(projector)
+  const controls = quickControls(projector, command, canControl)
 
   return (
-    <article className={classNames('panel flex flex-col', !projector.enabled && 'opacity-60')}>
-      <header className="flex items-center gap-3 px-4 pt-4">
-        <ProjectorMark tone={connectionTone(projector)} pulse={transitioning} />
+    <article
+      className={classNames(
+        'panel relative flex flex-col overflow-hidden transition-colors duration-300',
+        'before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:transition-colors before:duration-300',
+        TONE_EDGE[tone],
+        selected && 'border-sky-500/60 bg-sky-500/[0.05] ring-1 ring-sky-500/40',
+        !projector.enabled && 'opacity-60',
+      )}
+      aria-label={projector.name}
+    >
+      <header className="flex items-start gap-2.5 px-3.5 pt-3">
+        {selectable && (
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={selected}
+            onChange={() => onToggleSelect?.(projector)}
+            aria-label={`Select ${projector.name}`}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <Link
             to={`/projectors/${projector.id}`}
-            className="block truncate text-sm font-semibold text-slate-100 hover:text-sky-300"
+            className="block truncate text-sm font-semibold text-slate-50 hover:text-sky-300"
           >
             {projector.name}
           </Link>
-          <p className="truncate text-xs text-slate-400">
-            {projector.model}
-            {projector.location && <span className="text-slate-500"> · {projector.location}</span>}
+          <p className="truncate text-xs text-slate-500" title={projector.location || undefined}>
+            <span className="tnum text-slate-400">{projector.host}</span>
+            <span className="text-slate-600"> · </span>
+            {projector.model || projector.manufacturer}
           </p>
         </div>
-        <span
-          className={classNames(
-            'tnum shrink-0 text-[11px]',
-            state.stale ? 'text-amber-400' : 'text-slate-500',
-          )}
-          title={
-            state.stale
-              ? 'No successful poll inside the staleness window — last known value, not a live reading.'
-              : 'Last successful reply'
-          }
-        >
-          {relativeTime(state.last_seen_at)}
-          {state.stale && ' · stale'}
-        </span>
+        <Freshness projector={projector} className="pt-0.5 text-2xs" />
       </header>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-4">
-        <PowerGlyph state={state.power} live={live} size="sm" />
-        <ShutterGlyph state={state.shutter} live={live} size="sm" />
-        <div className="col-span-2 flex items-center justify-between gap-3 rounded-lg bg-panel-850 px-3 py-2">
-          <span className="text-[11px] uppercase tracking-wide text-slate-500">Input</span>
-          {input.muted ? (
-            <span className="text-xs text-slate-500" title={input.title}>
-              {input.text}
-            </span>
-          ) : (
-            <span className="text-sm">
-              <InputBadge code={inputCode} label={input.text} />
-            </span>
-          )}
-        </div>
-        <div className="col-span-2">
+      <div className="flex flex-wrap gap-1.5 px-3.5 pt-2.5">
+        <LinkBadge projector={projector} />
+        <PowerBadge projector={projector} />
+        <ShutterBadge projector={projector} />
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 px-3.5 pt-3 text-xs">
+        <dt className="eyebrow">Input</dt>
+        <dt className="eyebrow">{lamps.length > 1 ? `Lamp (max of ${lamps.length})` : 'Lamp'}</dt>
+        <dd className="min-w-0 text-sm">
+          <InputLabel projector={projector} />
+        </dd>
+        <dd className="min-w-0">
           <LampMeter
-            label={lampValues.length > 1 ? `Lamp hours (highest of ${lampValues.length})` : 'Lamp hours'}
-            hours={peakLampHours}
+            label=""
+            hours={peak}
             warn={projector.lamp_warn_hours}
             critical={projector.lamp_critical_hours}
             compact
-            note={
-              peakLampHours == null
-                ? (lamps.note ?? 'Lamp hours have not been read yet')
-                : undefined
-            }
+            note={peak == null ? (state.lamp_hours?.note ?? 'Lamp hours have not been read yet') : undefined}
           />
-        </div>
-      </div>
+        </dd>
+      </dl>
 
-      {(problems.length > 0 || offlineReason) && (
-        <ul className="mx-4 mb-3 space-y-1">
-          {state.errors.map((error) => (
-            <li key={error} className="flex items-start gap-1.5 text-xs text-red-300">
-              <WarningIcon size={13} className="mt-0.5 shrink-0" aria-hidden /> <span className="break-words">{error}</span>
+      {issues.length > 0 && (
+        <ul className="mx-3.5 mt-3 space-y-1">
+          {issues.slice(0, 2).map((item) => (
+            <li key={item.text} className="flex items-start gap-1.5 text-xs" title={item.detail}>
+              <StatusDot tone={attentionTone(item.severity)} className="mt-1.5" />
+              <span className={classNames('min-w-0 break-words', TONE_TEXT[attentionTone(item.severity)])}>
+                {item.text}
+                {item.detail && !live && <span className="block truncate text-slate-500">{item.detail}</span>}
+              </span>
             </li>
           ))}
-          {state.warnings.map((warning) => (
-            <li key={warning} className="flex items-start gap-1.5 text-xs text-amber-300">
-              <WarningIcon size={13} className="mt-0.5 shrink-0" aria-hidden /> <span className="break-words">{warning}</span>
+          {issues.length > 2 && (
+            <li className="pl-3.5 text-xs text-slate-500">
+              <Link to={`/projectors/${projector.id}`} className="hover:text-slate-300">+{issues.length - 2} more</Link>
             </li>
-          ))}
-          {offlineReason && <li className="break-words text-xs text-slate-500">{offlineReason}</li>}
+          )}
         </ul>
       )}
 
-      <footer className="mt-auto flex items-center gap-2 border-t border-white/5 px-3 py-2.5">
+      <CommandStrip command={command} className="mx-3.5 mt-3" />
+
+      <footer className="mt-auto flex items-center gap-1.5 px-2.5 pb-2.5 pt-3">
         <button
-          className="btn-default flex-1"
-          disabled={!canControl || busy || !live || transitioning}
-          onClick={() => onPower(projector, state.power === 'on' ? 'off' : 'on')}
-          title={transitioning ? 'Wait for the projector to finish its transition' : undefined}
+          className="btn-default btn-sm flex-1"
+          disabled={controls.power.disabled}
+          title={controls.power.reason}
+          onClick={() => onAction(projector, controls.power.next === 'on' ? 'power-on' : 'power-off')}
         >
-          <PowerIcon size={15} aria-hidden />
-          {state.power === 'on' ? 'Power off' : 'Power on'}
+          <PowerIcon size={13} aria-hidden />
+          {controls.power.label}
         </button>
         <button
-          className="btn-default flex-1"
-          disabled={!canControl || busy || !live || state.power !== 'on'}
-          onClick={() => onShutter(projector, state.shutter === 'closed' ? 'open' : 'closed')}
-          title={state.power !== 'on' ? 'Shutter control needs the lamp on' : undefined}
+          className="btn-default btn-sm flex-1"
+          disabled={controls.shutter.disabled}
+          title={controls.shutter.reason}
+          onClick={() => onAction(projector, controls.shutter.next === 'open' ? 'shutter-open' : 'shutter-closed')}
         >
-          <ShutterIcon size={15} aria-hidden />
-          {state.shutter === 'closed' ? 'Open' : 'Close'}
+          <ShutterIcon size={13} aria-hidden />
+          {controls.shutter.label}
+          <span className="sr-only"> shutter</span>
         </button>
-        <Link to={`/projectors/${projector.id}`} className="btn-ghost px-2" aria-label="Details">
-          <ChevronIcon size={18} />
+        <Link to={`/projectors/${projector.id}`} className="btn-ghost btn-sm btn-icon" aria-label={`Open ${projector.name}`}>
+          <ChevronIcon size={16} />
         </Link>
       </footer>
     </article>
   )
-}
+})

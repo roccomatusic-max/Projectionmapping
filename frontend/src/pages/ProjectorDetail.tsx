@@ -1,724 +1,1271 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
 import type {
   Capability,
   CapabilityManifest,
   CommandLogRow,
-  CommandResult,
   ConnectionTest,
   Projector,
+  Telemetry,
 } from '@/api/types'
+import { useFleetContext, useOps, latestCommand, phaseIsActive, type TrackedCommand } from '@/live/LiveProvider'
+import { useDrivers } from '@/live/useCatalog'
+import { useTicker } from '@/hooks/useLiveData'
 import {
+  inputRequest,
+  powerRequest,
+  shutterRequest,
+  useProjectorCommand,
+} from '@/components/fleet/useProjectorCommand'
+import { CommandStrip } from '@/components/ProjectorCard'
+import { Freshness, LinkBadge, PowerBadge, ShutterBadge } from '@/components/status'
+import { LampMeter, ProjectorMark, inputIcon } from '@/components/graphics'
+import {
+  Banner,
   Chip,
-  ConfirmDialog,
-  ErrorBanner,
+  EmptyState,
   Panel,
   Spinner,
-  ToastStack,
+  Tabs,
   UnavailableNote,
   Value,
-  useToasts,
 } from '@/components/ui'
-import { connectionTone } from '@/components/ProjectorCard'
-import {
-  InputBadge,
-  LampMeters,
-  PowerGlyph,
-  ProjectorMark,
-  ShutterGlyph,
-  SubsystemTiles,
-  inputIcon,
-} from '@/components/graphics'
+import { TONE_TEXT, type Tone } from '@/components/tone'
 import {
   BackIcon,
+  BrightnessIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronUpIcon,
+  ChevronIcon,
+  ColorIcon,
+  ContrastIcon,
+  CoverIcon,
+  EditIcon,
+  EnterIcon,
+  FanIcon,
+  FaultIcon,
+  FilterIcon,
+  FreezeIcon,
   HdmiIcon,
+  LampIcon,
   LensIcon,
   LiveIcon,
   LogsIcon,
-  MonitoringIcon,
+  MaintenanceIcon,
+  OsdIcon,
+  PictureIcon,
   PowerIcon,
   RefreshIcon,
   RemoteIcon,
   ShutterIcon,
+  TemperatureIcon,
+  TestPatternIcon,
+  type LucideIcon,
 } from '@/components/icons'
 import {
   OUTCOME_HELP,
   OUTCOME_LABEL,
-  POWER_LABEL,
   classNames,
   formatDateTime,
-  healthTone,
   inputsFromCapabilities,
   outcomeTone,
   relativeTime,
   renderTelemetry,
 } from '@/lib/format'
-import { useTicker } from '@/hooks/useLiveData'
+import {
+  activeInput,
+  attentionItems,
+  deviceTone,
+  isLive,
+  isTransitioning,
+  lampReadings,
+} from '@/lib/status'
+import { ProjectorForm } from './Projectors'
 
-const REMOTE_KEYS: Array<[string, string, string]> = [
-  ['menu', 'Menu', 'col-start-1'],
-  ['up', '▲', 'col-start-2'],
-  ['back', 'Return', 'col-start-3'],
-  ['left', '◀', 'col-start-1 row-start-2'],
-  ['enter', 'Enter', 'col-start-2 row-start-2'],
-  ['right', '▶', 'col-start-3 row-start-2'],
-  ['down', '▼', 'col-start-2 row-start-3'],
-]
+type TabId = 'picture' | 'remote' | 'lamp' | 'log'
 
-export default function ProjectorDetail({ session }: { session: Session }) {
-  const { id } = useParams()
-  const projectorId = Number(id)
-  const [projector, setProjector] = useState<Projector | null>(null)
-  const [manifest, setManifest] = useState<CapabilityManifest | null>(null)
-  const [history, setHistory] = useState<CommandLogRow[]>([])
-  const [probe, setProbe] = useState<ConnectionTest | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [confirm, setConfirm] = useState<{
-    title: string
-    body: string
-    danger?: boolean
-    run: () => Promise<void>
-  } | null>(null)
-  const { toasts, push, dismiss } = useToasts()
-  useTicker(5000)
+/* ------------------------------------------------------------------ */
+/* Capability gating                                                    */
+/* ------------------------------------------------------------------ */
 
-  const canControl = session.role !== 'viewer'
+interface Gate {
+  capability: (name: string) => Capability | undefined
+  /** Declared, not retracted on this unit, and trusted or opted into. */
+  usable: (name: string) => boolean
+  /** Why a capability cannot be used here, or null when it can. */
+  reason: (name: string) => string | null
+  /** Enabled only because the operator opted into unverified commands. */
+  unverified: (name: string) => boolean
+}
 
-  const load = useCallback(async () => {
-    try {
-      const [device, caps, log] = await Promise.all([
-        api.getProjector(projectorId),
-        api.capabilities(projectorId),
-        api.commandHistory(projectorId, 40),
-      ])
-      setProjector(device)
-      setManifest(caps)
-      setHistory(log.commands)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load projector')
-    }
-  }, [projectorId])
-
-  useEffect(() => {
-    void load()
-    const timer = window.setInterval(() => void load(), 10000)
-    return () => window.clearInterval(timer)
-  }, [load])
-
-  const capability = (name: string): Capability | undefined =>
-    manifest?.capabilities.find((item) => item.name === name)
-
-  /** Supported means: declared, not retracted for this unit, and either
-   *  trusted or explicitly opted into. Everything else explains itself. */
-  const usable = (name: string) => {
+function makeGate(manifest: CapabilityManifest | null): Gate {
+  const capability = (name: string) => manifest?.capabilities.find((item) => item.name === name)
+  const reason = (name: string): string | null => {
     const cap = capability(name)
-    if (!cap) return false
-    if (manifest?.retracted[name]) return false
-    if (cap.requires_opt_in && !manifest?.allow_unverified_commands) return false
-    return true
-  }
-
-  const gateReason = (name: string): string | null => {
-    const cap = capability(name)
-    if (!cap) return `${name} is not implemented for this driver.`
-    const retracted = manifest?.retracted[name]
+    if (!manifest) return 'Loading capabilities…'
+    if (!cap) return 'This driver does not implement it for this model.'
+    const retracted = manifest.retracted[name]
     if (retracted) return retracted
-    if (cap.requires_opt_in && !manifest?.allow_unverified_commands) {
+    if (cap.requires_opt_in && !manifest.allow_unverified_commands) {
       return (
         cap.caveat ??
-        'This command is documented only for a sibling model. Enable “allow unverified commands” in Settings for this projector to use it.'
+        'Documented only for a sibling model. Enable “Allow unverified commands” for this projector to use it.'
       )
     }
     return null
   }
+  return {
+    capability,
+    reason,
+    usable: (name) => reason(name) === null,
+    unverified: (name) => Boolean(capability(name)?.requires_opt_in && manifest?.allow_unverified_commands),
+  }
+}
 
-  const send = async (
-    label: string,
-    action: () => Promise<CommandResult>,
-  ): Promise<void> => {
-    setBusy(true)
+/* ------------------------------------------------------------------ */
+/* Small building blocks                                                */
+/* ------------------------------------------------------------------ */
+
+function ControlBlock({
+  icon: Icon,
+  title,
+  status,
+  children,
+  footer,
+  unverified,
+}: {
+  icon: LucideIcon
+  title: string
+  status?: ReactNode
+  children: ReactNode
+  footer?: ReactNode
+  unverified?: boolean
+}) {
+  return (
+    <div className="inset flex flex-col gap-2.5 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="eyebrow flex items-center gap-1.5">
+          <Icon size={13} aria-hidden /> {title}
+          {unverified && (
+            <span className="rounded bg-yellow-500/15 px-1 text-[10px] normal-case tracking-normal text-yellow-300" title="Enabled through “Allow unverified commands”: the encoding is documented for a sibling model only.">
+              unverified
+            </span>
+          )}
+        </span>
+        {status}
+      </div>
+      {children}
+      {footer}
+    </div>
+  )
+}
+
+/** Segmented control whose highlighted segment is the projector's
+ *  confirmed state. Pressing a segment asks to change to it. */
+function StateSwitch<T extends string>({
+  options,
+  current,
+  disabled,
+  title,
+  onSelect,
+  label,
+}: {
+  options: Array<{ value: T; label: string; icon?: LucideIcon }>
+  current: T | null
+  disabled: boolean
+  title?: string
+  onSelect: (value: T) => void
+  label: string
+}) {
+  return (
+    <div className="seg w-full" role="group" aria-label={label} title={title}>
+      {options.map((option) => {
+        const active = current === option.value
+        return (
+          <button
+            key={option.value}
+            className={classNames('seg-item py-2', active && 'seg-item-active')}
+            aria-pressed={active}
+            disabled={disabled || active}
+            onClick={() => onSelect(option.value)}
+          >
+            {option.icon && <option.icon size={14} aria-hidden />}
+            {option.label}
+            {active && <span className="sr-only"> (current)</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** For settings the projector cannot report: what was last sent from here. */
+function LastSent({ command, history, capability }: { command?: TrackedCommand; history: CommandLogRow[]; capability: string }) {
+  if (command && command.phase !== 'failed' && command.phase !== 'unavailable') {
+    const value = command.params?.state ?? command.params?.value
+    return (
+      <p className="text-2xs text-slate-500">
+        Last sent: <span className="text-slate-300">{String(value)}</span> {relativeTime(new Date(command.startedAt).toISOString())}. Not read back.
+      </p>
+    )
+  }
+  const row = history.find((r) => r.capability === capability && (r.outcome === 'accepted' || r.outcome === 'ok' || r.outcome === 'confirmed'))
+  if (row) {
+    const value = row.params?.state ?? row.params?.value
+    return (
+      <p className="text-2xs text-slate-500">
+        Last sent: <span className="text-slate-300">{String(value)}</span> {relativeTime(row.created_at)}
+        {row.username && ` by ${row.username}`}. Not read back.
+      </p>
+    )
+  }
+  return <p className="text-2xs text-slate-500">The projector does not report this setting.</p>
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                                 */
+/* ------------------------------------------------------------------ */
+
+export default function ProjectorDetail({ session }: { session: Session }) {
+  const { id } = useParams()
+  const projectorId = Number(id)
+  const { projectors, loading, refresh } = useFleetContext()
+  const { commands, notify } = useOps()
+  const drivers = useDrivers()
+  const { ask, dialog } = useProjectorCommand()
+  const [manifest, setManifest] = useState<CapabilityManifest | null>(null)
+  const [manifestError, setManifestError] = useState<string | null>(null)
+  const [history, setHistory] = useState<CommandLogRow[]>([])
+  const [probe, setProbe] = useState<ConnectionTest | null>(null)
+  const [checking, setChecking] = useState<'poll' | 'test' | null>(null)
+  const [tab, setTab] = useState<TabId>('picture')
+  const [editing, setEditing] = useState(false)
+  useTicker(5000)
+
+  const projector = projectors.find((p) => p.id === projectorId)
+  const canControl = session.role !== 'viewer'
+  const isAdmin = session.role === 'admin'
+
+  const loadManifest = useCallback(async () => {
     try {
-      const result = await action()
-      push(
-        outcomeTone(result.outcome),
-        `${label}: ${OUTCOME_LABEL[result.outcome]}`,
-        result.error ?? OUTCOME_HELP[result.outcome],
-      )
-      await load()
+      setManifest(await api.capabilities(projectorId))
+      setManifestError(null)
     } catch (err) {
-      push(
-        'fault',
-        `${label} failed`,
-        err instanceof ApiError ? err.message : 'The command could not be sent',
-      )
+      setManifestError(err instanceof Error ? err.message : 'Could not load capabilities')
+    }
+  }, [projectorId])
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory((await api.commandHistory(projectorId, 60)).commands)
+    } catch {
+      // The log is supplementary; the controls still work without it.
+    }
+  }, [projectorId])
+
+  useEffect(() => {
+    setManifest(null)
+    setProbe(null)
+    void loadManifest()
+    void loadHistory()
+  }, [loadManifest, loadHistory])
+
+  // Settled commands change what the log and the manifest say (an input the
+  // unit refused is retracted). Reload when one of ours settles.
+  const mine = useMemo(() => commands.filter((c) => c.projectorId === projectorId), [commands, projectorId])
+  const settledKey = mine.filter((c) => !phaseIsActive(c.phase)).map((c) => `${c.id}:${c.phase}`).join(',')
+  useEffect(() => {
+    if (!settledKey) return
+    void loadHistory()
+    void loadManifest()
+  }, [settledKey, loadHistory, loadManifest])
+
+  // While the log tab is open, keep it current with other operators' commands.
+  useEffect(() => {
+    if (tab !== 'log') return
+    const timer = window.setInterval(() => void loadHistory(), 15000)
+    return () => window.clearInterval(timer)
+  }, [tab, loadHistory])
+
+  const gate = useMemo(() => makeGate(manifest), [manifest])
+
+  if (!projector) {
+    if (loading) return <Spinner label="Loading projector…" />
+    return (
+      <div className="panel">
+        <EmptyState
+          title="Projector not found"
+          action={<Link to="/projectors" className="btn-default btn-sm">All projectors</Link>}
+        >
+          It may have been removed.
+        </EmptyState>
+      </div>
+    )
+  }
+
+  const { state } = projector
+  const live = isLive(projector)
+  const transitioning = isTransitioning(projector)
+  const driverName = drivers.find((d) => d.driver_id === projector.driver)?.display_name ?? projector.driver
+  const issues = attentionItems(projector)
+  const command = (capability?: string) => latestCommand(commands, projectorId, capability)
+  const busy = (capability: string) => {
+    const c = command(capability)
+    return c !== undefined && phaseIsActive(c.phase)
+  }
+
+  /** Why this control cannot be pressed right now, or null. */
+  const blocked = (capability: string): string | null => {
+    if (!canControl) return 'Your role is view-only.'
+    if (!projector.enabled) return 'This projector is disabled.'
+    if (!live) return 'The projector is not responding.'
+    const reason = gate.reason(capability)
+    if (reason) return reason
+    if (busy(capability)) return 'Waiting for the previous command to resolve.'
+    return null
+  }
+
+  const send = (capability: string, label: string, params: Record<string, unknown> = {}, confirm?: { title: string; body: ReactNode; danger?: boolean }) =>
+    ask({
+      projectors: [projector],
+      spec: { capability, params, label },
+      title: confirm?.title ?? label,
+      body: confirm?.body ?? null,
+      danger: confirm?.danger,
+      confirmLabel: label,
+      confirm: Boolean(confirm),
+    })
+
+  const pollNow = async () => {
+    setChecking('poll')
+    try {
+      await api.status(projectorId, true)
+      await refresh()
+      notify('ok', `${projector.name}: status read from the projector`)
+    } catch (err) {
+      notify('fault', `${projector.name}: poll failed`, err instanceof ApiError ? err.message : undefined)
     } finally {
-      setBusy(false)
+      setChecking(null)
     }
   }
 
-  if (error && !projector) return <ErrorBanner message={error} />
-  if (!projector || !manifest) return <Spinner label="Loading projector…" />
+  const testConnection = async () => {
+    setChecking('test')
+    try {
+      setProbe(await api.testConnection(projectorId))
+    } catch (err) {
+      notify('fault', 'Connection test failed', err instanceof ApiError ? err.message : undefined)
+    } finally {
+      setChecking(null)
+    }
+  }
 
-  const { state } = projector
-  const live = state.online && !state.stale
-  const input = renderTelemetry(state.active_input, (value) =>
-    typeof value === 'string' ? value : `${value.label} (${value.code})`,
-  )
-  const transitioning = state.power === 'warming' || state.power === 'cooling'
-  const inputRetracted = manifest.retracted_params ?? {}
-  // Whatever this model's driver declares — a DZ13K lists SDI, a DZ770 lists S-Video.
-  const inputs = inputsFromCapabilities(manifest.capabilities)
+  const powerBlocked = blocked('power.set') ?? (transitioning
+    ? state.power === 'warming'
+      ? 'The lamp is striking. Power commands are refused until start-up finishes.'
+      : 'Cooling. The projector will not accept power-on until cooling completes.'
+    : null)
+  const shutterBlocked = blocked('shutter.set') ?? (state.power !== 'on' ? 'Shutter control needs the projector powered on.' : null)
+  const inputBlocked = blocked('input.set')
+  const input = activeInput(projector)
+  const inputs = manifest ? inputsFromCapabilities(manifest.capabilities) : []
+  const retractedParams = manifest?.retracted_params ?? {}
+
+  const extraLampCaps = ['lamp.select', 'lamp.power'].filter((name) => gate.capability(name))
+  const tabs: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
+    { id: 'picture', label: 'Picture', icon: PictureIcon },
+    { id: 'remote', label: 'Remote & lens', icon: RemoteIcon },
+    ...(extraLampCaps.length ? [{ id: 'lamp' as const, label: 'Lamp mode', icon: LampIcon }] : []),
+    { id: 'log', label: 'Command log', icon: LogsIcon },
+  ]
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link to="/projectors" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
-            <BackIcon size={12} aria-hidden /> All projectors
-          </Link>
-          <div className="mt-2 flex items-center gap-3">
-            <ProjectorMark tone={connectionTone(projector)} pulse={transitioning} size="lg" />
-            <div>
-              <h1 className="text-lg font-semibold text-slate-100">{projector.name}</h1>
-              <p className="text-xs text-slate-400">
-                {projector.manufacturer} {projector.model} · {projector.host}:
-                {projector.port} · {projector.driver}
-                {projector.location && ` · ${projector.location}`}
+    <div className="space-y-4">
+      {/* Target bar: always says which projector receives the commands. */}
+      <div className="sticky top-12 z-30 -mx-3 border-b border-white/[0.06] bg-panel-950/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+        <Link to="/projectors" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
+          <BackIcon size={12} aria-hidden /> Projectors
+        </Link>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <ProjectorMark tone={deviceTone(projector)} pulse={transitioning} size="md" />
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold leading-tight text-slate-50">{projector.name}</h1>
+              <p className="truncate text-xs text-slate-400">
+                {projector.manufacturer} {projector.model}
+                <span className="text-slate-600"> · </span>
+                <span className="tnum">{projector.host}:{projector.port}</span>
+                {projector.location && <span className="text-slate-500"> · {projector.location}</span>}
               </p>
             </div>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Chip tone={live ? 'ok' : 'fault'}>{live ? 'Responding' : 'Not responding'}</Chip>
-          <Chip tone={healthTone(state.health)}>Health: {state.health}</Chip>
-          <button
-            className="btn-default"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true)
-              try {
-                setProbe(await api.testConnection(projectorId))
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            <LiveIcon size={15} aria-hidden /> Test connection
-          </button>
-          <button
-            className="btn-default"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true)
-              try {
-                await api.status(projectorId, true)
-                await load()
-                push('ok', 'Status refreshed')
-              } catch (err) {
-                push(
-                  'fault',
-                  'Refresh failed',
-                  err instanceof ApiError ? err.message : undefined,
-                )
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            <RefreshIcon size={15} aria-hidden /> Poll now
-          </button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <LinkBadge projector={projector} />
+            <PowerBadge projector={projector} />
+            <ShutterBadge projector={projector} />
+            <Freshness projector={projector} className="ml-1 text-xs" />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button className="btn-default btn-sm" disabled={checking !== null || !projector.enabled} onClick={() => void pollNow()} title="Read every value from the projector now">
+              {checking === 'poll' ? <Spinner size="sm" label={null} /> : <RefreshIcon size={13} aria-hidden />} Poll now
+            </button>
+            <button className="btn-default btn-sm" disabled={checking !== null} onClick={() => void testConnection()} title="Open a connection and authenticate, without changing anything">
+              {checking === 'test' ? <Spinner size="sm" label={null} /> : <LiveIcon size={13} aria-hidden />} Test connection
+            </button>
+            {isAdmin && (
+              <button className="btn-ghost btn-sm" onClick={() => setEditing(true)}>
+                <EditIcon size={13} aria-hidden /> Edit
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
-
+      {/* Problems first */}
+      {!projector.enabled && (
+        <Banner tone="idle" title="This projector is disabled">
+          It is not polled and cannot be controlled. An administrator can enable it from Edit.
+        </Banner>
+      )}
+      {projector.enabled && !live && (
+        <Banner tone="fault" title={state.last_seen_at ? 'Not responding' : 'Never reached'}>
+          {state.last_seen_at
+            ? `No successful poll since ${formatDateTime(state.last_seen_at)} (${relativeTime(state.last_seen_at)}). Values below are the last known readings, not live state.`
+            : 'The projector has not answered since it was added. Check the address, port, network and control password, then Test connection.'}
+          {state.last_error && <span className="mt-1 block font-mono text-2xs opacity-80">{state.last_error}</span>}
+        </Banner>
+      )}
+      {live && issues.filter((i) => i.severity !== 'notice').length > 0 && (
+        <Banner tone={issues[0].severity === 'critical' ? 'fault' : 'warn'} title="Equipment warnings">
+          <ul className="space-y-0.5">
+            {issues.filter((i) => i.severity !== 'notice').map((item) => (
+              <li key={item.text}>
+                {item.text}
+                {item.detail && <span className="opacity-70"> · {item.detail}</span>}
+              </li>
+            ))}
+          </ul>
+        </Banner>
+      )}
       {probe && (
-        <div
-          className={classNames(
-            'rounded-md border px-3 py-2 text-sm',
-            probe.reachable && probe.authenticated
-              ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
-              : 'border-red-500/25 bg-red-500/10 text-red-200',
-          )}
+        <Banner
+          tone={probe.reachable && probe.authenticated ? 'ok' : 'fault'}
+          title={probe.reachable && probe.authenticated ? 'Connection test passed' : 'Connection test failed'}
+          onDismiss={() => setProbe(null)}
         >
-          <p>{probe.detail}</p>
-          {probe.raw_response && (
-            <p className="mt-1 font-mono text-xs opacity-70">
-              Projector replied: {probe.raw_response}
-            </p>
-          )}
-        </div>
+          {probe.detail}
+          {probe.tcp_latency_ms != null && ` · ${probe.tcp_latency_ms} ms`}
+          {probe.raw_response && <span className="mt-1 block font-mono text-2xs opacity-80">Projector replied: {probe.raw_response}</span>}
+        </Banner>
       )}
+      {manifestError && <Banner tone="warn" title="Capabilities could not be loaded">{manifestError}</Banner>}
 
-      {state.stale && (
-        <div className="rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          No successful poll inside the staleness window. Values below are the last
-          known readings, not live state. Last reply {relativeTime(state.last_seen_at)}.
-          {state.last_error && ` Last error: ${state.last_error}`}
-        </div>
-      )}
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        {/* -- Power ------------------------------------------------------ */}
-        <Panel
-          icon={PowerIcon}
-          title="Power"
-          description="Confirmed by reading the state back, not by the acknowledgement."
-        >
-          <div className="space-y-3">
-            <PowerGlyph state={state.power} live={live} size="lg" />
-            {transitioning && (
-              <p className="rounded-md bg-panel-850 px-3 py-2 text-xs text-sky-300">
-                {state.power === 'warming'
-                  ? 'Lamp is striking. Power commands are refused until start-up finishes.'
-                  : 'Cooling. The projector will not accept power-on until cooling completes.'}
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className="btn-primary btn-lg"
-                disabled={!canControl || busy || !live || transitioning || state.power === 'on'}
-                onClick={() =>
-                  setConfirm({
-                    title: `Power on ${projector.name}?`,
-                    body: 'The lamp will strike and the projector will warm up over roughly 30 seconds.',
-                    run: () => send('Power on', () => api.power(projectorId, 'on')),
-                  })
-                }
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          {/* -- Primary controls ------------------------------------- */}
+          <Panel icon={PowerIcon} title="Primary controls" description="Highlighted states are read back from the projector, not assumed from the command.">
+            <div className="grid gap-3 md:grid-cols-2">
+              <ControlBlock
+                icon={PowerIcon}
+                title="Power"
+                status={<PowerBadge projector={projector} />}
+                footer={<CommandStrip command={command('power.set')} />}
               >
-                <PowerIcon size={16} aria-hidden /> Power on
-              </button>
-              <button
-                className="btn-danger btn-lg"
-                disabled={!canControl || busy || !live || transitioning || state.power === 'off'}
-                onClick={() =>
-                  setConfirm({
-                    title: `Power off ${projector.name}?`,
-                    body: 'The projector will enter its cooling cycle and cannot be restarted until cooling completes.',
-                    danger: true,
-                    run: () => send('Power off', () => api.power(projectorId, 'off')),
-                  })
-                }
+                <StateSwitch
+                  label="Power"
+                  options={[
+                    { value: 'on', label: 'On', icon: PowerIcon },
+                    { value: 'off', label: 'Standby' },
+                  ]}
+                  current={live && (state.power === 'on' || state.power === 'off') ? state.power : null}
+                  disabled={powerBlocked !== null}
+                  title={powerBlocked ?? undefined}
+                  onSelect={(value) => ask(powerRequest([projector], value))}
+                />
+                {powerBlocked && live && <p className="text-2xs text-slate-500">{powerBlocked}</p>}
+              </ControlBlock>
+
+              <ControlBlock
+                icon={ShutterIcon}
+                title="Shutter"
+                status={<ShutterBadge projector={projector} />}
+                footer={<CommandStrip command={command('shutter.set')} />}
               >
-                <PowerIcon size={16} aria-hidden /> Power off
-              </button>
-            </div>
-          </div>
-        </Panel>
+                <StateSwitch
+                  label="Shutter"
+                  options={[
+                    { value: 'open', label: 'Open' },
+                    { value: 'closed', label: 'Closed' },
+                  ]}
+                  current={live && state.shutter !== 'unknown' ? state.shutter : null}
+                  disabled={shutterBlocked !== null}
+                  title={shutterBlocked ?? undefined}
+                  onSelect={(value) => ask(shutterRequest([projector], value))}
+                />
+                {shutterBlocked && live && <p className="text-2xs text-slate-500">{shutterBlocked}</p>}
+              </ControlBlock>
 
-        {/* -- Shutter / image -------------------------------------------- */}
-        <Panel icon={ShutterIcon} title="Shutter" description="Open shows the image; closed blanks it with the lamp still on.">
-          <div className="space-y-3">
-            <ShutterGlyph state={state.shutter} live={live} size="lg" />
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className="btn-default btn-lg"
-                disabled={!canControl || busy || !live || !usable('shutter.set')}
-                onClick={() =>
-                  setConfirm({
-                    title: `Open shutter on ${projector.name}?`,
-                    body: 'The image will be shown.',
-                    run: () => send('Shutter open', () => api.shutter(projectorId, 'open')),
-                  })
-                }
-              >
-                Open
-              </button>
-              <button
-                className="btn-default btn-lg"
-                disabled={!canControl || busy || !live || !usable('shutter.set')}
-                onClick={() =>
-                  setConfirm({
-                    title: `Close shutter on ${projector.name}?`,
-                    body: 'The image will be blanked. The lamp stays on.',
-                    danger: true,
-                    run: () => send('Shutter close', () => api.shutter(projectorId, 'closed')),
-                  })
-                }
-              >
-                Close
-              </button>
-            </div>
-            {!usable('shutter.set') && (
-              <UnavailableNote reason={gateReason('shutter.set') ?? 'Unavailable'} />
-            )}
-          </div>
-        </Panel>
-
-        {/* -- Input ------------------------------------------------------- */}
-        <Panel icon={HdmiIcon} title="Input source">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg bg-panel-850 px-3 py-2">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500">Active</span>
-              {input.muted ? (
-                <Value text={input.text} muted title={input.title} />
-              ) : (
-                <span className="text-sm">
-                  <InputBadge
-                    code={typeof state.active_input.value === 'object' ? state.active_input.value?.code ?? '' : ''}
-                    label={input.text}
-                  />
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {inputs.map(([code, label]) => {
-                const unavailable = inputRetracted[`input.set:${code}`]
-                const Icon = inputIcon(code)
-                const active =
-                  typeof state.active_input.value === 'object' &&
-                  state.active_input.value?.code === code
-                return (
-                  <button
-                    key={code}
-                    className={classNames(
-                      'btn-default justify-start',
-                      active && 'ring-1 ring-sky-500/60',
-                      unavailable && 'line-through opacity-40',
-                    )}
-                    disabled={
-                      !canControl || busy || !live || !usable('input.set') || Boolean(unavailable)
-                    }
-                    title={unavailable}
-                    onClick={() =>
-                      setConfirm({
-                        title: `Switch ${projector.name} to ${label}?`,
-                        body: 'The projector will change its input source. The image may blank briefly while it re-syncs.',
-                        run: () => send(`Input ${label}`, () => api.input(projectorId, code)),
-                      })
-                    }
-                  >
-                    <Icon size={15} className="text-slate-400" aria-hidden /> {label}
-                  </button>
-                )
-              })}
-            </div>
-            {Object.keys(inputRetracted).length > 0 && (
-              <UnavailableNote
-                reason={`Struck-through inputs were refused by this unit: ${Object.values(inputRetracted).join('; ')}`}
-              />
-            )}
-          </div>
-        </Panel>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        {/* -- Technical status -------------------------------------------- */}
-        <Panel
-          icon={MonitoringIcon}
-          title="Technical status"
-          description="“n/a” means the model has no such query. “—” means it was not read."
-          className="xl:col-span-2"
-        >
-          <TechnicalStatus projector={projector} />
-        </Panel>
-
-        {/* -- Remote ------------------------------------------------------- */}
-        <Panel
-          icon={RemoteIcon}
-          title="Remote"
-          description="Fire-and-forget: the projector does not report OSD cursor position."
-        >
-          {usable('remote.menu') ? (
-            <div className="grid grid-cols-3 grid-rows-3 gap-2">
-              {REMOTE_KEYS.map(([key, label, position]) => (
-                <button
-                  key={key}
-                  className={classNames('btn-default btn-lg', position)}
-                  disabled={!canControl || busy || !live}
-                  onClick={() =>
-                    void send(`Remote ${label}`, () =>
-                      api.command(projectorId, `remote.${key}`),
-                    )
+              <div className="md:col-span-2">
+                <ControlBlock
+                  icon={HdmiIcon}
+                  title="Input"
+                  status={
+                    <span className={classNames('text-xs', input.muted ? 'text-slate-500' : 'text-slate-200')} title={input.title}>
+                      {input.muted ? input.text : `Active: ${input.text}`}
+                    </span>
                   }
+                  footer={<CommandStrip command={command('input.set')} />}
                 >
-                  {label}
-                </button>
-              ))}
+                  {!manifest ? (
+                    <Spinner size="sm" />
+                  ) : inputs.length === 0 ? (
+                    <UnavailableNote reason={gate.reason('input.set') ?? 'No inputs declared by this driver.'} />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                      {inputs.map(([code, label]) => {
+                        const unavailable = retractedParams[`input.set:${code}`]
+                        const Icon = inputIcon(code)
+                        const active = live && input.code === code
+                        return (
+                          <button
+                            key={code}
+                            className={classNames(
+                              'btn-default justify-start',
+                              active && 'border-sky-500/60 bg-sky-500/15 text-slate-50 disabled:opacity-100',
+                              unavailable && 'line-through',
+                            )}
+                            aria-pressed={active}
+                            disabled={Boolean(inputBlocked) || Boolean(unavailable) || active}
+                            title={unavailable ?? inputBlocked ?? (active ? 'Current input' : `Switch to ${label}`)}
+                            onClick={() => ask(inputRequest([projector], code, label))}
+                          >
+                            <Icon size={14} className="text-slate-400" aria-hidden /> {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {Object.keys(retractedParams).length > 0 && (
+                    <p className="text-2xs text-slate-500">
+                      Struck-through inputs were refused by this unit: {Object.values(retractedParams).join('; ')}
+                    </p>
+                  )}
+                </ControlBlock>
+              </div>
+
+              <OnOffBlock
+                icon={FreezeIcon}
+                title="Freeze"
+                capability="image.freeze"
+                gate={gate}
+                blocked={blocked('image.freeze')}
+                command={command('image.freeze')}
+                history={history}
+                onSend={(value) => send('image.freeze', value === 'on' ? 'Freeze on' : 'Freeze off', { state: value })}
+              />
+              <OnOffBlock
+                icon={OsdIcon}
+                title="On-screen display"
+                capability="osd.set"
+                gate={gate}
+                blocked={blocked('osd.set')}
+                command={command('osd.set')}
+                history={history}
+                onSend={(value) => send('osd.set', value === 'on' ? 'OSD on' : 'OSD off', { state: value })}
+              />
             </div>
-          ) : (
-            <UnavailableNote reason={gateReason('remote.menu') ?? 'Unavailable'} />
-          )}
-        </Panel>
+          </Panel>
+
+          {/* -- Secondary controls ----------------------------------- */}
+          <section className="panel">
+            <Tabs tabs={tabs} value={tab} onChange={setTab} className="px-2" />
+            <div className="p-4">
+              {tab === 'picture' && (
+                <PictureControls
+                  gate={gate}
+                  blocked={blocked}
+                  commands={mine}
+                  history={history}
+                  onSend={(capability, label, value) => send(capability, `${label} ${value}`, { value })}
+                />
+              )}
+              {tab === 'remote' && (
+                <RemoteAndLens
+                  gate={gate}
+                  blocked={blocked}
+                  lastRemote={mine.find((c) => c.capability.startsWith('remote.') || c.capability.startsWith('lens.'))}
+                  onSend={send}
+                />
+              )}
+              {tab === 'lamp' && (
+                <LampMode gate={gate} blocked={blocked} command={command} onSend={send} />
+              )}
+              {tab === 'log' && <CommandHistory rows={history} />}
+            </div>
+          </section>
+        </div>
+
+        {/* -- Equipment status --------------------------------------- */}
+        <aside className="min-w-0 space-y-4">
+          <EquipmentStatus projector={projector} driverName={driverName} />
+        </aside>
       </div>
 
-      {/* -- Lens ---------------------------------------------------------- */}
-      <Panel
-        icon={LensIcon}
-        title="Lens"
-        description="Discrete jogs, not press-and-hold: no explicit stop command is confirmed for this model."
-      >
-        <LensControls
-          disabled={!canControl || busy || !live}
-          usable={usable}
-          gateReason={gateReason}
-          onJog={(cap, direction) =>
-            void send(`Lens ${cap}`, () =>
-              api.command(projectorId, cap, { direction, step: 1 }),
-            )
-          }
-          onAction={(cap, title, body) =>
-            setConfirm({
-              title,
-              body,
-              run: () => send(cap, () => api.command(projectorId, cap)),
-            })
-          }
+      {editing && (
+        <ProjectorForm
+          drivers={drivers}
+          projector={projector}
+          onClose={() => setEditing(false)}
+          onSaved={(message) => {
+            setEditing(false)
+            notify('ok', message)
+            void refresh()
+            void loadManifest()
+          }}
+          onError={(message) => notify('fault', 'Save failed', message)}
         />
-      </Panel>
-
-      {/* -- Command history ----------------------------------------------- */}
-      <Panel
-        icon={LogsIcon}
-        title="Recent commands"
-        description="Every command, with the exact frame sent and the projector's reply."
-      >
-        <CommandHistory rows={history} />
-      </Panel>
-
-      <ConfirmDialog
-        open={confirm !== null}
-        title={confirm?.title ?? ''}
-        body={confirm?.body ?? ''}
-        danger={confirm?.danger}
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => {
-          const action = confirm
-          setConfirm(null)
-          if (action) void action.run()
-        }}
-      />
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
+      )}
+      {dialog}
     </div>
   )
 }
 
-function TechnicalStatus({ projector }: { projector: Projector }) {
-  const { state } = projector
-  const lamps =
-    state.lamp_hours.availability === 'available' && Array.isArray(state.lamp_hours.value)
-      ? state.lamp_hours.value
-      : []
-  const lampStatus = renderTelemetry(state.lamp_status, (value) =>
-    value.state ?? `raw: ${value.raw}`,
-  )
-  const errorStatus = state.error_status
+/* ------------------------------------------------------------------ */
+/* Freeze / OSD                                                         */
+/* ------------------------------------------------------------------ */
 
-  const rows: Array<[string, { text: string; muted: boolean; title?: string }]> = [
-    ['Manufacturer', { text: projector.manufacturer, muted: false }],
-    ['Model', { text: projector.model, muted: false }],
-    ['Lamp control status', lampStatus],
-    [
-      'Power',
-      {
-        text: state.online && !state.stale ? POWER_LABEL[state.power] : '—',
-        muted: !state.online || state.stale,
-        title: 'From the last successful poll',
-      },
-    ],
-    [
-      'Consecutive failures',
-      { text: String(state.consecutive_failures), muted: state.consecutive_failures === 0 },
-    ],
-    ['Last reply', { text: relativeTime(state.last_seen_at), muted: state.stale }],
-  ]
-
-  return (
-    <div className="space-y-4">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm md:grid-cols-3">
-        {rows.map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-xs text-slate-500">{label}</dt>
-            <dd>
-              <Value text={value.text} muted={value.muted} title={value.title} />
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      <div>
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-slate-500">
-          Lamps
-          <span className="ml-2 normal-case tracking-normal text-slate-600">
-            warn {projector.lamp_warn_hours.toLocaleString()} h · replace {projector.lamp_critical_hours.toLocaleString()} h
-          </span>
-        </h3>
-        {lamps.length === 0 ? (
-          <Value
-            text={state.lamp_hours.availability === 'unsupported' ? 'n/a' : '—'}
-            muted
-            title={state.lamp_hours.note ?? 'Lamp hours have not been read yet'}
-          />
-        ) : (
-          <LampMeters
-            lamps={lamps}
-            warn={projector.lamp_warn_hours}
-            critical={projector.lamp_critical_hours}
-          />
-        )}
-        {lamps.some((lamp) => lamp.unparsed || lamp.error) && (
-          <p className="mt-2 text-xs text-amber-400">
-            {lamps.filter((l) => l.unparsed).length > 0 && 'Some lamp replies were not understood — hover a lamp for the raw value. '}
-            {lamps.filter((l) => l.error).map((l) => `Lamp ${l.index}: ${l.error}`).join(' · ')}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-slate-500">
-          Subsystem status
-        </h3>
-        {errorStatus.availability !== 'available' ? (
-          <UnavailableNote
-            reason={
-              errorStatus.note ??
-              'No per-subsystem error query is available on this transport.'
-            }
-          />
-        ) : (
-          <SubsystemTiles status={errorStatus.value ?? {}} />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function LensControls({
-  disabled,
-  usable,
-  gateReason,
-  onJog,
-  onAction,
+function OnOffBlock({
+  icon,
+  title,
+  capability,
+  gate,
+  blocked,
+  command,
+  history,
+  onSend,
 }: {
-  disabled: boolean
-  usable: (name: string) => boolean
-  gateReason: (name: string) => string | null
-  onJog: (capability: string, direction: 1 | -1) => void
-  onAction: (capability: string, title: string, body: string) => void
+  icon: LucideIcon
+  title: string
+  capability: string
+  gate: Gate
+  blocked: string | null
+  command?: TrackedCommand
+  history: CommandLogRow[]
+  onSend: (value: 'on' | 'off') => void
 }) {
-  const axes: Array<[string, string, string, string]> = [
-    ['lens.shift_h', 'Shift H', '◀', '▶'],
-    ['lens.shift_v', 'Shift V', '▼', '▲'],
-    ['lens.focus', 'Focus', '−', '+'],
-    ['lens.zoom', 'Zoom', 'Wide', 'Tele'],
-  ]
-  const axesUsable = usable('lens.shift_h')
+  const declared = Boolean(gate.capability(capability))
+  return (
+    <ControlBlock icon={icon} title={title} unverified={gate.unverified(capability)} footer={<CommandStrip command={command} />}>
+      {declared && gate.usable(capability) ? (
+        <>
+          <div className="seg w-full" role="group" aria-label={title}>
+            <button className="seg-item py-2" disabled={blocked !== null} title={blocked ?? undefined} onClick={() => onSend('on')}>
+              On
+            </button>
+            <button className="seg-item py-2" disabled={blocked !== null} title={blocked ?? undefined} onClick={() => onSend('off')}>
+              Off
+            </button>
+          </div>
+          <LastSent command={command} history={history} capability={capability} />
+        </>
+      ) : (
+        <UnavailableNote reason={gate.reason(capability) ?? 'Unavailable'} />
+      )}
+    </ControlBlock>
+  )
+}
 
+/* ------------------------------------------------------------------ */
+/* Picture                                                              */
+/* ------------------------------------------------------------------ */
+
+const PICTURE: Array<{ capability: string; label: string; icon: LucideIcon }> = [
+  { capability: 'image.brightness', label: 'Brightness', icon: BrightnessIcon },
+  { capability: 'image.contrast', label: 'Contrast', icon: ContrastIcon },
+  { capability: 'image.color', label: 'Colour', icon: ColorIcon },
+  { capability: 'image.tint', label: 'Tint', icon: ColorIcon },
+  { capability: 'image.sharpness', label: 'Sharpness', icon: PictureIcon },
+]
+
+function PictureControls({
+  gate,
+  blocked,
+  commands,
+  history,
+  onSend,
+}: {
+  gate: Gate
+  blocked: (capability: string) => string | null
+  commands: TrackedCommand[]
+  history: CommandLogRow[]
+  onSend: (capability: string, label: string, value: number) => void
+}) {
+  const declared = PICTURE.filter((item) => gate.capability(item.capability))
+  const pictureMode = gate.capability('image.picture_mode')
+  const testPattern = gate.capability('image.test_pattern')
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <button
-          className="btn-default"
-          disabled={disabled || !usable('lens.home')}
-          onClick={() =>
-            onAction(
-              'lens.home',
-              'Move lens to home position?',
-              'The lens will move to its home position. Any current alignment will be lost.',
+      <p className="text-xs text-slate-500">
+        Picture settings cannot be read back from the projector, so each slider starts from the last value sent
+        (from this browser or the command log). Nothing is sent until you press Apply.
+      </p>
+      {declared.length === 0 ? (
+        <UnavailableNote reason="This driver offers no picture adjustments for this model." />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {declared.map((item) => (
+            <PictureSlider
+              key={item.capability}
+              {...item}
+              range={gate.capability(item.capability)?.value_range ?? [0, 63]}
+              unverified={gate.unverified(item.capability)}
+              gateReason={gate.reason(item.capability)}
+              blocked={blocked(item.capability)}
+              lastSent={lastSentValue(item.capability, commands, history)}
+              command={commands.find((c) => c.capability === item.capability)}
+              onSend={(value) => onSend(item.capability, item.label, value)}
+            />
+          ))}
+        </div>
+      )}
+      <div className="grid gap-3 md:grid-cols-2">
+        <ControlBlock icon={PictureIcon} title="Picture mode">
+          {pictureMode ? (
+            <UnavailableNote reason={gate.reason('image.picture_mode') ?? 'Picture mode is declared but has no control here yet.'} />
+          ) : (
+            <UnavailableNote reason="Not offered: no picture-mode command has been confirmed for this projector's control protocol, so the platform does not send one." />
+          )}
+        </ControlBlock>
+        <ControlBlock icon={TestPatternIcon} title="Test patterns">
+          {testPattern ? (
+            <UnavailableNote reason={gate.reason('image.test_pattern') ?? 'Test patterns are declared but have no control here yet.'} />
+          ) : (
+            <UnavailableNote reason="Not offered: no test-pattern command has been confirmed for this projector's control protocol. Use the projector's own menu (Remote tab) or the Mapping calibration patterns." />
+          )}
+        </ControlBlock>
+      </div>
+    </div>
+  )
+}
+
+function lastSentValue(capability: string, commands: TrackedCommand[], history: CommandLogRow[]): { value: number; at: string } | null {
+  const mine = commands.find((c) => c.capability === capability && c.phase !== 'failed' && c.phase !== 'unavailable')
+  if (mine && typeof mine.params?.value === 'number') {
+    return { value: mine.params.value, at: new Date(mine.startedAt).toISOString() }
+  }
+  const row = history.find((r) => r.capability === capability && ['accepted', 'ok', 'confirmed'].includes(r.outcome))
+  const value = row ? Number(row.params?.value) : NaN
+  return row && Number.isFinite(value) ? { value, at: row.created_at } : null
+}
+
+function PictureSlider({
+  label,
+  icon,
+  range,
+  unverified,
+  gateReason,
+  blocked,
+  lastSent,
+  command,
+  onSend,
+}: {
+  capability: string
+  label: string
+  icon: LucideIcon
+  range: [number, number]
+  unverified: boolean
+  gateReason: string | null
+  blocked: string | null
+  lastSent: { value: number; at: string } | null
+  command?: TrackedCommand
+  onSend: (value: number) => void
+}) {
+  const [draft, setDraft] = useState<number | null>(null)
+  const value = draft ?? lastSent?.value ?? null
+  const [low, high] = range
+  return (
+    <ControlBlock
+      icon={icon}
+      title={label}
+      unverified={unverified}
+      status={<span className="tnum text-sm text-slate-100">{value ?? '—'}</span>}
+      footer={<CommandStrip command={command} />}
+    >
+      {gateReason ? (
+        <UnavailableNote reason={gateReason} />
+      ) : (
+        <>
+          <div className="flex items-center gap-3">
+            <span className="tnum w-6 text-right text-2xs text-slate-500">{low}</span>
+            <input
+              type="range"
+              min={low}
+              max={high}
+              value={value ?? Math.round((low + high) / 2)}
+              onChange={(e) => setDraft(Number(e.target.value))}
+              aria-label={label}
+              className={classNames(value == null && 'opacity-40')}
+            />
+            <span className="tnum w-6 text-2xs text-slate-500">{high}</span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-2xs text-slate-500">
+              {lastSent ? `Last sent ${lastSent.value}, ${relativeTime(lastSent.at)}` : 'Not sent from here yet'}
+            </span>
+            <button
+              className="btn-default btn-sm"
+              disabled={blocked !== null || draft === null || draft === lastSent?.value}
+              title={blocked ?? undefined}
+              onClick={() => {
+                if (draft !== null) onSend(draft)
+                setDraft(null)
+              }}
+            >
+              Apply {draft !== null ? draft : ''}
+            </button>
+          </div>
+        </>
+      )}
+    </ControlBlock>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Remote keypad and lens                                               */
+/* ------------------------------------------------------------------ */
+
+type Send = (capability: string, label: string, params?: Record<string, unknown>, confirm?: { title: string; body: ReactNode; danger?: boolean }) => void
+
+function RemoteAndLens({
+  gate,
+  blocked,
+  lastRemote,
+  onSend,
+}: {
+  gate: Gate
+  blocked: (capability: string) => string | null
+  lastRemote?: TrackedCommand
+  onSend: Send
+}) {
+  const key = (name: string, label: ReactNode, aria: string, className?: string) => {
+    const capability = `remote.${name}`
+    const reason = blocked(capability)
+    return (
+      <button
+        className={classNames('btn-default h-12 text-sm', className)}
+        disabled={reason !== null}
+        title={reason ?? aria}
+        aria-label={aria}
+        onClick={() => onSend(capability, `Remote ${aria}`)}
+      >
+        {label}
+      </button>
+    )
+  }
+  const remoteAvailable = gate.usable('remote.menu')
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+      <ControlBlock icon={RemoteIcon} title="Remote keypad" unverified={gate.unverified('remote.menu')}>
+        {remoteAvailable ? (
+          <>
+            <div className="grid grid-cols-3 gap-1.5">
+              {key('menu', 'Menu', 'Menu')}
+              {key('up', <ChevronUpIcon size={18} />, 'Up')}
+              {key('back', 'Return', 'Return')}
+              {key('left', <ChevronLeftIcon size={18} />, 'Left')}
+              {key('enter', <EnterIcon size={16} />, 'Enter', 'border-sky-500/30')}
+              {key('right', <ChevronIcon size={18} />, 'Right')}
+              <span />
+              {key('down', <ChevronDownIcon size={18} />, 'Down')}
+              <span />
+            </div>
+            <p className="text-2xs text-slate-500">
+              Key presses are sent once each and are not read back: the projector does not report its menu position.
+            </p>
+          </>
+        ) : (
+          <UnavailableNote reason={gate.reason('remote.menu') ?? 'Unavailable'} />
+        )}
+      </ControlBlock>
+      <LensControls gate={gate} blocked={blocked} onSend={onSend} />
+      {lastRemote && (
+        <div className="lg:col-span-2">
+          <CommandStrip command={lastRemote} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LensControls({ gate, blocked, onSend }: { gate: Gate; blocked: (capability: string) => string | null; onSend: Send }) {
+  const axes: Array<[string, string, ReactNode, ReactNode, string, string]> = [
+    ['lens.shift_h', 'Shift H', <ChevronLeftIcon size={16} key="l" />, <ChevronIcon size={16} key="r" />, 'left', 'right'],
+    ['lens.shift_v', 'Shift V', <ChevronDownIcon size={16} key="d" />, <ChevronUpIcon size={16} key="u" />, 'down', 'up'],
+    ['lens.focus', 'Focus', '−', '+', '−', '+'],
+    ['lens.zoom', 'Zoom', 'Wide', 'Tele', 'wide', 'tele'],
+  ]
+  const axesReason = gate.reason('lens.shift_h')
+  return (
+    <ControlBlock icon={LensIcon} title="Lens" unverified={gate.unverified('lens.shift_h')}>
+      <p className="text-2xs text-slate-500">
+        One small step per press. No stop command is confirmed for this model, so press-and-hold is deliberately not offered.
+      </p>
+      {axesReason ? (
+        <UnavailableNote reason={axesReason} />
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {axes.map(([capability, label, minus, plus, minusName, plusName]) => {
+            const reason = blocked(capability)
+            return (
+              <div key={capability}>
+                <p className="eyebrow mb-1">{label}</p>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    className="btn-default h-11"
+                    disabled={reason !== null}
+                    title={reason ?? `${label} ${minusName}`}
+                    aria-label={`${label} ${minusName}`}
+                    onClick={() => onSend(capability, `Lens ${label} ${minusName}`, { direction: -1, step: 1 })}
+                  >
+                    {minus}
+                  </button>
+                  <button
+                    className="btn-default h-11"
+                    disabled={reason !== null}
+                    title={reason ?? `${label} ${plusName}`}
+                    aria-label={`${label} ${plusName}`}
+                    onClick={() => onSend(capability, `Lens ${label} ${plusName}`, { direction: 1, step: 1 })}
+                  >
+                    {plus}
+                  </button>
+                </div>
+              </div>
             )
+          })}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          className="btn-default btn-sm"
+          disabled={blocked('lens.home') !== null}
+          title={blocked('lens.home') ?? undefined}
+          onClick={() =>
+            onSend('lens.home', 'Lens home', {}, {
+              title: 'Move the lens to its home position?',
+              body: 'The lens moves to its home position. Any current alignment will be lost.',
+              danger: true,
+            })
           }
         >
           Home position
         </button>
         <button
-          className="btn-default"
-          disabled={disabled || !usable('lens.calibrate')}
+          className="btn-default btn-sm"
+          disabled={blocked('lens.calibrate') !== null}
+          title={blocked('lens.calibrate') ?? undefined}
           onClick={() =>
-            onAction(
-              'lens.calibrate',
-              'Run lens calibration?',
-              'Calibration moves the lens through its full range and takes up to a minute. Do not run this during a show.',
-            )
+            onSend('lens.calibrate', 'Lens calibration', {}, {
+              title: 'Run lens calibration?',
+              body: 'The lens moves through its full range, which takes up to a minute. Do not run this during a show.',
+              danger: true,
+            })
           }
         >
           Calibrate
         </button>
       </div>
+      <p className="text-2xs text-slate-500">
+        Lens memory is not offered: no lens-memory command could be confirmed for this model.
+      </p>
+    </ControlBlock>
+  )
+}
 
-      {axesUsable ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {axes.map(([capability, label, minus, plus]) => (
-            <div key={capability} className="rounded-md bg-panel-850 p-3">
-              <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">{label}</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  className="btn-default btn-lg"
-                  disabled={disabled}
-                  onClick={() => onJog(capability, -1)}
-                >
-                  {minus}
-                </button>
-                <button
-                  className="btn-default btn-lg"
-                  disabled={disabled}
-                  onClick={() => onJog(capability, 1)}
-                >
-                  {plus}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <UnavailableNote reason={gateReason('lens.shift_h') ?? 'Unavailable'} />
-      )}
+/* ------------------------------------------------------------------ */
+/* Lamp mode (dual-lamp models)                                         */
+/* ------------------------------------------------------------------ */
 
-      <UnavailableNote reason="Lens memory is not implemented: no lens-memory command could be confirmed for this model, so the platform does not offer one." />
+function LampMode({
+  gate,
+  blocked,
+  command,
+  onSend,
+}: {
+  gate: Gate
+  blocked: (capability: string) => string | null
+  command: (capability?: string) => TrackedCommand | undefined
+  onSend: Send
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {(['lamp.select', 'lamp.power'] as const).map((name) => {
+        const cap = gate.capability(name)
+        if (!cap) return null
+        const reason = gate.reason(name)
+        const title = name === 'lamp.select' ? 'Lamp select' : 'Lamp power'
+        return (
+          <ControlBlock key={name} icon={LampIcon} title={title} unverified={gate.unverified(name)} footer={<CommandStrip command={command(name)} />}>
+            {reason ? (
+              <UnavailableNote reason={reason} />
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {cap.params.map((param) => {
+                    const label = cap.param_labels?.[param] ?? param
+                    return (
+                      <button
+                        key={param}
+                        className="btn-default btn-sm justify-start"
+                        disabled={blocked(name) !== null}
+                        title={blocked(name) ?? undefined}
+                        onClick={() =>
+                          onSend(name, `${title}: ${label}`, { mode: param }, cap.disruptive
+                            ? { title: `${title}: ${label}?`, body: 'The projector changes how it drives its lamps. The image may change brightness.' }
+                            : undefined)
+                        }
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-2xs text-slate-500">The projector does not report this setting back.</p>
+              </>
+            )}
+          </ControlBlock>
+        )
+      })}
     </div>
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* Equipment status                                                     */
+/* ------------------------------------------------------------------ */
+
+function telemetryRow(field: Telemetry<unknown> | undefined, fallbackNote: string) {
+  if (!field) return { text: '—', muted: true, title: fallbackNote }
+  return renderTelemetry(field, (value) => String(value))
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <dt className="shrink-0 text-xs text-slate-500">{label}</dt>
+      <dd className="min-w-0 truncate text-right text-sm">{children}</dd>
+    </div>
+  )
+}
+
+const SUBSYSTEMS: Array<{ key: string; label: string; icon: LucideIcon; equipment?: 'temperature' | 'fan' | 'filter_usage' }> = [
+  { key: 'temperature', label: 'Temperature', icon: TemperatureIcon, equipment: 'temperature' },
+  { key: 'fan', label: 'Fan', icon: FanIcon, equipment: 'fan' },
+  { key: 'lamp', label: 'Lamp', icon: LampIcon },
+  { key: 'filter', label: 'Filter', icon: FilterIcon, equipment: 'filter_usage' },
+  { key: 'cover', label: 'Cover', icon: CoverIcon },
+  { key: 'other', label: 'Other', icon: FaultIcon },
+]
+
+function severityTone(severity: string | undefined): Tone {
+  if (severity === 'error') return 'fault'
+  if (severity === 'warning') return 'warn'
+  if (severity === 'ok') return 'ok'
+  return 'unknown'
+}
+
+function EquipmentStatus({ projector, driverName }: { projector: Projector; driverName: string }) {
+  const { state } = projector
+  const equipment = state.equipment ?? {}
+  const notRead = 'Not read yet: identity and condition are read on the slower diagnostics poll. Press Poll now to read them.'
+  const serial = telemetryRow(equipment.serial_number, notRead)
+  const firmware = telemetryRow(equipment.firmware, notRead)
+  const reportedModel = equipment.model?.availability === 'available' ? String(equipment.model.value) : null
+  const lamps = lampReadings(projector)
+  const lampStatus = renderTelemetry(state.lamp_status, (value) => value.state ?? `raw: ${value.raw}`)
+  const erst = state.error_status?.availability === 'available' ? (state.error_status.value ?? {}) : null
+
+  return (
+    <>
+      <Panel icon={MaintenanceIcon} title="Equipment" bodyClassName="px-4 py-2">
+        <dl className="divide-y divide-white/5">
+          <Row label="Model">
+            <span className="text-slate-100">{projector.manufacturer} {projector.model}</span>
+            {reportedModel && reportedModel !== projector.model && (
+              <span className="block text-2xs text-slate-500">reports “{reportedModel}”</span>
+            )}
+          </Row>
+          <Row label="Serial number"><Value {...serial} /></Row>
+          <Row label="Firmware"><Value {...firmware} /></Row>
+          <Row label="Driver"><span className="text-slate-300">{driverName}</span></Row>
+          <Row label="Address"><span className="tnum text-slate-300">{projector.host}:{projector.port}</span></Row>
+          {projector.location && <Row label="Location"><span className="text-slate-300">{projector.location}</span></Row>}
+          <Row label="Runtime">
+            <Value text="n/a" muted title="This driver does not read total projector runtime. Lamp runtime is shown below." />
+          </Row>
+        </dl>
+      </Panel>
+
+      <Panel
+        icon={LampIcon}
+        title="Lamps"
+        description={`Warn at ${projector.lamp_warn_hours.toLocaleString()} h · replace at ${projector.lamp_critical_hours.toLocaleString()} h`}
+      >
+        <div className="space-y-3">
+          {lamps.length === 0 ? (
+            <Value
+              text={state.lamp_hours?.availability === 'unsupported' ? 'n/a' : '—'}
+              muted
+              title={state.lamp_hours?.note ?? 'Lamp hours have not been read yet'}
+            />
+          ) : (
+            lamps.map((lamp) => (
+              <LampMeter
+                key={lamp.index}
+                label={lamps.length > 1 ? `Lamp ${lamp.index}` : 'Lamp'}
+                hours={lamp.hours}
+                warn={projector.lamp_warn_hours}
+                critical={projector.lamp_critical_hours}
+                note={lamp.error ?? (lamp.unparsed ? `Unparsed reply: ${lamp.raw}` : undefined)}
+              />
+            ))
+          )}
+          {lamps.some((lamp) => lamp.unparsed || lamp.error) && (
+            <p className="text-xs text-yellow-300">
+              Some lamp replies were not understood; hover a lamp for the raw value.
+            </p>
+          )}
+          <div className="flex items-baseline justify-between gap-3 border-t border-white/5 pt-2">
+            <span className="text-xs text-slate-500">Lamp control status</span>
+            <Value {...lampStatus} className="text-sm" />
+          </div>
+        </div>
+      </Panel>
+
+      <Panel
+        icon={TemperatureIcon}
+        title="Condition"
+        description={erst ? 'Reported by the projector (PJLink error status).' : undefined}
+        bodyClassName="px-4 py-2"
+      >
+        {erst ? (
+          <ul className="divide-y divide-white/5">
+            {SUBSYSTEMS.map((sub) => {
+              const severity = erst[sub.key]
+              const tone = severityTone(severity)
+              return (
+                <li key={sub.key} className="flex items-center justify-between gap-3 py-1.5">
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <sub.icon size={14} className={TONE_TEXT[tone]} aria-hidden /> {sub.label}
+                  </span>
+                  <Chip tone={tone}>{severity ?? 'not reported'}</Chip>
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <>
+            <ul className="divide-y divide-white/5">
+              {SUBSYSTEMS.filter((sub) => sub.equipment).map((sub) => {
+                const reading = telemetryRow(sub.equipment ? equipment[sub.equipment] : undefined, notRead)
+                return (
+                  <li key={sub.key} className="flex items-center justify-between gap-3 py-1.5">
+                    <span className="flex items-center gap-2 text-sm text-slate-300">
+                      <sub.icon size={14} className="text-slate-500" aria-hidden /> {sub.label}
+                    </span>
+                    <Value {...reading} className="text-sm" />
+                  </li>
+                )
+              })}
+            </ul>
+            <UnavailableNote
+              className="my-2"
+              reason={
+                state.error_status?.note ??
+                'No per-subsystem error query is available on this transport. Fan, temperature, cover and filter faults are reported only by projectors that answer PJLink error status.'
+              }
+            />
+          </>
+        )}
+      </Panel>
+
+      <Panel icon={LiveIcon} title="Communication" bodyClassName="px-4 py-2">
+        <dl className="divide-y divide-white/5">
+          <Row label="Link"><LinkBadge projector={projector} /></Row>
+          <Row label="Last reply">
+            <span className="tnum text-slate-300" title={formatDateTime(state.last_seen_at)}>{relativeTime(state.last_seen_at)}</span>
+          </Row>
+          <Row label="Failed polls in a row">
+            <span className={classNames('tnum', state.consecutive_failures > 0 ? 'text-yellow-300' : 'text-slate-400')}>
+              {state.consecutive_failures}
+            </span>
+          </Row>
+          <Row label="Commands queued"><span className="tnum text-slate-400">{state.queue_depth}</span></Row>
+          {state.last_error && (
+            <div className="py-1.5">
+              <dt className="text-xs text-slate-500">Last error</dt>
+              <dd className="mt-0.5 break-words font-mono text-2xs text-slate-400">{state.last_error}</dd>
+            </div>
+          )}
+          {projector.allow_unverified_commands && (
+            <div className="py-2">
+              <Chip tone="warn" title="Commands documented only for sibling models are enabled on this device.">
+                Unverified commands enabled
+              </Chip>
+            </div>
+          )}
+        </dl>
+      </Panel>
+    </>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Command log                                                          */
+/* ------------------------------------------------------------------ */
 
 function CommandHistory({ rows }: { rows: CommandLogRow[] }) {
   if (rows.length === 0) {
     return <p className="text-sm text-slate-500">No commands recorded yet.</p>
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-xs">
-        <thead className="text-slate-500">
+    <div className="-mx-4 overflow-x-auto">
+      <table className="table text-xs">
+        <thead>
           <tr>
-            <th className="pb-2 pr-4 font-medium">Time</th>
-            <th className="pb-2 pr-4 font-medium">Command</th>
-            <th className="pb-2 pr-4 font-medium">Sent</th>
-            <th className="pb-2 pr-4 font-medium">Reply</th>
-            <th className="pb-2 pr-4 font-medium">Outcome</th>
-            <th className="pb-2 pr-4 font-medium">ms</th>
-            <th className="pb-2 font-medium">By</th>
+            <th className="pl-4">Time</th>
+            <th>Command</th>
+            <th>Outcome</th>
+            <th>Sent</th>
+            <th>Reply</th>
+            <th>ms</th>
+            <th className="pr-4">By</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/5">
+        <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td className="py-1.5 pr-4 tnum text-slate-400">
-                {formatDateTime(row.created_at)}
+              <td className="tnum whitespace-nowrap pl-4 text-slate-400">{formatDateTime(row.created_at)}</td>
+              <td className="whitespace-nowrap text-slate-200">
+                {row.capability}
+                {Object.keys(row.params ?? {}).length > 0 && (
+                  <span className="text-slate-500"> {Object.values(row.params).map(String).join(' ')}</span>
+                )}
               </td>
-              <td className="py-1.5 pr-4 text-slate-300">{row.capability}</td>
-              <td className="py-1.5 pr-4 font-mono text-slate-500">
-                {row.raw_request ?? '—'}
+              <td>
+                {row.outcome === 'pending' ? (
+                  <Chip tone="busy">Pending</Chip>
+                ) : (
+                  <Chip tone={outcomeTone(row.outcome)} title={row.error ?? OUTCOME_HELP[row.outcome]}>
+                    {OUTCOME_LABEL[row.outcome]}
+                  </Chip>
+                )}
               </td>
-              <td className="py-1.5 pr-4 font-mono text-slate-500">
-                {row.raw_response ?? '—'}
-              </td>
-              <td className="py-1.5 pr-4">
-                <Chip
-                  tone={
-                    row.outcome === 'pending'
-                      ? 'busy'
-                      : outcomeTone(row.outcome as CommandLogRow['outcome'] & never)
-                  }
-                  title={row.error ?? undefined}
-                >
-                  {row.outcome}
-                </Chip>
-              </td>
-              <td className="py-1.5 pr-4 tnum text-slate-500">{row.latency_ms ?? '—'}</td>
-              <td className="py-1.5 text-slate-500">
-                {row.username ?? row.source}
-              </td>
+              <td className="font-mono text-slate-500">{row.raw_request ?? '—'}</td>
+              <td className="font-mono text-slate-500">{row.raw_response ?? '—'}</td>
+              <td className="tnum text-slate-500">{row.latency_ms ?? '—'}</td>
+              <td className="whitespace-nowrap pr-4 text-slate-500">{row.username ?? row.source}</td>
             </tr>
           ))}
         </tbody>
@@ -726,3 +1273,4 @@ function CommandHistory({ rows }: { rows: CommandLogRow[] }) {
     </div>
   )
 }
+

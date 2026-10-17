@@ -58,7 +58,22 @@ export interface ProjectorState {
   last_error: string | null
   consecutive_failures: number
   queue_depth: number
+  /** Identity and condition readings from the last diagnostics poll
+   *  (serial, firmware, temperature, fan, filter). Each field says whether
+   *  the protocol provides it; absent on servers older than this field. */
+  equipment?: Partial<Record<EquipmentField, Telemetry<unknown>>>
 }
+
+export type EquipmentField =
+  | 'manufacturer'
+  | 'model'
+  | 'serial_number'
+  | 'firmware'
+  | 'filter_usage'
+  | 'temperature'
+  | 'fan'
+  | 'resolution'
+  | 'input_signal'
 
 export interface Projector {
   id: number

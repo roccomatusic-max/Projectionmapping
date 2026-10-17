@@ -1,58 +1,34 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Session } from '@/api/client'
-import { api, ApiError } from '@/api/client'
-import type { Projector } from '@/api/types'
-import { useFleet, useTicker } from '@/hooks/useLiveData'
-import { ProjectorCard } from '@/components/ProjectorCard'
+import type { Overview, Projector } from '@/api/types'
+import { useFleetContext, useOps } from '@/live/LiveProvider'
+import { useTicker } from '@/hooks/useLiveData'
+import { FleetBrowser } from '@/components/fleet/FleetBrowser'
+import { PhaseBadge } from '@/components/status'
+import { Banner, EmptyState, PageHeader, Panel, Spinner, StatusDot } from '@/components/ui'
+import { FleetBar, type FleetSegmentKind } from '@/components/graphics'
+import { TONE_TEXT } from '@/components/tone'
 import {
-  ConfirmDialog,
-  EmptyState,
-  ErrorBanner,
-  PageHeader,
-  Spinner,
-  ToastStack,
-  useToasts,
-} from '@/components/ui'
-import { FleetBar, StatTile, type FleetSegmentKind } from '@/components/graphics'
-import {
-  ControlIcon,
+  AddIcon,
+  AlertsIcon,
+  ChevronIcon,
   DashboardIcon,
-  EnergyIcon,
-  FaultIcon,
-  LiveIcon,
-  OfflineIcon,
-  PowerIcon,
-  ProjectorIcon,
+  HistoryIcon,
+  OkIcon,
   RefreshIcon,
   WarningIcon,
 } from '@/components/icons'
-import { OUTCOME_HELP, OUTCOME_LABEL, outcomeTone } from '@/lib/format'
-
-type PendingCommand = {
-  projector: Projector
-  kind: 'power' | 'shutter'
-  state: string
-}
-
-type Filter = 'all' | 'online' | 'on' | 'standby' | 'warnings' | 'faults'
-
-function isLive(p: Projector) {
-  return p.state.online && !p.state.stale
-}
-
-function matches(p: Projector, filter: Filter): boolean {
-  switch (filter) {
-    case 'online': return isLive(p)
-    case 'on': return isLive(p) && p.state.power === 'on'
-    case 'standby': return isLive(p) && p.state.power === 'off'
-    case 'warnings': return p.state.health === 'warning' || p.state.warnings.length > 0
-    // Matches the server's "faults" count: a device-reported error, not mere unreachability
-    // (that is what the Online tile is for).
-    case 'faults': return p.state.health === 'error'
-    default: return true
-  }
-}
+import { classNames, relativeTime } from '@/lib/format'
+import {
+  attentionItems,
+  attentionTone,
+  isLive,
+  matchesFilter,
+  type AttentionItem,
+  type FleetFilter,
+  type Tone,
+} from '@/lib/status'
 
 function segmentKind(p: Projector): FleetSegmentKind {
   if (!isLive(p)) return 'offline'
@@ -61,15 +37,262 @@ function segmentKind(p: Projector): FleetSegmentKind {
   return 'standby'
 }
 
+function Metric({
+  label,
+  value,
+  sub,
+  tone = 'idle',
+  active,
+  onClick,
+  title,
+}: {
+  label: string
+  value: ReactNode
+  sub?: ReactNode
+  tone?: Tone
+  active?: boolean
+  onClick?: () => void
+  title?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={classNames(
+        'group flex min-w-0 flex-col items-start gap-0.5 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]',
+        active && 'bg-sky-500/[0.07] shadow-[inset_0_-2px_0_theme(colors.sky.400)]',
+      )}
+    >
+      <span className="eyebrow flex items-center gap-1.5">
+        <StatusDot tone={tone} />
+        {label}
+      </span>
+      <span className={classNames('tnum text-2xl font-semibold leading-tight', tone === 'idle' ? 'text-slate-100' : TONE_TEXT[tone])}>
+        {value}
+      </span>
+      {sub && <span className="truncate text-2xs text-slate-500">{sub}</span>}
+    </button>
+  )
+}
+
+function OverviewStrip({
+  overview,
+  projectors,
+  attentionCount,
+  filter,
+  onFilter,
+}: {
+  overview: Overview | null
+  projectors: Projector[]
+  attentionCount: number
+  filter: FleetFilter
+  onFilter: (filter: FleetFilter) => void
+}) {
+  const toggle = (next: FleetFilter) => onFilter(filter === next ? 'all' : next)
+  const transitioning = (overview?.warming ?? 0) + (overview?.cooling ?? 0)
+  const offline = projectors.filter((p) => matchesFilter(p, 'offline')).length
+  const online = projectors.filter((p) => matchesFilter(p, 'online')).length
+  const enabled = projectors.filter((p) => p.enabled).length
+  // Counted here, with the same rules the cards use, so the strip and the
+  // grid can never disagree.
+  const warnings = projectors.filter((p) => matchesFilter(p, 'warnings')).length
+  const faults = projectors.filter((p) => matchesFilter(p, 'faults')).length
+  return (
+    <div className="panel grid grid-cols-2 divide-white/[0.06] overflow-hidden sm:grid-cols-3 lg:grid-cols-6 lg:divide-x [&>*]:border-b [&>*]:border-white/[0.06] lg:[&>*]:border-b-0">
+      <Metric
+        label="Projectors"
+        value={overview?.total ?? projectors.length}
+        sub={enabled === projectors.length ? 'all enabled' : `${enabled} enabled`}
+        active={filter === 'all'}
+        onClick={() => onFilter('all')}
+        title="Show every projector"
+      />
+      <Metric
+        label="Online"
+        value={
+          <>
+            {online}
+            <span className="text-base font-normal text-slate-500">/{enabled}</span>
+          </>
+        }
+        sub={offline > 0 ? <span className="text-slate-400">{offline} offline</span> : 'all responding'}
+        tone={offline > 0 ? 'idle' : online > 0 ? 'ok' : 'idle'}
+        active={filter === 'offline'}
+        onClick={() => toggle(offline > 0 ? 'offline' : 'online')}
+        title="Counted from a successful poll inside the staleness window, not from a remembered state. Click to filter."
+      />
+      <Metric
+        label="Powered on"
+        value={overview?.powered_on ?? '—'}
+        sub={`${overview?.standby ?? 0} standby${transitioning ? ` · ${transitioning} transitioning` : ''}`}
+        tone={(overview?.powered_on ?? 0) > 0 ? 'ok' : 'idle'}
+        active={filter === 'on'}
+        onClick={() => toggle('on')}
+        title="Click to filter"
+      />
+      <Metric
+        label="Warnings"
+        value={warnings}
+        tone={warnings > 0 ? 'warn' : 'idle'}
+        sub="device-reported"
+        active={filter === 'warnings'}
+        onClick={() => toggle('warnings')}
+        title="Projectors reporting a warning (fan, temperature, filter, cover or lamp). Click to filter."
+      />
+      <Metric
+        label="Faults"
+        value={faults}
+        tone={faults > 0 ? 'fault' : 'idle'}
+        sub="device-reported"
+        active={filter === 'faults'}
+        onClick={() => toggle('faults')}
+        title="Projectors reporting an error. Unreachable projectors are counted under Online. Click to filter."
+      />
+      <Metric
+        label="Need attention"
+        value={attentionCount}
+        tone={attentionCount > 0 ? 'warn' : 'ok'}
+        sub={attentionCount > 0 ? 'offline, faults, warnings, lamps' : 'nothing outstanding'}
+        active={filter === 'attention'}
+        onClick={() => toggle('attention')}
+        title="Projectors that are offline, faulted, warning or past lamp replacement. Click to filter."
+      />
+    </div>
+  )
+}
+
+const SEVERITY_ORDER = { critical: 0, warning: 1, notice: 2 } as const
+
+function AttentionPanel({ projectors }: { projectors: Projector[] }) {
+  const rows = useMemo(
+    () =>
+      projectors
+        .map((projector) => ({ projector, items: attentionItems(projector) }))
+        .filter((row) => row.items.length > 0)
+        .sort(
+          (a, b) =>
+            SEVERITY_ORDER[a.items[0].severity] - SEVERITY_ORDER[b.items[0].severity] ||
+            a.projector.name.localeCompare(b.projector.name),
+        ),
+    [projectors],
+  )
+  return (
+    <Panel
+      icon={WarningIcon}
+      title="Needs attention"
+      description={rows.length ? `${rows.length} projector${rows.length === 1 ? '' : 's'}` : undefined}
+      bodyClassName=""
+    >
+      {rows.length === 0 ? (
+        <p className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
+          <OkIcon size={16} className="text-emerald-400" aria-hidden /> Nothing needs attention.
+        </p>
+      ) : (
+        <ul className="max-h-[28rem] divide-y divide-white/5 overflow-y-auto">
+          {rows.map(({ projector, items }) => (
+            <li key={projector.id}>
+              <Link
+                to={`/projectors/${projector.id}`}
+                className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-white/[0.03]"
+              >
+                <StatusDot tone={attentionTone(items[0].severity)} className="mt-1.5" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-slate-100">{projector.name}</span>
+                  {items.slice(0, 3).map((item: AttentionItem) => (
+                    <span
+                      key={item.text}
+                      className={classNames('block truncate text-xs', TONE_TEXT[attentionTone(item.severity)])}
+                      title={item.detail}
+                    >
+                      {item.text}
+                      {item.detail && <span className="text-slate-500"> · {item.detail}</span>}
+                    </span>
+                  ))}
+                </span>
+                <ChevronIcon size={15} className="mt-0.5 shrink-0 text-slate-600" aria-hidden />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  )
+}
+
+function AlertsSummary() {
+  const { alerts, overview } = useFleetContext()
+  const open = alerts.filter((a) => a.state === 'open')
+  const sorted = [...open].sort(
+    (a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1) || b.opened_at.localeCompare(a.opened_at),
+  )
+  return (
+    <Panel
+      icon={AlertsIcon}
+      title="Alerts"
+      description={
+        overview && overview.open_alerts > 0
+          ? `${overview.open_alerts} unresolved · ${overview.critical_alerts} critical`
+          : undefined
+      }
+      action={<Link to="/alerts" className="btn-ghost btn-sm">All alerts</Link>}
+      bodyClassName=""
+    >
+      {sorted.length === 0 ? (
+        <p className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
+          <OkIcon size={16} className="text-emerald-400" aria-hidden /> No open alerts.
+        </p>
+      ) : (
+        <ul className="divide-y divide-white/5">
+          {sorted.slice(0, 5).map((alert) => (
+            <li key={alert.id} className="flex items-start gap-2.5 px-4 py-2">
+              <StatusDot tone={alert.severity === 'critical' ? 'fault' : 'warn'} className="mt-1.5" />
+              <span className="min-w-0 flex-1">
+                <span className="block break-words text-sm text-slate-200">{alert.message}</span>
+                <span className="text-2xs text-slate-500">opened {relativeTime(alert.opened_at)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  )
+}
+
+function RecentCommands() {
+  const { commands } = useOps()
+  useTicker(5000)
+  if (commands.length === 0) return null
+  return (
+    <Panel icon={HistoryIcon} title="Recent commands" description="From this browser" bodyClassName="">
+      <ul className="divide-y divide-white/5">
+        {commands.slice(0, 6).map((command) => (
+          <li key={command.id} className="flex items-center justify-between gap-2 px-4 py-2" title={command.detail}>
+            <span className="min-w-0">
+              <span className="block truncate text-sm text-slate-200">
+                {command.projectorName} <span className="text-slate-500">· {command.label}</span>
+              </span>
+              <span className="text-2xs text-slate-500">{relativeTime(new Date(command.startedAt).toISOString())}</span>
+            </span>
+            <PhaseBadge command={command} />
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  )
+}
+
 export default function Dashboard({ session }: { session: Session }) {
-  const { projectors, overview, loading, error, refresh, wsStatus } = useFleet()
-  const { toasts, push, dismiss } = useToasts()
-  const [pending, setPending] = useState<PendingCommand | null>(null)
-  const [busyIds, setBusyIds] = useState<Set<number>>(new Set())
-  const [filter, setFilter] = useState<Filter>('all')
+  const { projectors, overview, loading, refresh, lastSync } = useFleetContext()
+  const [filter, setFilter] = useState<FleetFilter>('all')
   useTicker(5000)
 
-  const visible = useMemo(() => projectors.filter((p) => matches(p, filter)), [projectors, filter])
+  const canControl = session.role !== 'viewer'
+  const attentionCount = useMemo(
+    () => projectors.filter((p) => matchesFilter(p, 'attention')).length,
+    [projectors],
+  )
   const segments = useMemo(() => {
     const order: Record<FleetSegmentKind, number> = { on: 0, transition: 1, standby: 2, offline: 3 }
     return projectors
@@ -77,130 +300,23 @@ export default function Dashboard({ session }: { session: Session }) {
       .map((p) => ({ name: p.name, kind: segmentKind(p) }))
       .sort((a, b) => order[a.kind] - order[b.kind])
   }, [projectors])
-  const toggle = (next: Filter) => setFilter((current) => (current === next ? 'all' : next))
-
-  const canControl = session.role !== 'viewer'
-
-  const setBusy = (id: number, busy: boolean) =>
-    setBusyIds((current) => {
-      const next = new Set(current)
-      if (busy) next.add(id)
-      else next.delete(id)
-      return next
-    })
-
-  const run = async (command: PendingCommand) => {
-    const { projector, kind, state } = command
-    setBusy(projector.id, true)
-    try {
-      const result =
-        kind === 'power'
-          ? await api.power(projector.id, state as 'on' | 'off')
-          : await api.shutter(projector.id, state as 'open' | 'closed')
-      push(
-        outcomeTone(result.outcome),
-        `${projector.name}: ${OUTCOME_LABEL[result.outcome]}`,
-        result.error ?? OUTCOME_HELP[result.outcome],
-      )
-      void refresh()
-    } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : 'The command could not be sent'
-      push('fault', `${projector.name}: command failed`, message)
-    } finally {
-      setBusy(projector.id, false)
-    }
-  }
-
-  const online = overview?.online ?? 0
-  const faults = overview?.faults ?? 0
-  const warnings = overview?.warnings ?? 0
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         icon={DashboardIcon}
-        title="Fleet overview"
+        title="Dashboard"
         subtitle={
-          <>
-            {wsStatus === 'open' ? (
-              <LiveIcon size={13} className="text-emerald-400" aria-hidden />
-            ) : (
-              <OfflineIcon size={13} className="text-amber-400" aria-hidden />
-            )}
-            {wsStatus === 'open'
-              ? 'Live updates connected'
-              : 'Live link down — falling back to periodic refresh'}
-          </>
+          lastSync
+            ? <>Fleet state · updated <span className="tnum">{relativeTime(new Date(lastSync).toISOString())}</span></>
+            : 'Fleet state'
         }
         actions={
-          <>
-            <Link to="/control" className="btn-default">
-              <ControlIcon size={15} aria-hidden /> Control Center
-            </Link>
-            <button className="btn-default" onClick={() => void refresh()}>
-              <RefreshIcon size={15} aria-hidden /> Refresh
-            </button>
-          </>
+          <button className="btn-default btn-sm" onClick={() => void refresh()}>
+            <RefreshIcon size={14} aria-hidden /> Refresh
+          </button>
         }
       />
-
-      {error && <ErrorBanner message={error} />}
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <StatTile icon={ProjectorIcon} label="Registered" value={overview?.total ?? '—'}
-                  onClick={() => setFilter('all')} active={filter === 'all'} hint="Show every projector" />
-        <StatTile
-          icon={LiveIcon}
-          label="Online"
-          value={online}
-          tone={online > 0 ? 'ok' : 'idle'}
-          hint="Counted from a successful poll inside the staleness window, not from a remembered state. Click to filter."
-          onClick={() => toggle('online')} active={filter === 'online'}
-        />
-        <StatTile
-          icon={PowerIcon}
-          label="Powered on"
-          value={overview?.powered_on ?? '—'}
-          tone={(overview?.powered_on ?? 0) > 0 ? 'ok' : 'idle'}
-          onClick={() => toggle('on')} active={filter === 'on'} hint="Click to filter"
-        />
-        <StatTile icon={EnergyIcon} label="Standby" value={overview?.standby ?? '—'}
-                  onClick={() => toggle('standby')} active={filter === 'standby'} hint="Click to filter" />
-        <StatTile icon={WarningIcon} label="Warnings" value={warnings} tone={warnings > 0 ? 'warn' : 'idle'}
-                  onClick={() => toggle('warnings')} active={filter === 'warnings'} hint="Click to filter" />
-        <StatTile icon={FaultIcon} label="Faults" value={faults} tone={faults > 0 ? 'fault' : 'idle'}
-                  onClick={() => toggle('faults')} active={filter === 'faults'} hint="Click to filter" />
-      </div>
-
-      {segments.length > 0 && (
-        <div className="panel px-4 py-3">
-          <FleetBar segments={segments} />
-        </div>
-      )}
-
-      {(overview?.stale ?? 0) > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          <OfflineIcon size={16} aria-hidden />
-          {overview?.stale} projector(s) have not answered recently. Their last known
-          values are shown as stale rather than live.
-        </div>
-      )}
-
-      {(overview?.open_alerts ?? 0) > 0 && (
-        <Link
-          to="/monitoring"
-          className="flex items-center justify-between rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-200 hover:bg-red-500/15"
-        >
-          <span className="flex items-center gap-2">
-            <FaultIcon size={16} aria-hidden />
-            {overview?.open_alerts} open alert(s)
-            {(overview?.critical_alerts ?? 0) > 0 &&
-              `, ${overview?.critical_alerts} critical`}
-          </span>
-          <span>View →</span>
-        </Link>
-      )}
 
       {loading ? (
         <div className="panel p-6">
@@ -211,80 +327,62 @@ export default function Dashboard({ session }: { session: Session }) {
           <EmptyState
             title="No projectors registered yet"
             action={
-              <Link to="/projectors" className="btn-primary">
-                Add your first projector
-              </Link>
+              session.role === 'admin' && (
+                <Link to="/projectors?add=1" className="btn-primary">
+                  <AddIcon size={15} aria-hidden /> Add your first projector
+                </Link>
+              )
             }
           >
             Add a projector by IP address to start monitoring and controlling it.
           </EmptyState>
         </div>
-      ) : visible.length === 0 ? (
-        <div className="panel">
-          <EmptyState
-            title="No projectors match this filter"
-            action={<button className="btn-default" onClick={() => setFilter('all')}>Show all</button>}
-          />
-        </div>
       ) : (
-        <div className="card-grid">
-          {visible.map((projector) => (
-            <ProjectorCard
-              key={projector.id}
-              projector={projector}
-              canControl={canControl}
-              busy={busyIds.has(projector.id)}
-              onPower={(target, state) =>
-                setPending({ projector: target, kind: 'power', state })
-              }
-              onShutter={(target, state) =>
-                setPending({ projector: target, kind: 'shutter', state })
-              }
-            />
-          ))}
-        </div>
+        <>
+          <OverviewStrip
+            overview={overview}
+            projectors={projectors}
+            attentionCount={attentionCount}
+            filter={filter}
+            onFilter={setFilter}
+          />
+
+          {segments.length > 1 && (
+            <div className="px-1">
+              <FleetBar segments={segments} />
+            </div>
+          )}
+
+          {(overview?.stale ?? 0) > 0 && (
+            <Banner tone="warn">
+              {overview?.stale} projector{overview?.stale === 1 ? ' has' : 's have'} not answered recently. Their last
+              known values are marked stale rather than shown as live.
+            </Banner>
+          )}
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="space-y-4 xl:order-2">
+              <AttentionPanel projectors={projectors} />
+              {/* Phones and tablets have the Alerts tab; the wide layout
+                  keeps alerts and recent commands beside the fleet. */}
+              <div className="hidden space-y-4 xl:block">
+                <AlertsSummary />
+                <RecentCommands />
+              </div>
+            </div>
+            <div className="min-w-0 xl:order-1">
+              <FleetBrowser
+                projectors={projectors}
+                canControl={canControl}
+                storageKey="pc.dashboard"
+                defaultView="grid"
+                filter={filter}
+                onFilterChange={setFilter}
+              />
+            </div>
+          </div>
+        </>
       )}
-
-      <ConfirmDialog
-        open={pending !== null}
-        title={
-          pending?.kind === 'power'
-            ? `Power ${pending.state} ${pending.projector.name}?`
-            : `${pending?.state === 'closed' ? 'Close' : 'Open'} shutter on ${pending?.projector.name}?`
-        }
-        body={
-          pending?.kind === 'power' ? (
-            <>
-              <p>
-                This drives real hardware. A power change takes tens of seconds and
-                cannot be interrupted part-way.
-              </p>
-              {pending.state === 'off' && (
-                <p className="mt-2 text-amber-300">
-                  The projector will enter its cooling cycle. It cannot be powered
-                  back on until cooling finishes.
-                </p>
-              )}
-            </>
-          ) : (
-            <p>
-              {pending?.state === 'closed'
-                ? 'The image will be blanked. The lamp stays on.'
-                : 'The image will be shown.'}
-            </p>
-          )
-        }
-        confirmLabel={pending?.kind === 'power' ? `Power ${pending.state}` : 'Confirm'}
-        danger={pending?.kind === 'power' && pending.state === 'off'}
-        onCancel={() => setPending(null)}
-        onConfirm={() => {
-          const command = pending
-          setPending(null)
-          if (command) void run(command)
-        }}
-      />
-
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }

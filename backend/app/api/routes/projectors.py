@@ -85,6 +85,7 @@ def _state_out(record: Projector, state: ProjectorState | None) -> ProjectorStat
         last_error=state.last_error,
         consecutive_failures=state.consecutive_failures,
         queue_depth=worker.queue_depth if worker else 0,
+        equipment=(state.extra or {}).get("equipment", {}),
     )
 
 

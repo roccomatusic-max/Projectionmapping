@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design system.
+ *
+ * Every page and the mapping editor draw from these classes, so spacing,
+ * radii, type sizes and status colours stay identical across the app.
+ * Rules:
+ *   - Surfaces are flat charcoal panels with hairline borders. No gradients,
+ *     no glows: this runs in dark rooms and has to read as equipment.
+ *   - Status colour is never the only cue. Every status carries a word.
+ *   - Numbers that update in place use tabular figures (.tnum).
+ *   - Touch screens get 44 px minimum targets (see the coarse-pointer block).
+ */
+
 @layer base {
   :root {
     color-scheme: dark;
@@ -14,15 +27,9 @@
   }
 
   body {
-    /* Dark charcoal, not pure black: easier on the eyes through a long
-       night show while still killing stray light on a dim stage. A faint
-       cool glow top-left gives the panels something to sit on. */
-    @apply bg-panel-950 text-slate-200;
-    background-image:
-      radial-gradient(1200px 600px at -10% -20%, rgba(56, 189, 248, 0.07), transparent 60%),
-      radial-gradient(900px 500px at 110% 0%, rgba(99, 102, 241, 0.05), transparent 60%);
-    background-attachment: fixed;
+    @apply bg-panel-950 text-slate-200 antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'tnum';
+    -webkit-tap-highlight-color: transparent;
   }
 
   select.input {
@@ -37,6 +44,14 @@
     font-variant-numeric: tabular-nums;
   }
 
+  input[type='checkbox'] {
+    @apply h-4 w-4 cursor-pointer rounded border-white/20 bg-panel-850 accent-sky-500;
+  }
+
+  input[type='range'] {
+    @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-panel-700 accent-sky-500;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -45,7 +60,7 @@
     @apply bg-panel-900;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-panel-700 rounded;
+    @apply rounded bg-panel-700;
   }
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-panel-600;
@@ -57,25 +72,36 @@
 }
 
 @layer components {
+  /* -- Surfaces ------------------------------------------------------- */
+
   .panel {
-    @apply bg-panel-900 border border-white/[0.06] rounded-xl shadow-panel;
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 45%);
+    @apply rounded-lg border border-white/[0.07] bg-panel-900 shadow-panel;
   }
   /* A panel that is itself a control (a filter tile, a selectable card). */
   .panel-interactive {
-    @apply panel cursor-pointer transition-[border-color,background-color,transform] duration-150
-           hover:border-white/[0.14] hover:bg-panel-850 active:scale-[0.995];
+    @apply panel cursor-pointer transition-colors duration-150
+           hover:border-white/[0.14] hover:bg-panel-850;
   }
   .panel-active {
     @apply border-sky-500/50 bg-sky-500/[0.06];
   }
+  /* A recessed well inside a panel: readouts, grouped controls. */
+  .inset {
+    @apply rounded-md border border-white/[0.05] bg-panel-850;
+  }
+  /* Small uppercase caption above a value or a control group. */
+  .eyebrow {
+    @apply text-2xs font-medium uppercase tracking-wider text-slate-500;
+  }
+
+  /* -- Tables --------------------------------------------------------- */
 
   /* Dense data tables: a quiet header row, hairline dividers, row hover. */
   .table {
     @apply w-full text-left text-sm;
   }
   .table thead th {
-    @apply pb-2 pr-4 text-[11px] font-medium uppercase tracking-wide text-slate-500;
+    @apply whitespace-nowrap pb-2 pr-4 text-2xs font-medium uppercase tracking-wider text-slate-500;
   }
   .table tbody {
     @apply divide-y divide-white/5;
@@ -84,56 +110,123 @@
     @apply transition-colors hover:bg-white/[0.025];
   }
   .table td {
-    @apply py-2.5 pr-4 align-middle;
+    @apply py-2 pr-4 align-middle;
   }
+
+  /* -- Navigation ----------------------------------------------------- */
 
   .sidebar-link {
-    @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-400 transition-colors
-           hover:bg-white/[0.04] hover:text-slate-200;
+    @apply relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-slate-400
+           transition-colors hover:bg-white/[0.04] hover:text-slate-200;
   }
   .sidebar-link-active {
-    @apply bg-sky-500/10 text-slate-100 ring-1 ring-inset ring-sky-500/25;
+    @apply bg-white/[0.06] text-slate-50
+           before:absolute before:-left-3 before:top-1.5 before:bottom-1.5 before:w-0.5
+           before:rounded-full before:bg-sky-400;
   }
 
+  /* Tabs inside a page or panel. */
+  .tab {
+    @apply -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent
+           px-3 py-2.5 text-sm text-slate-400 transition-colors hover:text-slate-200;
+  }
+  .tab-active {
+    @apply border-sky-400 text-slate-50;
+  }
+
+  /* -- Buttons -------------------------------------------------------- */
+
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5
            text-sm font-medium transition-colors select-none
-           disabled:opacity-40 disabled:cursor-not-allowed;
+           disabled:cursor-not-allowed disabled:opacity-40;
   }
   .btn svg {
     @apply shrink-0;
   }
   .btn-default {
-    @apply btn bg-panel-750 hover:bg-panel-700 text-slate-200 border border-white/5;
+    @apply btn border border-white/[0.08] bg-panel-750 text-slate-200 hover:bg-panel-700
+           disabled:hover:bg-panel-750;
   }
   .btn-primary {
-    @apply btn bg-sky-600 hover:bg-sky-500 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15)];
+    @apply btn bg-sky-600 text-white hover:bg-sky-500 disabled:hover:bg-sky-600;
   }
   .btn-danger {
-    @apply btn bg-red-700 hover:bg-red-600 text-white;
+    @apply btn bg-red-600 text-white hover:bg-red-500 disabled:hover:bg-red-600;
+  }
+  /* Outlined destructive action: present, but quieter than a filled one. */
+  .btn-danger-outline {
+    @apply btn border border-red-500/40 text-red-300 hover:bg-red-500/10 disabled:hover:bg-transparent;
   }
   .btn-ghost {
-    @apply btn hover:bg-panel-800 text-slate-300;
+    @apply btn text-slate-300 hover:bg-white/[0.06] disabled:hover:bg-transparent;
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-xs;
   }
   /* Large hit areas: these get used on a tablet, outdoors, in the dark. */
   .btn-lg {
-    @apply px-4 py-3 text-base;
+    @apply px-4 py-2.5 text-base;
+  }
+  .btn-icon {
+    @apply px-2;
   }
 
+  /*
+   * Segmented control: a set of mutually exclusive states, one of which is
+   * the projector's *confirmed* state. The active segment is the state read
+   * back from the device, never the one last requested.
+   */
+  .seg {
+    @apply inline-flex rounded-md border border-white/[0.08] bg-panel-850 p-0.5;
+  }
+  .seg-item {
+    @apply inline-flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-3 py-1.5 text-sm
+           font-medium text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-slate-100
+           disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent;
+  }
+  /* The confirmed state: clearly lit, and never dimmed by being the one
+     segment you cannot press again. */
+  .seg-item-active {
+    @apply bg-sky-500/20 text-sky-50 ring-1 ring-inset ring-sky-400/50 hover:bg-sky-500/20
+           disabled:cursor-default disabled:opacity-100 disabled:hover:bg-sky-500/20;
+  }
+
+  /* -- Forms ---------------------------------------------------------- */
+
   .input {
-    @apply w-full rounded-lg bg-panel-850 border border-white/10 px-3 py-2
+    @apply w-full rounded-md border border-white/10 bg-panel-850 px-3 py-1.5
            text-sm text-slate-100 placeholder:text-slate-500
            focus:border-sky-500 focus:outline-none;
   }
   .label {
-    @apply block text-xs font-medium uppercase tracking-wide text-slate-400 mb-1.5;
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400;
   }
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2 py-0.5
-           text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded px-1.5 py-0.5
+           text-2xs font-medium;
   }
+  .kbd {
+    @apply rounded border border-white/10 bg-panel-800 px-1 font-mono text-2xs text-slate-400;
+  }
+
   .card-grid {
-    @apply grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4;
+    @apply grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4;
+  }
+}
+
+/* Touch screens: every control a finger can reach gets a 44 px target. */
+@media (pointer: coarse) {
+  .btn,
+  .seg-item,
+  .input {
+    min-height: 44px;
+  }
+  .btn-sm {
+    min-height: 36px;
+  }
+  .sidebar-link {
+    @apply py-2.5;
   }
 
   /* The phone remote: no grey flash on tap, no double-tap zoom, and no

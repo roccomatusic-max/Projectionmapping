@@ -1,88 +1,69 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
 import type { DriverInfo, Projector } from '@/api/types'
-import { useFleet, useTicker } from '@/hooks/useLiveData'
-import {
-  Chip,
-  ConfirmDialog,
-  EmptyState,
-  ErrorBanner,
-  PageHeader,
-  Panel,
-  Spinner,
-  ToastStack,
-  useToasts,
-} from '@/components/ui'
-import { connectionTone } from '@/components/ProjectorCard'
-import { InputBadge, LampMeter, ProjectorMark } from '@/components/graphics'
-import { AddIcon, ChevronIcon, ProjectorIcon } from '@/components/icons'
-import { POWER_LABEL, relativeTime, renderTelemetry } from '@/lib/format'
-
-function peakLampHours(projector: Projector): number | null {
-  const lamps = projector.state.lamp_hours
-  if (lamps.availability !== 'available' || !Array.isArray(lamps.value)) return null
-  const hours = lamps.value.map((l) => l.hours).filter((h): h is number => h != null)
-  return hours.length ? Math.max(...hours) : null
-}
+import { useFleetContext, useOps } from '@/live/LiveProvider'
+import { useDrivers } from '@/live/useCatalog'
+import { FleetBrowser } from '@/components/fleet/FleetBrowser'
+import { ConfirmDialog, EmptyState, Modal, PageHeader, Panel, Spinner } from '@/components/ui'
+import { AddIcon, DeleteIcon, EditIcon, ProjectorIcon } from '@/components/icons'
+import { isLive } from '@/lib/status'
 
 export default function Projectors({ session }: { session: Session }) {
-  const { projectors, loading, error, refresh } = useFleet()
-  const [drivers, setDrivers] = useState<DriverInfo[]>([])
-  const [adding, setAdding] = useState(false)
+  const { projectors, loading, refresh } = useFleetContext()
+  const { notify } = useOps()
+  const drivers = useDrivers()
+  const [params, setParams] = useSearchParams()
+  const [adding, setAdding] = useState(params.get('add') === '1')
   const [editing, setEditing] = useState<Projector | null>(null)
   const [deleting, setDeleting] = useState<Projector | null>(null)
-  const [query, setQuery] = useState('')
-  const { toasts, push, dismiss } = useToasts()
-  useTicker(5000)
 
   const isAdmin = session.role === 'admin'
-  const driverName = useMemo(
-    () => Object.fromEntries(drivers.map((d) => [d.driver_id, d.display_name])),
-    [drivers],
-  )
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return projectors
-    return projectors.filter((p) =>
-      [p.name, p.model, p.location, p.host, p.driver].some((v) => v?.toLowerCase().includes(q)),
-    )
-  }, [projectors, query])
+  const responding = projectors.filter(isLive).length
 
   useEffect(() => {
-    void api
-      .drivers()
-      .then((result) => setDrivers(result.drivers))
-      .catch(() => undefined)
-  }, [])
+    if (params.get('add')) setParams({}, { replace: true })
+  }, [params, setParams])
+
+  const rowActions = useCallback(
+    (projector: Projector) =>
+      isAdmin ? (
+        <>
+          <button
+            className="btn-ghost btn-sm btn-icon"
+            onClick={() => setEditing(projector)}
+            aria-label={`Edit ${projector.name}`}
+            title="Edit"
+          >
+            <EditIcon size={14} />
+          </button>
+          <button
+            className="btn-ghost btn-sm btn-icon text-red-300"
+            onClick={() => setDeleting(projector)}
+            aria-label={`Remove ${projector.name}`}
+            title="Remove"
+          >
+            <DeleteIcon size={14} />
+          </button>
+        </>
+      ) : null,
+    [isAdmin],
+  )
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         icon={ProjectorIcon}
         title="Projectors"
-        subtitle={`${projectors.length} registered · ${projectors.filter((p) => p.state.online && !p.state.stale).length} responding`}
+        subtitle={`${projectors.length} registered · ${responding} responding`}
         actions={
-          <>
-            {projectors.length > 3 && (
-              <input
-                className="input w-56"
-                placeholder="Search name, model, location, IP"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label="Search projectors"
-              />
-            )}
-            {isAdmin && (
-              <button className="btn-primary" onClick={() => setAdding(true)}>
-                <AddIcon size={15} aria-hidden /> Add projector
-              </button>
-            )}
-          </>
+          isAdmin && (
+            <button className="btn-primary btn-sm" onClick={() => setAdding(true)}>
+              <AddIcon size={14} aria-hidden /> Add projector
+            </button>
+          )
         }
       />
-
-      {error && <ErrorBanner message={error} />}
 
       {loading ? (
         <Panel>
@@ -90,154 +71,31 @@ export default function Projectors({ session }: { session: Session }) {
         </Panel>
       ) : projectors.length === 0 ? (
         <Panel>
-          <EmptyState title="No projectors registered">
+          <EmptyState
+            title="No projectors registered"
+            icon={ProjectorIcon}
+            action={
+              isAdmin && (
+                <button className="btn-primary" onClick={() => setAdding(true)}>
+                  <AddIcon size={15} aria-hidden /> Add projector
+                </button>
+              )
+            }
+          >
             {isAdmin
               ? 'Add a projector by its IP address to begin.'
               : 'Ask an administrator to register a projector.'}
           </EmptyState>
         </Panel>
       ) : (
-        <Panel className="overflow-hidden">
-          {/* Phone layout: one row per projector, no sideways scrolling. */}
-          <ul className="-m-4 divide-y divide-white/5 lg:hidden">
-            {shown.map((projector) => {
-              const live = projector.state.online && !projector.state.stale
-              const transitioning = projector.state.power === 'warming' || projector.state.power === 'cooling'
-              return (
-                <li key={projector.id} className="flex items-center gap-3 px-4 py-3">
-                  <Link to={`/projectors/${projector.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                    <ProjectorMark tone={connectionTone(projector)} size="sm" pulse={transitioning} />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-slate-100">{projector.name}</span>
-                      <span className="block truncate text-xs text-slate-500">
-                        {projector.model || projector.manufacturer}
-                        {projector.location && ` · ${projector.location}`}
-                      </span>
-                      <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                        <Chip tone={!live ? 'unknown' : projector.state.power === 'on' ? 'ok' : transitioning ? 'busy' : 'idle'}>
-                          {live ? POWER_LABEL[projector.state.power] : 'Offline'}
-                        </Chip>
-                        <span className="tnum">{projector.host}:{projector.port}</span>
-                        <span className={projector.state.stale ? 'text-amber-400' : undefined}>
-                          {relativeTime(projector.state.last_seen_at)}{projector.state.stale && ' · stale'}
-                        </span>
-                      </span>
-                    </span>
-                  </Link>
-                  {isAdmin && (
-                    <button className="btn-ghost px-2 text-xs" onClick={() => setEditing(projector)}>
-                      Edit
-                    </button>
-                  )}
-                  <Link to={`/projectors/${projector.id}`} className="btn-ghost px-2" aria-label="Details">
-                    <ChevronIcon size={16} />
-                  </Link>
-                </li>
-              )
-            })}
-            {shown.length === 0 && (
-              <li className="px-4 py-6 text-center text-sm text-slate-500">No projector matches “{query}”.</li>
-            )}
-          </ul>
-          <div className="-m-4 hidden overflow-x-auto lg:block">
-            <table className="table">
-              <thead>
-                <tr className="border-b border-white/5">
-                  <th className="pl-4 pt-3">Projector</th>
-                  <th className="pt-3">Address</th>
-                  <th className="pt-3">Driver</th>
-                  <th className="pt-3">Power</th>
-                  <th className="pt-3">Input</th>
-                  <th className="min-w-[160px] pt-3">Lamp</th>
-                  <th className="whitespace-nowrap pt-3">Last reply</th>
-                  <th className="pr-4 pt-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((projector) => {
-                  const live = projector.state.online && !projector.state.stale
-                  const input = renderTelemetry(projector.state.active_input, (v) => (typeof v === 'string' ? v : v.label))
-                  const code = projector.state.active_input.availability === 'available' && typeof projector.state.active_input.value === 'object'
-                    ? projector.state.active_input.value?.code ?? '' : ''
-                  const transitioning = projector.state.power === 'warming' || projector.state.power === 'cooling'
-                  return (
-                    <tr key={projector.id} className={!projector.enabled ? 'opacity-60' : undefined}>
-                      <td className="pl-4">
-                        <Link to={`/projectors/${projector.id}`} className="flex items-center gap-3 group">
-                          <ProjectorMark tone={connectionTone(projector)} size="sm" pulse={transitioning} />
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium text-slate-100 group-hover:text-sky-300">{projector.name}</span>
-                            <span className="block truncate text-xs text-slate-500">
-                              {projector.model || projector.manufacturer}
-                              {projector.location && ` · ${projector.location}`}
-                              {!projector.enabled && ' · disabled'}
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td className="tnum text-slate-400">
-                        {projector.host}:{projector.port}
-                      </td>
-                      <td className="text-xs text-slate-400">
-                        <span className="block">{driverName[projector.driver] ?? projector.driver}</span>
-                        {projector.allow_unverified_commands && (
-                          <Chip tone="warn" title="Commands documented only for sibling models are enabled on this device.">
-                            unverified enabled
-                          </Chip>
-                        )}
-                      </td>
-                      <td>
-                        <Chip tone={!live ? 'unknown' : projector.state.power === 'on' ? 'ok' : transitioning ? 'busy' : 'idle'}>
-                          {live ? POWER_LABEL[projector.state.power] : 'Offline'}
-                        </Chip>
-                      </td>
-                      <td className="text-sm">
-                        {input.muted ? (
-                          <span className="text-xs text-slate-500" title={input.title}>{input.text}</span>
-                        ) : (
-                          <InputBadge code={code} label={input.text} />
-                        )}
-                      </td>
-                      <td>
-                        <LampMeter
-                          label=""
-                          hours={peakLampHours(projector)}
-                          warn={projector.lamp_warn_hours}
-                          critical={projector.lamp_critical_hours}
-                          compact
-                        />
-                      </td>
-                      <td className={`tnum whitespace-nowrap text-xs ${projector.state.stale ? 'text-amber-400' : 'text-slate-500'}`}>
-                        {relativeTime(projector.state.last_seen_at)}
-                        {projector.state.stale && ' · stale'}
-                      </td>
-                      <td className="pr-3 text-right">
-                        <span className="flex items-center justify-end gap-1">
-                          {isAdmin && (
-                            <>
-                              <button className="btn-ghost text-xs" onClick={() => setEditing(projector)}>
-                                Edit
-                              </button>
-                              <button className="btn-ghost text-xs text-red-300" onClick={() => setDeleting(projector)}>
-                                Remove
-                              </button>
-                            </>
-                          )}
-                          <Link to={`/projectors/${projector.id}`} className="btn-ghost px-2" aria-label="Details">
-                            <ChevronIcon size={16} />
-                          </Link>
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {shown.length === 0 && (
-              <p className="px-4 py-6 text-center text-sm text-slate-500">No projector matches “{query}”.</p>
-            )}
-          </div>
-        </Panel>
+        <FleetBrowser
+          projectors={projectors}
+          canControl={session.role !== 'viewer'}
+          storageKey="pc.projectors"
+          defaultView="list"
+          defaultSort="name"
+          rowActions={rowActions}
+        />
       )}
 
       {(adding || editing) && (
@@ -251,16 +109,23 @@ export default function Projectors({ session }: { session: Session }) {
           onSaved={(message) => {
             setAdding(false)
             setEditing(null)
-            push('ok', message)
+            notify('ok', message)
             void refresh()
           }}
-          onError={(message) => push('fault', 'Save failed', message)}
+          onError={(message) => notify('fault', 'Save failed', message)}
         />
       )}
 
       <ConfirmDialog
         open={deleting !== null}
         title={`Remove ${deleting?.name}?`}
+        target={
+          deleting && (
+            <p className="tnum text-slate-300">
+              {deleting.name} · {deleting.host}:{deleting.port}
+            </p>
+          )
+        }
         body="The projector, its history, telemetry and group memberships are deleted. This cannot be undone. The projector hardware is not affected."
         confirmLabel="Remove"
         danger
@@ -271,23 +136,18 @@ export default function Projectors({ session }: { session: Session }) {
           if (!target) return
           try {
             await api.deleteProjector(target.id)
-            push('ok', `${target.name} removed`)
+            notify('ok', `${target.name} removed`)
             void refresh()
           } catch (err) {
-            push(
-              'fault',
-              'Remove failed',
-              err instanceof ApiError ? err.message : undefined,
-            )
+            notify('fault', 'Remove failed', err instanceof ApiError ? err.message : undefined)
           }
         }}
       />
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }
 
-function ProjectorForm({
+export function ProjectorForm({
   drivers,
   projector,
   onClose,
@@ -345,15 +205,8 @@ function ProjectorForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4"
-      onClick={onClose}
-    >
-      <form
-        onSubmit={submit}
-        className="panel my-8 w-full max-w-2xl p-5"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Modal open label={editing ? `Edit ${projector.name}` : 'Add projector'} onClose={onClose} size="lg">
+      <form onSubmit={submit} className="p-5">
         <h2 className="text-base font-semibold text-slate-100">
           {editing ? `Edit ${projector.name}` : 'Add projector'}
         </h2>
@@ -468,7 +321,7 @@ function ProjectorForm({
           </div>
         </div>
 
-        <label className="mt-4 flex items-start gap-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3">
+        <label className="mt-4 flex items-start gap-3 rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -504,6 +357,6 @@ function ProjectorForm({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   )
 }
