@@ -8,24 +8,32 @@ wraps the result in an installer. Output: dist/MiniPC/MiniPC.exe.
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, collect_submodules
 
 ROOT = Path(SPECPATH).resolve().parent
 HERE = ROOT / "minipc"
 AGENT = ROOT / "camera-agent"
 ICON = ROOT / "build" / "minipc.ico"
 
-hiddenimports = ["agent", "sources", "vision", "websocket", "psutil"]
+hiddenimports = ["agent", "sources", "simcam", "vision", "websocket", "psutil"]
 binaries = []
+datas = []
 if sys.platform == "win32":
     hiddenimports += ["pystray._win32"] + collect_submodules("pyrealsense2")
     binaries += collect_dynamic_libs("pyrealsense2")
+    # Orbbec and Luxonis SDKs: their DLLs, and the Orbbec extensions and
+    # config file, which it looks for next to its own DLL.
+    for package in ("pyorbbecsdk", "depthai"):
+        package_datas, package_binaries, package_imports = collect_all(package)
+        datas += package_datas
+        binaries += package_binaries
+        hiddenimports += package_imports
 
 a = Analysis(
     [str(HERE / "minipc.py")],
     pathex=[str(HERE), str(AGENT)],
     binaries=binaries,
-    datas=[],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],

@@ -1,6 +1,9 @@
 import { ApiError, getToken, request } from '@/api/client'
 import type {
   ApplyResult,
+  CalibrationGrid,
+  CameraCommandName,
+  CameraView,
   Cue,
   MediaAsset,
   Output,
@@ -53,8 +56,14 @@ export const mappingApi = {
     request<void>(`/mapping/outputs/${outputId}/calibration`, { method: 'DELETE' }),
   applyCalibration: (showId: number, mesh: number) =>
     request<ApplyResult[]>(`/mapping/shows/${showId}/apply-calibration`, { method: 'POST', body: { mesh } }),
-  cameraCommand: (cameraId: number, command: 'snapshot' | 'background') =>
-    request<void>(`/mapping/cameras/${cameraId}/command`, { method: 'POST', body: { command } }),
+  calibrationGrid: (outputId: number) => request<CalibrationGrid>(`/mapping/outputs/${outputId}/calibration`),
+  fitCanvas: (showId: number, cameraId: number, slices: boolean) =>
+    request<{ camera_view: CameraView; sliced: number[] }>(`/mapping/shows/${showId}/fit-canvas`, {
+      method: 'POST',
+      body: { camera_id: cameraId, slices },
+    }),
+  cameraCommand: (cameraId: number, command: CameraCommandName, seconds?: number) =>
+    request<void>(`/mapping/cameras/${cameraId}/command`, { method: 'POST', body: { command, seconds } }),
 }
 
 /** The camera's latest photo; ``version`` busts the browser cache. */

@@ -6,7 +6,9 @@ signs in after that, it:
 - finds the main server on the network by itself,
 - shows the output full screen on the projector in a kiosk browser window
   (no tabs, no address bar, no frame), reopened if it ever closes,
-- runs the camera when one is plugged in, for calibration and people,
+- runs the camera when one is plugged in, for calibration and people: a
+  depth camera (Intel RealSense, Orbbec, Luxonis OAK) or any webcam, found
+  by itself,
 - keeps the screen and the computer awake.
 
 The first time, the projector shows a pairing code. Approving it on the
@@ -453,12 +455,21 @@ def self_check() -> int:
     import websocket  # noqa: F401
 
     import agent  # noqa: F401
-    import sources  # noqa: F401
+    import sources
     import vision  # noqa: F401
 
     if sys.platform == "win32":
+        import depthai  # noqa: F401
+        import pyorbbecsdk  # noqa: F401
         import pyrealsense2  # noqa: F401
         import pystray  # noqa: F401
+
+        # Each depth camera SDK loads its drivers and can look for cameras.
+        broken = {k: v for k, v in sources.sdk_status().items() if v.startswith("unavailable")}
+        if broken:
+            log.error("depth camera support missing: %s", broken)
+            return 1
+    log.info("depth camera support: %s", sources.sdk_status())
     icon_image()
     log.info("self-check passed; browser: %s", find_browser())
     return 0
@@ -469,7 +480,8 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server", help="the main server's address, kept from now on; 'auto' finds it again")
     parser.add_argument("--name", help="how this computer is listed on the Players tab, kept from now on")
-    parser.add_argument("--camera", help="auto, off, realsense or webcam:N, kept from now on")
+    parser.add_argument("--camera",
+                        help="auto, off, realsense, orbbec, oak, webcam, webcam:N or sim, kept from now on")
     parser.add_argument("--data-dir", help="where the settings and logs are kept")
     parser.add_argument("--discovery-port", type=int, default=discovery.DEFAULT_PORT, help=argparse.SUPPRESS)
     parser.add_argument("--status-port", type=int, default=STATUS_PORT, help=argparse.SUPPRESS)

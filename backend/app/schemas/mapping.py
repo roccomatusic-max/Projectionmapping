@@ -236,21 +236,69 @@ class ShowCreate(BaseModel):
     canvas_height: int = Field(default=2160, ge=16, le=32768)
 
 
+def _within_reach(points: list[Point]) -> None:
+    for x, y in points:
+        if not (-1 <= x <= 2 and -1 <= y <= 2):
+            raise ValueError("camera view points must be within the camera image's reach")
+
+
+class CameraMesh(BaseModel):
+    """A grid of canvas points placed by hand on the camera's picture.
+
+    Row-major, ``cols`` × ``rows`` points spread evenly over the canvas,
+    each the camera-image fraction where that canvas point is on the
+    building. Its four corners are the view's corners.
+    """
+    cols: int = Field(ge=2, le=9)
+    rows: int = Field(ge=2, le=9)
+    points: list[Point]
+
+    @model_validator(mode="after")
+    def _shape(self) -> CameraMesh:
+        if len(self.points) != self.cols * self.rows:
+            raise ValueError(f"{len(self.points)} points for a {self.cols}×{self.rows} grid")
+        _within_reach(self.points)
+        return self
+
+    def corners(self) -> list[Point]:
+        c, r = self.cols, self.rows
+        return [self.points[0], self.points[c - 1], self.points[c * r - 1], self.points[c * (r - 1)]]
+
+
 class CameraView(BaseModel):
     """Where the show canvas sits in a camera's picture of the building."""
     camera_id: int
     #: Canvas corners TL, TR, BR, BL, in fractions of the camera image.
     corners: list[Point]
+    #: Finer placement by hand; when set, its corners replace ``corners``.
+    mesh: CameraMesh | None = None
 
     @field_validator("corners")
     @classmethod
     def _four(cls, corners: list[Point]) -> list[Point]:
         if len(corners) != 4:
             raise ValueError("the camera view needs exactly four corners (TL, TR, BR, BL)")
-        for x, y in corners:
-            if not (-1 <= x <= 2 and -1 <= y <= 2):
-                raise ValueError("camera view corners must be within the camera image's reach")
+        _within_reach(corners)
         return corners
+
+    @model_validator(mode="after")
+    def _corners_follow_mesh(self) -> CameraView:
+        if self.mesh is not None:
+            self.corners = self.mesh.corners()
+        return self
+
+
+class FitCanvas(BaseModel):
+    camera_id: int
+    #: Also set each calibrated output's slice of the canvas to the part its
+    #: projector's light covers (overlaps included, for blending).
+    slices: bool = True
+
+
+class FitResult(BaseModel):
+    camera_view: CameraView
+    #: Outputs whose slice of the canvas was set from their light.
+    sliced: list[int] = Field(default_factory=list)
 
 
 class ShowUpdate(BaseModel):
@@ -471,8 +519,10 @@ class ApplyResult(BaseModel):
 
 
 class CameraCommand(BaseModel):
-    #: "snapshot": send a fresh photo; "background": re-learn the empty scene.
-    command: Literal["snapshot", "background"]
+    #: "snapshot": send a fresh photo; "background": re-learn the empty scene;
+    #: "live": a new photo about every second for ``seconds``; "stop_live".
+    command: Literal["snapshot", "background", "live", "stop_live"]
+    seconds: int = Field(default=90, ge=5, le=600)
 
 
 class TrackedPerson(BaseModel):

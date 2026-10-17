@@ -65,7 +65,7 @@ Add them to the Mini PC shortcut (Start menu and Startup folder) after
 |---|---|
 | `--server http://192.168.1.10:8765` | Use this address instead of looking for the server. `--server auto` looks again |
 | `--name "Left tower"` | How this computer is listed on the Players tab (default: its computer name) |
-| `--camera off` | Never use a camera. Also `realsense`, `webcam:0`, `webcam:1`; default `auto` |
+| `--camera off` | Never use a camera. Also `realsense`, `orbbec`, `oak`, `webcam`, `webcam:0`, `webcam:1`; default `auto` (a depth camera if one is plugged in, otherwise a webcam) |
 | `--browser "C:\path\to\chrome.exe"` | Chrome or Edge somewhere unusual. Default: Chrome if installed, otherwise Edge |
 
 Settings and logs are in `%LOCALAPPDATA%\ProjectionMapping MiniPC`

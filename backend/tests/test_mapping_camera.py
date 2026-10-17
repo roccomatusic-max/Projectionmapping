@@ -13,9 +13,12 @@ import pytest
 from app.core.events import bus
 from app.services.calibration import (
     CalibrationError,
+    CanvasOnCamera,
     apply,
+    fit_canvas,
     fit_homography,
     invert,
+    light_on_canvas,
     solve_warp,
     square_to_quad,
 )
@@ -123,6 +126,85 @@ def test_too_little_light_is_an_error():
     grid = {"cols": 8, "rows": 8, "points": [None] * 60 + [[0.5, 0.5]] * 4}
     with pytest.raises(CalibrationError):
         solve_warp({"x": 0, "y": 0, "w": 1, "h": 1}, VIEW, grid)
+
+
+def even_grid(corners, cols: int, rows: int) -> list[list[float]]:
+    """A hand grid exactly where the corners alone put it."""
+    flat = square_to_quad(corners)
+    return [list(apply(flat, c / (cols - 1), r / (rows - 1))) for r in range(rows) for c in range(cols)]
+
+
+def test_hand_grid_where_the_corners_put_it_changes_nothing():
+    mesh = {"cols": 3, "rows": 3, "points": even_grid(VIEW, 3, 3)}
+    placed = CanvasOnCamera(VIEW, mesh)
+    flat = CanvasOnCamera(VIEW)
+    for u, v in [(0, 0), (0.3, 0.7), (0.5, 0.5), (1, 1), (0.9, 0.2)]:
+        assert math.dist(placed(u, v), flat(u, v)) < 1e-12
+
+
+def test_a_point_dragged_by_hand_is_where_that_canvas_point_lands():
+    points = even_grid(VIEW, 3, 3)
+    points[4] = [points[4][0] + 0.03, points[4][1] - 0.02]  # the middle, nudged
+    placed = CanvasOnCamera(VIEW, {"cols": 3, "rows": 3, "points": points})
+    assert math.dist(placed(0.5, 0.5), points[4]) < 1e-12
+    # Corners stay put, and the nudge fades towards them.
+    assert math.dist(placed(0, 0), VIEW[0]) < 1e-12
+    halfway = math.dist(placed(0.25, 0.25), CanvasOnCamera(VIEW)(0.25, 0.25))
+    assert 0 < halfway < math.dist(points[4], CanvasOnCamera(VIEW)(0.5, 0.5))
+
+
+def test_the_hand_grid_moves_the_picture_on_the_projector():
+    source = {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+    target = [(0.06, 0.04), (0.96, 0.1), (0.92, 0.95), (0.03, 0.9)]
+    grid = decoded_grid(source, target)
+    points = even_grid(VIEW, 3, 3)
+    plain, _ = solve_warp(source, VIEW, grid, mesh=9,
+                          camera_mesh={"cols": 3, "rows": 3, "points": points})
+    assert plain["mesh"] is None or max(abs(v) for p in plain["mesh"]["points"] for v in p) < 2e-3
+    points[4] = [points[4][0] + 0.02, points[4][1]]
+    moved, _ = solve_warp(source, VIEW, grid, mesh=9,
+                          camera_mesh={"cols": 3, "rows": 3, "points": points})
+    assert moved["mesh"] is not None
+    middle = moved["mesh"]["points"][4 * 9 + 4]
+    # Moved right on the photo, so right on the projector too.
+    assert middle[0] > 0.01
+
+
+def test_fit_canvas_sits_inside_the_light_and_keeps_the_canvas_shape():
+    sources = [{"x": 0.0, "y": 0.0, "w": 0.55, "h": 1.0}, {"x": 0.45, "y": 0.0, "w": 0.55, "h": 1.0}]
+    target = [(0.06, 0.04), (0.96, 0.1), (0.92, 0.95), (0.03, 0.9)]
+    grids = [decoded_grid(s, target) for s in sources]
+    corners = fit_canvas(grids, 16 / 9)
+    (x0, y0), (x1, _), (_, y1), _ = corners
+    # 16:9 as the camera sees it (1280 × 720 photo).
+    assert abs((x1 - x0) * 1280 / ((y1 - y0) * 720) - 16 / 9) < 0.12
+    # Every corner is lit by one projector or the other.
+    for x, y in corners:
+        inside = [(x + dx, y + dy) for dx in (0.01, -0.01) for dy in (0.01, -0.01)]
+        assert any(
+            any(g["points"][min(int(py * 48), 47) * 64 + min(int(px * 64), 63)] is not None for g in grids)
+            for px, py in inside
+        )
+    # And it is a good share of the lit area, not a postage stamp.
+    lit = sum(any(g["points"][i] is not None for g in grids) for i in range(64 * 48))
+    assert (x1 - x0) * (y1 - y0) * 64 * 48 > 0.5 * lit
+
+
+def test_fit_canvas_needs_light():
+    with pytest.raises(CalibrationError):
+        fit_canvas([], 16 / 9)
+    with pytest.raises(CalibrationError):
+        fit_canvas([{"cols": 4, "rows": 4, "camera_width": 640, "camera_height": 480,
+                     "points": [None] * 16}], 16 / 9)
+
+
+def test_light_on_canvas_is_the_slice_the_projector_covers():
+    source = {"x": 0.45, "y": 0.0, "w": 0.55, "h": 1.0}
+    grid = decoded_grid(source, [(0, 0), (1, 0), (1, 1), (0, 1)])
+    slice_ = light_on_canvas(grid, VIEW)
+    assert abs(slice_["x"] - 0.45) < 0.03
+    assert abs(slice_["x"] + slice_["w"] - 1.0) < 0.03
+    assert slice_["y"] < 0.03 and slice_["h"] > 0.95
 
 
 # -- pairing ---------------------------------------------------------------------
@@ -333,3 +415,74 @@ async def test_people_are_mapped_onto_the_live_canvas(api):
     not_a_camera = await api.post("/api/mapping/cameras/me/people", headers=headers,
                                   json={"people": []})
     assert not_a_camera.status_code == 403
+
+
+async def test_fit_canvas_places_the_canvas_and_slices_the_outputs(api):
+    headers = await login(api)
+    camera_id, camera = await pair(api, headers, CAMERA)
+    show = await make_show(api, headers)
+    refused = await api.post(f"/api/mapping/shows/{show['id']}/fit-canvas", headers=headers,
+                             json={"camera_id": camera_id})
+    assert refused.status_code == 409
+
+    sources = [{"x": 0.0, "y": 0.0, "w": 0.55, "h": 1.0}, {"x": 0.45, "y": 0.0, "w": 0.55, "h": 1.0}]
+    target = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    outputs = []
+    for name, source in zip(("Left", "Right"), sources, strict=True):
+        output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                                 json={"name": name})).json()  # default slice: the whole canvas
+        stored = await api.put(f"/api/mapping/outputs/{output['id']}/calibration", headers=camera,
+                               json=decoded_grid(source, target))
+        assert stored.status_code == 200, stored.text
+        outputs.append(output)
+
+    fitted = await api.post(f"/api/mapping/shows/{show['id']}/fit-canvas", headers=headers,
+                            json={"camera_id": camera_id})
+    assert fitted.status_code == 200, fitted.text
+    body = fitted.json()
+    assert body["camera_view"]["camera_id"] == camera_id
+    assert sorted(body["sliced"]) == sorted(o["id"] for o in outputs)
+    again = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert again["camera_view"]["corners"] == body["camera_view"]["corners"]
+    left, right = (next(o for o in again["outputs"] if o["id"] == out["id"]) for out in outputs)
+    # Each output now shows the part of the canvas its light covers; they overlap.
+    assert left["source"]["x"] < 0.05 and right["source"]["x"] + right["source"]["w"] > 0.95
+    assert left["source"]["x"] + left["source"]["w"] > right["source"]["x"]
+
+    applied = await api.post(f"/api/mapping/shows/{show['id']}/apply-calibration",
+                             headers=headers, json={})
+    assert all(r["applied"] for r in applied.json()), applied.text
+
+
+async def test_a_hand_grid_is_kept_with_the_show(api):
+    headers = await login(api)
+    camera_id, _ = await pair(api, headers, CAMERA)
+    show = await make_show(api, headers)
+    points = even_grid(VIEW, 3, 3)
+    points[4] = [0.52, 0.47]
+    saved = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers, json={
+        "camera_view": {"camera_id": camera_id, "corners": [[0, 0]] * 4,
+                        "mesh": {"cols": 3, "rows": 3, "points": points}}})
+    assert saved.status_code == 200, saved.text
+    view = saved.json()["camera_view"]
+    assert view["mesh"]["points"][4] == [0.52, 0.47]
+    # The corners follow the grid's corners, whatever was sent.
+    assert view["corners"] == [points[0], points[2], points[8], points[6]]
+    wrong = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers, json={
+        "camera_view": {"camera_id": camera_id, "corners": VIEW,
+                        "mesh": {"cols": 3, "rows": 3, "points": points[:8]}}})
+    assert wrong.status_code == 422
+
+
+async def test_live_view_asks_the_camera_for_photos(api):
+    headers = await login(api)
+    camera_id, _ = await pair(api, headers, CAMERA)
+    queue = await bus.subscribe()
+    try:
+        sent = await api.post(f"/api/mapping/cameras/{camera_id}/command", headers=headers,
+                              json={"command": "live", "seconds": 120})
+        assert sent.status_code == 204, sent.text
+        message = await next_message(queue, "mapping_camera_command")
+        assert message == {"camera_id": camera_id, "command": "live", "seconds": 120}
+    finally:
+        await bus.unsubscribe(queue)

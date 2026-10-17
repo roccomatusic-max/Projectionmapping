@@ -15,9 +15,13 @@ Calibration of one output:
    of that show: the output being calibrated draws the pattern in its own
    pixels, the others go black so their light does not confuse the camera.
 3. The camera uploads what it decoded (``PUT /outputs/{id}/calibration``).
-4. With the canvas corners marked on the camera's photo (the show's
-   ``camera_view``), ``POST /shows/{id}/apply-calibration`` turns the
-   decoded maps into corner pins and mesh warps.
+4. ``POST /shows/{id}/fit-canvas`` places the canvas on the camera's photo
+   inside the projectors' light (and, optionally, gives each output the
+   slice of the canvas its light covers). The operator can then refine
+   that by hand: drag the corners, or a grid of points, onto the building
+   (the show's ``camera_view``).
+5. ``POST /shows/{id}/apply-calibration`` turns the decoded maps and the
+   canvas placement into corner pins and mesh warps.
 
 People tracking: the camera posts the people it sees, in camera-image
 fractions, several times a second (``POST /cameras/me/people``). The server
@@ -37,7 +41,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, RequireAdmin, RequireViewer, SessionDep, write_rate_limit
-from app.api.routes.mapping import _load_show, _media_user, _output_out, media_root
+from app.api.routes.mapping import _load_show, _media_user, _output_out, _touch, media_root
 from app.api.routes.mapping_players import is_online
 from app.core.events import bus
 from app.db.models import Event, MappingOutput, MappingPlayer, MappingShow, Severity, User, utcnow
@@ -48,11 +52,21 @@ from app.schemas.mapping import (
     CalibrationResult,
     CalibrationStep,
     CameraCommand,
+    CameraView,
+    FitCanvas,
+    FitResult,
     OutputOut,
     PeopleReport,
     Warp,
 )
-from app.services.calibration import CalibrationError, apply, camera_to_canvas, solve_warp
+from app.services.calibration import (
+    CalibrationError,
+    apply,
+    camera_to_canvas,
+    fit_canvas,
+    light_on_canvas,
+    solve_warp,
+)
 from app.services.mapping import now_ms, transport
 
 router = APIRouter(prefix="/mapping", tags=["mapping"])
@@ -173,6 +187,44 @@ async def clear_calibration(output_id: int, session: SessionDep, _: RequireAdmin
     _output_changed(output)
 
 
+@router.post("/shows/{show_id}/fit-canvas", response_model=FitResult,
+             dependencies=[Depends(write_rate_limit)])
+async def fit_canvas_to_light(show_id: int, payload: FitCanvas, session: SessionDep,
+                              admin: RequireAdmin) -> FitResult:
+    """Place the canvas on the camera's photo inside the projectors' light.
+
+    The largest rectangle of the canvas's shape that the calibrated
+    projectors light, so nothing of the picture falls off the building.
+    Replaces any corners or grid placed by hand.
+    """
+    show = await _load_show(session, show_id)
+    calibrated = [o for o in show.outputs
+                  if (o.calibration or {}).get("camera_id") == payload.camera_id]
+    try:
+        corners = fit_canvas([o.calibration for o in calibrated],
+                             show.canvas_width / show.canvas_height)
+    except CalibrationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    view = CameraView(camera_id=payload.camera_id, corners=corners)
+    show.camera_view = view.model_dump(mode="json")
+    sliced: list[MappingOutput] = []
+    if payload.slices:
+        for output in calibrated:
+            source = light_on_canvas(output.calibration, corners)
+            if source is not None:
+                output.source = source
+                sliced.append(output)
+    session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="canvas_fitted",
+                      message=f"{admin.username} fitted the canvas of {show.name} to the "
+                              "projectors' light"))
+    await session.commit()
+    for output in sliced:
+        await session.refresh(output)
+        _output_changed(output)
+    _touch(show_id)
+    return FitResult(camera_view=view, sliced=[o.id for o in sliced])
+
+
 @router.post("/shows/{show_id}/apply-calibration", response_model=list[ApplyResult],
              dependencies=[Depends(write_rate_limit)])
 async def apply_calibration(show_id: int, payload: ApplyCalibration, session: SessionDep,
@@ -198,7 +250,8 @@ async def apply_calibration(show_id: int, payload: ApplyCalibration, session: Se
             continue
         try:
             warp, stats = solve_warp(output.source or {}, view["corners"], calibration,
-                                     mesh=payload.mesh, output_width=output.width)
+                                     mesh=payload.mesh, output_width=output.width,
+                                     camera_mesh=view.get("mesh"))
             output.warp = Warp.model_validate(warp).model_dump(mode="json")
         except (CalibrationError, ValueError) as exc:
             results.append(ApplyResult(output_id=output.id, name=output.name, applied=False,
@@ -283,7 +336,10 @@ async def camera_command(camera_id: int, payload: CameraCommand, session: Sessio
     if not is_online(camera):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail=f"Camera {camera.name} is offline")
-    bus.publish("mapping_camera_command", {"camera_id": camera.id, "command": payload.command})
+    message = {"camera_id": camera.id, "command": payload.command}
+    if payload.command == "live":
+        message["seconds"] = payload.seconds
+    bus.publish("mapping_camera_command", message)
 
 
 # -- people tracking --------------------------------------------------------------

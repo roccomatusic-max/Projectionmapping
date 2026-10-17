@@ -18,17 +18,34 @@ you approve it on the Mapping page, and from then on it starts by itself.
 
 ## Hardware
 
-| Camera | Calibration | People |
-|---|---|---|
-| Intel RealSense D435 / D455 | yes (colour sensor) | yes, about 0.4 to 9 m |
-| Any USB webcam | yes | no |
+The agent finds the camera by itself: the first depth camera it has an SDK
+for, otherwise the first webcam that sends pictures.
+
+| Camera | Calibration | People | SDK |
+|---|---|---|---|
+| Intel RealSense D400 series (D415, D435, D455, D405…), L515, SR305 | yes | yes | `pyrealsense2` |
+| Orbbec Femto Bolt / Mega, Gemini 2 and 330 series, Astra 2 | yes | yes | `pyorbbecsdk2` |
+| Luxonis OAK-D, OAK-D Lite, OAK-D Pro, OAK-D S2, PoE models | yes | yes | `depthai` 2.x |
+| Any USB webcam, or any camera the computer lists as one | yes | no | none |
+
+A depth camera without its SDK installed usually still shows up as a
+webcam, so it can calibrate. Not supported for people: Microsoft Azure
+Kinect (discontinued; the Orbbec Femto Bolt replaces it), Kinect v1/v2 and
+Stereolabs ZED (they need their own drivers and, for the ZED, an NVIDIA
+graphics card).
+
+Honest status: every driver above is written against its maker's SDK and
+loads on Windows and Linux, but only the simulated camera (`--camera sim`)
+and synthetic pictures have been run end to end so far. The first real
+camera of each kind is still to be tried.
 
 Calibration works from much further away than depth does, so one camera
 across the street can calibrate the whole façade. For people tracking the
-camera has to be within depth range of where people stand.
+camera has to be within depth range of where people stand (about 0.4 to
+9 m, depending on the model).
 
-Use a camera you can fix in place. If it moves after the canvas corners are
-marked on its photo, mark them again.
+Use a camera you can fix in place. If it moves after calibrating, run the
+patterns again.
 
 ## Where to run it
 
@@ -37,10 +54,10 @@ On a Windows mini PC beside a projector, nothing to do: the
 camera is plugged in, already paired with that mini PC. Run it by hand only
 on another computer on the show network, such as the main server.
 
-The RealSense SDK installs with `pip install pyrealsense2` on Windows and
-Linux. On macOS there is no official package, and RealSense cameras often
-need the program run with `sudo`; if the camera is a RealSense, a Windows or
-Linux mini PC is the easier home for it. A webcam works everywhere.
+The Mini PC app has every SDK built in. By hand, install the ones you need
+(next section). RealSense and Orbbec have no official macOS packages and
+often need `sudo` there; for a depth camera, a Windows or Linux mini PC is
+the easier home. A webcam works everywhere.
 
 ## Install
 
@@ -50,7 +67,10 @@ Python 3.10 or newer.
 cd camera-agent
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/pip install pyrealsense2      # RealSense only, Windows/Linux
+# Depth cameras, only the ones you have (Windows/Linux):
+.venv/bin/pip install pyrealsense2            # Intel RealSense
+.venv/bin/pip install pyorbbecsdk2            # Orbbec
+.venv/bin/pip install "depthai>=2.28,<3"      # Luxonis OAK
 ```
 
 ## Run
@@ -66,7 +86,7 @@ Useful options:
 
 | Option | Default | |
 |---|---|---|
-| `--camera` | `auto` | `realsense`, or `webcam:0`, `webcam:1`… `auto` uses a RealSense when one is plugged in |
+| `--camera` | `auto` | `realsense`, `orbbec`, `oak`, `webcam` (the first that works), `webcam:0`, `webcam:1`…, or `sim` (a made-up building with two projectors, no hardware needed) |
 | `--min-stripe` | `4` | Finest stripe, in projector pixels. Raise it (8, 16) when the camera is far away |
 | `--settle` | `0.5` | Seconds between showing a pattern and photographing it. Raise it on a slow network |
 | `--grid` | `64` | Calibration cells across the photo |
@@ -74,25 +94,33 @@ Useful options:
 
 ## Calibrating
 
-On **Mapping → Camera**:
+**Mapping → Camera** walks through four steps:
 
-1. **Take photo.** Make sure the projectors are on with shutters open.
-2. Drag the four corners onto where the canvas corners are on the building.
-   The canvas is the flat image the content was made for, so its corners are
-   usually the corners of the façade or of the area being mapped.
-3. **Calibrate** each output. Its projector shows stripes for about half a
-   minute while every other projector in the show goes black. Keep the
-   camera still and people out of the beam.
-4. **Apply to outputs** sets each calibrated output's corner pin and mesh.
-   Masks, blends and colour are not touched. Check the grid test pattern and
-   fine-tune by hand if needed.
+1. **Camera.** Point it at the building so it sees every projector's
+   picture, and fix it in place. *Take photo* or *Live view* (a new photo
+   about every second) to aim it.
+2. **Patterns.** *Calibrate all projectors*: each projector in turn shows
+   black, white and stripe patterns for about half a minute while every
+   other projector goes black, and the photo shows the stripes as the
+   camera sees them. Keep the camera still and people out of the beam.
+3. **Correct.** When the last projector is done, the picture is placed in
+   the largest area the projectors light (keeping its shape), each
+   projector is given the part of the picture its light covers, and every
+   projector's corner pin and mesh are set so the picture lands there,
+   straight. Masks, blends and colour are not touched.
+4. **Map by hand.** The picture's outline and a grid of points (corners
+   only, 3 × 3, 5 × 5 or 7 × 7) sit on the photo. Drag them onto the
+   building: the corners where the picture's corners belong, the others
+   onto the features it should follow. Each time you let go, the projectors
+   follow. *Show grid on projectors* and *Live view* show the result on the
+   building.
 
 Calibrate at night or in low light: the stripes have to be clearly brighter
 than the wall around them.
 
 ## People
 
-With a RealSense, the agent learns the empty scene when it starts. If the
+With a depth camera, the agent learns the empty scene when it starts. If the
 scene changes (a stage is built, cars park), clear the area and press
 **Re-learn empty scene**. Pick an effect per cue in the editor under
 **Cues → People**: *Spotlight* lights the content only around people,
@@ -130,5 +158,6 @@ the computer as a new camera.
 .venv/bin/python -m pytest -q tests
 ```
 
-They decode synthetic photos of the stripe patterns and track synthetic
-depth scenes; no camera needed.
+They decode synthetic photos of the stripe patterns, track synthetic depth
+scenes, check how cameras are found, and run a whole calibration through the
+simulated camera; no camera needed.

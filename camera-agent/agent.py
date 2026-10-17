@@ -1,5 +1,7 @@
 """Camera agent: calibrates projectors and tracks people for the mapping server.
 
+It finds the camera by itself: a depth camera (Intel RealSense, Orbbec,
+Luxonis OAK) when one is plugged in, otherwise any webcam. See sources.py.
 Run it on the computer the camera is plugged into (the main server itself
 is fine):
 
@@ -28,7 +30,7 @@ import cv2
 import numpy as np
 import requests
 
-from sources import Source, open_source
+from sources import Source, open_source, sdk_status
 from vision import Decoder, PeopleTracker, pattern_sequence
 
 log = logging.getLogger("camera-agent")
@@ -37,6 +39,10 @@ HELLO_SECONDS = 3
 REPORT_SECONDS = 5
 #: Frames of the empty scene to learn before tracking.
 BACKGROUND_FRAMES = 30
+#: Live view: seconds between photos, and the photos' size and quality.
+LIVE_SECONDS = 0.8
+LIVE_WIDTH = 960
+LIVE_QUALITY = 70
 
 
 class Revoked(Exception):
@@ -120,6 +126,9 @@ class Agent:
         self.stopping = threading.Event()
         self.revoked = threading.Event()
         self.tracker = PeopleTracker() if source.has_depth and not args.no_tracking else None
+        #: Live view runs until this time (monotonic), for mapping by hand.
+        self.live_until = 0.0
+        self.live_last = 0.0
 
     # -- talking to the server ---------------------------------------------------
 
@@ -169,12 +178,27 @@ class Agent:
             "status": status, "message": message[:300],
         })
 
-    def send_snapshot(self) -> None:
-        ok, jpeg = cv2.imencode(".jpg", self.source.fresh().color, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    def send_snapshot(self, *, live: bool = False, picture: np.ndarray | None = None) -> None:
+        if picture is None:
+            picture = self.source.fresh().color if not live else self.source.read().color
+        if live and picture.shape[1] > LIVE_WIDTH:
+            scale = LIVE_WIDTH / picture.shape[1]
+            picture = cv2.resize(picture, (LIVE_WIDTH, round(picture.shape[0] * scale)),
+                                 interpolation=cv2.INTER_AREA)
+        quality = LIVE_QUALITY if live else 88
+        ok, jpeg = cv2.imencode(".jpg", picture, [cv2.IMWRITE_JPEG_QUALITY, quality])
         if ok:
             self.server.call("PUT", "/mapping/cameras/me/snapshot", data=jpeg.tobytes(),
                              headers={"Content-Type": "image/jpeg"}, timeout=30)
-            log.info("sent a photo")
+            if not live:
+                log.info("sent a photo")
+
+    def live_tick(self) -> None:
+        """While live view is on, a new photo every LIVE_SECONDS."""
+        now = time.monotonic()
+        if now < self.live_until and now - self.live_last >= LIVE_SECONDS:
+            self.live_last = now
+            self.send_snapshot(live=True)
 
     # -- calibration ---------------------------------------------------------------
 
@@ -190,16 +214,21 @@ class Agent:
             # Full white first, so auto exposure settles on the projector's
             # brightness before it is held still for the stripes.
             self.step(output_id, sequence[1], 0, total, message="Settling exposure")
+            self.source.show_pattern(output_id, sequence[1], width, height)
             time.sleep(args.exposure_settle)
             self.source.lock_exposure(True)
             shape = None
             for index, pattern in enumerate(sequence):
                 self.step(output_id, pattern, index, total, message="Reading patterns")
+                self.source.show_pattern(output_id, pattern, width, height)
                 time.sleep(args.settle)
                 pictures = [self.source.fresh().color.astype(np.float32) for _ in range(args.average)]
                 picture = np.mean(pictures, axis=0).astype(np.float32)
                 shape = picture.shape
                 decoder.add(pattern, picture)
+                if index % 4 == 3:  # let the editor watch the stripes go by
+                    with contextlib.suppress(requests.RequestException):
+                        self.send_snapshot(live=True, picture=np.clip(picture, 0, 255).astype(np.uint8))
             self.step(output_id, None, total, total, message="Decoding")
             height_px, width_px = shape[:2]
             cols = args.grid
@@ -223,6 +252,7 @@ class Agent:
             with contextlib.suppress(requests.RequestException):
                 self.step(output_id, None, total, total, status="failed", message=str(exc))
         finally:
+            self.source.show_pattern(None, None)
             self.source.lock_exposure(False)
             self.activity = "tracking" if self.tracker else "idle"
 
@@ -273,12 +303,23 @@ class Agent:
             try:
                 if job and job["type"] == "mapping_calibrate":
                     self.calibrate(job["payload"])
+                    if self.jobs.empty():
+                        # The projectors are back on the show: a photo of that,
+                        # not of the last stripes.
+                        self.stopping.wait(1.0)
+                        self.send_snapshot()
                 elif job and job["payload"].get("command") == "snapshot":
                     self.send_snapshot()
                 elif job and job["payload"].get("command") == "background":
                     self.learn_background()
+                elif job and job["payload"].get("command") == "live":
+                    self.live_until = time.monotonic() + float(job["payload"].get("seconds") or 90)
+                    self.live_last = 0.0
+                elif job and job["payload"].get("command") == "stop_live":
+                    self.live_until = 0.0
                 elif self.tracker:
                     had_people = self.track_once(had_people)
+                self.live_tick()
             except Revoked:
                 raise
             except requests.RequestException as exc:
@@ -292,7 +333,8 @@ def build_parser() -> argparse.ArgumentParser:
     """The agent's options; the Mini PC app (minipc/) runs it with the defaults."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server", required=True, help="the main server, e.g. http://192.168.1.10:8765")
-    parser.add_argument("--camera", default="auto", help="auto, realsense, or webcam:N (default auto)")
+    parser.add_argument("--camera", default="auto",
+                        help="auto, realsense, orbbec, oak, webcam, webcam:N or sim (default auto)")
     parser.add_argument("--name", default=None, help="how the camera is listed (default Camera XXXX)")
     parser.add_argument("--identity", default=str(Path.home() / ".mapping-camera.json"),
                         help="where this camera's pairing identity is kept")
@@ -320,6 +362,7 @@ def main() -> None:
 
     identity = load_identity(Path(args.identity).expanduser(), args.name)
     server = Server(args.server)
+    log.info("depth camera support: %s", ", ".join(f"{k} {v}" for k, v in sdk_status().items()))
     source = open_source(args.camera)
     log.info("camera: %s%s", source.name, " with depth" if source.has_depth else "")
     try:
