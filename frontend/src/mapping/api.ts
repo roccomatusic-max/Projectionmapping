@@ -1,5 +1,6 @@
 import { ApiError, getToken, request } from '@/api/client'
 import type {
+  ApplyResult,
   Cue,
   MediaAsset,
   Output,
@@ -19,7 +20,7 @@ export const mappingApi = {
   getShow: (id: number) => request<Show>(`/mapping/shows/${id}`),
   createShow: (body: { name: string; canvas_width: number; canvas_height: number }) =>
     request<Show>('/mapping/shows', { method: 'POST', body }),
-  updateShow: (id: number, body: Partial<ShowSummary>) =>
+  updateShow: (id: number, body: Partial<Omit<Show, 'outputs' | 'cues'>>) =>
     request<Show>(`/mapping/shows/${id}`, { method: 'PATCH', body }),
   deleteShow: (id: number) => request<void>(`/mapping/shows/${id}`, { method: 'DELETE' }),
 
@@ -45,6 +46,21 @@ export const mappingApi = {
   command: (action: TransportAction, extra: { show_id?: number; cue?: number } = {}) =>
     request<TransportState>('/mapping/transport', { method: 'POST', body: { action, ...extra } }),
   clock: () => request<{ now_ms: number; monotonic: number }>('/mapping/clock'),
+
+  calibrate: (outputId: number, cameraId: number) =>
+    request<void>(`/mapping/outputs/${outputId}/calibrate`, { method: 'POST', body: { camera_id: cameraId } }),
+  clearCalibration: (outputId: number) =>
+    request<void>(`/mapping/outputs/${outputId}/calibration`, { method: 'DELETE' }),
+  applyCalibration: (showId: number, mesh: number) =>
+    request<ApplyResult[]>(`/mapping/shows/${showId}/apply-calibration`, { method: 'POST', body: { mesh } }),
+  cameraCommand: (cameraId: number, command: 'snapshot' | 'background') =>
+    request<void>(`/mapping/cameras/${cameraId}/command`, { method: 'POST', body: { command } }),
+}
+
+/** The camera's latest photo; ``version`` busts the browser cache. */
+export function snapshotUrl(cameraId: number, version: number | string): string {
+  const token = getToken() ?? ''
+  return `/api/mapping/cameras/${cameraId}/snapshot?token=${encodeURIComponent(token)}&v=${version}`
 }
 
 /** URL a <video> or <img> can load directly; it cannot send a header. */

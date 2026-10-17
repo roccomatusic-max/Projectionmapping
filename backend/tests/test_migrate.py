@@ -15,7 +15,7 @@ from app.db.models import Base
 
 MAPPING_TABLES = {"media_assets", "mapping_shows", "mapping_outputs", "mapping_cues",
                   "mapping_players"}
-HEAD_REVISION = "0c6c70c928f6"
+HEAD_REVISION = "5d2e8a41c7b3"
 
 
 def test_classification():

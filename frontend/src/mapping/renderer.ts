@@ -6,10 +6,28 @@
  * outgoing one during a crossfade), then applies colour, edge blend and
  * masks. Test patterns are drawn in canvas space so they line up across
  * projectors, which is what makes them useful for alignment.
+ *
+ * Camera calibration patterns are the exception: a second, tiny program
+ * draws them straight in the projector's pixels, ignoring the warp, since
+ * what the camera decodes is which projector pixel lit which spot.
  */
 
 import { buildDenseMesh } from './geometry'
-import type { Fit, Mask, Output, TestPattern } from './types'
+import type { Fit, Interaction, Mask, Output, PatternSpec, TestPattern } from './types'
+
+/** A tracked person as the shader sees them, in canvas fractions. */
+export interface Spot {
+  x: number
+  y: number
+  /** Radius in canvas heights. */
+  radius: number
+  /** 0..1, fades people in and out. */
+  strength: number
+}
+
+export const MAX_SPOTS = 8
+
+const INTERACTION_CODE: Record<Interaction, number> = { none: 0, spotlight: 1, ripple: 2 }
 
 export interface TextureSource {
   element: HTMLVideoElement | HTMLImageElement
@@ -70,6 +88,10 @@ uniform float uBright;
 uniform float uGamma;
 uniform vec3 uGain;
 uniform int uBlack;
+uniform int uInteract;     // 0 none, 1 spotlight, 2 ripple
+uniform int uSpots;
+uniform vec4 uSpot[8];     // x, y in canvas fractions; radius in canvas heights; strength
+uniform float uTime;
 
 vec2 mediaUv(vec2 c, vec2 size, int fit, out float inside) {
   vec2 m;
@@ -129,10 +151,28 @@ vec3 gridPattern(vec2 c) {
   return col;
 }
 
+// Distance from a spot, in canvas heights, so circles stay round.
+vec2 spotDelta(vec2 c, vec4 spot) {
+  return (c - spot.xy) * vec2(uCanvas.x / uCanvas.y, 1.0);
+}
+
 void main() {
   if (uBlack == 1) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
   vec2 c = uSource.xy + vUv * uSource.zw;
   vec3 col = vec3(0.0);
+
+  if (uPattern == 0 && uInteract == 2) {
+    // Rings spreading out from each person bend the image they pass.
+    for (int i = 0; i < 8; i++) {
+      if (i >= uSpots) break;
+      vec2 d = spotDelta(c, uSpot[i]);
+      float r = length(d);
+      if (r < 1e-4) continue;
+      float reach = uSpot[i].z * 3.0;
+      float wave = sin(r * 60.0 - uTime * 5.0) * exp(-r / reach) * uSpot[i].w;
+      c += (d / r) * wave * 0.01 * vec2(uCanvas.y / uCanvas.x, 1.0);
+    }
+  }
 
   if (uPattern == 0) {
     float inA = 0.0;
@@ -148,6 +188,17 @@ void main() {
       b = texture(uTexB, m).rgb * inB;
     }
     col = a * uMix + b * (1.0 - uMix);
+    if (uInteract == 1) {
+      // Dim everywhere but around people, as if they carried a lamp.
+      float light = 0.15;
+      for (int i = 0; i < 8; i++) {
+        if (i >= uSpots) break;
+        float r = length(spotDelta(c, uSpot[i]));
+        float lit = 1.0 - smoothstep(uSpot[i].z * 0.45, uSpot[i].z, r);
+        light = max(light, mix(0.15, 1.0, lit * uSpot[i].w));
+      }
+      col *= light;
+    }
   } else if (uPattern == 1) {
     col = gridPattern(c);
   } else if (uPattern == 2) {
@@ -175,6 +226,43 @@ void main() {
 
   if (uHasMask == 1) col *= texture(uMask, vOut).r;
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`
+
+/** Full-screen triangle; no buffers needed. */
+const PATTERN_VERTEX = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`
+
+/**
+ * Black, white, or one bit of the Gray code of each projector column or
+ * row. Gray code because neighbouring columns differ in one bit only, so a
+ * camera pixel straddling two stripes is wrong by one column at most.
+ */
+const PATTERN_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+uniform vec2 uViewport;
+uniform vec2 uRaster;      // the output's configured resolution
+uniform int uKind;         // 0 black, 1 white, 2 gray code
+uniform int uAxis;         // 0 columns, 1 rows
+uniform int uBit;
+uniform int uInverse;
+out vec4 outColor;
+void main() {
+  float v = 0.0;
+  if (uKind == 1) {
+    v = 1.0;
+  } else if (uKind == 2) {
+    vec2 f = vec2(gl_FragCoord.x / uViewport.x, 1.0 - gl_FragCoord.y / uViewport.y);
+    float coord = uAxis == 0 ? f.x * uRaster.x : f.y * uRaster.y;
+    uint p = uint(clamp(floor(coord), 0.0, 65535.0));
+    uint g = p ^ (p >> 1u);
+    v = float((g >> uint(uBit)) & 1u);
+    if (uInverse == 1) v = 1.0 - v;
+  }
+  outColor = vec4(vec3(v), 1.0);
 }`
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -251,6 +339,8 @@ function drawIdOverlay(canvas: HTMLCanvasElement, output: Output) {
 export class OutputRenderer {
   private gl: WebGL2RenderingContext
   private program!: WebGLProgram
+  private patternProgram!: WebGLProgram
+  private patternVao!: WebGLVertexArrayObject
   private vao!: WebGLVertexArrayObject
   private posBuffer!: WebGLBuffer
   private uvBuffer!: WebGLBuffer
@@ -293,18 +383,24 @@ export class OutputRenderer {
     if (this.output) this.setOutput(this.output, ...this.canvasSize)
   }
 
-  private init() {
+  private link(vertex: string, fragment: string, attributes: string[] = []) {
     const gl = this.gl
     const program = gl.createProgram()!
-    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX))
-    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT))
-    gl.bindAttribLocation(program, 0, 'aPos')
-    gl.bindAttribLocation(program, 1, 'aUv')
+    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex))
+    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment))
+    attributes.forEach((name, index) => gl.bindAttribLocation(program, index, name))
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
       throw new Error(`Shader failed to link: ${gl.getProgramInfoLog(program)}`)
     }
-    this.program = program
+    return program
+  }
+
+  private init() {
+    const gl = this.gl
+    this.program = this.link(VERTEX, FRAGMENT, ['aPos', 'aUv'])
+    this.patternProgram = this.link(PATTERN_VERTEX, PATTERN_FRAGMENT)
+    this.patternVao = gl.createVertexArray()!
     this.uniforms.clear()
 
     this.vao = gl.createVertexArray()!
@@ -333,9 +429,10 @@ export class OutputRenderer {
     }
   }
 
-  private u(name: string) {
-    if (!this.uniforms.has(name)) this.uniforms.set(name, this.gl.getUniformLocation(this.program, name))
-    return this.uniforms.get(name)!
+  private u(name: string, program = this.program) {
+    const key = program === this.program ? name : `pattern:${name}`
+    if (!this.uniforms.has(key)) this.uniforms.set(key, this.gl.getUniformLocation(program, name))
+    return this.uniforms.get(key)!
   }
 
   setOutput(output: Output, canvasWidth: number, canvasHeight: number) {
@@ -404,7 +501,36 @@ export class OutputRenderer {
     return true
   }
 
-  render({ mix = 1, blackout = false }: { mix?: number; blackout?: boolean } = {}) {
+  /** A calibration frame in the projector's own pixels; null is black. */
+  renderPattern(pattern: PatternSpec | null) {
+    const output = this.output
+    if (this.lost) return
+    const gl = this.gl
+    const { canvas } = this
+    gl.viewport(0, 0, canvas.width, canvas.height)
+    gl.clearColor(0, 0, 0, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    if (!pattern || pattern.kind === 'black') return
+    const p = this.patternProgram
+    gl.useProgram(p)
+    gl.uniform2f(this.u('uViewport', p), canvas.width, canvas.height)
+    gl.uniform2f(this.u('uRaster', p), output?.width ?? canvas.width, output?.height ?? canvas.height)
+    gl.uniform1i(this.u('uKind', p), pattern.kind === 'white' ? 1 : 2)
+    gl.uniform1i(this.u('uAxis', p), pattern.axis === 'y' ? 1 : 0)
+    gl.uniform1i(this.u('uBit', p), pattern.bit)
+    gl.uniform1i(this.u('uInverse', p), pattern.inverse ? 1 : 0)
+    gl.bindVertexArray(this.patternVao)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.bindVertexArray(null)
+  }
+
+  render({
+    mix = 1,
+    blackout = false,
+    interaction = 'none',
+    spots = [],
+    time = 0,
+  }: { mix?: number; blackout?: boolean; interaction?: Interaction; spots?: Spot[]; time?: number } = {}) {
     const output = this.output
     if (this.lost || !output) return
     const gl = this.gl
@@ -458,6 +584,14 @@ export class OutputRenderer {
     // with the show stopped.
     gl.uniform1i(this.u('uBlack'), blackout && output.test_pattern === 'none' ? 1 : 0)
 
+    const shown = spots.slice(0, MAX_SPOTS)
+    const packed = new Float32Array(MAX_SPOTS * 4)
+    shown.forEach((spot, i) => packed.set([spot.x, spot.y, spot.radius, spot.strength], i * 4))
+    gl.uniform1i(this.u('uInteract'), INTERACTION_CODE[interaction] ?? 0)
+    gl.uniform1i(this.u('uSpots'), shown.length)
+    gl.uniform4fv(this.u('uSpot'), packed)
+    gl.uniform1f(this.u('uTime'), time)
+
     gl.bindVertexArray(this.vao)
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0)
     gl.bindVertexArray(null)
@@ -472,6 +606,8 @@ export class OutputRenderer {
     gl.deleteBuffer(this.uvBuffer)
     gl.deleteBuffer(this.indexBuffer)
     gl.deleteVertexArray(this.vao)
+    gl.deleteVertexArray(this.patternVao)
     gl.deleteProgram(this.program)
+    gl.deleteProgram(this.patternProgram)
   }
 }

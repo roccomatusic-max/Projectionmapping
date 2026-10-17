@@ -4,6 +4,7 @@ import type { Projector } from '@/api/types'
 import { ConfirmDialog, EmptyState, ErrorBanner, Panel, Spinner } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
+import { CameraPanel } from '@/mapping/editor/CameraPanel'
 import { CueList, CanvasOverview, MediaLibrary, outputColor } from '@/mapping/editor/panels'
 import { NumberField } from '@/mapping/editor/controls'
 import { OutputInspector } from '@/mapping/editor/OutputInspector'
@@ -18,7 +19,10 @@ const SHOW_KEY = 'pc.mapping.show'
 /** Geometry is saved this long after the last change while dragging. */
 const SAVE_DELAY_MS = 250
 
-type Section = 'show' | 'players' | 'remote'
+type Section = 'show' | 'camera' | 'players' | 'remote'
+
+/** Messages the camera tab follows: progress, new photos, tracked people. */
+const CAMERA_MESSAGES = new Set(['mapping_calib_pattern', 'mapping_camera', 'mapping_people'])
 
 export default function Mapping({ session }: { session: Session }) {
   const canEdit = session.role === 'admin'
@@ -37,8 +41,10 @@ export default function Mapping({ session }: { session: Session }) {
   const [playersKey, setPlayersKey] = useState(0)
   const [confirm, setConfirm] = useState<{ title: string; body: string; action: () => void } | null>(null)
 
+  const cameraFeed = useRef(new EventTarget()).current
   const runtime = useShowRuntime(showId, (message) => {
     if (message.type === 'mapping_player') setPlayersKey((n) => n + 1)
+    if (CAMERA_MESSAGES.has(message.type)) cameraFeed.dispatchEvent(new CustomEvent('message', { detail: message }))
   })
   const { show, setShow, media, reloadMedia, transport, clock, playback, link } = runtime
 
@@ -278,7 +284,7 @@ export default function Mapping({ session }: { session: Session }) {
             live link {link}
           </span>
           <div className="inline-flex gap-0.5 rounded-md bg-panel-850 p-0.5 ring-1 ring-white/5">
-            {(['remote', 'show', 'players'] as Section[]).map((s) => (
+            {(['remote', 'show', 'camera', 'players'] as Section[]).map((s) => (
               <button
                 key={s}
                 onClick={() => setSection(s)}
@@ -335,6 +341,13 @@ export default function Mapping({ session }: { session: Session }) {
           {section === 'remote' && (
             <Panel title="Cues">
               <CueList show={show} media={media} transport={transport} canEdit={false} canRun={canRun} compact {...cueOps} />
+            </Panel>
+          )}
+
+          {section === 'camera' && (
+            <Panel title="Camera" description="Line the show up with the camera, let it calibrate each projector, and see who it tracks.">
+              <CameraPanel show={show} outputs={outputs} canEdit={canEdit} feed={cameraFeed}
+                refreshKey={playersKey} onError={setError} onShowChanged={() => void runtime.refresh()} />
             </Panel>
           )}
 

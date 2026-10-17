@@ -470,6 +470,9 @@ class MappingShow(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     canvas_width: Mapped[int] = mapped_column(Integer, default=3840)
     canvas_height: Mapped[int] = mapped_column(Integer, default=2160)
+    #: Where the canvas sits in the calibration camera's view:
+    #: {"camera_id": n, "corners": [[x, y] * 4]} in camera-image fractions.
+    camera_view: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -518,6 +521,9 @@ class MappingOutput(Base):
     #: "none" | "grid" | "id" | "white" | "black" | "red" | "green" | "blue"
     test_pattern: Mapped[str] = mapped_column(String(16), default="none")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: Last camera calibration: which camera, when, and the decoded map from
+    #: camera image to projector pixels. See services/calibration.py.
+    calibration: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
     show: Mapped[MappingShow] = relationship(back_populates="outputs")
 
@@ -537,6 +543,10 @@ class MappingCue(Base):
     fit: Mapped[str] = mapped_column(String(16), default="fill")
     loop: Mapped[bool] = mapped_column(Boolean, default=True)
     fade_seconds: Mapped[float] = mapped_column(Float, default=1.0)
+    #: How people tracked by a depth camera affect this cue:
+    #: "none" | "spotlight" (lit around them) | "ripple" (rings spread from them)
+    interaction: Mapped[str] = mapped_column(String(16), default="none",
+                                             server_default="none")
     #: Seconds a still holds, or a non-looping video runs, before auto-follow.
     #: None means hold until the next GO.
     follow_seconds: Mapped[float | None] = mapped_column(Float)
@@ -561,6 +571,8 @@ class MappingPlayer(Base):
     #: fast hash is sufficient; it is checked on every poll.
     secret_hash: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
+    #: "player" drives a projector; "camera" runs the camera agent.
+    kind: Mapped[str] = mapped_column(String(16), default="player", server_default="player")
     code: Mapped[str] = mapped_column(String(8))
     approved: Mapped[bool] = mapped_column(Boolean, default=False)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

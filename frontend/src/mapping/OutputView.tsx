@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ServerClock } from './live'
+import type { PeopleTracker } from './people'
 import type { Frame, Playback } from './playback'
 import { OutputRenderer } from './renderer'
-import type { Output } from './types'
+import type { Interaction, Output, PatternSpec } from './types'
+
+/** While set, the output shows camera calibration frames instead of the show. */
+export interface CalibrationFrame {
+  /** null: stay black while another output of the show is being read. */
+  pattern: PatternSpec | null
+}
 
 export interface FrameStats {
   fps: number
@@ -25,6 +32,9 @@ export function OutputView({
   pixelSize,
   className,
   onStats,
+  calibration = null,
+  interaction = 'none',
+  people,
 }: {
   output: Output
   canvasWidth: number
@@ -34,11 +44,14 @@ export function OutputView({
   pixelSize?: [number, number]
   className?: string
   onStats?: (stats: FrameStats) => void
+  calibration?: CalibrationFrame | null
+  interaction?: Interaction
+  people?: PeopleTracker
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OutputRenderer | null>(null)
-  const latest = useRef({ output, canvasWidth, canvasHeight, onStats })
-  latest.current = { output, canvasWidth, canvasHeight, onStats }
+  const latest = useRef({ output, canvasWidth, canvasHeight, onStats, calibration, interaction, people })
+  latest.current = { output, canvasWidth, canvasHeight, onStats, calibration, interaction, people }
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -67,13 +80,24 @@ export function OutputView({
           canvas.height = h
         }
       }
-      const { output: current, canvasWidth: cw, canvasHeight: ch } = latest.current
+      const { output: current, canvasWidth: cw, canvasHeight: ch, calibration: calib } = latest.current
       renderer.setOutput(current, cw, ch)
       const frame = playback.frame(clock.now())
       lastFrame = frame
-      renderer.setSource('a', frame.a)
-      renderer.setSource('b', frame.b)
-      renderer.render({ mix: frame.mix, blackout: frame.blackout })
+      if (calib) {
+        renderer.renderPattern(calib.pattern)
+      } else {
+        renderer.setSource('a', frame.a)
+        renderer.setSource('b', frame.b)
+        const mode = latest.current.interaction
+        renderer.render({
+          mix: frame.mix,
+          blackout: frame.blackout,
+          interaction: mode,
+          spots: mode !== 'none' ? latest.current.people?.spots() : undefined,
+          time: performance.now() / 1000,
+        })
+      }
       frames++
       const now = performance.now()
       if (now - since >= 1000) {

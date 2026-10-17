@@ -54,6 +54,7 @@ from app.schemas.mapping import (
     TransportCommand,
     TransportState,
 )
+from app.services.calibration import calibration_summary
 from app.services.mapping import TransportError, now_ms, transport
 
 log = logging.getLogger(__name__)
@@ -259,6 +260,7 @@ def _output_out(output: MappingOutput) -> OutputOut:
         source=output.source or {}, warp=output.warp or {}, masks=output.masks or [],
         blend=output.blend or {}, color=output.color or {},
         test_pattern=output.test_pattern, enabled=output.enabled,
+        calibration=calibration_summary(output.calibration),
     )
 
 
@@ -267,6 +269,7 @@ def _show_out(show: MappingShow) -> ShowOut:
         id=show.id, name=show.name, description=show.description,
         canvas_width=show.canvas_width, canvas_height=show.canvas_height,
         output_count=len(show.outputs), cue_count=len(show.cues), updated_at=show.updated_at,
+        camera_view=show.camera_view or None,
         outputs=[_output_out(o) for o in show.outputs],
         cues=[CueOut.model_validate(c) for c in show.cues],
     )
@@ -322,7 +325,9 @@ async def get_show(show_id: int, session: SessionDep, _: RequireViewer) -> ShowO
 async def update_show(show_id: int, payload: ShowUpdate, session: SessionDep,
                       _: RequireAdmin) -> ShowOut:
     show = await _load_show(session, show_id)
-    changes = payload.model_dump(exclude_unset=True)
+    changes = payload.model_dump(mode="json", exclude_unset=True)
+    if "camera_view" in changes:
+        changes["camera_view"] = changes["camera_view"] or {}
     if "name" in changes and changes["name"] != show.name and (await session.execute(
         select(MappingShow.id).where(MappingShow.name == changes["name"])
     )).first():
@@ -393,7 +398,7 @@ async def update_output(output_id: int, payload: OutputUpdate, session: SessionD
     await session.commit()
     await session.refresh(output)
     out = _output_out(output)
-    _touch(output.show_id, kind="mapping_output", payload={"output": out.model_dump()})
+    _touch(output.show_id, kind="mapping_output", payload={"output": out.model_dump(mode="json")})
     return out
 
 

@@ -169,13 +169,25 @@ class OutputUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class CalibrationSummary(BaseModel):
+    """What the editor needs to know about an output's last calibration."""
+    camera_id: int
+    captured_at: datetime
+    #: Share of the camera grid where this projector's light was decoded.
+    coverage: float
+
+
 class OutputOut(OutputBase):
     id: int
     show_id: int
     position: int
+    calibration: CalibrationSummary | None = None
 
 
 # -- cues ----------------------------------------------------------------------
+
+
+Interaction = Literal["none", "spotlight", "ripple"]
 
 
 class CueBase(BaseModel):
@@ -184,6 +196,8 @@ class CueBase(BaseModel):
     fit: Literal["fill", "fit", "stretch"] = "fill"
     loop: bool = True
     fade_seconds: float = Field(default=1.0, ge=0, le=60)
+    #: How people tracked by a depth camera affect this cue.
+    interaction: Interaction = "none"
     follow_seconds: float | None = Field(default=None, gt=0, le=86400)
 
 
@@ -198,6 +212,7 @@ class CueUpdate(BaseModel):
     loop: bool | None = None
     fade_seconds: float | None = Field(default=None, ge=0, le=60)
     follow_seconds: float | None = Field(default=None, gt=0, le=86400)
+    interaction: Interaction | None = None
 
 
 class CueOut(CueBase):
@@ -221,11 +236,30 @@ class ShowCreate(BaseModel):
     canvas_height: int = Field(default=2160, ge=16, le=32768)
 
 
+class CameraView(BaseModel):
+    """Where the show canvas sits in a camera's picture of the building."""
+    camera_id: int
+    #: Canvas corners TL, TR, BR, BL, in fractions of the camera image.
+    corners: list[Point]
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point]) -> list[Point]:
+        if len(corners) != 4:
+            raise ValueError("the camera view needs exactly four corners (TL, TR, BR, BL)")
+        for x, y in corners:
+            if not (-1 <= x <= 2 and -1 <= y <= 2):
+                raise ValueError("camera view corners must be within the camera image's reach")
+        return corners
+
+
 class ShowUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = None
     canvas_width: int | None = Field(default=None, ge=16, le=32768)
     canvas_height: int | None = Field(default=None, ge=16, le=32768)
+    #: null clears it.
+    camera_view: CameraView | None = None
 
 
 class ShowSummary(BaseModel):
@@ -241,6 +275,7 @@ class ShowSummary(BaseModel):
 
 
 class ShowOut(ShowSummary):
+    camera_view: CameraView | None = None
     outputs: list[OutputOut]
     cues: list[CueOut]
 
@@ -263,6 +298,7 @@ class TransportCue(BaseModel):
     fit: str
     loop: bool
     fade_seconds: float
+    interaction: Interaction = "none"
     #: Server epoch milliseconds at which media time zero was (or will be).
     started_at_ms: float
 
@@ -289,6 +325,8 @@ class PlayerHello(BaseModel):
     device_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     secret: str = Field(min_length=32, max_length=128)
     name: str = Field(default="Player", min_length=1, max_length=128)
+    #: "camera" for the camera agent (camera-agent/); fixed at first hello.
+    kind: Literal["player", "camera"] = "player"
 
 
 class PlayerHelloResponse(BaseModel):
@@ -303,6 +341,7 @@ class PlayerHelloResponse(BaseModel):
 class PlayerOut(BaseModel):
     id: int
     name: str
+    kind: Literal["player", "camera"] = "player"
     code: str
     approved: bool
     output_id: int | None
@@ -327,6 +366,12 @@ class PlayerReport(BaseModel):
     cache: str | None = Field(default=None, max_length=16)
     cached_bytes: int | None = None
     cue: str | None = Field(default=None, max_length=160)
+    # Cameras
+    camera: str | None = Field(default=None, max_length=120)
+    depth: bool | None = None
+    people: int | None = None
+    #: What the camera is doing: "idle", "calibrating", "tracking".
+    activity: str | None = Field(default=None, max_length=32)
 
 
 class PlayerAssignment(BaseModel):
@@ -334,3 +379,94 @@ class PlayerAssignment(BaseModel):
     name: str
     output_id: int | None
     show_id: int | None
+
+
+# -- cameras -------------------------------------------------------------------
+
+
+class CalibrateRequest(BaseModel):
+    camera_id: int
+
+
+class PatternSpec(BaseModel):
+    """One structured-light frame, drawn in the projector's own pixels.
+
+    ``gray`` draws bit ``bit`` of the Gray code of the pixel's column
+    (``axis`` x) or row (``axis`` y), out of ``width``/``height`` of the
+    output's configured resolution.
+    """
+    kind: Literal["black", "white", "gray"]
+    axis: Literal["x", "y"] = "x"
+    bit: int = Field(default=0, ge=0, le=15)
+    inverse: bool = False
+
+
+class CalibrationStep(BaseModel):
+    output_id: int
+    #: None ends the sequence: every output goes back to the show.
+    pattern: PatternSpec | None = None
+    step: int = Field(default=0, ge=0)
+    steps: int = Field(default=0, ge=0)
+    status: Literal["running", "done", "failed"] = "running"
+    message: str = Field(default="", max_length=300)
+
+
+class CalibrationResult(BaseModel):
+    """The decoded map from the camera's picture to one projector's pixels.
+
+    A grid over the camera image, row-major, cell centres; each point is the
+    projector position (output fractions) seen in that cell, or null where
+    this projector's light was not found.
+    """
+    camera_width: int = Field(ge=16, le=16384)
+    camera_height: int = Field(ge=16, le=16384)
+    cols: int = Field(ge=2, le=200)
+    rows: int = Field(ge=2, le=200)
+    points: list[Point | None]
+
+    @model_validator(mode="after")
+    def _shape(self) -> CalibrationResult:
+        if len(self.points) != self.cols * self.rows:
+            raise ValueError(f"{len(self.points)} points for a {self.cols}×{self.rows} grid")
+        for point in self.points:
+            if point is not None and not all(-0.5 <= v <= 1.5 for v in point):
+                raise ValueError("decoded projector positions must be near the output")
+        return self
+
+
+class ApplyCalibration(BaseModel):
+    #: Mesh control grid per side; denser follows a curved wall more closely.
+    mesh: int = Field(default=9, ge=2, le=17)
+    #: Restrict to these outputs; all calibrated outputs when omitted.
+    output_ids: list[int] | None = None
+
+
+class ApplyResult(BaseModel):
+    output_id: int
+    name: str
+    applied: bool
+    reason: str = ""
+    #: Share of mesh points that came from decoded light rather than the fit.
+    measured: float = 0.0
+    #: How far the decoded points sit from one flat-wall fit, in output pixels.
+    residual_px: float = 0.0
+
+
+class CameraCommand(BaseModel):
+    #: "snapshot": send a fresh photo; "background": re-learn the empty scene.
+    command: Literal["snapshot", "background"]
+
+
+class TrackedPerson(BaseModel):
+    id: int = Field(ge=0)
+    #: Position in the camera image, fractions.
+    x: float = Field(ge=-0.5, le=1.5)
+    y: float = Field(ge=-0.5, le=1.5)
+    #: Distance from the camera in metres, when the camera measures depth.
+    z: float | None = Field(default=None, ge=0, le=100)
+    #: Apparent size, fraction of the image width.
+    size: float = Field(default=0.05, ge=0, le=2)
+
+
+class PeopleReport(BaseModel):
+    people: list[TrackedPerson] = Field(default_factory=list, max_length=16)

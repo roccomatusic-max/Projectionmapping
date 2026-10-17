@@ -2,9 +2,13 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { withDefaults } from './geometry'
 import { useLocalChannel } from './live'
-import { type FrameStats, OutputView } from './OutputView'
-import type { Show } from './types'
+import { type CalibrationFrame, type FrameStats, OutputView } from './OutputView'
+import { PeopleTracker } from './people'
+import type { CalibrationStepMessage, PeopleMessage, Show } from './types'
 import { useShowRuntime } from './useShowRuntime'
+
+/** A calibration that stops sending frames (camera gone) ends after this. */
+const CALIBRATION_WATCHDOG_MS = 15000
 
 const STATUS_LABEL = {
   playing: 'Playing',
@@ -40,10 +44,31 @@ export function OutputScreen({
   onStats?: (stats: FrameStats & { width: number; height: number; cue: string | null }) => void
   onShow?: (show: Show) => void
 }) {
+  const people = useRef<PeopleTracker>()
+  if (!people.current) people.current = new PeopleTracker(showId)
+  const [calibration, setCalibration] = useState<CalibrationFrame | null>(null)
+  const watchdog = useRef<number>()
+
+  const onCalibrationStep = (step: CalibrationStepMessage) => {
+    if (step.show_id !== showId) return
+    window.clearTimeout(watchdog.current)
+    if (step.status !== 'running' || !step.pattern) {
+      setCalibration(null)
+      return
+    }
+    // The output being read shows the pattern; the rest of the show goes
+    // dark so their light does not land in the camera's picture.
+    setCalibration({ pattern: step.output_id === outputId ? step.pattern : null })
+    watchdog.current = window.setTimeout(() => setCalibration(null), CALIBRATION_WATCHDOG_MS)
+  }
+  useEffect(() => () => window.clearTimeout(watchdog.current), [])
+
   const runtime = useShowRuntime(Number.isFinite(showId) ? showId : null, (message) => {
     const forPlayer = playerId != null && message.payload.player_id === playerId
     if (message.type === 'mapping_identify' && (forPlayer || message.payload.output_id === outputId)) flashIdentify()
     if (message.type === 'mapping_player' && forPlayer) window.dispatchEvent(new CustomEvent('pc:player-changed'))
+    if (message.type === 'mapping_calib_pattern') onCalibrationStep(message.payload as unknown as CalibrationStepMessage)
+    if (message.type === 'mapping_people') people.current!.update(message.payload as unknown as PeopleMessage)
   })
   const { show, setShow, transport, link, clock, playback, error } = runtime
   const [hud, setHud] = useState(playerId == null)
@@ -109,8 +134,10 @@ export function OutputScreen({
     document.title = output ? `${output.name} · Output` : 'Output'
   }, [output])
 
-  // Hide the cursor over the image once the overlay is away.
-  const cursor = hud ? 'default' : 'none'
+  // Hide the cursor over the image once the overlay is away. During a
+  // calibration nothing but the pattern may be on screen.
+  const showHud = hud && !calibration
+  const cursor = showHud ? 'default' : 'none'
 
   if (error) return <Message text={error} />
   if (!show) return <Message text="Loading show…" />
@@ -130,8 +157,11 @@ export function OutputScreen({
         pixelSize={size}
         className="block h-full w-full"
         onStats={handleStats}
+        calibration={calibration}
+        interaction={transport?.current?.interaction ?? 'none'}
+        people={people.current}
       />
-      {hud && (
+      {showHud && (
         <div className="pointer-events-none absolute left-4 top-4 space-y-1 rounded-lg bg-black/70 px-4 py-3 font-mono text-xs text-slate-200 ring-1 ring-white/10">
           <p className="text-sm font-semibold text-white">
             {output.name} <span className="font-normal text-slate-400">· {show.name}</span>

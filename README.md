@@ -171,6 +171,7 @@ frontend/src/
   api/                Typed API client
 deploy/               Dockerfile (builds SPA + API into one image)
 desktop/              PyInstaller spec and build scripts for the desktop app
+camera-agent/         Camera program: projector calibration and people tracking
 .github/workflows/    CI: tests, lint, typecheck, image build and smoke test
 docs/                 Protocol research, architecture, deployment, validation,
                       safety, troubleshooting, integrations
@@ -190,7 +191,7 @@ docs/                 Protocol research, architecture, deployment, validation,
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Reading outcomes, connection problems, missing telemetry |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | REST, WebSocket, MQTT, Home Assistant, enclosure sensors, service tokens |
 | [DESKTOP.md](docs/DESKTOP.md) | Running it as a desktop application instead of a server |
-| [MAPPING.md](docs/MAPPING.md) | Mapping media: shows, warping, blending, players beside the projectors |
+| [MAPPING.md](docs/MAPPING.md) | Mapping media: shows, warping, blending, players beside the projectors, camera calibration and people tracking |
 
 ---
 

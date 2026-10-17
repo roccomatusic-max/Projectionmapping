@@ -1,0 +1,8 @@
+# Camera agent. Python 3.10 or newer.
+requests>=2.31
+websocket-client>=1.7
+numpy>=1.26
+opencv-python-headless>=4.9
+# For an Intel RealSense (colour and depth), also: pip install pyrealsense2
+# (Windows and Linux). Without it the agent uses a webcam, which can
+# calibrate but not track people.

@@ -1,5 +1,8 @@
 """Players: the small computers that drive one projector each.
 
+Cameras (see mapping_camera.py) pair through the same endpoints with
+``kind: camera`` and are listed here too.
+
 Setting one up is: open ``/player`` in a full-screen browser on it, read the
 pairing code off the projector, approve that code on the Mapping page and
 pick its output. Everything after that (which show, which cue, geometry
@@ -60,7 +63,7 @@ def _code() -> str:
     return "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
 
 
-def _online(player: MappingPlayer) -> bool:
+def is_online(player: MappingPlayer) -> bool:
     seen = as_utc(player.last_seen_at)
     return seen is not None and (utcnow() - seen).total_seconds() <= ONLINE_SECONDS
 
@@ -72,8 +75,9 @@ async def _player_out(session, player: MappingPlayer) -> PlayerOut:
             select(MappingOutput.show_id).where(MappingOutput.id == player.output_id)
         )).scalar_one_or_none()
     return PlayerOut(
-        id=player.id, name=player.name, code=player.code, approved=player.approved,
-        output_id=player.output_id, show_id=show_id, online=_online(player),
+        id=player.id, name=player.name, kind=player.kind or "player", code=player.code,
+        approved=player.approved,
+        output_id=player.output_id, show_id=show_id, online=is_online(player),
         last_seen_at=player.last_seen_at, report=player.report or {},
     )
 
@@ -107,7 +111,7 @@ async def hello(payload: PlayerHello, session: SessionDep) -> PlayerHelloRespons
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                                 detail="Too many players are waiting for approval")
         player = MappingPlayer(device_id=payload.device_id, secret_hash=_hash(payload.secret),
-                               name=payload.name, code=_code())
+                               name=payload.name, kind=payload.kind, code=_code())
         session.add(player)
         await session.commit()
         await session.refresh(player)
@@ -153,6 +157,9 @@ async def update_player(player_id: int, payload: PlayerUpdate, session: SessionD
                         admin: RequireAdmin) -> PlayerOut:
     player = await _load(session, player_id)
     changes = payload.model_dump(exclude_unset=True)
+    if changes.get("output_id") is not None and player.kind == "camera":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="A camera does not drive an output")
     if "output_id" in changes and changes["output_id"] is not None and \
             await session.get(MappingOutput, changes["output_id"]) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,

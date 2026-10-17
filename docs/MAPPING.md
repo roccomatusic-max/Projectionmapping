@@ -129,10 +129,19 @@ matching how projector configuration is gated.
 | GET · PATCH · DELETE | `/players`, `/players/{id}` | List, approve and assign, remove |
 | POST | `/players/{id}/identify` | Flash a player's name on its projector |
 | POST | `/players/me` | A player's heartbeat; returns its assignment |
+| POST | `/outputs/{id}/calibrate` | Ask a camera to calibrate this output |
+| POST | `/calibration/step` | Camera only: the pattern every window of the show should show now |
+| PUT · GET · DELETE | `/outputs/{id}/calibration` | The decoded camera → projector map (PUT is camera only) |
+| POST | `/shows/{id}/apply-calibration` | Set calibrated outputs' corner pin and mesh from the camera |
+| PUT | `/cameras/me/snapshot` | Camera only: its current photo |
+| GET | `/cameras/{id}/snapshot` | That photo, for marking the canvas corners; accepts `?token=` |
+| POST | `/cameras/{id}/command` | `snapshot` (take a new photo) or `background` (re-learn the empty scene) |
+| POST | `/cameras/me/people` | Camera only: who it sees now; relayed, never stored |
 
 Live changes go out on the existing WebSocket feed as `mapping_transport`,
-`mapping_output`, `mapping_show`, `mapping_player` and `mapping_identify`
-messages.
+`mapping_output`, `mapping_show`, `mapping_player`, `mapping_identify`,
+`mapping_calibrate`, `mapping_calib_pattern`, `mapping_camera`,
+`mapping_camera_command` and `mapping_people` messages.
 
 ## 5. Players: one small computer per projector
 
@@ -205,7 +214,43 @@ Any phone, tablet or laptop on the network opens the app, **Mapping →
 Remote**: GO, pause, stop, blackout and the cue list as large buttons.
 Operators can run the show; only administrators can change it.
 
-## 6. Show control integration (phase 2)
+## 6. Cameras: calibration and people
+
+A camera pointed at the building runs a small program,
+[`camera-agent/`](../camera-agent/README.md), on any computer on the show
+network. It pairs like a player (`kind: camera`) and gets a viewer account;
+what it may post is gated on that account belonging to an approved camera.
+
+**Calibration** is structured light. For one output at a time the camera
+asks the server to show black, white, then each bit of the Gray code of the
+projector's columns and rows with its inverse. Output windows draw these in
+the projector's own pixels, ignoring the warp; every other output of the
+show goes black. Comparing each photo with its inverse says, per camera
+pixel, which projector column and row lit it, regardless of how dark that
+bit of wall is. The camera reduces this to a grid of cells over its photo
+and uploads it: a map from camera picture to projector pixels.
+
+The operator marks the four canvas corners on the camera's photo once, which
+gives canvas → camera. Chained with each output's camera → projector map,
+every canvas point gets a target in each projector, and
+`apply-calibration` writes the corner pin and the mesh offsets that put it
+there. Where the camera saw no light, a flat-wall homography fitted to all
+decoded cells fills in, carrying the measured curvature a few cells past the
+edge of the light. In a test with the real output window photographed
+through a simulated camera, the corners land within 2 projector pixels.
+
+**People** come from a depth camera (Intel RealSense). The agent learns the
+empty scene's depth, labels anything clearly nearer as a person, keeps ids
+stable between frames, and posts them about 15 times a second. The server
+maps them onto the live show's canvas through the marked corners and relays
+them; output windows smooth them and apply the live cue's effect:
+`spotlight` (content lit only around people) or `ripple`.
+
+A camera's position on the canvas is where the person appears against the
+building from the camera's point of view, which is right for people near the
+wall and approximate further out.
+
+## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`
   so the existing startup sequence can power on, wait for lamps, open
@@ -215,16 +260,18 @@ Operators can run the show; only administrators can change it.
   not on with its shutter open.
 - MQTT/Home Assistant: transport as a select entity.
 
-## 7. Phases
+## 8. Phases
 
 1. **Done in the first slice:** data model and migration, media library,
    shows/outputs/cues API, transport with server clock, WebGL output window
    with corner pin, mesh warp, masks, edge blend, colour and test patterns,
    the Mapping editor page, players with pairing and a media cache, and the
-   phone remote.
+   phone remote. **Then:** the camera agent, camera calibration of corner
+   pin and mesh, and people tracking with spotlight and ripple effects.
 2. Automation step and projector-state preconditions; output thumbnails;
    media thumbnails and probe on the server (ffprobe when present).
 3. Layers and surfaces: several pieces of media placed on regions of the
    canvas at once, with opacity and blend modes.
-4. Calibration helpers: camera-assisted corner detection, saved alignment
-   snapshots per output with one-click restore after a projector is bumped.
+4. Calibration helpers: saved alignment snapshots per output with
+   one-click restore; masks drawn from the camera photo; colour and
+   brightness matching between projectors from the camera.

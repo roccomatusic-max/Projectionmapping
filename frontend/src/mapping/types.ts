@@ -80,6 +80,15 @@ export interface Output {
   color: ColorAdjust
   test_pattern: TestPattern
   enabled: boolean
+  /** Last camera calibration, if any (the decoded grid stays on the server). */
+  calibration?: CalibrationSummary | null
+}
+
+export interface CalibrationSummary {
+  camera_id: number
+  captured_at: string
+  /** Share of the camera picture where this projector's light was found. */
+  coverage: number
 }
 
 export type Fit = 'fill' | 'fit' | 'stretch'
@@ -94,7 +103,11 @@ export interface Cue {
   loop: boolean
   fade_seconds: number
   follow_seconds: number | null
+  interaction: Interaction
 }
+
+/** How people tracked by a depth camera affect a cue. */
+export type Interaction = 'none' | 'spotlight' | 'ripple'
 
 export interface ShowSummary {
   id: number
@@ -108,6 +121,8 @@ export interface ShowSummary {
 }
 
 export interface Show extends ShowSummary {
+  /** Where the canvas sits in a camera's picture: corners TL, TR, BR, BL in image fractions. */
+  camera_view: { camera_id: number; corners: Point[] } | null
   outputs: Output[]
   cues: Cue[]
 }
@@ -120,6 +135,7 @@ export interface TransportCue {
   fit: Fit
   loop: boolean
   fade_seconds: number
+  interaction: Interaction
   started_at_ms: number
 }
 
@@ -137,3 +153,52 @@ export interface TransportState {
 }
 
 export type TransportAction = 'go' | 'goto' | 'pause' | 'resume' | 'stop' | 'blackout'
+
+// -- cameras -------------------------------------------------------------------
+
+/** One structured-light frame, drawn in the projector's own pixels. */
+export interface PatternSpec {
+  kind: 'black' | 'white' | 'gray'
+  axis: 'x' | 'y'
+  bit: number
+  inverse: boolean
+}
+
+/** A calibration step as relayed to output windows. */
+export interface CalibrationStepMessage {
+  camera_id: number
+  show_id: number
+  output_id: number
+  pattern: PatternSpec | null
+  step: number
+  steps: number
+  status: 'running' | 'done' | 'failed'
+  message: string
+}
+
+/** A person a depth camera sees. ``x``/``y`` are canvas fractions, when mapped. */
+export interface Person {
+  id: number
+  cx: number
+  cy: number
+  x: number | null
+  y: number | null
+  z: number | null
+  size: number
+}
+
+export interface PeopleMessage {
+  camera_id: number
+  show_id: number | null
+  people: Person[]
+  at: number
+}
+
+export interface ApplyResult {
+  output_id: number
+  name: string
+  applied: boolean
+  reason: string
+  measured: number
+  residual_px: number
+}

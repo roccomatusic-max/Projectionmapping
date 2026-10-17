@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
 import { probeMedia, uploadMedia } from '../api'
-import type { Cue, Fit, MediaAsset, Output, Show, TransportState } from '../types'
+import type { Cue, Fit, Interaction, MediaAsset, Output, Show, TransportState } from '../types'
 import { formatBytes, formatDuration } from './controls'
 
 // -- cue list --------------------------------------------------------------------
@@ -156,6 +156,16 @@ export function CueList({
                     if (v !== cue.follow_seconds && (v === null || v > 0)) onUpdate(cue, { follow_seconds: v })
                   }} />
                 s
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400"
+                title="What people seen by a depth camera do to this cue">
+                People
+                <select className="input w-auto py-1 text-xs" value={cue.interaction ?? 'none'} disabled={!canEdit}
+                  onChange={(event) => onUpdate(cue, { interaction: event.target.value as Interaction })}>
+                  <option value="none">No effect</option>
+                  <option value="spotlight">Spotlight</option>
+                  <option value="ripple">Ripple</option>
+                </select>
               </label>
               <span className="ml-auto flex items-center gap-1">
                 <span className="mr-2 text-xs text-slate-500">
