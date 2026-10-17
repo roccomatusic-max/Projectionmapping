@@ -294,9 +294,17 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   /* -- fleet ------------------------------------------------------- */
 
+  // The server re-announces an open alert every time it re-evaluates the
+  // condition. Only a genuinely new critical alert deserves a toast; known
+  // ones are already on the banner.
+  const knownAlerts = useRef<Set<string> | null>(null)
+  const toastedAlerts = useRef(new Map<string, number>())
+
   const refreshAlerts = useCallback(async () => {
     try {
-      setAlerts(await api.alerts())
+      const list = await api.alerts()
+      knownAlerts.current = new Set(list.map((a) => `${a.projector_id}:${a.kind}`))
+      setAlerts(list)
     } catch {
       // The overview counters still show the totals; the list can wait.
     }
@@ -575,10 +583,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           void api.overview().then(setOverview).catch(() => undefined)
         }
         if (message.type === 'alert' || message.type === 'alert_resolved') {
-          void refreshAlerts()
           if (message.type === 'alert' && payload.severity === 'critical') {
-            notify('fault', String(payload.message ?? 'Critical alert'))
+            const key = `${payload.projector_id ?? null}:${String(payload.kind)}`
+            const last = toastedAlerts.current.get(key) ?? 0
+            const known = knownAlerts.current
+            if (known && !known.has(key) && Date.now() - last > 10 * 60_000) {
+              toastedAlerts.current.set(key, Date.now())
+              notify('fault', String(payload.message ?? 'Critical alert'))
+            }
           }
+          void refreshAlerts()
         }
 
         for (const listener of listeners.current) listener(message)

@@ -187,7 +187,7 @@ function AttentionPanel({ projectors }: { projectors: Projector[] }) {
     >
       {rows.length === 0 ? (
         <p className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
-          <OkIcon size={16} className="text-emerald-400" aria-hidden /> Nothing needs attention.
+          <OkIcon size={16} className="text-green-400" aria-hidden /> Nothing needs attention.
         </p>
       ) : (
         <ul className="max-h-[28rem] divide-y divide-white/5 overflow-y-auto">
@@ -241,7 +241,7 @@ function AlertsSummary() {
     >
       {sorted.length === 0 ? (
         <p className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
-          <OkIcon size={16} className="text-emerald-400" aria-hidden /> No open alerts.
+          <OkIcon size={16} className="text-green-400" aria-hidden /> No open alerts.
         </p>
       ) : (
         <ul className="divide-y divide-white/5">
@@ -360,8 +360,8 @@ export default function Dashboard({ session }: { session: Session }) {
             </Banner>
           )}
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-4 xl:order-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 space-y-4 xl:order-2">
               <AttentionPanel projectors={projectors} />
               {/* Phones and tablets have the Alerts tab; the wide layout
                   keeps alerts and recent commands beside the fleet. */}

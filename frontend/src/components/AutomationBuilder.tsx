@@ -377,8 +377,8 @@ export function AutomationBuilder({
                           {step.label && <span className="block truncate text-xs text-slate-500">{step.label}</span>}
                         </span>
                         {worst === 'error' && <FaultIcon size={15} className="text-red-400" aria-label="Has errors" />}
-                        {worst === 'warning' && <WarningIcon size={15} className="text-amber-400" aria-label="Has warnings" />}
-                        {checked && !worst && <OkIcon size={15} className="text-emerald-400" aria-label="Checked" />}
+                        {worst === 'warning' && <WarningIcon size={15} className="text-yellow-400" aria-label="Has warnings" />}
+                        {checked && !worst && <OkIcon size={15} className="text-green-400" aria-label="Checked" />}
                       </button>
                     </li>
                   )
@@ -435,7 +435,7 @@ export function AutomationBuilder({
                 {problemsFor(selected).length > 0 && (
                   <ul className="mt-3 space-y-1">
                     {problemsFor(selected).map((p, i) => (
-                      <li key={i} className={classNames('flex items-start gap-1.5 text-xs', p.severity === 'error' ? 'text-red-300' : 'text-amber-300')}>
+                      <li key={i} className={classNames('flex items-start gap-1.5 text-xs', p.severity === 'error' ? 'text-red-300' : 'text-yellow-300')}>
                         {p.severity === 'error' ? <FaultIcon size={13} className="mt-0.5 shrink-0" /> : <WarningIcon size={13} className="mt-0.5 shrink-0" />}
                         {p.message}
                       </li>
@@ -458,10 +458,10 @@ export function AutomationBuilder({
               <OkIcon size={15} aria-hidden /> {saving ? 'Saving…' : existingId ? 'Save changes' : 'Save automation'}
             </button>
             {check && check.signature !== signature && (
-              <span className="text-xs text-amber-300">Draft changed since the last check — run Check again.</span>
+              <span className="text-xs text-yellow-300">Draft changed since the last check — run Check again.</span>
             )}
             {checked && (
-              <span className={classNames('flex items-center gap-1.5 text-sm', checked.ok ? 'text-emerald-300' : 'text-red-300')}>
+              <span className={classNames('flex items-center gap-1.5 text-sm', checked.ok ? 'text-green-300' : 'text-red-300')}>
                 {checked.ok ? <OkIcon size={15} /> : <FaultIcon size={15} />}
                 {checked.ok
                   ? `Ready — ${checked.problems.length ? `${checked.problems.length} warning(s)` : 'no problems'}`
@@ -474,7 +474,7 @@ export function AutomationBuilder({
             <div className="mt-3 grid gap-4 md:grid-cols-2">
               <div>
                 {checked.problems.filter((p) => p.step === null).map((p, i) => (
-                  <p key={i} className={classNames('flex items-start gap-1.5 text-xs', p.severity === 'error' ? 'text-red-300' : 'text-amber-300')}>
+                  <p key={i} className={classNames('flex items-start gap-1.5 text-xs', p.severity === 'error' ? 'text-red-300' : 'text-yellow-300')}>
                     {p.severity === 'error' ? <FaultIcon size={13} className="mt-0.5 shrink-0" /> : <WarningIcon size={13} className="mt-0.5 shrink-0" />}
                     {p.message}
                   </p>
@@ -492,7 +492,7 @@ export function AutomationBuilder({
                 {draft.trigger_type === 'manual' ? (
                   <p className="text-xs text-slate-400">Manual — runs only when you press Run now.</p>
                 ) : checked.next_runs.length === 0 ? (
-                  <p className="text-xs text-amber-300">This schedule never fires.</p>
+                  <p className="text-xs text-yellow-300">This schedule never fires.</p>
                 ) : (
                   <ul className="text-xs text-slate-300">
                     {checked.next_runs.map((iso) => <li key={iso} className="tnum">{formatDateTime(iso)}</li>)}
@@ -666,7 +666,7 @@ function StepEditor({ step, onChange, projectors, groups, scenes, enclosures, fu
                 </optgroup>
               ))}
             </select>
-            {targeted.length === 0 && <p className="mt-1 text-xs text-amber-300">The target has no enabled projectors.</p>}
+            {targeted.length === 0 && <p className="mt-1 text-xs text-yellow-300">The target has no enabled projectors.</p>}
           </div>
 
           {entry && cap && entry.allParams.length > 0 && key && (
@@ -714,7 +714,7 @@ function StepEditor({ step, onChange, projectors, groups, scenes, enclosures, fu
           {cap && (
             <div className="sm:col-span-2 space-y-1 text-xs">
               {gatedOn.length > 0 && (
-                <p className="flex items-start gap-1.5 text-amber-300">
+                <p className="flex items-start gap-1.5 text-yellow-300">
                   <WarningIcon size={13} className="mt-0.5 shrink-0" />
                   Gated on {gatedOn.map((p) => p.name).join(', ')}: {cap.caveat ?? 'enable "allow unverified commands" on those projectors first.'}
                 </p>
@@ -818,7 +818,7 @@ function StepEditor({ step, onChange, projectors, groups, scenes, enclosures, fu
           <div>
             <label className="label">Enclosure</label>
             {enclosures.length === 0 ? (
-              <p className="text-xs text-amber-300">No enclosures are configured yet.</p>
+              <p className="text-xs text-yellow-300">No enclosures are configured yet.</p>
             ) : (
               <select className="input" value={Number(step.enclosure_id ?? enclosures[0].id)}
                       onChange={(e) => onChange({ enclosure_id: Number(e.target.value) })}>
@@ -844,7 +844,7 @@ function StepEditor({ step, onChange, projectors, groups, scenes, enclosures, fu
           <div>
             <label className="label">Scene</label>
             {scenes.length === 0 ? (
-              <p className="text-xs text-amber-300">No scenes are defined yet.</p>
+              <p className="text-xs text-yellow-300">No scenes are defined yet.</p>
             ) : (
               <select className="input" value={Number(step.scene_id ?? scenes[0].id)} onChange={(e) => onChange({ scene_id: Number(e.target.value) })}>
                 {scenes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

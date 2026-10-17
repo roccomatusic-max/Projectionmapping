@@ -19,10 +19,8 @@ import {
 import { latestCommand, phaseIsActive, useOps } from '@/live/LiveProvider'
 import { useDrivers, useGroups } from '@/live/useCatalog'
 import { ProjectorCard, type QuickAction } from '../ProjectorCard'
-import { PhaseBadge } from '../status'
 import { EmptyState, SearchInput } from '../ui'
 import {
-  CloseIcon,
   GridViewIcon,
   ListViewIcon,
   PowerIcon,
@@ -32,6 +30,7 @@ import {
   HdmiIcon,
 } from '../icons'
 import { ProjectorTable } from './ProjectorTable'
+import { useBulkResults } from './BulkResults'
 import { inputRequest, powerRequest, shutterRequest, useProjectorCommand } from './useProjectorCommand'
 
 type View = 'grid' | 'list'
@@ -109,7 +108,7 @@ export function FleetBrowser({
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [inputMenu, setInputMenu] = useState(false)
-  const [lastBulk, setLastBulk] = useState<{ label: string; ids: number[]; at: number } | null>(null)
+  const bulkResults = useBulkResults()
 
   const filter = controlledFilter ?? localFilter
   const setFilter = (next: FleetFilter) => (onFilterChange ? onFilterChange(next) : setLocalFilter(next))
@@ -205,19 +204,8 @@ export function FleetBrowser({
 
   const bulk = (request: ReturnType<typeof powerRequest>) => {
     setInputMenu(false)
-    const before = new Set(commands.map((c) => c.id))
-    ask({
-      ...request,
-      onDone: () => setLastBulk({ label: request.spec.label, ids: [...before].map(Number), at: Date.now() }),
-    })
+    ask(bulkResults.track(request))
   }
-
-  // The rows of the last bulk dispatch, followed live through the tracker.
-  const bulkRows = useMemo(() => {
-    if (!lastBulk) return []
-    const before = new Set(lastBulk.ids)
-    return commands.filter((c) => c.bulk && !before.has(c.id) && c.label === lastBulk.label && c.startedAt >= lastBulk.at - 60_000)
-  }, [commands, lastBulk])
 
   const selectedOffline = selectedList.filter((p) => !isLive(p)).length
   const bulkBusy = selectedList.some((p) => {
@@ -235,7 +223,7 @@ export function FleetBrowser({
           placeholder="Search name, model, IP, location"
           className="w-full sm:w-72"
         />
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-1 flex-wrap items-center gap-2 sm:justify-end">
           {groups.length > 0 && (
             <select
               className="input w-auto py-1 text-xs"
@@ -403,32 +391,7 @@ export function FleetBrowser({
       )}
 
       {/* Results of the last bulk command, per projector, live */}
-      {bulkRows.length > 0 && lastBulk && (
-        <div className="panel">
-          <header className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-2.5">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-100">{lastBulk.label}: per-projector results</h2>
-              <p className="text-xs text-slate-500">
-                Dispatched together; each projector acts at its own pace and is confirmed separately.
-              </p>
-            </div>
-            <button className="btn-ghost btn-sm btn-icon" onClick={() => setLastBulk(null)} aria-label="Hide results">
-              <CloseIcon size={15} />
-            </button>
-          </header>
-          <ul className="divide-y divide-white/5">
-            {bulkRows.map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
-                <div className="min-w-0">
-                  <p className="text-sm text-slate-200">{row.projectorName}</p>
-                  {row.detail && <p className="break-words text-xs text-slate-500">{row.detail}</p>}
-                </div>
-                <PhaseBadge command={row} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {bulkResults.panel}
 
       {/* Bulk action bar */}
       {selecting && selected.size > 0 && (

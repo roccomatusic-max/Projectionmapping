@@ -213,8 +213,10 @@ function CriticalBanner() {
         </Link>
       }
     >
-      {critical.slice(0, 2).map((a) => a.message).join(' · ')}
-      {critical.length > 2 && ` · +${critical.length - 2} more`}
+      <span className="line-clamp-2 sm:line-clamp-none">
+        {critical.slice(0, 2).map((a) => a.message).join(' · ')}
+        {critical.length > 2 && ` · +${critical.length - 2} more`}
+      </span>
     </Banner>
   )
 }

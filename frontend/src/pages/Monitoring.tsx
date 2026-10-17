@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts'
 import { ApiError, api, downloadCsv, type Session } from '@/api/client'
+import { useOps } from '@/live/LiveProvider'
 import type { Alert, Enclosure, MaintenanceRecord, Projector, TelemetryPoint } from '@/api/types'
 import {
   Chip,
@@ -20,8 +21,6 @@ import {
   PageHeader,
   Panel,
   Spinner,
-  ToastStack,
-  useToasts,
 } from '@/components/ui'
 import { Glyph, type Tone } from '@/components/graphics'
 import { classNames, formatDateTime, relativeTime } from '@/lib/format'
@@ -53,7 +52,7 @@ export default function Monitoring({ session }: { session: Session }) {
   const [selectedProjector, setSelectedProjector] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const { toasts, push, dismiss } = useToasts()
+  const { notify: push } = useOps()
 
 
   const load = async () => {
@@ -160,7 +159,7 @@ export default function Monitoring({ session }: { session: Session }) {
       >
         <span className="flex items-center gap-2.5 text-sm">
           {alerts.length === 0 ? (
-            <OkIcon size={16} className="text-emerald-400" aria-hidden />
+            <OkIcon size={16} className="text-green-400" aria-hidden />
           ) : (
             <FaultIcon size={16} className={alerts.some((a) => a.severity === 'critical') ? 'text-red-400' : 'text-yellow-400'} aria-hidden />
           )}
@@ -291,7 +290,6 @@ export default function Monitoring({ session }: { session: Session }) {
         />
       </Panel>
 
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }
@@ -501,7 +499,7 @@ function EnclosureTile({ enclosure, projectorName }: { enclosure: Enclosure; pro
     return rank[t] > rank[acc] ? t : acc
   }, entries.length ? 'ok' : 'unknown')
   const ringTone: Record<Tone, string> = {
-    ok: 'ring-emerald-500/30', warn: 'ring-amber-500/40', fault: 'ring-red-500/50',
+    ok: 'ring-green-500/30', warn: 'ring-yellow-500/40', fault: 'ring-red-500/50',
     unknown: 'ring-white/10', idle: 'ring-white/10', busy: 'ring-sky-500/30',
   }
   return (
@@ -532,7 +530,7 @@ function EnclosureTile({ enclosure, projectorName }: { enclosure: Enclosure; pro
                 label={formatReading(metric, r.value)}
                 size="sm"
               />
-              <p className={classNames('mt-1 pl-11 text-[11px]', r.stale ? 'text-amber-400' : 'text-slate-500')}>
+              <p className={classNames('mt-1 pl-11 text-[11px]', r.stale ? 'text-yellow-400' : 'text-slate-500')}>
                 {relativeTime(r.recorded_at)}{r.stale && ' · stale'}
               </p>
             </div>

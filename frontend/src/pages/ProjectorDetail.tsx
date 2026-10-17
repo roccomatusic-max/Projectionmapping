@@ -109,10 +109,8 @@ function makeGate(manifest: CapabilityManifest | null): Gate {
     const retracted = manifest.retracted[name]
     if (retracted) return retracted
     if (cap.requires_opt_in && !manifest.allow_unverified_commands) {
-      return (
-        cap.caveat ??
-        'Documented only for a sibling model. Enable “Allow unverified commands” for this projector to use it.'
-      )
+      const why = cap.caveat ?? 'Documented only for a sibling model.'
+      return `${why.replace(/\.?$/, '.')} Off until an administrator turns on “Allow unverified commands” for this projector (Edit).`
     }
     return null
   }
@@ -384,12 +382,12 @@ export default function ProjectorDetail({ session }: { session: Session }) {
   return (
     <div className="space-y-4">
       {/* Target bar: always says which projector receives the commands. */}
-      <div className="sticky top-12 z-30 -mx-3 border-b border-white/[0.06] bg-panel-950/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+      <div className="z-30 -mx-3 border-b md:sticky md:top-12 border-white/[0.06] bg-panel-950/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
         <Link to="/projectors" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
           <BackIcon size={12} aria-hidden /> Projectors
         </Link>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex w-full min-w-0 items-center gap-3 xl:w-auto xl:flex-1">
             <ProjectorMark tone={deviceTone(projector)} pulse={transitioning} size="md" />
             <div className="min-w-0">
               <h1 className="truncate text-lg font-semibold leading-tight text-slate-50">{projector.name}</h1>
@@ -462,7 +460,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
       )}
       {manifestError && <Banner tone="warn" title="Capabilities could not be loaded">{manifestError}</Banner>}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
           {/* -- Primary controls ------------------------------------- */}
           <Panel icon={PowerIcon} title="Primary controls" description="Highlighted states are read back from the projector, not assumed from the command.">
@@ -705,6 +703,8 @@ function PictureControls({
   const declared = PICTURE.filter((item) => gate.capability(item.capability))
   const pictureMode = gate.capability('image.picture_mode')
   const testPattern = gate.capability('image.test_pattern')
+  const reasons = declared.map((item) => gate.reason(item.capability))
+  const sharedGate = reasons.length > 1 && reasons[0] && reasons.every((r) => r === reasons[0]) ? reasons[0] : null
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
@@ -713,6 +713,11 @@ function PictureControls({
       </p>
       {declared.length === 0 ? (
         <UnavailableNote reason="This driver offers no picture adjustments for this model." />
+      ) : sharedGate ? (
+        // One reason for every slider: say it once instead of five times.
+        <ControlBlock icon={PictureIcon} title={declared.map((item) => item.label).join(', ')}>
+          <UnavailableNote reason={sharedGate} />
+        </ControlBlock>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {declared.map((item) => (

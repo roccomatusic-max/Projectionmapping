@@ -192,6 +192,21 @@ export function attentionTone(severity: AttentionSeverity): Tone {
 /* Input                                                               */
 /* ------------------------------------------------------------------ */
 
+/** PJLink reports inputs as two characters: family digit, then index. */
+const PJLINK_INPUT_FAMILY: Record<string, string> = {
+  '1': 'RGB',
+  '2': 'Video',
+  '3': 'Digital',
+  '4': 'Storage',
+  '5': 'Network',
+}
+
+/** A readable name for a bare input code, e.g. PJLink "31" → "Digital 1". */
+export function inputCodeLabel(code: string): string {
+  const family = /^[1-5][1-9A-Z]$/.test(code) ? PJLINK_INPUT_FAMILY[code[0]] : undefined
+  return family ? `${family} ${code[1]}` : code
+}
+
 export function activeInput(projector: Projector): {
   code: string
   text: string
@@ -199,10 +214,12 @@ export function activeInput(projector: Projector): {
   title?: string
 } {
   const field = projector.state.active_input
-  const rendered = renderTelemetry(field, (value) => (typeof value === 'string' ? value : value.label))
+  const rendered = renderTelemetry(field, (value) => (typeof value === 'string' ? inputCodeLabel(value) : value.label))
   const code =
-    field?.availability === 'available' && field.value && typeof field.value === 'object'
-      ? field.value.code
+    field?.availability === 'available' && field.value
+      ? typeof field.value === 'object'
+        ? field.value.code
+        : field.value
       : ''
   // An input read from a projector that has since gone quiet is history.
   if (!isLive(projector) && !rendered.muted) {

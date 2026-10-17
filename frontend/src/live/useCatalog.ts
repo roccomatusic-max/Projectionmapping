@@ -23,15 +23,20 @@ export function useDrivers(): DriverInfo[] {
 }
 
 /** Groups, loaded when the component mounts. */
-export function useGroups(): { groups: Group[]; reload: () => void } {
+export function useGroups(): { groups: Group[]; loaded: boolean; reload: () => void } {
   const [groups, setGroups] = useState<Group[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [version, setVersion] = useState(0)
   useEffect(() => {
     let alive = true
-    api.listGroups().then((list) => alive && setGroups(list)).catch(() => undefined)
+    api
+      .listGroups()
+      .then((list) => alive && setGroups(list))
+      .catch(() => undefined)
+      .finally(() => alive && setLoaded(true))
     return () => {
       alive = false
     }
   }, [version])
-  return { groups, reload: () => setVersion((v) => v + 1) }
+  return { groups, loaded, reload: () => setVersion((v) => v + 1) }
 }

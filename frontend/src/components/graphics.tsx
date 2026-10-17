@@ -190,7 +190,7 @@ export function Glyph({
 /* ------------------------------------------------------------------ */
 
 const METER_FILL: Record<Tone, string> = {
-  ok: 'bg-emerald-400',
+  ok: 'bg-green-400',
   warn: 'bg-yellow-400',
   fault: 'bg-red-400',
   idle: 'bg-slate-500',
@@ -198,7 +198,7 @@ const METER_FILL: Record<Tone, string> = {
   unknown: 'bg-slate-600',
 }
 const METER_TRACK: Record<Tone, string> = {
-  ok: 'bg-emerald-400/15',
+  ok: 'bg-green-400/15',
   warn: 'bg-yellow-400/15',
   fault: 'bg-red-400/15',
   idle: 'bg-slate-500/15',
@@ -323,6 +323,9 @@ export function inputIcon(code: string): LucideIcon {
   if (c.startsWith('RG')) return RgbIcon
   if (c.startsWith('SD')) return SdiIcon
   if (c.startsWith('DL')) return DigitalLinkIcon
+  // PJLink two-character codes: 1x RGB, 3x digital.
+  if (/^1[1-9A-Z]$/.test(c)) return RgbIcon
+  if (/^3[1-9A-Z]$/.test(c)) return HdmiIcon
   return VideoIcon
 }
 
@@ -395,7 +398,7 @@ export function StatTile({
 export type FleetSegmentKind = 'on' | 'transition' | 'standby' | 'offline'
 
 const SEGMENT_STYLE: Record<FleetSegmentKind, { fill: string; label: string }> = {
-  on: { fill: 'bg-emerald-400', label: 'Lamp on' },
+  on: { fill: 'bg-green-400', label: 'Lamp on' },
   transition: { fill: 'bg-sky-400', label: 'Starting / cooling' },
   standby: { fill: 'bg-slate-500', label: 'Standby' },
   offline: { fill: 'bg-red-400', label: 'Offline' },
