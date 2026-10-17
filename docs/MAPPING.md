@@ -223,9 +223,33 @@ restart without asking.
 
 ### Remote control
 
-Any phone, tablet or laptop on the network opens the app, **Mapping →
-Remote**: GO, pause, stop, blackout and the cue list as large buttons.
-Operators can run the show; only administrators can change it.
+**Show Remote** is the phone remote: GO, pause, stop, blackout, the cue list
+and projector power, laid out for one thumb in the dark. It lives at
+`/remote` and goes on the phone's Home Screen, where it opens full screen
+with its own icon. The **Phone remote** page in the sidebar shows a QR code
+for it and the steps:
+
+1. Start Projector Control with `--lan` (otherwise no phone can reach it).
+2. To use it away from the venue's Wi-Fi, install
+   [Tailscale](https://tailscale.com/download) on the main computer and on
+   the phone and sign in to both with the same account. The page notices
+   and switches the QR code to the computer's Tailscale address, which the
+   phone reaches over any Wi-Fi or mobile data. Nothing is opened to the
+   internet: Tailscale is a private network between your own devices (see
+   [DEPLOYMENT.md](DEPLOYMENT.md#3-remote-access) for why this app is never
+   port-forwarded).
+3. Scan the code with the phone's camera, then in Safari **Share → Add to
+   Home Screen**, open Show Remote from the Home Screen and sign in. A
+   phone sign-in lasts 90 days (`REMEMBER_DAYS`) instead of a working day.
+
+The remote loads no media, follows whichever show goes live, catches up the
+moment the phone wakes, and says so when it cannot reach the server rather
+than showing stale state as live. Turning projectors off asks first; bulk
+results name each projector that did not take the command, and the list
+shows the state read back from each one. Operators can run the show;
+viewers can watch it; only administrators can change it.
+
+The same buttons are on **Mapping → Remote** in the full app.
 
 ## 6. Cameras: calibration and people
 
@@ -286,7 +310,9 @@ wall and approximate further out.
    phone remote. **Then:** the camera agent, camera calibration of corner
    pin and mesh, and people tracking with spotlight and ripple effects.
    **Then:** the Mini PC app for Windows (server discovery, kiosk output,
-   camera, auto-start, one approval per machine).
+   camera, auto-start, one approval per machine). **Then:** Show Remote,
+   the phone remote for the Home Screen, reachable from anywhere through
+   Tailscale.
 2. Automation step and projector-state preconditions; output thumbnails;
    media thumbnails and probe on the server (ffprobe when present).
 3. Layers and surfaces: several pieces of media placed on regions of the

@@ -46,10 +46,11 @@ async def login(payload: LoginRequest, session: SessionDep) -> TokenResponse:
                       message=f"{user.username} signed in"))
     await session.commit()
 
-    token = create_access_token(user.username, user.role)
+    minutes = settings.remember_days * 24 * 60 if payload.remember else settings.access_token_minutes
+    token = create_access_token(user.username, user.role, expires_minutes=minutes)
     return TokenResponse(
         access_token=token, role=user.role, username=user.username,
-        expires_in=settings.access_token_minutes * 60,
+        expires_in=minutes * 60,
     )
 
 

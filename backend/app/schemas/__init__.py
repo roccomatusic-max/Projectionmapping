@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class LoginRequest(BaseModel):
     username: str
     password: str
+    #: Stay signed in for ``remember_days`` instead of a working day.
+    remember: bool = False
 
 
 class TokenResponse(BaseModel):

@@ -135,6 +135,18 @@
   .card-grid {
     @apply grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4;
   }
+
+  /* The phone remote: no grey flash on tap, no double-tap zoom, and no
+     text selection or callout when a thumb rests on a button. */
+  .remote-app {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+    user-select: none;
+  }
+  .remote-app input {
+    user-select: text;
+  }
 }
 
 /* Honour the operator's reduced-motion preference: this is control
