@@ -38,12 +38,26 @@ function randomHex(bytes: number) {
 }
 
 function identity(): Identity {
+  let stored: Identity | null = null
   try {
-    const stored = JSON.parse(localStorage.getItem(PLAYER_KEY) ?? 'null') as Identity | null
-    if (stored?.device_id && stored.secret) return stored
+    stored = JSON.parse(localStorage.getItem(PLAYER_KEY) ?? 'null') as Identity | null
   } catch {
     /* regenerate */
   }
+  // The Mini PC app opens this page with its computer's identity in the
+  // fragment, which never reaches the server. Using it lets the camera on
+  // the same computer pair together with this player.
+  const given = new URLSearchParams(window.location.hash.slice(1))
+  const device_id = given.get('device_id')
+  const secret = given.get('secret')
+  if (device_id && secret) {
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+    const fromApp = { device_id, secret, name: given.get('name') || stored?.name || 'Mini PC' }
+    if (stored?.device_id !== device_id) setPlayerToken(null)
+    localStorage.setItem(PLAYER_KEY, JSON.stringify(fromApp))
+    return fromApp
+  }
+  if (stored?.device_id && stored.secret) return stored
   const id = randomHex(12)
   const created = { device_id: id, secret: randomHex(32), name: `Player ${id.slice(-4).toUpperCase()}` }
   localStorage.setItem(PLAYER_KEY, JSON.stringify(created))

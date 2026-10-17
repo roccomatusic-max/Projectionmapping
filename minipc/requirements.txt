@@ -1,0 +1,9 @@
+# Mini PC app. Python 3.10 or newer.
+# The camera half is the camera agent.
+-r ../camera-agent/requirements.txt
+Pillow>=10.0
+psutil>=5.9
+# The icon by the clock, Windows only.
+pystray>=0.19; sys_platform == "win32"
+# Intel RealSense cameras (colour and depth); the official package has no Mac build.
+pyrealsense2>=2.55; sys_platform == "win32"

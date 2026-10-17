@@ -288,7 +288,8 @@ class Agent:
                 self.stopping.wait(max(0.0, period - (time.monotonic() - started)))
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """The agent's options; the Mini PC app (minipc/) runs it with the defaults."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server", required=True, help="the main server, e.g. http://192.168.1.10:8765")
     parser.add_argument("--camera", default="auto", help="auto, realsense, or webcam:N (default auto)")
@@ -308,7 +309,11 @@ def main() -> None:
     parser.add_argument("--rate", type=float, default=15.0, help="people reports per second (default 15)")
     parser.add_argument("--no-tracking", action="store_true", help="calibration only, no people tracking")
     parser.add_argument("--verbose", action="store_true")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

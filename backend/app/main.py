@@ -41,6 +41,7 @@ from app.paths import static_dir
 from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
 from app.services.device_manager import manager
+from app.services.discovery import discovery
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
@@ -117,6 +118,8 @@ async def lifespan(_: FastAPI):
     await alerting.start()
     await automation_engine.start()
     await mqtt_publisher.start()
+    if settings.advertise_port:
+        await discovery.start(port=settings.discovery_port, http_port=settings.advertise_port)
     log.info("startup complete")
     try:
         yield
@@ -124,6 +127,7 @@ async def lifespan(_: FastAPI):
         log.info("shutting down")
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
+        await discovery.stop()
         await automation_engine.stop()
         await mapping_transport.stop_service()
         await monitor.stop()

@@ -326,6 +326,8 @@ class PlayerHello(BaseModel):
     secret: str = Field(min_length=32, max_length=128)
     name: str = Field(default="Player", min_length=1, max_length=128)
     #: "camera" for the camera agent (camera-agent/); fixed at first hello.
+    #: A camera sharing an approved player's secret is on that player's
+    #: computer (the Mini PC app runs both) and is approved with it.
     kind: Literal["player", "camera"] = "player"
 
 
@@ -349,6 +351,20 @@ class PlayerOut(BaseModel):
     online: bool
     last_seen_at: datetime | None
     report: dict = Field(default_factory=dict)
+    #: The other half of a mini PC: its camera, on a player; its player,
+    #: on a camera. Approved and removed together.
+    companion_id: int | None = None
+
+
+class NetworkInfo(BaseModel):
+    """How mini PCs reach this server, for the Players tab."""
+
+    #: Only this computer can reach the server: no mini PC can pair.
+    local_only: bool
+    #: Mini PCs find the server by themselves.
+    discoverable: bool
+    #: Where to point one by hand, when known.
+    address: str | None = None
 
 
 class PlayerUpdate(BaseModel):

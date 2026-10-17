@@ -3,6 +3,9 @@ import { request } from '@/api/client'
 import { classNames } from '@/lib/format'
 import { formatBytes } from './controls'
 
+/** Where the Windows installer for the computers beside the projectors is published. */
+export const MINIPC_DOWNLOAD = 'https://github.com/roccomatusic-max/Projectionmapping/releases/tag/minipc-latest'
+
 export interface Player {
   id: number
   name: string
@@ -27,6 +30,16 @@ export interface Player {
     people?: number
     activity?: string
   }
+  /** The other half of a mini PC: its camera on a player, its player on a camera. */
+  companion_id: number | null
+}
+
+interface NetworkInfo {
+  /** Only this computer can reach the server, so no mini PC can. */
+  local_only: boolean
+  /** Mini PCs find the server by themselves. */
+  discoverable: boolean
+  address: string | null
 }
 
 export interface OutputChoice {
@@ -38,7 +51,8 @@ export interface OutputChoice {
  * The small computers beside the projectors.
  *
  * A new one shows a six-letter code on its projector; approving that code
- * here and picking an output is the whole setup.
+ * here and picking an output is the whole setup. A camera plugged into a
+ * mini PC comes with it: approved, listed and removed together.
  */
 export function PlayersPanel({
   outputs,
@@ -53,6 +67,11 @@ export function PlayersPanel({
   onError: (message: string) => void
 }) {
   const [players, setPlayers] = useState<Player[]>([])
+  const [network, setNetwork] = useState<NetworkInfo | null>(null)
+
+  useEffect(() => {
+    request<NetworkInfo>('/mapping/players/network').then(setNetwork, () => setNetwork(null))
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -79,7 +98,8 @@ export function PlayersPanel({
   }
 
   const remove = async (player: Player) => {
-    if (!window.confirm(`Remove ${player.name}? It will go back to showing a pairing code.`)) return
+    const camera = player.kind === 'player' && player.companion_id != null ? ' Its camera is removed with it.' : ''
+    if (!window.confirm(`Remove ${player.name}? It will go back to showing a pairing code.${camera}`)) return
     try {
       await request(`/mapping/players/${player.id}`, { method: 'DELETE' })
       await load()
@@ -93,19 +113,39 @@ export function PlayersPanel({
       onError(err instanceof Error ? err.message : 'Identify failed'),
     )
 
-  const pending = players.filter((p) => !p.approved)
+  const byId = new Map(players.map((p) => [p.id, p]))
+  // A mini PC's camera is approved with the mini PC, so it is not asked about.
+  const pending = players.filter((p) => !p.approved && !(p.kind === 'camera' && p.companion_id != null))
   const paired = players.filter((p) => p.approved)
+  const onMac = navigator.userAgent.includes('Mac')
 
   return (
     <div className="space-y-4">
+      {network?.local_only && (
+        <div className="space-y-2 rounded-md bg-amber-500/10 p-3 text-sm text-amber-100 ring-1 ring-amber-500/30">
+          <p>Mini PCs and phones can’t reach this computer yet. Quit Projector Control and start it like this:</p>
+          <p className="rounded bg-black/30 px-2 py-1 font-mono text-xs text-slate-100">
+            {onMac ? './dist/ProjectorControl/ProjectorControl --lan' : 'ProjectorControl.exe --lan'}
+          </p>
+        </div>
+      )}
+
       {players.length === 0 && (
         <div className="space-y-2 text-sm text-slate-400">
-          <p>No players yet. On each computer beside a projector, open this address full screen:</p>
-          <p className="rounded-md bg-panel-850 px-3 py-2 font-mono text-sm text-slate-100 ring-1 ring-white/5">
-            {window.location.protocol}//{window.location.host}/player
+          <p>
+            No mini PCs yet. Install the{' '}
+            <a className="text-sky-300 underline" href={MINIPC_DOWNLOAD} target="_blank" rel="noreferrer">
+              Mini PC app
+            </a>{' '}
+            on each Windows computer beside a projector. It finds this server by itself, fills the projector, and
+            shows a pairing code there to approve here. A camera plugged into it comes along.
           </p>
           <p className="text-xs text-slate-500">
-            It shows a pairing code on the projector. It will appear here to approve.
+            Any other computer can open{' '}
+            <span className="font-mono text-slate-300">
+              {network?.address ?? `${window.location.protocol}//${window.location.host}`}/player
+            </span>{' '}
+            in a full-screen browser instead.
           </p>
         </div>
       )}
@@ -116,7 +156,8 @@ export function PlayersPanel({
             <div>
               <p className="font-mono text-xl font-semibold tracking-[0.2em] text-amber-200">{player.code}</p>
               <p className="text-xs text-slate-400">
-                {player.name} · {player.kind === 'camera' ? 'camera, ' : ''}waiting for approval
+                {player.name} · {player.kind === 'camera' ? 'camera, ' : ''}
+                {player.companion_id != null ? 'with its camera, ' : ''}waiting for approval
               </p>
             </div>
             <div className="flex gap-2">
@@ -155,7 +196,7 @@ export function PlayersPanel({
             />
             {player.kind === 'camera' && (
               <span className="shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300">
-                Camera
+                {player.companion_id != null ? `Camera on ${byId.get(player.companion_id)?.name ?? 'a mini PC'}` : 'Camera'}
               </span>
             )}
             <span className={classNames('shrink-0 text-xs', player.online ? 'text-emerald-300' : 'text-red-300')}>
@@ -168,11 +209,15 @@ export function PlayersPanel({
                 {player.online
                   ? `${player.report.camera ?? 'camera'}${player.report.depth ? ' · depth' : ''} · ${player.report.activity ?? 'idle'}` +
                     (player.report.people != null ? ` · ${player.report.people} people` : '')
-                  : 'Start the camera program on its computer.'}
+                  : player.companion_id != null
+                    ? 'Not seen recently. Check the camera is plugged in.'
+                    : 'Start the camera program on its computer.'}
               </p>
-              <button className="btn-ghost px-2 py-1 text-xs text-red-300" disabled={!canEdit} onClick={() => remove(player)}>
-                Remove
-              </button>
+              {player.companion_id == null && (
+                <button className="btn-ghost px-2 py-1 text-xs text-red-300" disabled={!canEdit} onClick={() => remove(player)}>
+                  Remove
+                </button>
+              )}
             </div>
           ) : (
             <div className="mt-2 flex flex-wrap items-center gap-2">

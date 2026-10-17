@@ -32,8 +32,10 @@ marked on its photo, mark them again.
 
 ## Where to run it
 
-On any computer on the show network with the camera plugged in: the main
-server, or one of the mini PCs beside a projector.
+On a Windows mini PC beside a projector, nothing to do: the
+[Mini PC app](../minipc/README.md) runs this program by itself whenever a
+camera is plugged in, already paired with that mini PC. Run it by hand only
+on another computer on the show network, such as the main server.
 
 The RealSense SDK installs with `pip install pyrealsense2` on Windows and
 Linux. On macOS there is no official package, and RealSense cameras often

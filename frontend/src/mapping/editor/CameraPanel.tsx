@@ -12,7 +12,7 @@ import type {
   Point,
   Show,
 } from '../types'
-import type { Player } from './PlayersPanel'
+import { MINIPC_DOWNLOAD, type Player } from './PlayersPanel'
 import { outputColor } from './panels'
 
 const DEFAULT_CORNERS: Point[] = [
@@ -140,10 +140,13 @@ export function CameraPanel({
   if (cameras.length === 0) {
     return (
       <div className="space-y-2 text-sm text-slate-400">
-        <p>No camera is paired yet.</p>
+        <p>No camera yet.</p>
         <p>
-          On the computer the camera is plugged into, run the camera program from the <code>camera-agent</code>{' '}
-          folder of the repository. It prints a pairing code; approve that code on the Players tab.
+          Plug the camera into one of the mini PCs running the{' '}
+          <a className="text-sky-300 underline" href={MINIPC_DOWNLOAD} target="_blank" rel="noreferrer">
+            Mini PC app
+          </a>
+          . It is found by itself and shows up here, already paired with that mini PC.
         </p>
       </div>
     )
