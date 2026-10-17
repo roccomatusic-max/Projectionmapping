@@ -1,40 +1,51 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, getToken } from '@/api/client'
 import type { BusMessage, Overview, Projector } from '@/api/types'
-
-type WsStatus = 'connecting' | 'open' | 'closed'
-
-/** Take a telemetry field from a live update only when it carries a value. */
-function keepIfAvailable<T extends { availability: string } | undefined>(incoming: T, current: T): T {
-  if (incoming && incoming.availability === 'available') return incoming
-  return current ?? incoming
-}
+import {
+  mergeLiveState,
+  shareUnchanged,
+  useFleetContext,
+  useOptionalFleetContext,
+  type WsStatus,
+} from '@/live/LiveProvider'
 
 /**
  * Live fleet state.
  *
- * The WebSocket is the fast path; a slow REST poll runs alongside it as a
- * safety net. If the socket dies mid-show the dashboard keeps updating —
- * it just updates more slowly, and the header says the link is down rather
- * than quietly showing frozen values as if they were live.
+ * Inside the app this reads the shared feed kept by <LiveProvider>: one
+ * WebSocket plus a slow REST safety net for every page. Screens that live
+ * outside the provider (the phone remote) get their own feed with the same
+ * behaviour. Either way, if the socket dies mid-show the screen keeps
+ * updating — more slowly — and says the link is down rather than quietly
+ * showing frozen values as if they were live.
  */
 export function useFleet(pollMs = 15000) {
+  const shared = useOptionalFleetContext()
+  const own = useStandaloneFleet(pollMs, shared === null)
+  if (shared) {
+    const { projectors, overview, loading, error, refresh, wsStatus, lastSync } = shared
+    return { projectors, overview, loading, error, refresh, wsStatus, lastSync }
+  }
+  return own
+}
+
+function useStandaloneFleet(pollMs: number, enabled: boolean) {
   const [projectors, setProjectors] = useState<Projector[]>([])
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [wsStatus, setWsStatus] = useState<WsStatus>('connecting')
-  const socketRef = useRef<WebSocket | null>(null)
-  const retryRef = useRef(0)
+  const [lastSync, setLastSync] = useState<number | null>(null)
   const mountedRef = useRef(true)
 
   const refresh = useCallback(async () => {
     try {
       const [list, stats] = await Promise.all([api.listProjectors(), api.overview()])
       if (!mountedRef.current) return
-      setProjectors(list)
+      setProjectors((current) => shareUnchanged(current, list))
       setOverview(stats)
       setError(null)
+      setLastSync(Date.now())
     } catch (err) {
       if (!mountedRef.current) return
       setError(err instanceof Error ? err.message : 'Failed to load fleet state')
@@ -44,6 +55,7 @@ export function useFleet(pollMs = 15000) {
   }, [])
 
   useEffect(() => {
+    if (!enabled) return
     mountedRef.current = true
     void refresh()
     const timer = window.setInterval(() => void refresh(), pollMs)
@@ -51,28 +63,26 @@ export function useFleet(pollMs = 15000) {
       mountedRef.current = false
       window.clearInterval(timer)
     }
-  }, [refresh, pollMs])
+  }, [refresh, pollMs, enabled])
 
   // WebSocket with exponential backoff.
   useEffect(() => {
+    if (!enabled) return
+    let socket: WebSocket | null = null
     let reconnectTimer: number | undefined
+    let retries = 0
     let disposed = false
 
     const connect = () => {
       const token = getToken()
       if (!token || disposed) return
       const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const socket = new WebSocket(
-        `${scheme}://${window.location.host}/api/ws?token=${encodeURIComponent(token)}`,
-      )
-      socketRef.current = socket
+      socket = new WebSocket(`${scheme}://${window.location.host}/api/ws?token=${encodeURIComponent(token)}`)
       setWsStatus('connecting')
-
       socket.onopen = () => {
-        retryRef.current = 0
+        retries = 0
         setWsStatus('open')
       }
-
       socket.onmessage = (event) => {
         let message: BusMessage
         try {
@@ -81,58 +91,11 @@ export function useFleet(pollMs = 15000) {
           return
         }
         if (message.type === 'projector_state') {
-          const payload = message.payload as Record<string, unknown>
-          const id = payload.projector_id as number
-          const online = Boolean(payload.online)
+          const id = message.payload.projector_id as number
           setProjectors((current) =>
-            current.map((projector) =>
-              projector.id === id
-                ? {
-                    ...projector,
-                    state: {
-                      ...projector.state,
-                      online,
-                      // A failed poll is news, but it is not a fresh reading:
-                      // keep the previous last-seen time and staleness.
-                      stale: online ? false : projector.state.stale,
-                      power: (payload.power as Projector['state']['power']) ?? 'unknown',
-                      shutter:
-                        (payload.shutter as Projector['state']['shutter']) ?? 'unknown',
-                      health: (payload.health as Projector['state']['health']) ?? 'unknown',
-                      active_input:
-                        (payload.active_input as Projector['state']['active_input']) ??
-                        projector.state.active_input,
-                      // Only the diagnostics tiers read lamp data; a shallow
-                      // poll carries an "unavailable" placeholder that must not
-                      // overwrite the last real reading.
-                      lamp_hours: keepIfAvailable(
-                        payload.lamp_hours as Projector['state']['lamp_hours'],
-                        projector.state.lamp_hours,
-                      ),
-                      lamp_status: keepIfAvailable(
-                        payload.lamp_status as Projector['state']['lamp_status'],
-                        projector.state.lamp_status,
-                      ),
-                      error_status: keepIfAvailable(
-                        payload.error_status as Projector['state']['error_status'],
-                        projector.state.error_status,
-                      ),
-                      errors: (payload.errors as string[]) ?? [],
-                      warnings: (payload.warnings as string[]) ?? [],
-                      last_error: online
-                        ? null
-                        : ((payload.errors as string[])?.[0] ?? projector.state.last_error),
-                      last_seen_at: online
-                        ? new Date().toISOString()
-                        : projector.state.last_seen_at,
-                    },
-                  }
-                : projector,
-            ),
+            current.map((p) => (p.id === id ? mergeLiveState(p, message.payload) : p)),
           )
         }
-        // Any event that changes the fleet counters triggers a cheap
-        // refresh of just the overview rather than a full reload.
         if (
           message.type === 'projector_offline' ||
           message.type === 'projector_online' ||
@@ -142,63 +105,51 @@ export function useFleet(pollMs = 15000) {
           void api.overview().then(setOverview).catch(() => undefined)
         }
       }
-
-      const scheduleReconnect = () => {
+      socket.onclose = () => {
         if (disposed) return
         setWsStatus('closed')
-        retryRef.current = Math.min(retryRef.current + 1, 6)
-        const delay = Math.min(1000 * 2 ** retryRef.current, 30000)
-        reconnectTimer = window.setTimeout(connect, delay)
+        retries = Math.min(retries + 1, 6)
+        reconnectTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retries, 30000))
       }
-
-      socket.onclose = scheduleReconnect
-      socket.onerror = () => socket.close()
+      socket.onerror = () => socket?.close()
     }
 
     connect()
     return () => {
       disposed = true
       if (reconnectTimer) window.clearTimeout(reconnectTimer)
-      socketRef.current?.close()
-      socketRef.current = null
+      if (socket) {
+        socket.onclose = null
+        socket.close()
+      }
     }
-  }, [])
+  }, [enabled])
 
-  return { projectors, overview, loading, error, refresh, wsStatus }
+  return { projectors, overview, loading, error, refresh, wsStatus, lastSync }
 }
 
-/** Subscribe to bus messages of specific types. */
+/** Subscribe to bus messages of specific types, over the shared socket. */
 export function useBusMessages(
   types: string[],
   handler: (message: BusMessage) => void,
   limit = 50,
 ) {
+  const { subscribe } = useFleetContext()
   const [messages, setMessages] = useState<BusMessage[]>([])
   const handlerRef = useRef(handler)
   handlerRef.current = handler
   const typesRef = useRef(types)
   typesRef.current = types
 
-  useEffect(() => {
-    const token = getToken()
-    if (!token) return
-    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const socket = new WebSocket(
-      `${scheme}://${window.location.host}/api/ws?token=${encodeURIComponent(token)}`,
-    )
-    socket.onmessage = (event) => {
-      let message: BusMessage
-      try {
-        message = JSON.parse(event.data as string)
-      } catch {
-        return
-      }
-      if (!typesRef.current.includes(message.type)) return
-      handlerRef.current(message)
-      setMessages((current) => [message, ...current].slice(0, limit))
-    }
-    return () => socket.close()
-  }, [limit])
+  useEffect(
+    () =>
+      subscribe((message) => {
+        if (!typesRef.current.includes(message.type)) return
+        handlerRef.current(message)
+        setMessages((current) => [message, ...current].slice(0, limit))
+      }),
+    [subscribe, limit],
+  )
 
   return messages
 }

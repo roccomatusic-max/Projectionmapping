@@ -31,34 +31,11 @@ import {
   type LucideIcon,
 } from './icons'
 
-export type Tone = 'ok' | 'warn' | 'fault' | 'idle' | 'busy' | 'unknown'
+import { TONE_RING, TONE_SOFT_BG, TONE_TEXT, type Tone } from './tone'
+import { lampTone } from '@/lib/status'
 
-export const TONE_TEXT: Record<Tone, string> = {
-  ok: 'text-emerald-400',
-  warn: 'text-amber-400',
-  fault: 'text-red-400',
-  idle: 'text-slate-500',
-  busy: 'text-sky-400',
-  unknown: 'text-slate-500',
-}
-
-export const TONE_RING: Record<Tone, string> = {
-  ok: 'ring-emerald-500/60',
-  warn: 'ring-amber-500/60',
-  fault: 'ring-red-500/60',
-  idle: 'ring-slate-600',
-  busy: 'ring-sky-500/60',
-  unknown: 'ring-slate-700',
-}
-
-const TONE_SOFT_BG: Record<Tone, string> = {
-  ok: 'bg-emerald-500/10',
-  warn: 'bg-amber-500/10',
-  fault: 'bg-red-500/10',
-  idle: 'bg-slate-500/10',
-  busy: 'bg-sky-500/10',
-  unknown: 'bg-slate-500/10',
-}
+export type { Tone }
+export { TONE_RING, TONE_TEXT }
 
 /* ------------------------------------------------------------------ */
 /* Projector mark: the device icon inside a status ring                 */
@@ -88,7 +65,7 @@ export function ProjectorMark({
       {pulse && (
         <span
           className={classNames(
-            'absolute inset-0 animate-ping rounded-full ring-2 opacity-40',
+            'absolute inset-0 animate-breathe rounded-full ring-2 opacity-60',
             TONE_RING[tone],
           )}
         />
@@ -149,7 +126,7 @@ export function ShutterGlyph({
   live: boolean
   size?: 'sm' | 'md' | 'lg'
 }) {
-  const tone: Tone = !live ? 'unknown' : state === 'closed' ? 'warn' : state === 'open' ? 'ok' : 'unknown'
+  const tone: Tone = !live ? 'unknown' : state === 'closed' ? 'idle' : state === 'open' ? 'ok' : 'unknown'
   return (
     <Glyph
       icon={ShutterIcon}
@@ -193,11 +170,11 @@ export function Glyph({
         aria-hidden
       >
         {pulse && (
-          <span className={classNames('absolute inset-0 animate-pulse rounded-lg', TONE_SOFT_BG[tone])} />
+          <span className={classNames('absolute inset-0 animate-breathe rounded-lg', TONE_SOFT_BG[tone])} />
         )}
         <Icon size={px} className={classNames('relative', TONE_TEXT[tone])} strokeWidth={1.75} />
         {slash && (
-          <span className="absolute left-1/2 top-1/2 h-[2px] w-[70%] -translate-x-1/2 -translate-y-1/2 rotate-45 rounded bg-amber-400" />
+          <span className="absolute left-1/2 top-1/2 h-[2px] w-[70%] -translate-x-1/2 -translate-y-1/2 rotate-45 rounded bg-slate-300" />
         )}
       </span>
       <div className="min-w-0 leading-tight">
@@ -212,23 +189,17 @@ export function Glyph({
 /* Lamp meter: hours against the replacement limit                      */
 /* ------------------------------------------------------------------ */
 
-function lampTone(hours: number, warn: number, critical: number): Tone {
-  if (hours >= critical) return 'fault'
-  if (hours >= warn) return 'warn'
-  return 'ok'
-}
-
 const METER_FILL: Record<Tone, string> = {
-  ok: 'bg-emerald-400',
-  warn: 'bg-amber-400',
+  ok: 'bg-green-400',
+  warn: 'bg-yellow-400',
   fault: 'bg-red-400',
   idle: 'bg-slate-500',
   busy: 'bg-sky-400',
   unknown: 'bg-slate-600',
 }
 const METER_TRACK: Record<Tone, string> = {
-  ok: 'bg-emerald-400/15',
-  warn: 'bg-amber-400/15',
+  ok: 'bg-green-400/15',
+  warn: 'bg-yellow-400/15',
   fault: 'bg-red-400/15',
   idle: 'bg-slate-500/15',
   busy: 'bg-sky-400/15',
@@ -250,7 +221,7 @@ export function LampMeter({
   compact?: boolean
   note?: string
 }) {
-  const tone: Tone = hours == null ? 'unknown' : lampTone(hours, warn, critical)
+  const tone: Tone = lampTone(hours, warn, critical)
   const pct = hours == null ? 0 : Math.min(100, Math.round((hours / critical) * 100))
   return (
     <div className="min-w-0" title={note ?? `${label}: warn at ${warn.toLocaleString()} h, replace at ${critical.toLocaleString()} h`}>
@@ -352,6 +323,9 @@ export function inputIcon(code: string): LucideIcon {
   if (c.startsWith('RG')) return RgbIcon
   if (c.startsWith('SD')) return SdiIcon
   if (c.startsWith('DL')) return DigitalLinkIcon
+  // PJLink two-character codes: 1x RGB, 3x digital.
+  if (/^1[1-9A-Z]$/.test(c)) return RgbIcon
+  if (/^3[1-9A-Z]$/.test(c)) return HdmiIcon
   return VideoIcon
 }
 
@@ -424,7 +398,7 @@ export function StatTile({
 export type FleetSegmentKind = 'on' | 'transition' | 'standby' | 'offline'
 
 const SEGMENT_STYLE: Record<FleetSegmentKind, { fill: string; label: string }> = {
-  on: { fill: 'bg-emerald-400', label: 'Lamp on' },
+  on: { fill: 'bg-green-400', label: 'Lamp on' },
   transition: { fill: 'bg-sky-400', label: 'Starting / cooling' },
   standby: { fill: 'bg-slate-500', label: 'Standby' },
   offline: { fill: 'bg-red-400', label: 'Offline' },

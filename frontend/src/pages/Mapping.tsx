@@ -280,7 +280,7 @@ export default function Mapping({ session }: { session: Session }) {
           </button>
         )}
         <div className="ml-auto flex items-center gap-3">
-          <span className={classNames('text-xs', link === 'open' ? 'text-slate-500' : 'text-amber-300')}>
+          <span className={classNames('text-xs', link === 'open' ? 'text-slate-500' : 'text-yellow-300')}>
             live link {link}
           </span>
           <div className="inline-flex gap-0.5 rounded-md bg-panel-850 p-0.5 ring-1 ring-white/5">
@@ -396,7 +396,7 @@ export default function Mapping({ session }: { session: Session }) {
                           >
                             <span className="h-2 w-2 rounded-full" style={{ background: outputColor(i) }} />
                             {o.name}
-                            {o.test_pattern !== 'none' && <span className="text-amber-300">· {o.test_pattern}</span>}
+                            {o.test_pattern !== 'none' && <span className="text-yellow-300">· {o.test_pattern}</span>}
                           </button>
                         ))}
                       </div>

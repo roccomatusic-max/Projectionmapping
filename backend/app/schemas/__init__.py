@@ -142,6 +142,10 @@ class ProjectorStateOut(BaseModel):
     last_error: str | None = None
     consecutive_failures: int = 0
     queue_depth: int = 0
+    #: Identity and condition from the last successful diagnostics poll:
+    #: serial number, firmware, temperature, fan, filter. Each value carries
+    #: its availability, so "not supported" is distinguishable from "not read".
+    equipment: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectorOut(ProjectorBase):

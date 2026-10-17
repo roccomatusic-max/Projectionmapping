@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Bar,
   BarChart,
@@ -11,6 +12,7 @@ import {
   YAxis,
 } from 'recharts'
 import { ApiError, api, downloadCsv, type Session } from '@/api/client'
+import { useOps } from '@/live/LiveProvider'
 import type { Alert, Enclosure, MaintenanceRecord, Projector, TelemetryPoint } from '@/api/types'
 import {
   Chip,
@@ -19,8 +21,6 @@ import {
   PageHeader,
   Panel,
   Spinner,
-  ToastStack,
-  useToasts,
 } from '@/components/ui'
 import { Glyph, type Tone } from '@/components/graphics'
 import { classNames, formatDateTime, relativeTime } from '@/lib/format'
@@ -52,9 +52,8 @@ export default function Monitoring({ session }: { session: Session }) {
   const [selectedProjector, setSelectedProjector] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const { toasts, push, dismiss } = useToasts()
+  const { notify: push } = useOps()
 
-  const canAcknowledge = session.role !== 'viewer'
 
   const load = async () => {
     try {
@@ -154,56 +153,24 @@ export default function Monitoring({ session }: { session: Session }) {
 
       {error && <ErrorBanner message={error} />}
 
-      <Panel
-        icon={FaultIcon}
-        title="Open alerts"
-        description="One notification per unresolved condition. Acknowledging silences repeats without resolving it."
+      <Link
+        to="/alerts"
+        className="panel-interactive flex items-center justify-between gap-3 px-4 py-3"
       >
-        {alerts.length === 0 ? (
-          <EmptyState title="No open alerts" icon={OkIcon}>Everything the platform monitors is nominal.</EmptyState>
-        ) : (
-          <ul className="divide-y divide-white/5">
-            {alerts.map((alert) => (
-              <li key={alert.id} className="flex flex-wrap items-start justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-sm text-slate-200">{alert.message}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {alert.kind} · opened {relativeTime(alert.opened_at)}
-                    {alert.notify_count > 1 && ` · notified ${alert.notify_count}×`}
-                    {alert.acknowledged_by && ` · acknowledged by ${alert.acknowledged_by}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Chip tone={alert.severity === 'critical' ? 'fault' : 'warn'}>
-                    {alert.severity}
-                  </Chip>
-                  {alert.state === 'open' && canAcknowledge && (
-                    <button
-                      className="btn-default text-xs"
-                      onClick={async () => {
-                        try {
-                          await api.acknowledgeAlert(alert.id)
-                          push('ok', 'Alert acknowledged')
-                          void load()
-                        } catch (err) {
-                          push(
-                            'fault',
-                            'Could not acknowledge',
-                            err instanceof ApiError ? err.message : undefined,
-                          )
-                        }
-                      }}
-                    >
-                      Acknowledge
-                    </button>
-                  )}
-                  {alert.state === 'acknowledged' && <Chip tone="idle">acknowledged</Chip>}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+        <span className="flex items-center gap-2.5 text-sm">
+          {alerts.length === 0 ? (
+            <OkIcon size={16} className="text-green-400" aria-hidden />
+          ) : (
+            <FaultIcon size={16} className={alerts.some((a) => a.severity === 'critical') ? 'text-red-400' : 'text-yellow-400'} aria-hidden />
+          )}
+          <span className="text-slate-200">
+            {alerts.length === 0
+              ? 'No unresolved alerts'
+              : `${alerts.length} unresolved alert${alerts.length === 1 ? '' : 's'}, ${alerts.filter((a) => a.severity === 'critical').length} critical`}
+          </span>
+        </span>
+        <span className="text-xs text-slate-400">Open Alerts →</span>
+      </Link>
 
       <Panel
         icon={TemperatureIcon}
@@ -323,7 +290,6 @@ export default function Monitoring({ session }: { session: Session }) {
         />
       </Panel>
 
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }
@@ -533,7 +499,7 @@ function EnclosureTile({ enclosure, projectorName }: { enclosure: Enclosure; pro
     return rank[t] > rank[acc] ? t : acc
   }, entries.length ? 'ok' : 'unknown')
   const ringTone: Record<Tone, string> = {
-    ok: 'ring-emerald-500/30', warn: 'ring-amber-500/40', fault: 'ring-red-500/50',
+    ok: 'ring-green-500/30', warn: 'ring-yellow-500/40', fault: 'ring-red-500/50',
     unknown: 'ring-white/10', idle: 'ring-white/10', busy: 'ring-sky-500/30',
   }
   return (
@@ -564,7 +530,7 @@ function EnclosureTile({ enclosure, projectorName }: { enclosure: Enclosure; pro
                 label={formatReading(metric, r.value)}
                 size="sm"
               />
-              <p className={classNames('mt-1 pl-11 text-[11px]', r.stale ? 'text-amber-400' : 'text-slate-500')}>
+              <p className={classNames('mt-1 pl-11 text-[11px]', r.stale ? 'text-yellow-400' : 'text-slate-500')}>
                 {relativeTime(r.recorded_at)}{r.stale && ' · stale'}
               </p>
             </div>

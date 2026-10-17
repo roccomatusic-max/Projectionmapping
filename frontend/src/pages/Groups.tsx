@@ -1,21 +1,16 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
-import type { Group, GroupCommandResult, Projector } from '@/api/types'
-import {
-  Chip,
-  ConfirmDialog,
-  EmptyState,
-  ErrorBanner,
-  PageHeader,
-  Panel,
-  Spinner,
-  StatusDot,
-  ToastStack,
-  useToasts,
-} from '@/components/ui'
-import { connectionTone } from '@/components/ProjectorCard'
-import { OUTCOME_LABEL, POWER_LABEL, SHUTTER_LABEL, formatClock, outcomeTone } from '@/lib/format'
-import { AddIcon, DeleteIcon, GroupsIcon, PowerIcon, ShutterIcon } from '@/components/icons'
+import type { Group, Projector } from '@/api/types'
+import { ConfirmDialog, EmptyState, ErrorBanner, PageHeader, Panel, Spinner, StatusDot } from '@/components/ui'
+import { AddIcon, ChevronIcon, DeleteIcon, GroupsIcon, PowerIcon, ShutterIcon } from '@/components/icons'
+import { CommandStrip } from '@/components/ProjectorCard'
+import { useBulkResults } from '@/components/fleet/BulkResults'
+import { powerRequest, shutterRequest, useProjectorCommand, type CommandRequest } from '@/components/fleet/useProjectorCommand'
+import { latestCommand, phaseIsActive, useFleetContext, useOps } from '@/live/LiveProvider'
+import { useGroups } from '@/live/useCatalog'
+import { deviceTone, isLive, isTransitioning } from '@/lib/status'
+import { POWER_LABEL, SHUTTER_LABEL } from '@/lib/format'
 
 /** Suggested names from the brief — offered as shortcuts, not imposed. */
 const SUGGESTED = [
@@ -28,72 +23,27 @@ const SUGGESTED = [
 ]
 
 export default function Groups({ session }: { session: Session }) {
-  const [groups, setGroups] = useState<Group[]>([])
-  const [projectors, setProjectors] = useState<Projector[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { projectors, loading, error } = useFleetContext()
+  const { commands, notify } = useOps()
+  const { groups, reload, loaded } = useGroups()
+  const { ask, dialog } = useProjectorCommand()
+  const bulkResults = useBulkResults()
   const [editing, setEditing] = useState<Group | 'new' | null>(null)
   const [deleting, setDeleting] = useState<Group | null>(null)
-  const [results, setResults] = useState<Record<number, GroupCommandResult>>({})
-  const [pending, setPending] = useState<{
-    group: Group
-    capability: string
-    params: Record<string, unknown>
-    label: string
-    danger: boolean
-  } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const { toasts, push, dismiss } = useToasts()
 
   const isAdmin = session.role === 'admin'
   const canControl = session.role !== 'viewer'
 
-  const load = async () => {
-    try {
-      const [g, p] = await Promise.all([api.listGroups(), api.listProjectors()])
-      setGroups(g)
-      setProjectors(p)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load groups')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const send = (request: CommandRequest) => ask(bulkResults.track(request))
 
-  useEffect(() => {
-    void load()
-  }, [])
-
-  const runGroupCommand = async (
-    group: Group,
-    capability: string,
-    params: Record<string, unknown>,
-    label: string,
-  ) => {
-    setBusy(true)
-    try {
-      const result = await api.groupCommand(group.id, capability, params)
-      setResults((current) => ({ ...current, [group.id]: result }))
-      push(
-        result.summary.failed === 0 ? 'ok' : 'warn',
-        `${group.name} — ${label}: ${result.summary.succeeded}/${result.summary.total}`,
-      )
-    } catch (err) {
-      push('fault', `${label} failed`, err instanceof ApiError ? err.message : undefined)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (loading) return <Spinner />
+  if (loading || !loaded) return <Spinner />
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         icon={GroupsIcon}
         title="Groups"
-        subtitle={`${groups.length} group(s) · commands go to every member at once`}
+        subtitle={`${groups.length} group${groups.length === 1 ? '' : 's'} · commands go to every member at once`}
         actions={
           isAdmin && (
             <button className="btn-primary" onClick={() => setEditing('new')}>
@@ -105,44 +55,52 @@ export default function Groups({ session }: { session: Session }) {
 
       {error && <ErrorBanner message={error} />}
 
+      {bulkResults.panel}
+
       {groups.length === 0 ? (
         <Panel>
           <EmptyState title="No groups yet" icon={GroupsIcon}>
-            Group projectors by installation area so you can power a whole surface on
-            or off in one action.
+            Group projectors by installation area so you can power a whole surface on or off in one action.
           </EmptyState>
         </Panel>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           {groups.map((group) => {
             const members = projectors.filter((p) => group.projector_ids.includes(p.id))
-            const result = results[group.id]
+            const responding = members.filter(isLive).length
+            const busy = members.some((p) => {
+              const c = latestCommand(commands, p.id)
+              return c !== undefined && phaseIsActive(c.phase)
+            })
+            const blocked = !canControl
+              ? 'Your role is view-only'
+              : members.length === 0
+                ? 'This group has no projectors'
+                : busy
+                  ? 'A command is still in progress in this group'
+                  : undefined
             return (
               <Panel
                 key={group.id}
                 title={
                   <span className="flex items-center gap-2">
-                    <span
-                      className="h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: group.color }}
-                    />
+                    <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: group.color }} aria-hidden />
                     {group.name}
                   </span>
                 }
-                description={group.description || `${members.length} projector(s)`}
+                description={
+                  <>
+                    {group.description && `${group.description} · `}
+                    <span className="tnum">{responding}</span> of <span className="tnum">{members.length}</span> responding
+                  </>
+                }
                 action={
                   isAdmin && (
                     <span className="flex gap-1">
-                      <button
-                        className="btn-ghost text-xs"
-                        onClick={() => setEditing(group)}
-                      >
+                      <button className="btn-ghost btn-sm" onClick={() => setEditing(group)}>
                         Edit
                       </button>
-                      <button
-                        className="btn-ghost text-xs text-red-300"
-                        onClick={() => setDeleting(group)}
-                      >
+                      <button className="btn-ghost btn-sm text-red-300" onClick={() => setDeleting(group)}>
                         <DeleteIcon size={13} aria-hidden /> Delete
                       </button>
                     </span>
@@ -152,116 +110,65 @@ export default function Groups({ session }: { session: Session }) {
                 <div className="space-y-3">
                   <ul className="grid gap-1.5 sm:grid-cols-2">
                     {members.map((member) => {
-                      const live = member.state.online && !member.state.stale
+                      const live = isLive(member)
                       return (
-                        <li key={member.id} className="flex items-center gap-2.5 rounded-lg bg-panel-850 px-3 py-2">
-                          <StatusDot
-                            tone={connectionTone(member)}
-                            pulse={member.state.power === 'warming' || member.state.power === 'cooling'}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-slate-100">{member.name}</span>
-                            <span className="block truncate text-[11px] text-slate-500">
-                              {live
-                                ? `${POWER_LABEL[member.state.power]} · shutter ${SHUTTER_LABEL[member.state.shutter].toLowerCase()}`
-                                : 'Offline'}
+                        <li key={member.id}>
+                          <Link
+                            to={`/projectors/${member.id}`}
+                            className="inset flex items-center gap-2.5 px-3 py-2 hover:bg-panel-800"
+                          >
+                            <StatusDot tone={deviceTone(member)} pulse={isTransitioning(member)} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm text-slate-100">{member.name}</span>
+                              <span className="block truncate text-2xs text-slate-500">
+                                {live
+                                  ? `${POWER_LABEL[member.state.power]} · shutter ${SHUTTER_LABEL[member.state.shutter].toLowerCase()}`
+                                  : 'Not responding'}
+                              </span>
                             </span>
-                          </span>
+                            <ChevronIcon size={14} className="shrink-0 text-slate-600" aria-hidden />
+                          </Link>
+                          <CommandStrip command={latestCommand(commands, member.id)} className="mt-1 px-1" />
                         </li>
                       )
                     })}
-                    {members.length === 0 && (
-                      <li className="text-xs text-slate-500">No members</li>
-                    )}
+                    {members.length === 0 && <li className="text-xs text-slate-500">No members</li>}
                   </ul>
 
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       className="btn-default"
-                      disabled={!canControl || busy || members.length === 0}
-                      onClick={() =>
-                        setPending({
-                          group,
-                          capability: 'power.set',
-                          params: { state: 'on' },
-                          label: 'Power on',
-                          danger: false,
-                        })
-                      }
+                      disabled={Boolean(blocked)}
+                      title={blocked}
+                      onClick={() => send(groupLabel(powerRequest(members, 'on'), group))}
                     >
                       <PowerIcon size={15} aria-hidden /> Power on
                     </button>
                     <button
-                      className="btn-default"
-                      disabled={!canControl || busy || members.length === 0}
-                      onClick={() =>
-                        setPending({
-                          group,
-                          capability: 'power.set',
-                          params: { state: 'off' },
-                          label: 'Power off',
-                          danger: true,
-                        })
-                      }
+                      className="btn-danger-outline"
+                      disabled={Boolean(blocked)}
+                      title={blocked}
+                      onClick={() => send(groupLabel(powerRequest(members, 'off'), group))}
                     >
                       <PowerIcon size={15} aria-hidden /> Power off
                     </button>
                     <button
                       className="btn-default"
-                      disabled={!canControl || busy || members.length === 0}
-                      onClick={() =>
-                        setPending({
-                          group,
-                          capability: 'shutter.set',
-                          params: { state: 'open' },
-                          label: 'Open shutters',
-                          danger: false,
-                        })
-                      }
+                      disabled={Boolean(blocked)}
+                      title={blocked}
+                      onClick={() => send(groupLabel(shutterRequest(members, 'open'), group))}
                     >
                       <ShutterIcon size={15} aria-hidden /> Open shutters
                     </button>
                     <button
                       className="btn-default"
-                      disabled={!canControl || busy || members.length === 0}
-                      onClick={() =>
-                        setPending({
-                          group,
-                          capability: 'shutter.set',
-                          params: { state: 'closed' },
-                          label: 'Close shutters',
-                          danger: true,
-                        })
-                      }
+                      disabled={Boolean(blocked)}
+                      title={blocked}
+                      onClick={() => send(groupLabel(shutterRequest(members, 'closed'), group))}
                     >
                       <ShutterIcon size={15} aria-hidden /> Close shutters
                     </button>
                   </div>
-
-                  {result && (
-                    <div className="rounded-md bg-panel-850 p-3">
-                      <p className="mb-2 text-xs text-slate-500">
-                        {result.capability} · dispatched{' '}
-                        {formatClock(result.dispatched_at)}
-                      </p>
-                      <ul className="space-y-1">
-                        {result.results.map((item) => (
-                          <li
-                            key={item.projector_id ?? item.name}
-                            className="flex items-center justify-between gap-2 text-xs"
-                          >
-                            <span className="truncate text-slate-300">{item.name}</span>
-                            <Chip
-                              tone={outcomeTone(item.outcome)}
-                              title={item.error ?? undefined}
-                            >
-                              {OUTCOME_LABEL[item.outcome]}
-                            </Chip>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                 </div>
               </Panel>
             )
@@ -276,46 +183,14 @@ export default function Groups({ session }: { session: Session }) {
           onClose={() => setEditing(null)}
           onSaved={(message) => {
             setEditing(null)
-            push('ok', message)
-            void load()
+            notify('ok', message)
+            reload()
           }}
-          onError={(message) => push('fault', 'Save failed', message)}
+          onError={(message) => notify('fault', 'Save failed', message)}
         />
       )}
 
-      <ConfirmDialog
-        open={pending !== null}
-        title={`${pending?.label} — ${pending?.group.name}?`}
-        body={
-          <>
-            <p>
-              {pending?.capability === 'power.set'
-                ? pending.params.state === 'on'
-                  ? 'Every projector in the group will strike its lamp and warm up.'
-                  : 'Every projector in the group enters its cooling cycle and cannot restart until cooling completes.'
-                : pending?.params.state === 'closed'
-                  ? 'Images on every projector in the group will be blanked. Lamps stay on.'
-                  : 'Images will be shown on every projector in the group.'}
-            </p>
-            <ul className="mt-2 text-xs text-slate-400">
-              {projectors
-                .filter((p) => pending?.group.projector_ids.includes(p.id))
-                .map((p) => (
-                  <li key={p.id}>• {p.name}</li>
-                ))}
-            </ul>
-          </>
-        }
-        confirmLabel={pending?.label}
-        danger={pending?.danger}
-        onCancel={() => setPending(null)}
-        onConfirm={() => {
-          const action = pending
-          setPending(null)
-          if (action)
-            void runGroupCommand(action.group, action.capability, action.params, action.label)
-        }}
-      />
+      {dialog}
 
       <ConfirmDialog
         open={deleting !== null}
@@ -330,16 +205,20 @@ export default function Groups({ session }: { session: Session }) {
           if (!target) return
           try {
             await api.deleteGroup(target.id)
-            push('ok', `${target.name} deleted`)
-            void load()
+            notify('ok', `${target.name} deleted`)
+            reload()
           } catch (err) {
-            push('fault', 'Delete failed', err instanceof ApiError ? err.message : undefined)
+            notify('fault', 'Delete failed', err instanceof ApiError ? err.message : undefined)
           }
         }}
       />
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
+}
+
+/** Names the group in the confirmation, so the operator knows which surface. */
+function groupLabel(request: CommandRequest, group: Group): CommandRequest {
+  return { ...request, title: `${request.spec.label}: ${group.name} (${request.projectors.length})?` }
 }
 
 function GroupForm({

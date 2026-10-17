@@ -1,125 +1,66 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
-import type { DriverInfo, Group, GroupCommandResult, Projector, Scene } from '@/api/types'
-import { useFleet, useTicker } from '@/hooks/useLiveData'
-import {
-  Chip,
-  ConfirmDialog,
-  EmptyState,
-  ErrorBanner,
-  Panel,
-  Spinner,
-  ToastStack,
-  useToasts,
-  PageHeader,
-} from '@/components/ui'
-import { connectionTone } from '@/components/ProjectorCard'
-import { PowerGlyph, ProjectorMark, ShutterGlyph, inputIcon } from '@/components/graphics'
+import type { Projector, Scene } from '@/api/types'
+import { useFleetContext, useOps, latestCommand, phaseIsActive, type TrackedCommand } from '@/live/LiveProvider'
+import { useDrivers, useGroups } from '@/live/useCatalog'
+import { ConfirmDialog, EmptyState, ErrorBanner, PageHeader, Panel, Spinner, StatusDot, ToastStack } from '@/components/ui'
+import { CommandStrip } from '@/components/ProjectorCard'
+import { LinkBadge, PowerBadge, ShutterBadge } from '@/components/status'
+import { inputIcon } from '@/components/graphics'
+import { TONE_EDGE } from '@/components/tone'
 import {
   CheckIcon,
   ControlIcon,
+  FullscreenIcon,
   GroupsIcon,
   HdmiIcon,
-  LiveIcon,
-  LogsIcon,
-  OfflineIcon,
   PowerIcon,
   SceneIcon,
   ShutterIcon,
 } from '@/components/icons'
+import { useBulkResults } from '@/components/fleet/BulkResults'
 import {
-  OUTCOME_HELP,
-  OUTCOME_LABEL,
-  classNames,
-  formatClock,
-  inputsFromCapabilities,
-  outcomeTone,
-  relativeTime,
-} from '@/lib/format'
+  inputRequest,
+  powerRequest,
+  shutterRequest,
+  useProjectorCommand,
+  type CommandRequest,
+} from '@/components/fleet/useProjectorCommand'
+import { classNames, inputsFromCapabilities } from '@/lib/format'
+import { deviceTone, isLive } from '@/lib/status'
 
-type BulkAction = {
-  label: string
-  capability: string
-  params?: Record<string, unknown>
-  danger?: boolean
-  confirmBody: string
-}
-
-const ACTIONS: BulkAction[] = [
-  {
-    label: 'Power on',
-    capability: 'power.set',
-    params: { state: 'on' },
-    confirmBody:
-      'Each projector will strike its lamp and warm up. Commands are dispatched together, but each unit warms at its own pace.',
-  },
-  {
-    label: 'Power off',
-    capability: 'power.set',
-    params: { state: 'off' },
-    danger: true,
-    confirmBody:
-      'Each projector enters its cooling cycle and cannot be restarted until cooling completes.',
-  },
-  {
-    label: 'Open shutters',
-    capability: 'shutter.set',
-    params: { state: 'open' },
-    confirmBody: 'Images will be shown on the selected projectors.',
-  },
-  {
-    label: 'Close shutters',
-    capability: 'shutter.set',
-    params: { state: 'closed' },
-    danger: true,
-    confirmBody: 'Images will be blanked. Lamps stay on.',
-  },
-]
-
-export default function ControlCenter({
-  session,
-  fullscreen = false,
-}: {
-  session: Session
-  fullscreen?: boolean
-}) {
-  const { projectors, loading, error, refresh, wsStatus } = useFleet(10000)
-  const [groups, setGroups] = useState<Group[]>([])
+/**
+ * Show control: pick projectors (or a group), then send one command to all
+ * of them. Every command asks first, and every projector's result is shown
+ * separately until its own read-back confirms it.
+ */
+export default function ControlCenter({ session, fullscreen = false }: { session: Session; fullscreen?: boolean }) {
+  const { projectors, loading, error, wsStatus } = useFleetContext()
+  const { commands, notify, toasts, dismissToast } = useOps()
+  const { groups } = useGroups()
+  const drivers = useDrivers()
+  const { ask, dialog } = useProjectorCommand()
+  const bulkResults = useBulkResults()
   const [scenes, setScenes] = useState<Scene[]>([])
-  const [drivers, setDrivers] = useState<DriverInfo[]>([])
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [lastResult, setLastResult] = useState<GroupCommandResult | null>(null)
-  const [pending, setPending] = useState<{ action: BulkAction } | null>(null)
   const [scenePending, setScenePending] = useState<Scene | null>(null)
-  const [busy, setBusy] = useState(false)
-  const { toasts, push, dismiss } = useToasts()
-  useTicker(5000)
+  const [sceneBusy, setSceneBusy] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const canControl = session.role !== 'viewer'
 
   useEffect(() => {
-    void Promise.all([api.listGroups(), api.listScenes(), api.drivers()])
-      .then(([g, s, d]) => {
-        setGroups(g)
-        setScenes(s)
-        setDrivers(d.drivers)
-      })
-      .catch(() => undefined)
+    api.listScenes().then(setScenes).catch(() => undefined)
   }, [])
 
-  const selectedList = useMemo(
-    () => projectors.filter((projector) => selected.has(projector.id)),
-    [projectors, selected],
-  )
+  const ordered = useMemo(() => [...projectors].sort((a, b) => a.name.localeCompare(b.name)), [projectors])
+  const selectedList = useMemo(() => ordered.filter((p) => selected.has(p.id)), [ordered, selected])
+  const selectedOffline = selectedList.filter((p) => !isLive(p)).length
 
-  // Inputs offered = union across the drivers of the selected projectors
-  // (all drivers when nothing is selected). A projector lacking a given
-  // input reports it as unsupported in the per-device results.
+  // Inputs offered = union across the drivers of the selected projectors. A
+  // projector lacking a given input reports it as unavailable in its result.
   const inputs = useMemo(() => {
-    const driverIds = new Set(
-      (selectedList.length ? selectedList : projectors).map((p) => p.driver),
-    )
+    const driverIds = new Set(selectedList.map((p) => p.driver))
     const merged = new Map<string, string>()
     for (const driver of drivers) {
       if (!driverIds.has(driver.driver_id)) continue
@@ -128,7 +69,13 @@ export default function ControlCenter({
       }
     }
     return [...merged.entries()]
-  }, [drivers, projectors, selectedList])
+  }, [drivers, selectedList])
+
+  const busy = selectedList.some((p) => {
+    const c = latestCommand(commands, p.id)
+    return c !== undefined && phaseIsActive(c.phase)
+  })
+  const blocked = !canControl ? 'Your role is view-only' : selected.size === 0 ? 'Select projectors first' : busy ? 'A command is still in progress on the selection' : undefined
 
   const toggle = (id: number) =>
     setSelected((current) => {
@@ -138,70 +85,38 @@ export default function ControlCenter({
       return next
     })
 
-  const selectAll = () => setSelected(new Set(projectors.map((p) => p.id)))
-  const selectNone = () => setSelected(new Set())
-  const selectGroup = (group: Group) => setSelected(new Set(group.projector_ids))
-
-  const dispatch = async (action: BulkAction) => {
-    if (selected.size === 0) return
-    setBusy(true)
-    try {
-      const result = await api.selectionCommand(
-        [...selected],
-        action.capability,
-        action.params ?? {},
-      )
-      setLastResult(result)
-      const { succeeded, failed, total } = result.summary
-      push(
-        failed === 0 ? 'ok' : succeeded === 0 ? 'fault' : 'warn',
-        `${action.label}: ${succeeded}/${total} succeeded`,
-        failed > 0
-          ? `${failed} projector(s) did not accept the command. See the results panel.`
-          : undefined,
-      )
-      void refresh()
-    } catch (err) {
-      push(
-        'fault',
-        `${action.label} failed`,
-        err instanceof ApiError ? err.message : 'Could not dispatch',
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
+  const send = (request: CommandRequest) => ask(bulkResults.track(request))
 
   const runScene = async (scene: Scene) => {
-    setBusy(true)
+    setSceneBusy(true)
     try {
       const result = await api.activateScene(scene.id)
-      push(
-        result.failed === 0 ? 'ok' : 'warn',
-        `Scene “${result.name}”: ${result.total - result.failed}/${result.total} succeeded`,
+      const accepted = result.total - result.failed
+      notify(
+        result.failed === 0 ? 'ok' : accepted === 0 ? 'fault' : 'warn',
+        `Scene “${result.name}”: ${accepted} of ${result.total} accepted`,
+        'Each projector’s card shows its confirmed state once it reads back.',
       )
-      void refresh()
     } catch (err) {
-      push('fault', 'Scene failed', err instanceof ApiError ? err.message : undefined)
+      notify('fault', 'Scene failed', err instanceof ApiError ? err.message : undefined)
     } finally {
-      setBusy(false)
+      setSceneBusy(false)
     }
   }
 
+  const live = wsStatus === 'open'
+
   return (
-    <div className={classNames('space-y-4', fullscreen && 'min-h-screen bg-panel-950 p-4')}>
+    <div className={classNames('space-y-4', fullscreen && 'min-h-screen bg-panel-950 p-3 sm:p-4')}>
       <PageHeader
         icon={ControlIcon}
         title="Control Center"
         subtitle={
-          <>
-            {wsStatus === 'open' ? (
-              <LiveIcon size={13} className="text-emerald-400" aria-hidden />
-            ) : (
-              <OfflineIcon size={13} className="text-amber-400" aria-hidden />
-            )}
-            {selected.size} of {projectors.length} selected
-          </>
+          <span className="inline-flex items-center gap-1.5">
+            <StatusDot tone={live ? 'ok' : 'warn'} />
+            {live ? 'Live' : 'Polling'} · <span className="tnum">{selected.size}</span> of{' '}
+            <span className="tnum">{projectors.length}</span> selected
+          </span>
         }
         actions={
           fullscreen ? (
@@ -210,7 +125,7 @@ export default function ControlCenter({
             </Link>
           ) : (
             <Link to="/control/fullscreen" className="btn-default">
-              Full-screen view
+              <FullscreenIcon size={14} aria-hidden /> Full screen
             </Link>
           )
         }
@@ -218,218 +133,194 @@ export default function ControlCenter({
 
       {error && <ErrorBanner message={error} />}
 
-      {/* Selection */}
-      <Panel icon={GroupsIcon} title="Selection">
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-default" onClick={selectAll}>
-            All projectors
-          </button>
-          <button className="btn-default" onClick={selectNone}>
-            Clear
-          </button>
-          {groups.map((group) => (
-            <button
-              key={group.id}
-              className="btn-default"
-              onClick={() => selectGroup(group)}
-              style={{ borderLeft: `3px solid ${group.color}` }}
-            >
-              {group.name}
-              <span className="text-xs text-slate-500">
-                ({group.projector_ids.length})
-              </span>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-3">
+          {/* Selection shortcuts */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <GroupsIcon size={14} className="mr-1 text-slate-500" aria-hidden />
+            <button className="btn-default btn-sm" onClick={() => setSelected(new Set(projectors.map((p) => p.id)))}>
+              All
             </button>
-          ))}
-          {groups.length === 0 && (
-            <Link to="/groups" className="btn-ghost text-xs">
-              Create a group →
-            </Link>
-          )}
-        </div>
-      </Panel>
-
-      {/* Projector grid */}
-      {loading ? (
-        <Panel>
-          <Spinner />
-        </Panel>
-      ) : projectors.length === 0 ? (
-        <Panel>
-          <EmptyState title="No projectors registered">
-            Add projectors before using the control center.
-          </EmptyState>
-        </Panel>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-          {projectors.map((projector) => (
-            <SelectTile
-              key={projector.id}
-              projector={projector}
-              selected={selected.has(projector.id)}
-              onToggle={() => toggle(projector.id)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Bulk actions */}
-      <Panel
-        icon={ControlIcon}
-        title="Group actions"
-        description="Commands are dispatched concurrently. Each projector acts at its own pace — this is not frame-accurate synchronisation."
-      >
-        <div className="space-y-3">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {ACTIONS.map((action) => (
+            <button
+              className="btn-default btn-sm"
+              onClick={() => setSelected(new Set(projectors.filter(isLive).map((p) => p.id)))}
+            >
+              Responding
+            </button>
+            {groups.map((group) => (
               <button
-                key={action.label}
-                className={action.danger ? 'btn-danger btn-lg' : 'btn-primary btn-lg'}
-                disabled={!canControl || busy || selected.size === 0}
-                onClick={() => setPending({ action })}
+                key={group.id}
+                className="btn-default btn-sm"
+                onClick={() => setSelected(new Set(group.projector_ids))}
+                style={{ boxShadow: `inset 3px 0 0 ${group.color}` }}
               >
-                {action.capability === 'power.set' ? (
-                  <PowerIcon size={18} aria-hidden />
-                ) : (
-                  <ShutterIcon size={18} aria-hidden />
-                )}
-                {action.label}
+                {group.name}
+                <span className="tnum text-2xs text-slate-500">{group.projector_ids.length}</span>
               </button>
             ))}
+            <button className="btn-ghost btn-sm" disabled={selected.size === 0} onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
           </div>
 
-          <div>
-            <p className="label flex items-center gap-1.5">
-              <HdmiIcon size={12} aria-hidden /> Change input on selection
-            </p>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-              {inputs.map(([code, label]) => (
-                <button
-                  key={code}
-                  className="btn-default"
-                  disabled={!canControl || busy || selected.size === 0}
-                  onClick={() =>
-                    setPending({
-                      action: {
-                        label: `Input ${label}`,
-                        capability: 'input.set',
-                        params: { input: code },
-                        confirmBody: `The selected projectors will switch to ${label}. Any projector without that input fitted will report it as unavailable.`,
-                      },
-                    })
-                  }
-                >
-                  {(() => {
-                    const Icon = inputIcon(code)
-                    return <Icon size={15} className="text-slate-400" aria-hidden />
-                  })()}
-                  {label}
-                </button>
+          {loading ? (
+            <Panel>
+              <Spinner />
+            </Panel>
+          ) : projectors.length === 0 ? (
+            <Panel>
+              <EmptyState title="No projectors registered">
+                <Link to="/projectors?add=1" className="text-sky-300 hover:underline">
+                  Add a projector
+                </Link>{' '}
+                to control it from here.
+              </EmptyState>
+            </Panel>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
+              {ordered.map((projector) => (
+                <SelectTile
+                  key={projector.id}
+                  projector={projector}
+                  command={latestCommand(commands, projector.id)}
+                  selected={selected.has(projector.id)}
+                  onToggle={() => toggle(projector.id)}
+                />
               ))}
             </div>
-          </div>
+          )}
+
+          {bulkResults.panel}
+
+          {/* Phones and tablets: the actions follow the thumb. Inputs and
+              scenes stay in the panel further down. */}
+          {selected.size > 0 && (
+            <div className="sticky bottom-20 z-30 xl:hidden">
+              <div className="panel flex flex-wrap items-center gap-1.5 border-sky-500/40 bg-panel-850 px-3 py-2.5 shadow-overlay">
+                <p className="w-full text-xs text-slate-300">
+                  <span className="tnum font-medium text-slate-50">{selected.size}</span> selected
+                  {selectedOffline > 0 && <span className="ml-2 text-yellow-300">{selectedOffline} not responding</span>}
+                </p>
+                <button className="btn-primary btn-sm flex-1" disabled={Boolean(blocked)} onClick={() => send(powerRequest(selectedList, 'on'))}>
+                  <PowerIcon size={13} aria-hidden /> On
+                </button>
+                <button className="btn-danger-outline btn-sm flex-1" disabled={Boolean(blocked)} onClick={() => send(powerRequest(selectedList, 'off'))}>
+                  <PowerIcon size={13} aria-hidden /> Off
+                </button>
+                <button className="btn-default btn-sm flex-1" disabled={Boolean(blocked)} onClick={() => send(shutterRequest(selectedList, 'open'))}>
+                  <ShutterIcon size={13} aria-hidden /> Open
+                </button>
+                <button className="btn-default btn-sm flex-1" disabled={Boolean(blocked)} onClick={() => send(shutterRequest(selectedList, 'closed'))}>
+                  <ShutterIcon size={13} aria-hidden /> Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <aside className="space-y-3 xl:sticky xl:top-16 xl:self-start">
+          <Panel
+            icon={ControlIcon}
+            title="Send to selection"
+            description={
+              selected.size === 0
+                ? 'Pick projectors on the left or a group above.'
+                : `${selected.size} projector${selected.size === 1 ? '' : 's'}${selectedOffline ? `, ${selectedOffline} not responding` : ''}. Each acts at its own pace; this is not frame-accurate sync.`
+            }
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  className="btn-primary btn-lg whitespace-nowrap text-sm"
+                  disabled={Boolean(blocked)}
+                  title={blocked}
+                  onClick={() => send(powerRequest(selectedList, 'on'))}
+                >
+                  <PowerIcon size={17} aria-hidden /> Power on
+                </button>
+                <button
+                  className="btn-danger-outline btn-lg whitespace-nowrap text-sm"
+                  disabled={Boolean(blocked)}
+                  title={blocked}
+                  onClick={() => send(powerRequest(selectedList, 'off'))}
+                >
+                  <PowerIcon size={17} aria-hidden /> Power off
+                </button>
+                <button
+                  className="btn-default btn-lg whitespace-nowrap text-sm"
+                  disabled={Boolean(blocked)}
+                  title={blocked}
+                  onClick={() => send(shutterRequest(selectedList, 'open'))}
+                >
+                  <ShutterIcon size={17} aria-hidden /> Open shutters
+                </button>
+                <button
+                  className="btn-default btn-lg whitespace-nowrap text-sm"
+                  disabled={Boolean(blocked)}
+                  title={blocked}
+                  onClick={() => send(shutterRequest(selectedList, 'closed'))}
+                >
+                  <ShutterIcon size={17} aria-hidden /> Close shutters
+                </button>
+              </div>
+
+              <div>
+                <p className="label flex items-center gap-1.5">
+                  <HdmiIcon size={12} aria-hidden /> Input
+                </p>
+                {inputs.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    {selected.size === 0 ? 'Inputs appear once projectors are selected.' : 'No switchable inputs on the selection.'}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {inputs.map(([code, label]) => {
+                      const Icon = inputIcon(code)
+                      return (
+                        <button
+                          key={code}
+                          className="btn-default btn-sm"
+                          disabled={Boolean(blocked)}
+                          title={blocked}
+                          onClick={() => send(inputRequest(selectedList, code, label))}
+                        >
+                          <Icon size={13} className="text-slate-400" aria-hidden />
+                          <span className="truncate">{label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Panel>
 
           {scenes.length > 0 && (
-            <div>
-              <p className="label flex items-center gap-1.5">
-                <SceneIcon size={12} aria-hidden /> Scenes
-              </p>
-              <div className="flex flex-wrap gap-2">
+            <Panel icon={SceneIcon} title="Scenes" description="Run a saved set of actions on their own targets.">
+              <div className="flex flex-wrap gap-1.5">
                 {scenes.map((scene) => (
                   <button
                     key={scene.id}
-                    className="btn-default"
-                    disabled={!canControl || busy}
+                    className="btn-default btn-sm"
+                    disabled={!canControl || sceneBusy}
                     onClick={() => setScenePending(scene)}
                     title={scene.description}
                   >
-                    <SceneIcon size={14} aria-hidden /> {scene.name}
+                    <SceneIcon size={13} aria-hidden /> {scene.name}
                   </button>
                 ))}
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                A blackout scene closes projector shutters. It is an operational
-                convenience, not a certified emergency safety mechanism.
+                A blackout scene closes projector shutters. It is an operational convenience, not a certified
+                emergency safety mechanism.
               </p>
-            </div>
+            </Panel>
           )}
-        </div>
-      </Panel>
+        </aside>
+      </div>
 
-      {/* Per-device results */}
-      {lastResult && (
-        <Panel
-          icon={LogsIcon}
-          title="Last dispatch results"
-          description={`${lastResult.capability} · dispatched at ${formatClock(lastResult.dispatched_at)}`}
-          action={
-            <Chip
-              tone={
-                lastResult.summary.failed === 0
-                  ? 'ok'
-                  : lastResult.summary.succeeded === 0
-                    ? 'fault'
-                    : 'warn'
-              }
-            >
-              {lastResult.summary.succeeded}/{lastResult.summary.total} succeeded
-            </Chip>
-          }
-        >
-          <ul className="divide-y divide-white/5">
-            {lastResult.results.map((result) => (
-              <li
-                key={result.projector_id ?? result.name}
-                className="flex flex-wrap items-center justify-between gap-2 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm text-slate-200">
-                    {result.name ?? `Projector ${result.projector_id}`}
-                  </p>
-                  {result.error && (
-                    <p className="break-words text-xs text-slate-500">{result.error}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {result.latency_ms != null && (
-                    <span className="tnum text-xs text-slate-500">
-                      {result.latency_ms} ms
-                    </span>
-                  )}
-                  <Chip
-                    tone={outcomeTone(result.outcome)}
-                    title={OUTCOME_HELP[result.outcome]}
-                  >
-                    {OUTCOME_LABEL[result.outcome]}
-                  </Chip>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      )}
-
-      <ConfirmDialog
-        open={pending !== null}
-        title={`${pending?.action.label} on ${selected.size} projector(s)?`}
-        body={
-          <>
-            <p>{pending?.action.confirmBody}</p>
-            <ul className="mt-2 max-h-40 overflow-y-auto text-xs text-slate-400">
-              {selectedList.map((projector) => (
-                <li key={projector.id}>• {projector.name}</li>
-              ))}
-            </ul>
-          </>
-        }
-        confirmLabel={pending?.action.label}
-        danger={pending?.action.danger}
-        onCancel={() => setPending(null)}
-        onConfirm={() => {
-          const action = pending?.action
-          setPending(null)
-          if (action) void dispatch(action)
-        }}
-      />
+      {dialog}
       <ConfirmDialog
         open={scenePending !== null}
         title={`Activate scene “${scenePending?.name}”?`}
@@ -437,8 +328,7 @@ export default function ControlCenter({
           <>
             <p>{scenePending?.description || 'Runs every action in the scene now.'}</p>
             <p className="mt-2 text-xs text-slate-400">
-              {scenePending?.actions.length} action(s). Each projector reports its own
-              result.
+              {scenePending?.actions.length} action(s). Each projector reports its own result.
             </p>
           </>
         }
@@ -450,54 +340,59 @@ export default function ControlCenter({
           if (scene) void runScene(scene)
         }}
       />
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
+      {/* Full-screen mode has no app shell, so it shows its own notifications. */}
+      {fullscreen && <ToastStack toasts={toasts} onDismiss={dismissToast} />}
     </div>
   )
 }
 
 function SelectTile({
   projector,
+  command,
   selected,
   onToggle,
 }: {
   projector: Projector
+  command?: TrackedCommand
   selected: boolean
   onToggle: () => void
 }) {
-  const live = projector.state.online && !projector.state.stale
+  const tone = deviceTone(projector)
   return (
-    <button
-      onClick={onToggle}
-      aria-pressed={selected}
+    <div
       className={classNames(
-        'panel w-full px-3 py-2.5 text-left transition-colors',
-        selected ? 'ring-2 ring-sky-500' : 'hover:bg-panel-850',
+        'panel relative overflow-hidden transition-colors duration-200',
+        'before:absolute before:inset-y-0 before:left-0 before:w-[3px]',
+        TONE_EDGE[tone],
+        selected ? 'border-sky-500/60 bg-sky-500/[0.06] ring-1 ring-sky-500/40' : 'hover:border-white/10',
       )}
     >
-      <div className="flex items-center gap-3">
-        <ProjectorMark
-          tone={connectionTone(projector)}
-          size="sm"
-          pulse={projector.state.power === 'warming' || projector.state.power === 'cooling'}
-        />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-slate-100">{projector.name}</span>
-          <span className="block text-[11px] text-slate-500">{relativeTime(projector.state.last_seen_at)}</span>
-        </span>
+      <button
+        onClick={onToggle}
+        aria-pressed={selected}
+        aria-label={`${selected ? 'Deselect' : 'Select'} ${projector.name}`}
+        className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+      >
         <span
           className={classNames(
-            'inline-flex h-5 w-5 items-center justify-center rounded-full border',
-            selected ? 'border-sky-400 bg-sky-500/20 text-sky-300' : 'border-slate-700 text-transparent',
+            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
+            selected ? 'border-sky-400 bg-sky-500 text-white' : 'border-slate-600 text-transparent',
           )}
           aria-hidden
         >
           <CheckIcon size={12} />
         </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-slate-100">{projector.name}</span>
+          <span className="tnum block truncate text-2xs text-slate-500">{projector.host}</span>
+        </span>
+      </button>
+      <div className="flex flex-wrap gap-1.5 px-3.5 pb-2.5">
+        <LinkBadge projector={projector} compact />
+        <PowerBadge projector={projector} />
+        <ShutterBadge projector={projector} />
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <PowerGlyph state={projector.state.power} live={live} size="sm" />
-        <ShutterGlyph state={projector.state.shutter} live={live} size="sm" />
-      </div>
-    </button>
+      <CommandStrip command={command} className="mx-3.5 mb-2.5" />
+    </div>
   )
 }

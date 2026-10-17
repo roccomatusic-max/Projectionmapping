@@ -25,6 +25,14 @@ from app.services.device_manager import Priority, manager
 
 log = logging.getLogger(__name__)
 
+#: Status fields stored under ``ProjectorState.extra["equipment"]`` and
+#: served as ``state.equipment``. Each keeps its availability and note, so
+#: the UI can say "not supported by this protocol" instead of showing a gap.
+EQUIPMENT_FIELDS = (
+    "manufacturer", "model", "serial_number", "firmware", "filter_usage",
+    "temperature", "fan", "resolution", "input_signal",
+)
+
 
 #: Do not enqueue another poll when this many items are already waiting.
 MAX_QUEUED_POLLS = 3
@@ -219,6 +227,17 @@ class MonitoringService:
                 state.lamp_hours = status.lamp_hours.as_dict()
                 state.lamp_status = status.lamp_status.as_dict()
                 state.error_status = status.error_status.as_dict()
+                # Identity and condition readings ride along on the deep poll.
+                # A failed poll leaves the last good set in place: an offline
+                # projector did not lose its serial number.
+                if status.online:
+                    state.extra = {
+                        **(state.extra or {}),
+                        "equipment": {
+                            name: getattr(status, name).as_dict()
+                            for name in EQUIPMENT_FIELDS
+                        },
+                    }
 
             await self._write_telemetry(session, worker.projector_id, status, tier, now)
             await self._write_transitions(

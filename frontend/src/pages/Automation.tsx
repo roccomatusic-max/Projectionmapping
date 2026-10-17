@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ApiError, api, type Session } from '@/api/client'
+import { useOps } from '@/live/LiveProvider'
 import type { Automation as AutomationType, AutomationRun, Enclosure, Group, Projector, Scene } from '@/api/types'
 import {
   Chip,
@@ -8,8 +9,6 @@ import {
   ErrorBanner,
   Panel,
   Spinner,
-  ToastStack,
-  useToasts,
   PageHeader,
 } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
@@ -99,7 +98,7 @@ export default function Automation({ session }: { session: Session }) {
   const [deleting, setDeleting] = useState<AutomationType | null>(null)
   const [builder, setBuilder] = useState<{ draft: Draft; id: number | null } | null>(null)
   const [busy, setBusy] = useState(false)
-  const { toasts, push, dismiss } = useToasts()
+  const { notify: push } = useOps()
 
   const isAdmin = session.role === 'admin'
   const canRun = session.role !== 'viewer'
@@ -166,7 +165,6 @@ export default function Automation({ session }: { session: Session }) {
             void load()
           }}
         />
-        <ToastStack toasts={toasts} onDismiss={dismiss} />
       </div>
     )
   }
@@ -488,7 +486,6 @@ export default function Automation({ session }: { session: Session }) {
           }
         }}
       />
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }

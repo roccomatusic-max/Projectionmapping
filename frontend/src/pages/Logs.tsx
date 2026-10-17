@@ -77,7 +77,7 @@ export default function Logs() {
                   <span className="min-w-0 flex-1 truncate font-mono text-slate-400">
                     {String(message.payload.capability ?? message.payload.message ?? message.type)}
                   </span>
-                  {outcome && <span className={good ? 'text-emerald-400' : 'text-red-400'}>{outcome}</span>}
+                  {outcome && <span className={good ? 'text-green-400' : 'text-red-400'}>{outcome}</span>}
                 </li>
               )
             })}

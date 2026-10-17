@@ -375,6 +375,24 @@ async def test_status_refresh_polls_the_device(api):
     assert body["stale"] is False
 
 
+async def test_equipment_readings_are_served_after_a_deep_poll(api):
+    """Serial, firmware, temperature and fan reach the UI with their
+    availability, so "not supported by this protocol" is not shown as a gap."""
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    before = (await api.get(f"/api/projectors/{pid}", headers=headers)).json()
+    assert before["state"]["equipment"] == {}
+
+    await api.get(f"/api/projectors/{pid}/status?refresh=true", headers=headers)
+    equipment = (await api.get(f"/api/projectors/{pid}", headers=headers)).json()["state"]["equipment"]
+    for field in ("serial_number", "firmware", "temperature", "fan", "model"):
+        assert field in equipment
+    # The PT-DZ13K LAN protocol has no confirmed serial query: say so, never invent one.
+    assert equipment["serial_number"]["availability"] == "unsupported"
+    assert equipment["serial_number"]["value"] is None
+    assert equipment["serial_number"]["note"]
+
+
 async def test_never_reported_device_is_offline_not_online(api):
     """A projector that has never answered must not show as online."""
     headers = await login(api)

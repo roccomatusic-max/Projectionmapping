@@ -1,13 +1,12 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { ApiError, api, type Session } from '@/api/client'
+import { useOps } from '@/live/LiveProvider'
 import type { DriverInfo, Role } from '@/api/types'
 import {
   Chip,
   ErrorBanner,
   Panel,
   Spinner,
-  ToastStack,
-  useToasts,
   PageHeader,
 } from '@/components/ui'
 import AppUpdates from '@/components/AppUpdates'
@@ -20,7 +19,7 @@ export default function Settings({ session }: { session: Session }) {
     Array<{ id: number; username: string; role: Role; is_active: boolean }>
   >([])
   const [error, setError] = useState<string | null>(null)
-  const { toasts, push, dismiss } = useToasts()
+  const { notify: push } = useOps()
 
   const isAdmin = session.role === 'admin'
 
@@ -132,7 +131,7 @@ export default function Settings({ session }: { session: Session }) {
                 </p>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2">
                   <div>
-                    <p className="mb-1 text-xs uppercase tracking-wide text-emerald-400">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-green-400">
                       Verified ({trusted.length})
                     </p>
                     <p className="text-xs text-slate-400">
@@ -140,7 +139,7 @@ export default function Settings({ session }: { session: Session }) {
                     </p>
                   </div>
                   <div>
-                    <p className="mb-1 text-xs uppercase tracking-wide text-amber-400">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-yellow-400">
                       Needs opt-in ({gated.length})
                     </p>
                     <p className="text-xs text-slate-400">
@@ -180,7 +179,6 @@ export default function Settings({ session }: { session: Session }) {
         </Panel>
       )}
 
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }
@@ -310,7 +308,7 @@ function ServiceTokens({
       </form>
 
       {issued && (
-        <div className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3">
+        <div className="rounded-md border border-yellow-500/25 bg-yellow-500/5 p-3">
           <p className="text-sm text-slate-200">
             Token for <span className="font-medium">{issued.user}</span>, valid until{' '}
             {new Date(issued.expires).toLocaleDateString()}. It is shown once — copy it now.

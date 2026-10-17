@@ -25,8 +25,8 @@ export default function Login({ onSignedIn }: { onSignedIn: (session: Session) =
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="grid w-full max-w-3xl overflow-hidden rounded-2xl border border-white/[0.06] bg-panel-900 shadow-panel md:grid-cols-[1.1fr_1fr]">
-        <aside className="hidden flex-col justify-between bg-gradient-to-br from-sky-500/15 via-panel-900 to-panel-900 p-8 md:flex">
+      <div className="grid w-full max-w-3xl overflow-hidden rounded-lg border border-white/[0.06] bg-panel-900 shadow-panel md:grid-cols-[1.1fr_1fr]">
+        <aside className="hidden flex-col justify-between border-r border-white/[0.06] bg-panel-850 p-8 md:flex">
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/25" aria-hidden>
             <ProjectorIcon size={24} strokeWidth={1.75} />
           </span>
@@ -37,9 +37,9 @@ export default function Login({ onSignedIn }: { onSignedIn: (session: Session) =
               against the projector's own reply and recorded with its wire frame.
             </p>
             <ul className="mt-6 space-y-2 text-xs text-slate-400">
-              <li className="flex gap-2"><span className="text-emerald-400">●</span> Live state, not remembered state</li>
+              <li className="flex gap-2"><span className="text-green-400">●</span> Live state, not remembered state</li>
               <li className="flex gap-2"><span className="text-sky-400">●</span> Confirmation before anything disruptive</li>
-              <li className="flex gap-2"><span className="text-amber-400">●</span> Unverified commands stay off until you opt in</li>
+              <li className="flex gap-2"><span className="text-yellow-400">●</span> Unverified commands stay off until you opt in</li>
             </ul>
           </div>
           <p className="text-[11px] text-slate-600">Not a safety device. Keep physical procedures for people and equipment.</p>
