@@ -27,6 +27,7 @@ from app.drivers import (
     CommandOutcome,
     CommandResult,
     ConnectionConfig,
+    HealthSeverity,
     PowerState,
     ProjectorDriver,
     ProjectorStatus,
@@ -108,6 +109,11 @@ class DeviceWorker:
         self._verifications: set[asyncio.Task] = set()
 
         self.status = ProjectorStatus()
+        #: The last deep read while the device has stayed online. Shallow
+        #: polls do not ask for lamp hours or %1ERST, so without this a
+        #: fan fault reported by the diagnostics poll would vanish from the
+        #: status fifteen seconds later and reappear a minute after that.
+        self._deep_status: ProjectorStatus | None = None
         self.last_success_at: float | None = None
         self.consecutive_failures = 0
         self.last_error: str | None = None
@@ -454,6 +460,7 @@ class DeviceWorker:
     async def _poll(self, *, deep: bool = False) -> ProjectorStatus:
         if not await self._ensure_connection():
             self.consecutive_failures += 1
+            self._deep_status = None
             previous = self.status
             self.status = ProjectorStatus(online=False)
             self.status.errors = [self.last_error or "unreachable"]
@@ -471,20 +478,52 @@ class DeviceWorker:
             self.consecutive_failures += 1
             self.last_error = f"status read failed: {exc}"
             await self._safe_disconnect()
+            self._deep_status = None
             self.status = ProjectorStatus(online=False, errors=[self.last_error])
             return self.status
 
         previous = self.status
-        self.status = status
         if status.online:
             self.consecutive_failures = 0
             self.last_success_at = time.time()
             self.last_error = None
+            if deep:
+                self._deep_status = status
+            else:
+                self._carry_deep_fields(status)
         else:
             self.consecutive_failures += 1
+            # A device that dropped off may come back in another state; the
+            # next deep poll re-reads it rather than trusting old findings.
+            self._deep_status = None
+        self.status = status
 
         self._detect_transitions(previous, status)
         return status
+
+    #: Read only by deep polls, so a shallow poll keeps the last deep value.
+    _DEEP_FIELDS = (
+        "lamp_hours", "lamp_status", "error_status", "filter_usage",
+        "manufacturer", "model", "serial_number", "firmware",
+        "temperature", "fan", "input_signal", "resolution",
+    )
+
+    def _carry_deep_fields(self, status: ProjectorStatus) -> None:
+        """Fill a shallow status with what the last deep poll found.
+
+        Health, errors and warnings come along only when the shallow read
+        has nothing of its own to say (health UNKNOWN): a driver that
+        derives health from every poll keeps its own verdict.
+        """
+        deep = self._deep_status
+        if deep is None:
+            return
+        for name in self._DEEP_FIELDS:
+            setattr(status, name, getattr(deep, name))
+        if status.health is HealthSeverity.UNKNOWN and deep.health is not HealthSeverity.UNKNOWN:
+            status.health = deep.health
+            status.errors = list(deep.errors)
+            status.warnings = list(deep.warnings)
 
     def _detect_transitions(self, before: ProjectorStatus, after: ProjectorStatus) -> None:
         if before.online and not after.online:
