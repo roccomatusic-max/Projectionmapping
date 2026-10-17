@@ -143,6 +143,45 @@ async def test_show_with_outputs_and_geometry(api):
     assert [(o["name"], o["position"]) for o in full["outputs"]] == [("Right", 0)]
 
 
+async def test_new_outputs_get_their_own_slice(api):
+    headers = await login(api)
+    show = await make_show(api, headers)
+    url = f"/api/mapping/shows/{show['id']}/outputs"
+
+    def sources(full):
+        return [tuple(round(o["source"][k], 4) for k in "xywh") for o in full["outputs"]]
+
+    first = (await api.post(url, headers=headers, json={"name": "One"})).json()
+    assert first["source"] == {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+    for name in ("Two", "Three"):
+        await api.post(url, headers=headers, json={"name": name})
+    full = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    third = round(1 / 3, 4)
+    assert sources(full) == [(0.0, 0.0, third, 1.0), (third, 0.0, third, 1.0),
+                             (round(2 / 3, 4), 0.0, third, 1.0)]
+
+    # Once an output is placed by hand, the others stay where they are.
+    await api.patch(f"/api/mapping/outputs/{first['id']}", headers=headers,
+                    json={"source": {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}})
+    await api.post(url, headers=headers, json={"name": "Four"})
+    full = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert sources(full)[0] == (0.1, 0.2, 0.3, 0.4)
+    assert sources(full)[1] == (third, 0.0, third, 1.0)
+    assert sources(full)[3] == (0.0, 0.0, 1.0, 1.0)
+
+
+async def test_stacked_outputs_are_spread_out_when_one_is_added(api):
+    headers = await login(api)
+    show = await make_show(api, headers)
+    url = f"/api/mapping/shows/{show['id']}/outputs"
+    full_canvas = {"x": 0, "y": 0, "w": 1, "h": 1}
+    for name in ("A", "B"):
+        await api.post(url, headers=headers, json={"name": name, "source": full_canvas})
+    await api.post(url, headers=headers, json={"name": "C"})
+    full = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert [round(o["source"]["x"], 4) for o in full["outputs"]] == [0.0, 0.3333, 0.6667]
+
+
 @pytest.mark.parametrize("body", [
     {"warp": {"corners": [[0, 0], [1, 0], [1, 1]]}},
     {"warp": {"mesh": {"cols": 3, "rows": 3, "points": [[0, 0]] * 4}}},

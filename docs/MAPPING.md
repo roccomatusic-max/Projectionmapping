@@ -41,7 +41,7 @@ an ordered cue list driven by GO.
 
 | Stage | What it does |
 |---|---|
-| Source rect | The slice of the canvas this projector covers. Overlapping slices are what edge blending feathers. |
+| Source rect | The slice of the canvas this projector covers. Overlapping slices are what edge blending feathers. New outputs are laid out side by side (the canvas is re-split evenly while nobody has placed the outputs by hand); in the editor each slice is a numbered box that can be dragged and resized, with edges snapping to the canvas and to neighbours. |
 | Corner pin | Four corners dragged onto the building. A homography, so straight lines stay straight. **(phase 1)** |
 | Mesh warp | A grid of control points on top of the corner pin, for curved or uneven surfaces. Interpolated with Catmull-Rom so the surface stays smooth between points. **(phase 1)** |
 | Masks | Polygons in output space that black out windows, trees, a neighbour's wall. Feathered edges, optional invert. **(phase 1)** |

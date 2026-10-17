@@ -10,7 +10,7 @@
  * along with it instead of tearing it.
  */
 
-import type { Blend, ColorAdjust, Mesh, Point, Warp } from './types'
+import type { Blend, ColorAdjust, Mesh, Point, SourceRect, Warp } from './types'
 
 export type Homography = [number, number, number, number, number, number, number, number, number]
 
@@ -243,4 +243,75 @@ export function withDefaults<T extends { warp?: Partial<Warp>; blend?: Partial<B
     blend,
     color: { ...defaultColor(), ...(output.color ?? {}) },
   }
+}
+
+/** Which part of a canvas slice is being dragged: the body, an edge or a corner. */
+export type RectHandle = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+const MIN_SLICE = 0.02
+
+/** The edge in ``targets`` nearest to any of ``edges``, as a shift, if within ``within``. */
+function snapShift(edges: number[], targets: number[], within: number): number {
+  let best = 0
+  let bestDistance = within
+  for (const e of edges) {
+    for (const t of targets) {
+      const d = Math.abs(t - e)
+      if (d < bestDistance) {
+        bestDistance = d
+        best = t - e
+      }
+    }
+  }
+  return best
+}
+
+/**
+ * A canvas slice after dragging ``handle`` by ``dx``/``dy`` (canvas fractions).
+ *
+ * Edges snap to the canvas border and to the edges of ``others`` when they
+ * come within ``snapX``/``snapY``, so outputs butt up against each other
+ * without a gap or a sliver of overlap. The slice stays on the canvas.
+ */
+export function dragRect(
+  start: SourceRect,
+  handle: RectHandle,
+  dx: number,
+  dy: number,
+  others: SourceRect[],
+  snapX: number,
+  snapY: number,
+): SourceRect {
+  const xs = [0, 1, ...others.flatMap((o) => [o.x, o.x + o.w])]
+  const ys = [0, 1, ...others.flatMap((o) => [o.y, o.y + o.h])]
+  if (handle === 'move') {
+    let x = start.x + dx
+    let y = start.y + dy
+    x += snapShift([x, x + start.w], xs, snapX)
+    y += snapShift([y, y + start.h], ys, snapY)
+    if (start.w <= 1) x = Math.min(Math.max(x, 0), 1 - start.w)
+    if (start.h <= 1) y = Math.min(Math.max(y, 0), 1 - start.h)
+    return { ...start, x, y }
+  }
+  let left = start.x
+  let right = start.x + start.w
+  let top = start.y
+  let bottom = start.y + start.h
+  if (handle.includes('w')) {
+    left = start.x + dx
+    left = Math.min(Math.max(left + snapShift([left], xs, snapX), 0), right - MIN_SLICE)
+  }
+  if (handle.includes('e')) {
+    right = start.x + start.w + dx
+    right = Math.max(Math.min(right + snapShift([right], xs, snapX), 1), left + MIN_SLICE)
+  }
+  if (handle.includes('n')) {
+    top = start.y + dy
+    top = Math.min(Math.max(top + snapShift([top], ys, snapY), 0), bottom - MIN_SLICE)
+  }
+  if (handle.includes('s')) {
+    bottom = start.y + start.h + dy
+    bottom = Math.max(Math.min(bottom + snapShift([bottom], ys, snapY), 1), top + MIN_SLICE)
+  }
+  return { x: left, y: top, w: right - left, h: bottom - top }
 }
