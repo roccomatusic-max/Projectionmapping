@@ -51,6 +51,7 @@ async def api(panasonic_sim, monkeypatch):
     import app.api.routes.mapping as mapping_routes
     import app.api.routes.mapping_camera as camera_routes
     import app.api.routes.mapping_players as player_routes
+    import app.api.routes.mapping_scenes as scene_routes
     import app.api.routes.monitoring as monitoring_routes
     import app.api.routes.projectors as projector_routes
     import app.api.routes.system as system_routes
@@ -59,7 +60,7 @@ async def api(panasonic_sim, monkeypatch):
     importlib.reload(deps_module)
     for module in (auth_routes, projector_routes, group_routes, monitoring_routes,
                    automation_routes, enclosure_routes, integration_routes,
-                   mapping_routes, player_routes, camera_routes, ws_routes, system_routes,
+                   mapping_routes, player_routes, camera_routes, scene_routes, ws_routes, system_routes,
                    update_routes):
         importlib.reload(module)
     import app.main as main_module

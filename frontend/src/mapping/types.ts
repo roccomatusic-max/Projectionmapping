@@ -104,6 +104,8 @@ export interface Cue {
   fade_seconds: number
   follow_seconds: number | null
   interaction: Interaction
+  /** A scene from the scene library, drawn over the media (or alone). */
+  scene_id: number | null
 }
 
 /** How people tracked by a depth camera affect a cue. */
@@ -123,6 +125,8 @@ export interface ShowSummary {
 export interface Show extends ShowSummary {
   /** Where the canvas sits in a camera's picture: corners TL, TR, BR, BL in image fractions. */
   camera_view: CameraView | null
+  /** The building's parts traced on the canvas, for scenes to decorate. */
+  surfaces: Surface[]
   outputs: Output[]
   cues: Cue[]
 }
@@ -136,6 +140,7 @@ export interface TransportCue {
   loop: boolean
   fade_seconds: number
   interaction: Interaction
+  scene_id?: number | null
   started_at_ms: number
 }
 
@@ -218,6 +223,7 @@ export interface Person {
 }
 
 export interface PeopleMessage {
+  /** 0: made up in the scene builder; negative: simulated in this browser only. */
   camera_id: number
   show_id: number | null
   people: Person[]
@@ -231,4 +237,64 @@ export interface ApplyResult {
   reason: string
   measured: number
   residual_px: number
+}
+
+// -- scenes --------------------------------------------------------------------
+
+export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other'
+
+/** One part of the building traced on the canvas. */
+export interface Surface {
+  id: string
+  name: string
+  kind: SurfaceKind
+  /** Outline in canvas fractions. */
+  points: Point[]
+}
+
+export type LayerType =
+  | 'glow' | 'ripples' | 'trails' | 'particles' | 'shadows' | 'reveal' | 'distort'
+  | 'wash' | 'field' | 'texture' | 'outline' | 'lights' | 'falling' | 'shapes'
+  | 'picture'
+
+export type ReactsTo = 'presence' | 'movement' | 'count' | 'closeness' | 'always'
+export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside'
+export type LayerBlend = 'normal' | 'add' | 'screen'
+
+/** One layer of a scene; see scene/catalog.ts for what the dials mean per type. */
+export interface SceneLayer {
+  id: string
+  type: LayerType
+  name: string
+  enabled: boolean
+  opacity: number
+  blend: LayerBlend
+  color: string
+  color2: string
+  size: number
+  speed: number
+  amount: number
+  fade: number
+  style: string
+  target: LayerTarget
+  reacts_to: ReactsTo
+  reaction: number
+  /** The image a "picture" layer shows, stretched over the whole canvas. */
+  media_id?: number | null
+}
+
+export interface MappingScene {
+  id: number
+  name: string
+  description: string
+  /** Bottom first. */
+  layers: SceneLayer[]
+  created_at: string
+  updated_at: string
+}
+
+export interface AiStatus {
+  available: boolean
+  key_hint: string | null
+  source: 'settings' | 'environment' | null
 }

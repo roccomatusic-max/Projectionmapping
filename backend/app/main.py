@@ -27,6 +27,7 @@ from app.api.routes import (
     mapping,
     mapping_camera,
     mapping_players,
+    mapping_scenes,
     monitoring,
     projectors,
     system,
@@ -178,7 +179,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 for router in (
     system.router, auth.router, projectors.router, groups.router,
     monitoring.router, automation.router, enclosure.router, integration.router,
-    mapping.router, mapping_players.router, mapping_camera.router, updates.router,
+    mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router, updates.router,
     ws.router,
 ):
     app.include_router(router, prefix="/api")

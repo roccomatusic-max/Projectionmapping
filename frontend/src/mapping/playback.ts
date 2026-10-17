@@ -6,11 +6,17 @@
  * position the server clock says it should be: small drift is absorbed by
  * nudging playbackRate, large drift by seeking. Not frame-locked; see
  * docs/MAPPING.md for what that means across computers.
+ *
+ * It also says which scenes play (a cue's scene, crossfading with the
+ * previous cue's) and passes on the people and the show's traced surfaces
+ * the scenes react to and are shaped by.
  */
 
 import { mediaUrl } from './api'
+import type { PeopleTracker, PersonSpot } from './people'
 import type { TextureSource } from './renderer'
-import type { MediaAsset, TransportCue, TransportState } from './types'
+import type { SceneItem } from './scene/engine'
+import type { MappingScene, MediaAsset, Surface, TransportCue, TransportState } from './types'
 
 /** Drift beyond this is corrected by a seek rather than a rate change. */
 const SEEK_THRESHOLD = 0.15
@@ -32,6 +38,9 @@ export interface Frame {
   blackout: boolean
   /** Measured drift of the live video, seconds, for the status overlay. */
   drift: number | null
+  scenes: SceneItem[]
+  people: PersonSpot[]
+  surfaces: Surface[]
 }
 
 function cueKey(cue: TransportCue) {
@@ -44,6 +53,62 @@ export class Playback {
   private slots = new Map<string, Slot>()
   private lastCorrection = 0
   private drift: number | null = null
+  private scenes = new Map<number, MappingScene>()
+  private surfaces: Surface[] = []
+  private people: PeopleTracker | null = null
+  private peopleAt = -1
+  private peopleNow: PersonSpot[] = []
+  /** A scene shown whatever the transport says (the scene designer's preview). */
+  private preview: { scene: MappingScene; startedAt: number } | null = null
+  /** What the preview scene is drawn over, such as a photo of the building. */
+  private backdrop: TextureSource | null = null
+
+  setScenes(scenes: MappingScene[]) {
+    this.scenes = new Map(scenes.map((scene) => [scene.id, scene]))
+  }
+
+  setSurfaces(surfaces: Surface[]) {
+    this.surfaces = surfaces
+  }
+
+  setPeople(people: PeopleTracker | null) {
+    this.people = people
+  }
+
+  /** Show ``scene`` instead of the transport (over ``backdrop``); null hands back. */
+  setPreview(scene: MappingScene | null, backdrop: TextureSource | null = null) {
+    this.backdrop = backdrop
+    if (!scene) this.preview = null
+    else if (this.preview?.scene.id === scene.id) this.preview.scene = scene
+    else this.preview = { scene, startedAt: performance.now() }
+  }
+
+  /** People, advanced once per animation frame however many outputs ask. */
+  private spots(): PersonSpot[] {
+    if (!this.people) return []
+    const now = performance.now()
+    if (now - this.peopleAt > 4) {
+      this.peopleAt = now
+      this.peopleNow = this.people.spots(now)
+    }
+    return this.peopleNow
+  }
+
+  private sceneItems(state: TransportState | null, now: number, mix: number): SceneItem[] {
+    if (this.preview) {
+      return [{ scene: this.preview.scene, weight: 1, time: (performance.now() - this.preview.startedAt) / 1000 }]
+    }
+    if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) return []
+    const items: SceneItem[] = []
+    const add = (cue: TransportCue | null, weight: number) => {
+      const scene = cue?.scene_id != null ? this.scenes.get(cue.scene_id) : undefined
+      if (cue && scene && weight > 0) items.push({ scene, weight, time: Math.max(0, now - cue.started_at_ms) / 1000 })
+    }
+    // The outgoing scene first, so the incoming one draws on top of it.
+    if (mix < 1) add(state.previous, 1 - mix)
+    add(state.current, mix)
+    return items
+  }
 
   setMedia(assets: MediaAsset[]) {
     this.media = new Map(assets.map((asset) => [asset.id, asset]))
@@ -150,8 +215,15 @@ export class Playback {
 
   frame(now: number): Frame {
     const state = this.state
+    const people = this.spots()
+    const surfaces = this.surfaces
+    if (this.preview) {
+      const scenes = this.sceneItems(state, now, 1)
+      return { a: this.backdrop, b: null, mix: 1, blackout: false, drift: null, scenes, people, surfaces }
+    }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) {
-      return { a: null, b: null, mix: 1, blackout: true, drift: null }
+      const scenes = this.sceneItems(state, now, 1)
+      return { a: null, b: null, mix: 1, blackout: scenes.length === 0, drift: null, scenes, people, surfaces }
     }
     let mix = 1
     if (state.previous && state.fade_started_at_ms != null) {
@@ -174,6 +246,9 @@ export class Playback {
       mix,
       blackout: false,
       drift: this.drift,
+      scenes: this.sceneItems(state, now, mix),
+      people,
+      surfaces,
     }
   }
 

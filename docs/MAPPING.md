@@ -307,6 +307,73 @@ A camera's position on the canvas is where the person appears against the
 building from the camera's point of view, which is right for people near the
 wall and approximate further out.
 
+## 6a. Scenes: reactive designs
+
+**Mapping → Scenes** builds designs that react to people, and plays them as
+cues like media (a cue's **Scene** draws over its media, or over black).
+
+- **A scene is a stack of layers**, bottom first, stored in a global library
+  (`mapping_scenes`). Each layer is one of 15 types with a style, two colours,
+  four dials (size, speed, amount, fade, each 0–1; what each means is in
+  `frontend/src/mapping/scene/catalog.ts`), a mix (add light, soft light,
+  paint over), where it goes and what it reacts to.
+  - Follow people: glow, ripples, trails, particles (sparks, swarm, flee,
+    fireflies), shadows (shadow, glowing silhouette, giant), reveal, distort
+    (bends the media around people).
+  - Looks: wash, light field, material (gingerbread, brick, stone, snow, ice,
+    candy stripes, glowing windows…), trim (neon, icing with drips…), string
+    lights, falling (snow, rain, leaves, confetti, sparkles), decorations
+    (gumdrops, peppermints, ornaments, pumpkins, stars…), picture.
+  - Reacts to: someone there, movement, number of people, closeness (depth),
+    or always on, with "how much it reacts".
+- **House parts** are traced on each show's canvas (`shows.surfaces`: walls,
+  roof, windows, doors, other), so a layer can decorate just the roof or just
+  the windows. Untraced, everything covers the whole picture.
+- **Ready-made scenes**: Gingerbread house, Haunted house, Winter lights,
+  Underwater, Party, Shadow play.
+- **Trying without a camera**: the preview walks made-up people across the
+  canvas (drag one to move it) over a backdrop (the camera photo straightened
+  onto the canvas, or a media image). "Send to the projectors" relays them to
+  the real outputs as if a camera saw them (`POST /mapping/simulated-people`).
+- **Save as video** records a scene in the browser (MP4 where the browser can,
+  else WebM, up to 1920 wide) into the media library.
+
+**Rendering.** The output renderer draws the playing scenes into a texture
+covering the output's slice of the canvas, in canvas space so layers line up
+across projectors, then lays it over the media in the same pass. Particles
+and falling things are worked out on the GPU from their number and the time
+since the cue started (server clock), so every output draws the same moment;
+only trails and reveal keep per-output memory. Where a layer goes is
+rasterised once per change, not per frame. If an output drops frames while a
+scene plays, scenes are drawn at less detail (100 → 75 → 50 → 35 %) while the
+media stays at full resolution; the output HUD shows the level.
+
+**Describe a scene** (optional): with an Anthropic API key (Settings, or
+`ANTHROPIC_API_KEY`), a sentence becomes a scene, or changes the selected
+one. Claude (`claude-opus-5-5`, structured JSON output) chooses from the same
+catalog; the answer is validated like any saved scene. Picture layers are
+kept as they are when a scene is changed in words.
+
+**Paint the house (Beta)** (optional): with an OpenAI API key (Settings, or
+`OPENAI_API_KEY`), a photo of the building lined up with the canvas is
+repainted as described (`gpt-image-2` image edits, asked to keep every edge
+where it is and to leave everything but the building black). The result is
+saved to the media library and starts a scene with it as a picture layer
+(on the traced building) and sparkles that follow people.
+
+Keys are kept in files beside the media folder (`anthropic-api-key`,
+`openai-api-key`, mode 600) and never sent back to a browser.
+
+| Method | Path | |
+|---|---|---|
+| GET/POST | `/mapping/scenes` | The scene library |
+| GET/PATCH/DELETE | `/mapping/scenes/{id}` | One scene; changes go out as `mapping_scene` |
+| POST | `/mapping/scenes/describe` | Admin: a scene from a sentence (or change `scene_id`) |
+| POST | `/mapping/simulated-people` | Admin: made-up people, relayed as `mapping_people` |
+| GET, PUT/DELETE | `/mapping/ai`, `/mapping/ai/key` | Anthropic key status / set / remove |
+| GET, PUT/DELETE | `/mapping/paint`, `/mapping/paint/key` | OpenAI key status / set / remove |
+| POST | `/mapping/paint` | Admin: repaint a picture; returns the new media |
+
 ## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`

@@ -17,3 +17,5 @@ python-multipart==0.0.20
 tzdata==2024.2
 # Resolves the host's zone to a real IANA zone (DST-correct), including on Windows.
 tzlocal==5.2
+# Mapping → Scenes → "Describe a scene" (Claude API); unused until a key is set.
+anthropic==1.15.0

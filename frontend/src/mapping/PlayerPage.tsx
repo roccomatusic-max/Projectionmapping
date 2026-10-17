@@ -166,9 +166,11 @@ export default function PlayerPage() {
   }, [token])
 
   const syncMedia = useCallback(
-    async (show: Show) => {
+    async (show: Show, sceneMedia: number[] = []) => {
       if (!('serviceWorker' in navigator) || !token) return
-      const ids = [...new Set(show.cues.map((c) => c.media_id).filter((id): id is number => id != null))]
+      const ids = [
+        ...new Set([...show.cues.map((c) => c.media_id).filter((id): id is number => id != null), ...sceneMedia]),
+      ]
       try {
         const registration = await navigator.serviceWorker.ready
         setCache((c) => ({ ...c, mode: 'syncing' }))

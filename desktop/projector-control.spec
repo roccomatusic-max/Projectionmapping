@@ -32,6 +32,8 @@ hiddenimports = (
     + collect_submodules("uvicorn")
     + collect_submodules("alembic")
     + collect_submodules("sqlalchemy.dialects.sqlite")
+    # Imported only when "Describe a scene" runs, so name it outright.
+    + collect_submodules("anthropic")
     + ["aiosqlite", "argon2", "argon2.low_level", "_cffi_backend", "jwt", "httpx",
        "websockets", "websockets.legacy", "email.mime.text", "multipart"]
 )

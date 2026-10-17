@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
 import { probeMedia, uploadMedia } from '../api'
-import type { Cue, Fit, Interaction, MediaAsset, Show, TransportState } from '../types'
+import type { Cue, Fit, Interaction, MappingScene, MediaAsset, Show, TransportState } from '../types'
 import { formatBytes, formatDuration } from './controls'
 
 // -- cue list --------------------------------------------------------------------
@@ -9,6 +9,7 @@ import { formatBytes, formatDuration } from './controls'
 export function CueList({
   show,
   media,
+  scenes = [],
   transport,
   canEdit,
   canRun,
@@ -20,6 +21,8 @@ export function CueList({
 }: {
   show: Show
   media: MediaAsset[]
+  /** The scene library, for the cue's Scene choice. */
+  scenes?: MappingScene[]
   transport: TransportState | null
   canEdit: boolean
   canRun: boolean
@@ -34,7 +37,8 @@ export function CueList({
   if (show.cues.length === 0) {
     return (
       <p className="text-sm text-slate-500">
-        No cues yet. Upload media below, then add it as a cue. GO steps through the cues in order.
+        No cues yet. Upload media below and add it as a cue, or add a scene from the Scenes tab. GO steps through
+        the cues in order.
       </p>
     )
   }
@@ -44,6 +48,7 @@ export function CueList({
         {show.cues.map((cue, index) => {
           const isLive = live?.id === cue.id
           const asset = media.find((m) => m.id === cue.media_id)
+          const scene = scenes.find((s) => s.id === cue.scene_id)
           return (
             <li key={cue.id}>
               <button
@@ -56,9 +61,12 @@ export function CueList({
               >
                 <span className="tnum w-6 text-lg font-semibold text-slate-400">{index + 1}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-base text-slate-100">{cue.name || asset?.name || 'Black'}</span>
+                  <span className="block truncate text-base text-slate-100">
+                    {cue.name || asset?.name || scene?.name || 'Black'}
+                  </span>
                   <span className="block text-xs text-slate-500">
-                    {asset ? `${asset.kind} · ${formatDuration(asset.duration)}` : 'black'}
+                    {asset ? `${asset.kind} · ${formatDuration(asset.duration)}` : scene ? 'scene' : 'black'}
+                    {asset && scene ? ' · scene' : ''}
                     {cue.loop ? ' · loops' : ''}
                   </span>
                 </span>
@@ -77,6 +85,7 @@ export function CueList({
       {show.cues.map((cue, index) => {
         const isLive = live?.id === cue.id
         const asset = media.find((m) => m.id === cue.media_id)
+        const scene = scenes.find((s) => s.id === cue.scene_id)
         return (
           <li
             key={cue.id}
@@ -91,7 +100,7 @@ export function CueList({
                 className="input py-1 text-sm"
                 defaultValue={cue.name}
                 key={`${cue.id}:${cue.name}`}
-                placeholder={asset?.name ?? 'Untitled cue'}
+                placeholder={asset?.name ?? scene?.name ?? 'Untitled cue'}
                 disabled={!canEdit}
                 onBlur={(event) => event.target.value !== cue.name && onUpdate(cue, { name: event.target.value })}
               />
@@ -129,6 +138,22 @@ export function CueList({
                 <option value="fit">Fit</option>
                 <option value="stretch">Stretch</option>
               </select>
+              {(scenes.length > 0 || cue.scene_id != null) && (
+                <select
+                  className="input col-span-2 py-1 text-xs"
+                  value={cue.scene_id ?? ''}
+                  disabled={!canEdit}
+                  title="A reactive scene drawn over the media (or on its own over black)"
+                  onChange={(event) => onUpdate(cue, { scene_id: event.target.value ? Number(event.target.value) : null })}
+                >
+                  <option value="">No scene</option>
+                  {scenes.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Scene: {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 pl-8">
               <label className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -158,7 +183,7 @@ export function CueList({
                 s
               </label>
               <label className="flex items-center gap-1.5 text-xs text-slate-400"
-                title="What people seen by a depth camera do to this cue">
+                title="A simple effect people seen by a depth camera have on the media. Scenes do much more.">
                 People
                 <select className="input w-auto py-1 text-xs" value={cue.interaction ?? 'none'} disabled={!canEdit}
                   onChange={(event) => onUpdate(cue, { interaction: event.target.value as Interaction })}>
