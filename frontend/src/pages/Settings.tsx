@@ -50,6 +50,8 @@ export default function Settings({ session }: { session: Session }) {
       <PageHeader icon={SettingsIcon} title="Settings" subtitle="Account, polling, device links, drivers, users and service tokens." />
       {error && <ErrorBanner message={error} />}
 
+      {isAdmin && <AppUpdates />}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel icon={SettingsIcon} title="Your account">
           <ChangePassword
@@ -152,8 +154,6 @@ export default function Settings({ session }: { session: Session }) {
           })}
         </div>
       </Panel>
-
-      {isAdmin && <AppUpdates />}
 
       {isAdmin && (
         <Panel icon={UsersIcon} title="Users">
