@@ -141,6 +141,9 @@ Opening the app again sets it up again.
 
 ## When something is wrong
 
+- **Forgot the admin password:** paste this in Terminal on the server Mac;
+  it prints a new password for `admin`:
+  `"/Applications/Projector Control.app/Contents/MacOS/ProjectorControl" --reset-admin-password`
 - **The dashboard does not open:** open **Projector Control** again; it waits
   for the server and says if it is not answering.
 - **The log** is in `~/Library/Application Support/ProjectorControl/logs/`

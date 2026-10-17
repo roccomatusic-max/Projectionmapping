@@ -104,7 +104,9 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
     signal: options.signal,
   })
 
-  if (response.status === 401) {
+  // A refused sign-in is not an expired session: fall through and show the
+  // server's own message ("Invalid username or password").
+  if (response.status === 401 && token && path !== '/auth/login') {
     clearSession()
     // Let the router show the login screen rather than silently failing.
     window.dispatchEvent(new CustomEvent('pc:unauthorized'))

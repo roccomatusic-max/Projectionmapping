@@ -132,3 +132,11 @@ async def test_automatic_update_installs_only_when_quiet(tmp_path, monkeypatch):
     updater.result_path.unlink()
     await updater.auto_tick(quiet)
     assert installs == ["1.0.7"] and updater.status()["auto"] is False
+
+
+def test_reset_admin_password_without_a_database(tmp_path, capsys):
+    from app.desktop import reset_admin_password
+
+    assert reset_admin_password(tmp_path / "missing") == 1
+    assert "No Projector Control database" in capsys.readouterr().out
+    assert not (tmp_path / "missing").exists()
