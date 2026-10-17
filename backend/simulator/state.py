@@ -55,11 +55,11 @@ class SimulatedProjector:
     @classmethod
     def dz770(cls, **overrides) -> SimulatedProjector:
         """A PT-DZ770: single-chip, two lamps, S-VIDEO instead of SDI."""
-        defaults = dict(
-            name="SIM-PT-DZ770", model="PT-DZ770",
-            fitted_inputs={"RG1", "RG2", "VID", "SVD", "DVI", "HD1"},
-            lamp_hours=[812, 790], lamp_on=[False, False],
-        )
+        defaults = {
+            "name": "SIM-PT-DZ770", "model": "PT-DZ770",
+            "fitted_inputs": {"RG1", "RG2", "VID", "SVD", "DVI", "HD1"},
+            "lamp_hours": [812, 790], "lamp_on": [False, False],
+        }
         defaults.update(overrides)
         return cls(**defaults)
 

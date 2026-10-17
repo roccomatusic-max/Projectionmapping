@@ -414,6 +414,14 @@ async def delete_output(output_id: int, session: SessionDep, _: RequireAdmin) ->
     _touch(show_id)
 
 
+@router.post("/outputs/{output_id}/identify", status_code=status.HTTP_204_NO_CONTENT,
+             response_model=None)
+async def identify_output(output_id: int, session: SessionDep, _: RequireAdmin) -> None:
+    """Flash the output's name on every window and player showing it."""
+    await _load_output(session, output_id)
+    bus.publish("mapping_identify", {"output_id": output_id})
+
+
 # -- cues ----------------------------------------------------------------------
 
 

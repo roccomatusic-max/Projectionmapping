@@ -10,8 +10,12 @@ import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.db.migrate import INITIAL_REVISION, classify, upgrade_to_head
+from app.db.migrate import classify, upgrade_to_head
 from app.db.models import Base
+
+MAPPING_TABLES = {"media_assets", "mapping_shows", "mapping_outputs", "mapping_cues",
+                  "mapping_players"}
+HEAD_REVISION = "0c6c70c928f6"
 
 
 def test_classification():
@@ -63,14 +67,17 @@ async def test_database_from_create_all_is_adopted_not_crashed(sqlite_file):
     url = f"sqlite+aiosqlite:///{sqlite_file}"
     engine = create_async_engine(url)
     try:
+        # The tables that build knew about: everything before the mapping
+        # module, which arrived with its own migration.
+        legacy = [t for t in Base.metadata.sorted_tables if t.name not in MAPPING_TABLES]
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=legacy))
         assert "alembic_version" not in await _tables(engine)
 
         assert await upgrade_to_head(engine, url) == "unmanaged"
-        assert await _version(engine) is not None
         # Stamped at the revision the create_all schema matches, then upgraded
-        # from there; with one migration that is head.
-        assert await _version(engine) == INITIAL_REVISION
+        # from there to head, which adds the later tables.
+        assert await _version(engine) == HEAD_REVISION
+        assert await _tables(engine) >= MAPPING_TABLES
     finally:
         await engine.dispose()

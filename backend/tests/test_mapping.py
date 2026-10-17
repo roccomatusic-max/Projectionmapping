@@ -391,3 +391,14 @@ async def test_only_admins_approve_players(api):
     response = await api.patch(f"/api/mapping/players/{player['player_id']}",
                                headers=operator, json={"approved": True})
     assert response.status_code == 403
+
+
+async def test_identify_output(api):
+    headers = await login(api)
+    show = await make_show(api, headers)
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Left"})).json()
+    response = await api.post(f"/api/mapping/outputs/{output['id']}/identify", headers=headers)
+    assert response.status_code == 204
+    missing = await api.post("/api/mapping/outputs/999/identify", headers=headers)
+    assert missing.status_code == 404

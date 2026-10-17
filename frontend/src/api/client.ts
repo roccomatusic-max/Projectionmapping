@@ -73,7 +73,7 @@ type Options = {
   signal?: AbortSignal
 }
 
-async function request<T>(path: string, options: Options = {}): Promise<T> {
+export async function request<T>(path: string, options: Options = {}): Promise<T> {
   const token = getToken()
   const response = await fetch(`/api${path}`, {
     method: options.method ?? 'GET',

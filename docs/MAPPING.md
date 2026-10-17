@@ -56,7 +56,8 @@ that is off.
 ## 2. Rendering
 
 Each output is a browser window, full-screen on the display that feeds its
-projector. It renders with WebGL2:
+projector: on a player beside the projector (section 5), or a window opened
+from the editor on a computer with several display outputs. It renders with WebGL2:
 
 1. The current cue's media (a `<video>` or image) is uploaded as a texture
    every frame. During a crossfade the outgoing cue is a second texture.
@@ -123,11 +124,82 @@ matching how projector configuration is gated.
 | GET | `/transport` | Current transport state |
 | POST | `/transport` | `go`, `goto`, `pause`, `resume`, `stop`, `blackout` |
 | GET | `/clock` | Server time, for the clock-offset estimate |
+| POST | `/outputs/{id}/identify` | Flash the output's name on its windows and players |
+| POST | `/players/hello` | Unauthenticated: a player introduces itself and polls for approval |
+| GET · PATCH · DELETE | `/players`, `/players/{id}` | List, approve and assign, remove |
+| POST | `/players/{id}/identify` | Flash a player's name on its projector |
+| POST | `/players/me` | A player's heartbeat; returns its assignment |
 
 Live changes go out on the existing WebSocket feed as `mapping_transport`,
-`mapping_output` and `mapping_show` messages.
+`mapping_output`, `mapping_show`, `mapping_player` and `mapping_identify`
+messages.
 
-## 5. Show control integration (phase 2)
+## 5. Players: one small computer per projector
+
+The main server holds the media, the shows and the show clock. Beside each
+projector sits a small computer (an Intel N100 mini PC or a Mac mini; both
+decode 4K H.264/HEVC in Chrome, a Raspberry Pi does not reliably). It runs
+nothing but a browser, full screen, on one address:
+
+```
+http://<main-server>:8765/player
+```
+
+1. First start: the projector shows a six-letter pairing code.
+2. On the Mapping page, **Players** tab: the code appears; **Approve** it and
+   pick the output this machine drives.
+3. From then on the player shows that output, follows the transport, picks
+   up geometry changes live, and resumes by itself after a reboot.
+
+**Identify** flashes a player's name on its projector, to tell machines
+apart. **Remove** revokes it; it goes back to showing a pairing code.
+
+Approval creates a dedicated viewer account for the player, so a player
+can watch the show but cannot run it or change it.
+
+### Media cache
+
+Before the show, each player downloads every file its show uses to its own
+disk and plays from there, so the network only carries the small control
+messages during the show. The Players tab shows each player's cache state,
+frame rate and clock drift.
+
+Browsers allow this cache only on a secure origin. On a LAN over plain HTTP,
+start the browser with the server marked as secure; without that flag the
+player still works but streams media from the server.
+
+### Starting a player as a kiosk
+
+Windows or Linux mini PC (Chrome or Chromium), in the startup programs:
+
+```
+chrome --kiosk --autoplay-policy=no-user-gesture-required \
+  --unsafely-treat-insecure-origin-as-secure=http://<main-server>:8765 \
+  --user-data-dir=<a folder for this profile> \
+  http://<main-server>:8765/player
+```
+
+macOS (Mac mini), as a login item:
+
+```
+open -na "Google Chrome" --args --kiosk --autoplay-policy=no-user-gesture-required \
+  --unsafely-treat-insecure-origin-as-secure=http://<main-server>:8765 \
+  --user-data-dir=$HOME/.mapping-player \
+  http://<main-server>:8765/player
+```
+
+Set the computer's display output to the projector's native resolution; the
+player's status overlay (press H) warns when the window and the output's
+configured resolution differ. Turn off screen sleep and OS updates that
+restart without asking.
+
+### Remote control
+
+Any phone, tablet or laptop on the network opens the app, **Mapping →
+Remote**: GO, pause, stop, blackout and the cue list as large buttons.
+Operators can run the show; only administrators can change it.
+
+## 6. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`
   so the existing startup sequence can power on, wait for lamps, open
@@ -137,12 +209,13 @@ Live changes go out on the existing WebSocket feed as `mapping_transport`,
   not on with its shutter open.
 - MQTT/Home Assistant: transport as a select entity.
 
-## 6. Phases
+## 7. Phases
 
 1. **Done in the first slice:** data model and migration, media library,
    shows/outputs/cues API, transport with server clock, WebGL output window
    with corner pin, mesh warp, masks, edge blend, colour and test patterns,
-   the Mapping editor page.
+   the Mapping editor page, players with pairing and a media cache, and the
+   phone remote.
 2. Automation step and projector-state preconditions; output thumbnails;
    media thumbnails and probe on the server (ffprobe when present).
 3. Layers and surfaces: several pieces of media placed on regions of the

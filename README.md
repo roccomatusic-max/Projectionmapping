@@ -186,17 +186,19 @@ docs/                 Protocol research, architecture, deployment, validation,
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Reading outcomes, connection problems, missing telemetry |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | REST, WebSocket, MQTT, Home Assistant, enclosure sensors, service tokens |
 | [DESKTOP.md](docs/DESKTOP.md) | Running it as a desktop application instead of a server |
+| [MAPPING.md](docs/MAPPING.md) | Mapping media: shows, warping, blending, players beside the projectors |
 
 ---
 
 ## Scope
 
-This platform manages **projector hardware**. It does not manage projection
-mapping content, warping, blending or media playback — those belong to your
-media server, and conflating the two makes both worse. Frame-accurate
-synchronisation is a property of the media server; what this does is
-concurrent command dispatch, which is a different thing and is labelled as
-such throughout.
+This platform manages **projector hardware**. Projection-mapping content,
+warping, blending and playback live in the separate **Mapping** module of the
+same application, with its own players beside the projectors; see
+[docs/MAPPING.md](docs/MAPPING.md). The projector side never depends on it.
+Projector commands are concurrent dispatch, not frame-accurate
+synchronisation, and are labelled as such throughout; media playback keeps
+its outputs together by a shared server clock, as MAPPING.md explains.
 
 It is also **not a safety device**. Thermal protection and interlocks belong
 in hardware that works when this software does not. See
