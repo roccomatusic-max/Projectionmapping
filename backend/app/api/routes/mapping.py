@@ -54,6 +54,7 @@ from app.schemas.mapping import (
     TransportCommand,
     TransportState,
 )
+from app.services import canvas_layout
 from app.services.calibration import calibration_summary
 from app.services.mapping import TransportError, now_ms, transport
 
@@ -367,8 +368,16 @@ async def create_output(show_id: int, payload: OutputCreate, session: SessionDep
                         _: RequireAdmin) -> OutputOut:
     show = await _load_show(session, show_id)
     await _check_projector(session, payload.projector_id)
-    output = MappingOutput(show_id=show.id, position=len(show.outputs),
-                           **payload.model_dump(mode="json"))
+    fields = payload.model_dump(mode="json")
+    if "source" not in payload.model_fields_set:
+        existing = list(show.outputs)
+        if canvas_layout.is_automatic([o.source or {} for o in existing]):
+            # Keep every output in its own slice: re-split the canvas.
+            layout = canvas_layout.even_split(len(existing) + 1)
+            for item, rect in zip(existing, layout, strict=False):
+                item.source = rect
+            fields["source"] = layout[-1]
+    output = MappingOutput(show_id=show.id, position=len(show.outputs), **fields)
     session.add(output)
     await session.commit()
     await session.refresh(output)

@@ -5,7 +5,8 @@ import { ConfirmDialog, EmptyState, ErrorBanner, Panel, Spinner } from '@/compon
 import { classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
 import { CameraPanel } from '@/mapping/editor/CameraPanel'
-import { CueList, CanvasOverview, MediaLibrary, outputColor } from '@/mapping/editor/panels'
+import { CanvasOverview, OutputPreviews } from '@/mapping/editor/CanvasOverview'
+import { CueList, MediaLibrary } from '@/mapping/editor/panels'
 import { NumberField } from '@/mapping/editor/controls'
 import { OutputInspector } from '@/mapping/editor/OutputInspector'
 import { PlayersPanel } from '@/mapping/editor/PlayersPanel'
@@ -364,9 +365,16 @@ export default function Mapping({ session }: { session: Session }) {
               </div>
 
               <div className="min-w-0 space-y-4">
+                {outputs.length > 0 && (
+                  <Panel title="Output previews" description="What each projector is showing right now. Click one to edit it.">
+                    <OutputPreviews show={show} outputs={outputs} selectedId={output?.id ?? null}
+                      playback={playback} clock={clock} transport={transport} onSelect={setSelectedOutput} />
+                  </Panel>
+                )}
+
                 <Panel
                   title="Canvas"
-                  description={`${show.canvas_width} × ${show.canvas_height}. Each coloured box is the part one projector shows.`}
+                  description={`${show.canvas_width} × ${show.canvas_height}. Each numbered box is the part of the canvas one projector shows.${canEdit ? ' Drag a box to move it, or pull its edges to resize it.' : ''}`}
                   action={
                     canEdit ? (
                       <div className="flex gap-2">
@@ -381,26 +389,9 @@ export default function Mapping({ session }: { session: Session }) {
                   {outputs.length === 0 ? (
                     <EmptyState title="No outputs">Add one output per projector.</EmptyState>
                   ) : (
-                    <>
-                      <CanvasOverview show={show} outputs={outputs} selectedId={output?.id ?? null}
-                        onSelect={setSelectedOutput} />
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {outputs.map((o, i) => (
-                          <button
-                            key={o.id}
-                            onClick={() => setSelectedOutput(o.id)}
-                            className={classNames(
-                              'chip ring-1',
-                              o.id === output?.id ? 'bg-panel-700 text-slate-100 ring-white/20' : 'bg-panel-850 text-slate-400 ring-white/5',
-                            )}
-                          >
-                            <span className="h-2 w-2 rounded-full" style={{ background: outputColor(i) }} />
-                            {o.name}
-                            {o.test_pattern !== 'none' && <span className="text-yellow-300">· {o.test_pattern}</span>}
-                          </button>
-                        ))}
-                      </div>
-                    </>
+                    <CanvasOverview show={show} outputs={outputs} selectedId={output?.id ?? null}
+                      onSelect={setSelectedOutput}
+                      onChange={canEdit ? (o, source) => changeOutput(o, { source }) : undefined} />
                   )}
                 </Panel>
 

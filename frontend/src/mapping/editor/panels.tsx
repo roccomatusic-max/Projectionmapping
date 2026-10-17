@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
 import { probeMedia, uploadMedia } from '../api'
-import type { Cue, Fit, Interaction, MediaAsset, Output, Show, TransportState } from '../types'
+import type { Cue, Fit, Interaction, MediaAsset, Show, TransportState } from '../types'
 import { formatBytes, formatDuration } from './controls'
 
 // -- cue list --------------------------------------------------------------------
@@ -311,56 +311,4 @@ const OUTPUT_COLORS = ['#38bdf8', '#f472b6', '#a3e635', '#fbbf24', '#c084fc', '#
 
 export function outputColor(index: number) {
   return OUTPUT_COLORS[index % OUTPUT_COLORS.length]
-}
-
-/** The whole canvas with each output's slice drawn on it. */
-export function CanvasOverview({
-  show,
-  outputs,
-  selectedId,
-  onSelect,
-}: {
-  show: Show
-  outputs: Output[]
-  selectedId: number | null
-  onSelect: (id: number) => void
-}) {
-  const W = show.canvas_width
-  const H = show.canvas_height
-  return (
-    <svg viewBox={`${-W * 0.02} ${-H * 0.02} ${W * 1.04} ${H * 1.04}`} className="w-full rounded-md bg-panel-950">
-      <rect x={0} y={0} width={W} height={H} fill="#141820" stroke="rgba(255,255,255,0.15)" strokeWidth={2}
-        vectorEffect="non-scaling-stroke" />
-      {outputs.map((o, i) => {
-        const color = outputColor(i)
-        const active = o.id === selectedId
-        return (
-          <g key={o.id} onClick={() => onSelect(o.id)} className="cursor-pointer">
-            <rect
-              x={o.source.x * W}
-              y={o.source.y * H}
-              width={o.source.w * W}
-              height={o.source.h * H}
-              fill={color}
-              fillOpacity={active ? 0.28 : 0.12}
-              stroke={color}
-              strokeWidth={active ? 3 : 1.5}
-              vectorEffect="non-scaling-stroke"
-            />
-            <text
-              x={(o.source.x + o.source.w / 2) * W}
-              y={(o.source.y + o.source.h / 2) * H}
-              fill="#e2e8f0"
-              fontSize={H / 12}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              style={{ pointerEvents: 'none' }}
-            >
-              {o.name}
-            </text>
-          </g>
-        )
-      })}
-    </svg>
-  )
 }
