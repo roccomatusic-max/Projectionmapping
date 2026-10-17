@@ -10,6 +10,7 @@ import { CueList, MediaLibrary } from '@/mapping/editor/panels'
 import { NumberField } from '@/mapping/editor/controls'
 import { OutputInspector } from '@/mapping/editor/OutputInspector'
 import { PlayersPanel } from '@/mapping/editor/PlayersPanel'
+import { ScenesPanel } from '@/mapping/editor/ScenesPanel'
 import { TransportBar } from '@/mapping/editor/TransportBar'
 import { sideBySide, withDefaults } from '@/mapping/geometry'
 import { useLocalChannel } from '@/mapping/live'
@@ -20,7 +21,7 @@ const SHOW_KEY = 'pc.mapping.show'
 /** Geometry is saved this long after the last change while dragging. */
 const SAVE_DELAY_MS = 250
 
-type Section = 'show' | 'camera' | 'players' | 'remote'
+type Section = 'show' | 'scenes' | 'camera' | 'players' | 'remote'
 
 /** Messages the camera tab follows: progress, new photos, tracked people. */
 const CAMERA_MESSAGES = new Set(['mapping_calib_pattern', 'mapping_camera', 'mapping_people'])
@@ -47,7 +48,7 @@ export default function Mapping({ session }: { session: Session }) {
     if (message.type === 'mapping_player') setPlayersKey((n) => n + 1)
     if (CAMERA_MESSAGES.has(message.type)) cameraFeed.dispatchEvent(new CustomEvent('message', { detail: message }))
   })
-  const { show, setShow, media, reloadMedia, transport, clock, playback, link } = runtime
+  const { show, setShow, media, reloadMedia, scenes, transport, clock, playback, link } = runtime
 
   // Local geometry edits win over the server copy until they are saved, so
   // an echo of an older save never yanks a handle back mid-drag.
@@ -285,7 +286,7 @@ export default function Mapping({ session }: { session: Session }) {
             live link {link}
           </span>
           <div className="inline-flex gap-0.5 rounded-md bg-panel-850 p-0.5 ring-1 ring-white/5">
-            {(['remote', 'show', 'camera', 'players'] as Section[]).map((s) => (
+            {(['remote', 'show', 'scenes', 'camera', 'players'] as Section[]).map((s) => (
               <button
                 key={s}
                 onClick={() => setSection(s)}
@@ -341,8 +342,23 @@ export default function Mapping({ session }: { session: Session }) {
 
           {section === 'remote' && (
             <Panel title="Cues">
-              <CueList show={show} media={media} transport={transport} canEdit={false} canRun={canRun} compact {...cueOps} />
+              <CueList show={show} media={media} scenes={scenes} transport={transport} canEdit={false} canRun={canRun} compact {...cueOps} />
             </Panel>
+          )}
+
+          {section === 'scenes' && (
+            <ScenesPanel
+              show={show}
+              scenes={scenes}
+              media={media}
+              clock={clock}
+              cameraPeople={runtime.people}
+              canEdit={canEdit}
+              onError={setError}
+              reloadScenes={runtime.reloadScenes}
+              reloadMedia={reloadMedia}
+              onShowChanged={() => runtime.refresh()}
+            />
           )}
 
           {section === 'camera' && (
@@ -356,7 +372,7 @@ export default function Mapping({ session }: { session: Session }) {
             <div className="grid gap-4 2xl:grid-cols-[420px_minmax(0,1fr)]">
               <div className="space-y-4">
                 <Panel title="Cues" description="GO plays them in order.">
-                  <CueList show={show} media={media} transport={transport} canEdit={canEdit} canRun={canRun} {...cueOps} />
+                  <CueList show={show} media={media} scenes={scenes} transport={transport} canEdit={canEdit} canRun={canRun} {...cueOps} />
                 </Panel>
                 <Panel title="Media library">
                   <MediaLibrary media={media} canEdit={canEdit} onUploaded={() => void reloadMedia()}

@@ -1,14 +1,17 @@
 import { ApiError, getToken, request } from '@/api/client'
 import type {
+  AiStatus,
   ApplyResult,
   CalibrationGrid,
   CameraCommandName,
   CameraView,
   Cue,
+  MappingScene,
   MediaAsset,
   Output,
   Show,
   ShowSummary,
+  Surface,
   TransportAction,
   TransportState,
 } from './types'
@@ -44,6 +47,30 @@ export const mappingApi = {
       method: 'PUT',
       body: { cue_ids: cueIds },
     }),
+
+  listScenes: () => request<MappingScene[]>('/mapping/scenes'),
+  createScene: (body: Pick<MappingScene, 'name' | 'description' | 'layers'>) =>
+    request<MappingScene>('/mapping/scenes', { method: 'POST', body }),
+  updateScene: (id: number, body: Partial<Pick<MappingScene, 'name' | 'description' | 'layers'>>) =>
+    request<MappingScene>(`/mapping/scenes/${id}`, { method: 'PATCH', body }),
+  deleteScene: (id: number) => request<void>(`/mapping/scenes/${id}`, { method: 'DELETE' }),
+  describeScene: (body: { prompt: string; show_id?: number; scene_id?: number }) =>
+    request<MappingScene>('/mapping/scenes/describe', { method: 'POST', body }),
+  saveSurfaces: (showId: number, surfaces: Surface[]) =>
+    request<Show>(`/mapping/shows/${showId}`, { method: 'PATCH', body: { surfaces } }),
+  simulatedPeople: (
+    showId: number,
+    people: Array<{ id: number; x: number; y: number; z: number | null; size: number }>,
+  ) => request<void>('/mapping/simulated-people', { method: 'POST', body: { show_id: showId, people } }),
+  aiStatus: () => request<AiStatus>('/mapping/ai'),
+  setAiKey: (key: string) => request<AiStatus>('/mapping/ai/key', { method: 'PUT', body: { key } }),
+  removeAiKey: () => request<AiStatus>('/mapping/ai/key', { method: 'DELETE' }),
+  paintStatus: () => request<AiStatus>('/mapping/paint'),
+  setPaintKey: (key: string) => request<AiStatus>('/mapping/paint/key', { method: 'PUT', body: { key } }),
+  removePaintKey: () => request<AiStatus>('/mapping/paint/key', { method: 'DELETE' }),
+  /** Repaint a canvas-shaped picture of the building (base64 JPEG/PNG) as described. */
+  paintHouse: (body: { prompt: string; image: string; show_id: number }) =>
+    request<MediaAsset>('/mapping/paint', { method: 'POST', body }),
 
   transport: () => request<TransportState>('/mapping/transport'),
   command: (action: TransportAction, extra: { show_id?: number; cue?: number } = {}) =>

@@ -190,7 +190,8 @@ def _cue_out(cue: MappingCue, position: int, started_at_ms: float) -> TransportC
     return TransportCue(
         id=cue.id, position=position, name=cue.name, media_id=cue.media_id,
         fit=cue.fit, loop=cue.loop, fade_seconds=cue.fade_seconds,
-        interaction=cue.interaction or "none", started_at_ms=started_at_ms,
+        interaction=cue.interaction or "none", scene_id=cue.scene_id,
+        started_at_ms=started_at_ms,
     )
 
 

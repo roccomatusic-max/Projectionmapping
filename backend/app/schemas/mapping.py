@@ -7,6 +7,7 @@ the edge of the image is a legitimate way to overscan a surface.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Literal
 
@@ -199,6 +200,8 @@ class CueBase(BaseModel):
     #: How people tracked by a depth camera affect this cue.
     interaction: Interaction = "none"
     follow_seconds: float | None = Field(default=None, gt=0, le=86400)
+    #: A scene from the scene library, drawn over the media (or on its own).
+    scene_id: int | None = None
 
 
 class CueCreate(CueBase):
@@ -213,6 +216,7 @@ class CueUpdate(BaseModel):
     fade_seconds: float | None = Field(default=None, ge=0, le=60)
     follow_seconds: float | None = Field(default=None, gt=0, le=86400)
     interaction: Interaction | None = None
+    scene_id: int | None = None
 
 
 class CueOut(CueBase):
@@ -301,6 +305,28 @@ class FitResult(BaseModel):
     sliced: list[int] = Field(default_factory=list)
 
 
+SurfaceKind = Literal["wall", "roof", "window", "door", "other"]
+
+#: Traced building parts per show.
+MAX_SURFACES = 64
+
+
+class Surface(BaseModel):
+    """One part of the building traced on the canvas, for scenes to decorate."""
+    id: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(default="", max_length=64)
+    kind: SurfaceKind = "wall"
+    #: Outline in canvas fractions.
+    points: list[Point] = Field(min_length=3, max_length=256)
+
+    @field_validator("points")
+    @classmethod
+    def _in_range(cls, points: list[Point]) -> list[Point]:
+        for point in points:
+            _check_point(point, "surface")
+        return points
+
+
 class ShowUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = None
@@ -308,6 +334,7 @@ class ShowUpdate(BaseModel):
     canvas_height: int | None = Field(default=None, ge=16, le=32768)
     #: null clears it.
     camera_view: CameraView | None = None
+    surfaces: list[Surface] | None = Field(default=None, max_length=MAX_SURFACES)
 
 
 class ShowSummary(BaseModel):
@@ -324,6 +351,7 @@ class ShowSummary(BaseModel):
 
 class ShowOut(ShowSummary):
     camera_view: CameraView | None = None
+    surfaces: list[Surface] = Field(default_factory=list)
     outputs: list[OutputOut]
     cues: list[CueOut]
 
@@ -347,6 +375,7 @@ class TransportCue(BaseModel):
     loop: bool
     fade_seconds: float
     interaction: Interaction = "none"
+    scene_id: int | None = None
     #: Server epoch milliseconds at which media time zero was (or will be).
     started_at_ms: float
 
@@ -538,3 +567,125 @@ class TrackedPerson(BaseModel):
 
 class PeopleReport(BaseModel):
     people: list[TrackedPerson] = Field(default_factory=list, max_length=16)
+
+
+# -- scenes ----------------------------------------------------------------------
+
+#: What a layer draws. The renderer (frontend/src/mapping/scene/) knows each.
+LayerType = Literal[
+    # people
+    "glow", "ripples", "trails", "particles", "shadows", "reveal", "distort",
+    # look
+    "wash", "field", "texture", "outline", "lights", "falling", "shapes",
+    # a picture from the media library, such as one painted by "Paint the house"
+    "picture",
+]
+#: What makes a layer stronger: someone there, how fast people move, how many
+#: there are, how close they come, or nothing (always at full strength).
+ReactsTo = Literal["presence", "movement", "count", "closeness", "always"]
+#: Which traced surfaces a layer is drawn on; "everywhere" ignores them.
+LayerTarget = Literal["everywhere", "building", "walls", "roof", "windows", "doors", "outside"]
+LayerBlend = Literal["normal", "add", "screen"]
+
+MAX_LAYERS = 12
+_HEX = r"^#[0-9a-fA-F]{6}$"
+
+
+def _layer_id() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+class SceneLayer(BaseModel):
+    """One layer of a scene. Every type reads the same few dials; what each
+    dial means for a type (brush size, how many particles...) is the
+    renderer's business, so the stored shape never changes per type."""
+    id: str = Field(default_factory=_layer_id, min_length=1, max_length=32,
+                    pattern=r"^[A-Za-z0-9_-]+$")
+    type: LayerType
+    name: str = Field(default="", max_length=64)
+    enabled: bool = True
+    opacity: float = Field(default=1.0, ge=0, le=1)
+    blend: LayerBlend = "add"
+    color: str = Field(default="#38bdf8", pattern=_HEX)
+    color2: str = Field(default="#f472b6", pattern=_HEX)
+    size: float = Field(default=0.5, ge=0, le=1)
+    speed: float = Field(default=0.5, ge=0, le=1)
+    amount: float = Field(default=0.5, ge=0, le=1)
+    fade: float = Field(default=0.5, ge=0, le=1)
+    #: A variant of the type, such as "snow" for falling or "icing" for outline.
+    style: str = Field(default="", max_length=32)
+    target: LayerTarget = "everywhere"
+    reacts_to: ReactsTo = "presence"
+    #: How much the reaction matters: 0 ignores it, 1 is off without it.
+    reaction: float = Field(default=0.7, ge=0, le=1)
+    #: The image a "picture" layer shows (stretched over the whole canvas).
+    media_id: int | None = None
+
+
+class SceneBase(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=1000)
+    #: Bottom layer first.
+    layers: list[SceneLayer] = Field(default_factory=list, max_length=MAX_LAYERS)
+
+
+class SceneCreate(SceneBase):
+    pass
+
+
+class SceneUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=1000)
+    layers: list[SceneLayer] | None = Field(default=None, max_length=MAX_LAYERS)
+
+
+class SceneOut(SceneBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class SimulatedPerson(BaseModel):
+    id: int = Field(ge=0)
+    #: Canvas fractions.
+    x: float = Field(ge=-0.5, le=1.5)
+    y: float = Field(ge=-0.5, le=1.5)
+    z: float | None = Field(default=None, ge=0, le=100)
+    size: float = Field(default=0.05, ge=0, le=2)
+
+
+class SimulatedPeople(BaseModel):
+    """People made up in the scene builder, sent to every output as if a
+    camera saw them, so a scene can be tried on the projectors."""
+    show_id: int
+    people: list[SimulatedPerson] = Field(default_factory=list, max_length=16)
+
+
+class AiStatus(BaseModel):
+    #: A key is set, so "Describe a scene" can be offered.
+    available: bool
+    #: The last four characters, to recognise the key; never the key.
+    key_hint: str | None = None
+    #: Where the key came from: "settings" or "environment".
+    source: str | None = None
+
+
+class AiKey(BaseModel):
+    key: str = Field(min_length=20, max_length=300)
+
+
+class DescribeScene(BaseModel):
+    prompt: str = Field(min_length=3, max_length=2000)
+    #: The show it will play on, so traced surfaces can be decorated.
+    show_id: int | None = None
+    #: Change this scene instead of starting a new one.
+    scene_id: int | None = None
+
+
+class PaintHouse(BaseModel):
+    """Repaint a picture of the building (lined up with the canvas) as described."""
+    prompt: str = Field(min_length=3, max_length=2000)
+    #: The picture, as base64 JPEG or PNG, already the canvas's shape.
+    image: str = Field(min_length=100, max_length=30_000_000)
+    show_id: int

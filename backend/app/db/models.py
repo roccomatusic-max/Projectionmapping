@@ -473,6 +473,10 @@ class MappingShow(Base):
     #: Where the canvas sits in the calibration camera's view:
     #: {"camera_id": n, "corners": [[x, y] * 4]} in camera-image fractions.
     camera_view: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    #: The building's parts traced on the canvas, for scenes to decorate:
+    #: [{"id", "name", "kind": "wall"|"roof"|"window"|"door"|"other",
+    #:   "points": [[x, y]...]}] in canvas fractions.
+    surfaces: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -550,8 +554,35 @@ class MappingCue(Base):
     #: Seconds a still holds, or a non-looping video runs, before auto-follow.
     #: None means hold until the next GO.
     follow_seconds: Mapped[float | None] = mapped_column(Float)
+    #: A scene from the scene library, drawn over the media (or alone).
+    scene_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_scenes.id", ondelete="SET NULL")
+    )
 
     show: Mapped[MappingShow] = relationship(back_populates="cues")
+
+
+class MappingScene(Base):
+    """A live, generated design: a stack of layers drawn by every output.
+
+    Layers are rendered in the browser from a few parameters each (see
+    frontend/src/mapping/scene/), in canvas space so they line up across
+    projectors, and can follow the people a depth camera tracks. A scene
+    is shared by every show, like media; it decorates whichever show's
+    traced surfaces it plays on.
+    """
+
+    __tablename__ = "mapping_scenes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    #: [{"id", "type", "enabled", "opacity", "blend", "color", ...}], bottom first.
+    layers: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 class MappingPlayer(Base):

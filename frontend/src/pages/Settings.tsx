@@ -10,6 +10,7 @@ import {
   PageHeader,
 } from '@/components/ui'
 import AppUpdates from '@/components/AppUpdates'
+import SceneAiKey from '@/components/SceneAiKey'
 import { ClockIcon, LiveIcon, ProjectorIcon, SettingsIcon, TokenIcon, UsersIcon } from '@/components/icons'
 
 export default function Settings({ session }: { session: Session }) {
@@ -51,6 +52,7 @@ export default function Settings({ session }: { session: Session }) {
       {error && <ErrorBanner message={error} />}
 
       {isAdmin && <AppUpdates />}
+      {isAdmin && <SceneAiKey />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel icon={SettingsIcon} title="Your account">

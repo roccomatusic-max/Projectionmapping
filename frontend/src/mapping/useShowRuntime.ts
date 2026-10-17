@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BusMessage } from '@/api/types'
 import { mappingApi } from './api'
 import { withDefaults } from './geometry'
 import { type LinkStatus, ServerClock, useMappingFeed } from './live'
+import { PeopleTracker } from './people'
 import { Playback } from './playback'
-import type { MediaAsset, Output, Show, TransportState } from './types'
+import type { MappingScene, MediaAsset, Output, PeopleMessage, Show, TransportState } from './types'
 
 export function normaliseShow(show: Show): Show {
   return { ...show, outputs: show.outputs.map((o) => withDefaults(o)) }
@@ -12,8 +13,8 @@ export function normaliseShow(show: Show): Show {
 
 /**
  * Everything a view of a running show needs: the show, the media library,
- * the transport, a synced clock and a playback engine, all kept live from
- * the WebSocket feed.
+ * the scene library, the transport, the people a camera sees, a synced
+ * clock and a playback engine, all kept live from the WebSocket feed.
  */
 export function useShowRuntime(showId: number | null, onOther?: (message: BusMessage) => void) {
   const [show, setShow] = useState<Show | null>(null)
@@ -27,6 +28,26 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
   const clock = clockRef.current
   const playback = playbackRef.current
   const mediaRef = useRef<MediaAsset[]>([])
+  const [scenes, setScenes] = useState<MappingScene[]>([])
+  const people = useMemo(() => new PeopleTracker(showId ?? -1), [showId])
+
+  useEffect(() => {
+    playback.setPeople(people)
+  }, [playback, people])
+
+  useEffect(() => {
+    playback.setSurfaces(show?.surfaces ?? [])
+  }, [playback, show?.surfaces])
+
+  const loadScenes = useCallback(async () => {
+    try {
+      const list = await mappingApi.listScenes()
+      playback.setScenes(list)
+      setScenes(list)
+    } catch {
+      // An older server has no scenes; media still plays.
+    }
+  }, [playback])
 
   const loadMedia = useCallback(async () => {
     const list = await mappingApi.listMedia()
@@ -52,13 +73,14 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
   const refresh = useCallback(async () => {
     try {
       await loadMedia()
+      await loadScenes()
       if (showId != null) setShow(normaliseShow(await mappingApi.getShow(showId)))
       await applyTransport(await mappingApi.transport(), true)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load the show')
     }
-  }, [showId, loadMedia, applyTransport])
+  }, [showId, loadMedia, loadScenes, applyTransport])
 
   useEffect(() => {
     clock.start()
@@ -94,10 +116,31 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
       case 'mapping_reconnected':
         void refresh()
         break
+      case 'mapping_scene':
+        void loadScenes()
+        break
+      case 'mapping_people':
+        people.update(payload as unknown as PeopleMessage)
+        onOther?.(message)
+        break
       default:
         onOther?.(message)
     }
   })
 
-  return { show, setShow, media, reloadMedia: loadMedia, transport, link, clock, playback, error, refresh }
+  return {
+    show,
+    setShow,
+    media,
+    reloadMedia: loadMedia,
+    scenes,
+    reloadScenes: loadScenes,
+    people,
+    transport,
+    link,
+    clock,
+    playback,
+    error,
+    refresh,
+  }
 }

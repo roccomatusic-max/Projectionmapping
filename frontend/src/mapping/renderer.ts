@@ -7,13 +7,19 @@
  * masks. Test patterns are drawn in canvas space so they line up across
  * projectors, which is what makes them useful for alignment.
  *
+ * Scenes (reactive layers) are drawn first into a texture of their own by
+ * the scene engine, then laid over the media in the same pass; a scene's
+ * "distort" layer bends the media near people instead.
+ *
  * Camera calibration patterns are the exception: a second, tiny program
  * draws them straight in the projector's pixels, ignoring the warp, since
  * what the camera decodes is which projector pixel lit which spot.
  */
 
 import { buildDenseMesh } from './geometry'
-import type { Fit, Interaction, Mask, Output, PatternSpec, TestPattern } from './types'
+import type { PersonSpot } from './people'
+import { type SceneItem, SceneEngine } from './scene/engine'
+import type { Fit, Interaction, Mask, Output, PatternSpec, Surface, TestPattern } from './types'
 
 /** A tracked person as the shader sees them, in canvas fractions. */
 export interface Spot {
@@ -92,6 +98,11 @@ uniform int uInteract;     // 0 none, 1 spotlight, 2 ripple
 uniform int uSpots;
 uniform vec4 uSpot[8];     // x, y in canvas fractions; radius in canvas heights; strength
 uniform float uTime;
+uniform sampler2D uScene;  // premultiplied; alpha is how much media it covers
+uniform int uHasScene;
+uniform vec4 uDistort;     // style (0 ripple, 1 swirl, 2 bulge), size, amount, speed
+uniform float uDistortOn;  // strength, 0 when no distort layer plays
+uniform float uSceneTime;
 
 vec2 mediaUv(vec2 c, vec2 size, int fit, out float inside) {
   vec2 m;
@@ -174,6 +185,33 @@ void main() {
     }
   }
 
+  if (uPattern == 0 && uDistortOn > 0.0) {
+    // A scene's distort layer: the media bends around each person.
+    vec2 back = vec2(uCanvas.y / uCanvas.x, 1.0);
+    for (int i = 0; i < 8; i++) {
+      if (i >= uSpots) break;
+      vec4 s = uSpot[i];
+      vec2 d = spotDelta(c, s);
+      float r = length(d);
+      float reach = s.z * mix(0.8, 4.0, uDistort.y);
+      float w = s.w * uDistortOn;
+      if (uDistort.x < 0.5) {
+        if (r < 1e-4) continue;
+        float wave = sin(r * mix(80.0, 25.0, uDistort.y) - uSceneTime * mix(1.5, 9.0, uDistort.w)) * exp(-r / reach);
+        c += (d / r) * wave * w * mix(0.003, 0.03, uDistort.z) * back;
+      } else if (uDistort.x < 1.5) {
+        float ang = mix(0.5, 5.0, uDistort.z) * w * exp(-pow(r / reach, 2.0))
+                  * (1.0 + 0.3 * sin(uSceneTime * mix(0.5, 4.0, uDistort.w)));
+        float cs = cos(ang);
+        float sn = sin(ang);
+        c = s.xy + mat2(cs, -sn, sn, cs) * d * back;
+      } else {
+        float k = 1.0 - mix(0.15, 0.7, uDistort.z) * w * exp(-pow(r / reach, 2.0));
+        c = s.xy + d * k * back;
+      }
+    }
+  }
+
   if (uPattern == 0) {
     float inA = 0.0;
     float inB = 0.0;
@@ -188,6 +226,11 @@ void main() {
       b = texture(uTexB, m).rgb * inB;
     }
     col = a * uMix + b * (1.0 - uMix);
+    if (uHasScene == 1) {
+      // The scene buffer's rows run bottom up; vUv runs top down.
+      vec4 sc = texture(uScene, vec2(vUv.x, 1.0 - vUv.y));
+      col = col * (1.0 - sc.a) + sc.rgb;
+    }
     if (uInteract == 1) {
       // Dim everywhere but around people, as if they carried a lamp.
       float light = 0.15;
@@ -358,6 +401,9 @@ export class OutputRenderer {
   private maskCanvas = document.createElement('canvas')
   private overlayCanvas = document.createElement('canvas')
   private lost = false
+  private scenes: SceneEngine | null = null
+  /** Scene detail kept across a lost and restored GL context. */
+  private sceneQuality = 0
 
   constructor(private canvas: HTMLCanvasElement, private maxMaskSize = 2048) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, premultipliedAlpha: false })
@@ -375,6 +421,8 @@ export class OutputRenderer {
 
   private onRestored = () => {
     this.lost = false
+    // The old engine's GL objects went with the context.
+    this.scenes = null
     this.warpKey = ''
     this.maskKeyValue = ''
     this.overlayKey = ''
@@ -524,17 +572,71 @@ export class OutputRenderer {
     gl.bindVertexArray(null)
   }
 
+  /** How much of the output's resolution scenes are drawn at, 0..1. */
+  get sceneScale() {
+    return this.scenes?.scale ?? 1
+  }
+
+  /** Draw scenes at less detail (a slow computer); false when already lowest. */
+  lowerSceneQuality(): boolean {
+    if (!this.scenes?.lowerQuality()) return false
+    this.sceneQuality = this.scenes.quality
+    return true
+  }
+
   render({
     mix = 1,
     blackout = false,
     interaction = 'none',
-    spots = [],
+    spots,
     time = 0,
-  }: { mix?: number; blackout?: boolean; interaction?: Interaction; spots?: Spot[]; time?: number } = {}) {
+    scenes = [],
+    people = [],
+    surfaces = [],
+    frameTime = performance.now() / 1000,
+  }: {
+    mix?: number
+    blackout?: boolean
+    interaction?: Interaction
+    /** People for the cue's legacy people effect; defaults to ``people``. */
+    spots?: Spot[]
+    time?: number
+    /** Scenes playing now, each with its own clock (seconds since its cue). */
+    scenes?: SceneItem[]
+    people?: PersonSpot[]
+    surfaces?: Surface[]
+    /** Any steady clock, seconds; scenes use it for how long a frame took. */
+    frameTime?: number
+  } = {}) {
     const output = this.output
     if (this.lost || !output) return
     const gl = this.gl
     const { canvas } = this
+    const [cw, ch] = this.canvasSize
+
+    // Scenes draw into their own buffer before the output pass.
+    let sceneTex: WebGLTexture | null = null
+    if (scenes.length && output.enabled && !blackout && output.test_pattern === 'none') {
+      if (!this.scenes) {
+        this.scenes = new SceneEngine(gl)
+        this.scenes.quality = this.sceneQuality
+      }
+      sceneTex = this.scenes.render({
+        items: scenes,
+        rect: output.source,
+        canvasWidth: cw,
+        canvasHeight: ch,
+        width: canvas.width,
+        height: canvas.height,
+        surfaces,
+        people,
+        time: frameTime,
+      })
+    } else if (this.scenes) {
+      this.scenes.distort = null
+    }
+    const distort = scenes.length ? this.scenes?.distort ?? null : null
+
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
@@ -544,7 +646,6 @@ export class OutputRenderer {
     const hasB = mix < 1 && this.upload('b')
 
     gl.useProgram(this.program)
-    const [cw, ch] = this.canvasSize
     const s = output.source
     gl.uniform4f(this.u('uSource'), s.x, s.y, s.w, s.h)
     gl.uniform2f(this.u('uCanvas'), cw, ch)
@@ -584,13 +685,22 @@ export class OutputRenderer {
     // with the show stopped.
     gl.uniform1i(this.u('uBlack'), blackout && output.test_pattern === 'none' ? 1 : 0)
 
-    const shown = spots.slice(0, MAX_SPOTS)
+    const shown = (spots ?? people).slice(0, MAX_SPOTS)
     const packed = new Float32Array(MAX_SPOTS * 4)
     shown.forEach((spot, i) => packed.set([spot.x, spot.y, spot.radius, spot.strength], i * 4))
     gl.uniform1i(this.u('uInteract'), INTERACTION_CODE[interaction] ?? 0)
     gl.uniform1i(this.u('uSpots'), shown.length)
     gl.uniform4fv(this.u('uSpot'), packed)
     gl.uniform1f(this.u('uTime'), time)
+
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, sceneTex ?? this.textures.mask)
+    gl.uniform1i(this.u('uScene'), 4)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.uniform1i(this.u('uHasScene'), sceneTex ? 1 : 0)
+    gl.uniform4f(this.u('uDistort'), distort?.style ?? 0, distort?.size ?? 0, distort?.amount ?? 0, distort?.speed ?? 0)
+    gl.uniform1f(this.u('uDistortOn'), distort ? Math.min(1, this.scenes!.distortStrength) : 0)
+    gl.uniform1f(this.u('uSceneTime'), scenes[0]?.time ?? 0)
 
     gl.bindVertexArray(this.vao)
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0)
@@ -601,6 +711,8 @@ export class OutputRenderer {
     this.canvas.removeEventListener('webglcontextlost', this.onLost)
     this.canvas.removeEventListener('webglcontextrestored', this.onRestored)
     const gl = this.gl
+    if (!this.lost) this.scenes?.dispose()
+    this.scenes = null
     Object.values(this.textures).forEach((t) => gl.deleteTexture(t))
     gl.deleteBuffer(this.posBuffer)
     gl.deleteBuffer(this.uvBuffer)

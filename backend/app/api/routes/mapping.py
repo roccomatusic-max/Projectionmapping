@@ -30,6 +30,7 @@ from app.db.models import (
     Event,
     MappingCue,
     MappingOutput,
+    MappingScene,
     MappingShow,
     MediaAsset,
     Projector,
@@ -271,6 +272,7 @@ def _show_out(show: MappingShow) -> ShowOut:
         canvas_width=show.canvas_width, canvas_height=show.canvas_height,
         output_count=len(show.outputs), cue_count=len(show.cues), updated_at=show.updated_at,
         camera_view=show.camera_view or None,
+        surfaces=show.surfaces or [],
         outputs=[_output_out(o) for o in show.outputs],
         cues=[CueOut.model_validate(c) for c in show.cues],
     )
@@ -329,6 +331,8 @@ async def update_show(show_id: int, payload: ShowUpdate, session: SessionDep,
     changes = payload.model_dump(mode="json", exclude_unset=True)
     if "camera_view" in changes:
         changes["camera_view"] = changes["camera_view"] or {}
+    if "surfaces" in changes:
+        changes["surfaces"] = changes["surfaces"] or []
     if "name" in changes and changes["name"] != show.name and (await session.execute(
         select(MappingShow.id).where(MappingShow.name == changes["name"])
     )).first():
@@ -445,6 +449,12 @@ async def _check_media(session, media_id: int | None) -> None:
                             detail=f"Unknown media id {media_id}")
 
 
+async def _check_scene(session, scene_id: int | None) -> None:
+    if scene_id is not None and await session.get(MappingScene, scene_id) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Unknown scene id {scene_id}")
+
+
 async def _renumber_cues(session, show_id: int, order: list[int] | None = None) -> None:
     cues = (await session.execute(
         select(MappingCue).where(MappingCue.show_id == show_id).order_by(MappingCue.position)
@@ -462,6 +472,7 @@ async def create_cue(show_id: int, payload: CueCreate, session: SessionDep,
                      _: RequireAdmin) -> MappingCue:
     show = await _load_show(session, show_id)
     await _check_media(session, payload.media_id)
+    await _check_scene(session, payload.scene_id)
     cue = MappingCue(show_id=show.id, position=len(show.cues), **payload.model_dump())
     session.add(cue)
     await session.commit()
@@ -481,6 +492,8 @@ async def update_cue(cue_id: int, payload: CueUpdate, session: SessionDep,
     changes = payload.model_dump(exclude_unset=True)
     if "media_id" in changes:
         await _check_media(session, changes["media_id"])
+    if "scene_id" in changes:
+        await _check_scene(session, changes["scene_id"])
     for field, value in changes.items():
         setattr(cue, field, value)
     await session.commit()

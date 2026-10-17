@@ -1,10 +1,9 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { withDefaults } from './geometry'
 import { useLocalChannel } from './live'
 import { type CalibrationFrame, type FrameStats, OutputView } from './OutputView'
-import { PeopleTracker } from './people'
-import type { CalibrationStepMessage, PeopleMessage, Show } from './types'
+import type { CalibrationStepMessage, Show } from './types'
 import { useShowRuntime } from './useShowRuntime'
 
 /** A calibration that stops sending frames (camera gone) ends after this. */
@@ -42,10 +41,9 @@ export function OutputScreen({
   playerId?: number
   hudExtra?: ReactNode
   onStats?: (stats: FrameStats & { width: number; height: number; cue: string | null }) => void
-  onShow?: (show: Show) => void
+  /** The show, and the pictures its cues' scenes show, to download ahead. */
+  onShow?: (show: Show, sceneMedia: number[]) => void
 }) {
-  const people = useRef<PeopleTracker>()
-  if (!people.current) people.current = new PeopleTracker(showId)
   const [calibration, setCalibration] = useState<CalibrationFrame | null>(null)
   const watchdog = useRef<number>()
 
@@ -68,12 +66,11 @@ export function OutputScreen({
     if (message.type === 'mapping_identify' && (forPlayer || message.payload.output_id === outputId)) flashIdentify()
     if (message.type === 'mapping_player' && forPlayer) window.dispatchEvent(new CustomEvent('pc:player-changed'))
     if (message.type === 'mapping_calib_pattern') onCalibrationStep(message.payload as unknown as CalibrationStepMessage)
-    if (message.type === 'mapping_people') people.current!.update(message.payload as unknown as PeopleMessage)
   })
-  const { show, setShow, transport, link, clock, playback, error } = runtime
+  const { show, setShow, scenes, transport, link, clock, playback, error } = runtime
   const [hud, setHud] = useState(playerId == null)
   const [identify, setIdentify] = useState(false)
-  const [stats, setStats] = useState<FrameStats>({ fps: 0, drift: null })
+  const [stats, setStats] = useState<FrameStats>({ fps: 0, drift: null, sceneScale: null })
   const [size, setSize] = useState<[number, number]>(() => pixelSize())
   const identifyTimer = useRef<number>()
 
@@ -83,9 +80,18 @@ export function OutputScreen({
     identifyTimer.current = window.setTimeout(() => setIdentify(false), 4000)
   }
 
+  const sceneMedia = useMemo(() => {
+    const used = new Set(show?.cues.map((c) => c.scene_id) ?? [])
+    const ids = scenes
+      .filter((s) => used.has(s.id))
+      .flatMap((s) => s.layers.map((l) => l.media_id).filter((id): id is number => id != null))
+    return [...new Set(ids)].sort((a, b) => a - b)
+  }, [show, scenes])
+  const sceneMediaKey = sceneMedia.join(',')
+
   useEffect(() => {
-    if (show) onShow?.(show)
-  }, [show]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (show) onShow?.(show, sceneMedia)
+  }, [show, sceneMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const statsRef = useRef({ size, transport })
   statsRef.current = { size, transport }
@@ -159,7 +165,6 @@ export function OutputScreen({
         onStats={handleStats}
         calibration={calibration}
         interaction={transport?.current?.interaction ?? 'none'}
-        people={people.current}
       />
       {showHud && (
         <div className="pointer-events-none absolute left-4 top-4 space-y-1 rounded-lg bg-black/70 px-4 py-3 font-mono text-xs text-slate-200 ring-1 ring-white/10">
@@ -173,6 +178,7 @@ export function OutputScreen({
           <p>
             link {link} · clock {clock.synced ? `±${Math.round(clock.rtt / 2)} ms` : 'syncing'} · {stats.fps.toFixed(0)} fps
             {stats.drift != null ? ` · drift ${(stats.drift * 1000).toFixed(0)} ms` : ''}
+            {stats.sceneScale != null ? ` · scene detail ${Math.round(stats.sceneScale * 100)}%` : ''}
           </p>
           <p className={mismatch ? 'text-amber-300' : 'text-slate-400'}>
             window {size[0]} × {size[1]} · output set to {output.width} × {output.height}
