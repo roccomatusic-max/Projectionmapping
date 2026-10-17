@@ -267,6 +267,26 @@ export interface Scene {
   }>
 }
 
+export interface ValidationProblem {
+  step: number | null
+  severity: 'error' | 'warning'
+  message: string
+}
+
+export interface AutomationValidation {
+  ok: boolean
+  problems: ValidationProblem[]
+  next_runs: string[]
+  timezone: string
+}
+
+export interface Enclosure {
+  id: number
+  name: string
+  projector_id: number | null
+  location: string
+}
+
 export interface MaintenanceRecord {
   id: number
   projector_id: number

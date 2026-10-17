@@ -192,7 +192,7 @@ POST   /api/groups/{id}/commands         {capability, params} → per-device res
 GET    /api/events                       ?severity=&projector_id=&since=
 GET    /api/alerts                       POST /api/alerts/{id}/acknowledge
 GET    /api/automations                  POST /api/automations/{id}/execute
-GET    /api/automations/{id}/runs
+GET    /api/automations/{id}/runs        POST /api/automations/validate (pre-flight: problems + next runs)
 GET    /api/scenes                       POST /api/scenes/{id}/activate
 GET    /api/maintenance                  POST, GET /api/maintenance/export.csv
 GET    /api/integration/homeassistant/discovery

@@ -29,6 +29,7 @@ export {
   Monitor as DviIcon,
   MonitorDot as RgbIcon,
   Network as DigitalLinkIcon,
+  Pencil as EditIcon,
   Play as SceneIcon,
   Plus as AddIcon,
   Power as PowerIcon,

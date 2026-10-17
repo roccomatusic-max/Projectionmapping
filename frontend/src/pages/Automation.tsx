@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ApiError, api, type Session } from '@/api/client'
-import type { Automation as AutomationType, AutomationRun, Group, Scene } from '@/api/types'
+import type { Automation as AutomationType, AutomationRun, Enclosure, Group, Projector, Scene } from '@/api/types'
 import {
   Chip,
   ConfirmDialog,
@@ -12,7 +12,14 @@ import {
   useToasts,
 } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
-import { AutomationIcon, SceneIcon } from '@/components/icons'
+import { AddIcon, AutomationIcon, CopyIcon, EditIcon, SceneIcon } from '@/components/icons'
+import {
+  AutomationBuilder,
+  draftFromAutomation,
+  emptyDraft,
+  summarise,
+  type Draft,
+} from '@/components/AutomationBuilder'
 
 /** Templates matching the startup/shutdown sequences in the project brief.
  *  Each is a real, runnable step list, not an illustration. */
@@ -80,12 +87,16 @@ export default function Automation({ session }: { session: Session }) {
   const [automations, setAutomations] = useState<AutomationType[]>([])
   const [scenes, setScenes] = useState<Scene[]>([])
   const [groups, setGroups] = useState<Group[]>([])
+  const [projectors, setProjectors] = useState<Projector[]>([])
+  const [enclosures, setEnclosures] = useState<Enclosure[]>([])
   const [runs, setRuns] = useState<Record<number, AutomationRun[]>>({})
   const [expanded, setExpanded] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<AutomationType | null>(null)
   const [sceneConfirm, setSceneConfirm] = useState<Scene | null>(null)
+  const [deleting, setDeleting] = useState<AutomationType | null>(null)
+  const [builder, setBuilder] = useState<{ draft: Draft; id: number | null } | null>(null)
   const [busy, setBusy] = useState(false)
   const { toasts, push, dismiss } = useToasts()
 
@@ -94,14 +105,18 @@ export default function Automation({ session }: { session: Session }) {
 
   const load = async () => {
     try {
-      const [a, s, g] = await Promise.all([
+      const [a, s, g, p, e] = await Promise.all([
         api.listAutomations(),
         api.listScenes(),
         api.listGroups(),
+        api.listProjectors(),
+        api.listEnclosures(),
       ])
       setAutomations(a)
       setScenes(s)
       setGroups(g)
+      setProjectors(p)
+      setEnclosures(e)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load automations')
@@ -126,20 +141,34 @@ export default function Automation({ session }: { session: Session }) {
     }
   }
 
-  const createTemplate = async (template: ReturnType<typeof templates>[number]) => {
-    setBusy(true)
-    try {
-      await api.createAutomation(template as unknown as Record<string, unknown>)
-      push('ok', `Created “${template.name}”`)
-      void load()
-    } catch (err) {
-      push('fault', 'Could not create', err instanceof ApiError ? err.message : undefined)
-    } finally {
-      setBusy(false)
-    }
+  const openTemplate = (template: ReturnType<typeof templates>[number]) => {
+    setBuilder({
+      draft: { ...emptyDraft(), ...template, schedule: {} },
+      id: null,
+    })
   }
 
   if (loading) return <Spinner />
+
+  if (builder) {
+    return (
+      <div className="space-y-5">
+        <h1 className="text-lg font-semibold text-slate-100">Automation</h1>
+        <AutomationBuilder
+          key={builder.id ?? 'new'}
+          initial={builder.draft}
+          existingId={builder.id}
+          onCancel={() => setBuilder(null)}
+          onSaved={(saved) => {
+            setBuilder(null)
+            push('ok', builder.id ? `Saved “${saved.name}”` : `Created “${saved.name}”`)
+            void load()
+          }}
+        />
+        <ToastStack toasts={toasts} onDismiss={dismiss} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -150,10 +179,22 @@ export default function Automation({ session }: { session: Session }) {
         icon={AutomationIcon}
         title="Automations"
         description="Multi-step sequences. Each step reports its own per-projector result."
+        action={
+          isAdmin ? (
+            <button
+              className="btn-primary text-xs"
+              onClick={() => setBuilder({ draft: emptyDraft(), id: null })}
+            >
+              <AddIcon size={14} aria-hidden /> New automation
+            </button>
+          ) : undefined
+        }
       >
         {automations.length === 0 ? (
           <EmptyState title="No automations yet">
-            Create one from a template below, or build your own through the API.
+            {isAdmin
+              ? 'Build one from scratch with “New automation”, or start from a template below.'
+              : 'An administrator can build one from the New automation button.'}
           </EmptyState>
         ) : (
           <ul className="divide-y divide-white/5">
@@ -204,15 +245,38 @@ export default function Automation({ session }: { session: Session }) {
                       <SceneIcon size={13} aria-hidden /> Run now
                     </button>
                     {isAdmin && (
-                      <button
-                        className="btn-ghost text-xs text-red-300"
-                        onClick={async () => {
-                          await api.deleteAutomation(automation.id)
-                          void load()
-                        }}
-                      >
-                        Delete
-                      </button>
+                      <>
+                        <button
+                          className="btn-ghost text-xs"
+                          title="Edit"
+                          onClick={() =>
+                            setBuilder({ draft: draftFromAutomation(automation), id: automation.id })
+                          }
+                        >
+                          <EditIcon size={13} aria-hidden /> Edit
+                        </button>
+                        <button
+                          className="btn-ghost text-xs"
+                          title="Duplicate into a new automation"
+                          onClick={() =>
+                            setBuilder({
+                              draft: {
+                                ...draftFromAutomation(automation),
+                                name: `${automation.name} (copy)`,
+                              },
+                              id: null,
+                            })
+                          }
+                        >
+                          <CopyIcon size={13} aria-hidden /> Duplicate
+                        </button>
+                        <button
+                          className="btn-ghost text-xs text-red-300"
+                          onClick={() => setDeleting(automation)}
+                        >
+                          Delete
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -223,12 +287,7 @@ export default function Automation({ session }: { session: Session }) {
                     <ol className="space-y-1 text-xs text-slate-400">
                       {automation.steps.map((step, index) => (
                         <li key={index}>
-                          {index + 1}. {step.label ?? step.type}
-                          <span className="text-slate-600">
-                            {' '}
-                            ({step.type}
-                            {step.capability ? ` · ${step.capability}` : ''})
-                          </span>
+                          {index + 1}. {step.label || summarise(step, projectors, groups, scenes, enclosures)}
                         </li>
                       ))}
                     </ol>
@@ -287,7 +346,7 @@ export default function Automation({ session }: { session: Session }) {
       {isAdmin && (
         <Panel
           title="Templates"
-          description="Ready-made startup and shutdown sequences you can create and then edit."
+          description="Ready-made startup and shutdown sequences. Each opens in the builder so you can check it against your projectors before saving."
         >
           <div className="grid gap-3 sm:grid-cols-2">
             {templates(groups[0]?.id ?? null).map((template) => (
@@ -301,9 +360,9 @@ export default function Automation({ session }: { session: Session }) {
                 <button
                   className="btn-default mt-3 text-xs"
                   disabled={busy}
-                  onClick={() => void createTemplate(template)}
+                  onClick={() => openTemplate(template)}
                 >
-                  Create
+                  <EditIcon size={13} aria-hidden /> Open in builder
                 </button>
               </div>
             ))}
@@ -381,6 +440,26 @@ export default function Automation({ session }: { session: Session }) {
             push('fault', 'Run failed', err instanceof ApiError ? err.message : undefined)
           } finally {
             setBusy(false)
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={deleting !== null}
+        title={`Delete “${deleting?.name}”?`}
+        body="This removes the automation and its schedule. Run history is kept."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setDeleting(null)}
+        onConfirm={async () => {
+          const automation = deleting
+          setDeleting(null)
+          if (!automation) return
+          try {
+            await api.deleteAutomation(automation.id)
+            push('ok', `Deleted “${automation.name}”`)
+            void load()
+          } catch (err) {
+            push('fault', 'Could not delete', err instanceof ApiError ? err.message : undefined)
           }
         }}
       />

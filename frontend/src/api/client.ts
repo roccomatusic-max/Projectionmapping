@@ -2,6 +2,8 @@ import type {
   Alert,
   Automation,
   AutomationRun,
+  AutomationValidation,
+  Enclosure,
   CapabilityManifest,
   CommandLogRow,
   CommandResult,
@@ -258,6 +260,9 @@ export const api = {
     ),
   automationRuns: (id: number) =>
     request<AutomationRun[]>(`/automations/${id}/runs`),
+  validateAutomation: (body: Record<string, unknown>) =>
+    request<AutomationValidation>('/automations/validate', { method: 'POST', body }),
+  listEnclosures: () => request<Enclosure[]>('/enclosures'),
 
   listScenes: () => request<Scene[]>('/scenes'),
   createScene: (body: Record<string, unknown>) =>
