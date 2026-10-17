@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
-import type { Group, GroupCommandResult, Projector, Scene } from '@/api/types'
+import type { DriverInfo, Group, GroupCommandResult, Projector, Scene } from '@/api/types'
 import { useFleet, useTicker } from '@/hooks/useLiveData'
 import {
   Chip,
@@ -21,6 +21,7 @@ import {
   POWER_LABEL,
   classNames,
   formatClock,
+  inputsFromCapabilities,
   outcomeTone,
   relativeTime,
 } from '@/lib/format'
@@ -64,15 +65,6 @@ const ACTIONS: BulkAction[] = [
   },
 ]
 
-const INPUTS: Array<[string, string]> = [
-  ['RG1', 'RGB 1'],
-  ['RG2', 'RGB 2'],
-  ['DVI', 'DVI-D'],
-  ['HD1', 'HDMI'],
-  ['SD1', 'SDI 1'],
-  ['SD2', 'SDI 2'],
-]
-
 export default function ControlCenter({
   session,
   fullscreen = false,
@@ -83,6 +75,7 @@ export default function ControlCenter({
   const { projectors, loading, error, refresh, wsStatus } = useFleet(10000)
   const [groups, setGroups] = useState<Group[]>([])
   const [scenes, setScenes] = useState<Scene[]>([])
+  const [drivers, setDrivers] = useState<DriverInfo[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastResult, setLastResult] = useState<GroupCommandResult | null>(null)
   const [pending, setPending] = useState<{ action: BulkAction } | null>(null)
@@ -94,10 +87,11 @@ export default function ControlCenter({
   const canControl = session.role !== 'viewer'
 
   useEffect(() => {
-    void Promise.all([api.listGroups(), api.listScenes()])
-      .then(([g, s]) => {
+    void Promise.all([api.listGroups(), api.listScenes(), api.drivers()])
+      .then(([g, s, d]) => {
         setGroups(g)
         setScenes(s)
+        setDrivers(d.drivers)
       })
       .catch(() => undefined)
   }, [])
@@ -106,6 +100,23 @@ export default function ControlCenter({
     () => projectors.filter((projector) => selected.has(projector.id)),
     [projectors, selected],
   )
+
+  // Inputs offered = union across the drivers of the selected projectors
+  // (all drivers when nothing is selected). A projector lacking a given
+  // input reports it as unsupported in the per-device results.
+  const inputs = useMemo(() => {
+    const driverIds = new Set(
+      (selectedList.length ? selectedList : projectors).map((p) => p.driver),
+    )
+    const merged = new Map<string, string>()
+    for (const driver of drivers) {
+      if (!driverIds.has(driver.driver_id)) continue
+      for (const [code, label] of inputsFromCapabilities(driver.capabilities)) {
+        if (!merged.has(code)) merged.set(code, label)
+      }
+    }
+    return [...merged.entries()]
+  }, [drivers, projectors, selectedList])
 
   const toggle = (id: number) =>
     setSelected((current) => {
@@ -266,7 +277,7 @@ export default function ControlCenter({
           <div>
             <p className="label">Change input on selection</p>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-              {INPUTS.map(([code, label]) => (
+              {inputs.map(([code, label]) => (
                 <button
                   key={code}
                   className="btn-default"

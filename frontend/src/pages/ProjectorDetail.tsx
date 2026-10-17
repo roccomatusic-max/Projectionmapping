@@ -30,21 +30,12 @@ import {
   classNames,
   formatDateTime,
   healthTone,
+  inputsFromCapabilities,
   outcomeTone,
   relativeTime,
   renderTelemetry,
 } from '@/lib/format'
 import { useTicker } from '@/hooks/useLiveData'
-
-const PANASONIC_INPUTS: Array<[string, string]> = [
-  ['RG1', 'RGB 1'],
-  ['RG2', 'RGB 2'],
-  ['VID', 'Video'],
-  ['DVI', 'DVI-D'],
-  ['HD1', 'HDMI'],
-  ['SD1', 'SDI 1'],
-  ['SD2', 'SDI 2'],
-]
 
 const REMOTE_KEYS: Array<[string, string, string]> = [
   ['menu', 'Menu', 'col-start-1'],
@@ -159,6 +150,8 @@ export default function ProjectorDetail({ session }: { session: Session }) {
   )
   const transitioning = state.power === 'warming' || state.power === 'cooling'
   const inputRetracted = manifest.retracted_params ?? {}
+  // Whatever this model's driver declares — a DZ13K lists SDI, a DZ770 lists S-Video.
+  const inputs = inputsFromCapabilities(manifest.capabilities)
 
   return (
     <div className="space-y-5">
@@ -362,7 +355,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
               <Value text={input.text} muted={input.muted} title={input.title} />
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {PANASONIC_INPUTS.map(([code, label]) => {
+              {inputs.map(([code, label]) => {
                 const unavailable = inputRetracted[`input.set:${code}`]
                 return (
                   <button

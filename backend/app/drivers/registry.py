@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from .base import ConnectionConfig, ProjectorDriver
 from .panasonic_ptdz13k import PanasonicPTDZ13KDriver
+from .panasonic_ptdz770 import PanasonicPTDZ770Driver
 from .pjlink import PJLinkDriver
 
 
@@ -78,6 +79,15 @@ register(DriverInfo(
     manufacturer="Panasonic",
     models=("PT-DZ13K", "PT-DS12K", "PT-DW11K", "PT-DZ10K"),
     factory=PanasonicPTDZ13KDriver,
+))
+
+register(DriverInfo(
+    driver_id=PanasonicPTDZ770Driver.driver_id,
+    display_name=PanasonicPTDZ770Driver.display_name,
+    default_port=PanasonicPTDZ770Driver.default_port,
+    manufacturer="Panasonic",
+    models=("PT-DZ770", "PT-DW740", "PT-DX810"),
+    factory=PanasonicPTDZ770Driver,
 ))
 
 register(DriverInfo(

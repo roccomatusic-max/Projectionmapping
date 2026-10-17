@@ -143,6 +143,15 @@ export function formatHours(hours: number | null | undefined): string {
   return `${hours.toLocaleString()} h`
 }
 
+/** Input choices for a device, from its driver's manifest. */
+export function inputsFromCapabilities(
+  capabilities: Array<{ name: string; params: string[]; param_labels: Record<string, string> | null }>,
+): Array<[string, string]> {
+  const cap = capabilities.find((c) => c.name === 'input.set')
+  if (!cap) return []
+  return cap.params.map((code) => [code, cap.param_labels?.[code] ?? code])
+}
+
 export function classNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ')
 }

@@ -54,6 +54,12 @@ INPUTS: dict[str, str] = {
 #: Number of lamps on a PT-DZ13K. Q$L takes a 1-based lamp index.
 LAMP_COUNT = 4
 
+#: Standard Panasonic ``IIS`` vocabulary, for other models to pick from.
+PANASONIC_INPUT_LABELS: dict[str, str] = {
+    "RG1": "RGB1", "RG2": "RGB2", "VID": "VIDEO", "SVD": "S-VIDEO", "DVI": "DVI-D",
+    "HD1": "HDMI", "SD1": "SDI 1", "SD2": "SDI 2", "DL1": "DIGITAL LINK",
+}
+
 #: Shutter polarity. OSH:1 CLOSES the shutter. This mapping exists exactly
 #: once in the codebase so the inversion cannot drift.
 _SHUTTER_TO_PARAM = {ShutterState.OPEN: "0", ShutterState.CLOSED: "1"}
@@ -107,9 +113,28 @@ LENS_CAVEAT = (
 
 
 class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
+    """PT-DZ13K series, and the base for other Panasonic models.
+
+    A new Panasonic model is a subclass that overrides the class attributes
+    below (inputs, lamp count, identity) and, if it has extra commands,
+    ``EXTRA_CAPABILITIES`` plus an ``execute_supported_command`` override
+    that handles them and defers the rest to ``super()``. See
+    :mod:`app.drivers.panasonic_ptdz770` for the pattern.
+    """
+
     driver_id = "panasonic_pt_dz13k"
     display_name = "Panasonic PT-DZ13K series"
     default_port = 1024
+
+    #: ``IIS`` parameter → label. Overridden per model.
+    INPUTS: dict[str, str] = INPUTS
+    #: Number of lamps, i.e. how many ``Q$L:<n>`` queries to issue.
+    LAMP_COUNT: int = LAMP_COUNT
+    #: Inputs that depend on an optional board; ER401 on one of these is a
+    #: "not fitted" rather than a "not a valid input".
+    OPTIONAL_INPUTS: frozenset[str] = frozenset({"SD1", "SD2"})
+    #: Model-specific capabilities appended to the common manifest.
+    EXTRA_CAPABILITIES: tuple[Capability, ...] = ()
 
     def __init__(self, config: ConnectionConfig) -> None:
         super().__init__(config)
@@ -117,8 +142,8 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
 
     # -- manifest ----------------------------------------------------------
 
-    @staticmethod
-    def _build_capabilities() -> list[Capability]:
+    @classmethod
+    def _build_capabilities(cls) -> list[Capability]:
         caps: list[Capability] = [
             # --- power, verified ---
             Capability("power.get", CapabilityKind.QUERY, DOC,
@@ -135,11 +160,12 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
             # --- input, verified ---
             Capability("input.get", CapabilityKind.QUERY, DOC, "Read active input (QIN)"),
             Capability("input.set", CapabilityKind.SET, DOC,
-                       "Select input (IIS)", params=tuple(INPUTS),
+                       "Select input (IIS)", params=tuple(cls.INPUTS),
+                       param_labels=dict(cls.INPUTS),
                        disruptive=True, idempotent=False, verify_with="input.get"),
             # --- lamp / diagnostics, verified mnemonics ---
             Capability("lamp.hours", CapabilityKind.QUERY, DOC,
-                       f"Lamp runtime per lamp (Q$L:1..{LAMP_COUNT})"),
+                       f"Lamp runtime per lamp (Q$L:1..{cls.LAMP_COUNT})"),
             Capability("lamp.status", CapabilityKind.QUERY, DOC,
                        "Lamp control status (Q$S)"),
             Capability("lamp.on_off", CapabilityKind.QUERY, DOC, "Per-lamp on/off (QLS)"),
@@ -186,6 +212,7 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
                               "these are fire-and-forget.")
             for key, mnemonic in REMOTE_KEYS.items()
         ]
+        caps += list(cls.EXTRA_CAPABILITIES)
         return caps
 
     # -- power -------------------------------------------------------------
@@ -253,19 +280,19 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
         if result.outcome in (CommandOutcome.OK, CommandOutcome.ACCEPTED):
             code = str(result.value or "").strip().upper()
             result.outcome = CommandOutcome.OK
-            result.value = {"code": code, "label": INPUTS.get(code, code)}
+            result.value = {"code": code, "label": self.INPUTS.get(code, code)}
         return result
 
     async def set_input(self, source: str) -> CommandResult:
         if (gated := self._gate("input.set")) is not None:
             return gated
         code = source.strip().upper()
-        if code not in INPUTS:
+        if code not in self.INPUTS:
             return CommandResult(
                 capability="input.set", outcome=CommandOutcome.UNSUPPORTED,
                 error=(
-                    f"{source!r} is not an input on the PT-DZ13K series. "
-                    f"Valid inputs: {', '.join(INPUTS)}"
+                    f"{source!r} is not an input on the {self.display_name}. "
+                    f"Valid inputs: {', '.join(self.INPUTS)}"
                 ),
             )
         # Already known to be absent on this unit: do not ask again.
@@ -280,9 +307,11 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
         # Record it against the parameter, not the command: input selection
         # as a whole still works.
         if result.outcome is CommandOutcome.UNSUPPORTED:
+            why = ("the input board is likely not fitted" if code in self.OPTIONAL_INPUTS
+                   else "this unit does not accept that input code")
             reason = (
-                f"{INPUTS[code]} is not available on this unit "
-                f"(projector returned ER401 — the input board is likely not fitted)"
+                f"{self.INPUTS[code]} is not available on this unit "
+                f"(projector returned ER401 — {why})"
             )
             self._manifest.retract_param("input.set", code, reason)
             result.error = reason
@@ -301,7 +330,7 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
             return gated
         lamps: list[dict[str, Any]] = []
         last: CommandResult | None = None
-        for index in range(1, LAMP_COUNT + 1):
+        for index in range(1, self.LAMP_COUNT + 1):
             result = await self.raw_command("lamp.hours", f"Q$L:{index}")
             last = result
             if result.outcome in (CommandOutcome.OK, CommandOutcome.ACCEPTED):
@@ -326,7 +355,7 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
             )
         return CommandResult(
             capability="lamp.hours", outcome=CommandOutcome.OK, value=lamps,
-            raw_request=f"Q$L:1..{LAMP_COUNT}",
+            raw_request=f"Q$L:1..{self.LAMP_COUNT}",
             raw_response=last.raw_response if last else None,
         )
 

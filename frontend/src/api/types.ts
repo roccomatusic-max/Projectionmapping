@@ -104,6 +104,8 @@ export interface Capability {
   /** True when the command is documented only for a sibling model and is
    *  refused until the operator enables it for this device. */
   requires_opt_in: boolean
+  /** Labels for enumerated params, e.g. {"HD1": "HDMI"}. */
+  param_labels: Record<string, string> | null
 }
 
 export interface CapabilityManifest {

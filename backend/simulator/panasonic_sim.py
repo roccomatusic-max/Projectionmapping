@@ -161,6 +161,18 @@ class PanasonicSimulator:
                 return "00" + "".join("1" if on else "0" for on in self.state.lamp_on)
             case "VXX":
                 return self._lens(param)
+            case "LPM":
+                if len(self.state.lamp_hours) < 2:
+                    return "00ER401"  # single-lamp model: no lamp select
+                if param not in ("0", "1", "2", "3"):
+                    return "00ER402"
+                self.state.lamp_select = param
+                return "00LPM"
+            case "OLP":
+                if param not in ("0", "1"):
+                    return "00ER402"
+                self.state.lamp_power = param
+                return "00OLP"
         return "00ER401"
 
     def _lamp_control_status(self) -> str:
@@ -198,10 +210,13 @@ async def main() -> None:  # pragma: no cover - CLI entry point
     parser.add_argument("--with-sdi", action="store_true",
                         help="Simulate a unit with the SDI board fitted")
     parser.add_argument("--fault", choices=["silent", "busy", "drop"], default=None)
+    parser.add_argument("--model", choices=["dz13k", "dz770"], default="dz13k",
+                        help="dz13k: 3-chip, 4 lamps, SDI option; dz770: 1-chip, 2 lamps, S-VIDEO")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    state = SimulatedProjector(
+    factory = SimulatedProjector.dz770 if args.model == "dz770" else SimulatedProjector
+    state = factory(
         warmup_seconds=args.warmup, cooldown_seconds=args.cooldown,
         password=args.password,
     )
@@ -216,7 +231,7 @@ async def main() -> None:  # pragma: no cover - CLI entry point
 
     simulator = PanasonicSimulator(state, host=args.host, port=args.port)
     await simulator.start()
-    print(f"SIMULATED PT-DZ13K on {args.host}:{args.port} "
+    print(f"SIMULATED {state.model} on {args.host}:{args.port} "
           f"(protect mode: {'on' if args.password else 'off'})")
     print("This is a simulator. Data it reports is not from real hardware.")
     await asyncio.Event().wait()

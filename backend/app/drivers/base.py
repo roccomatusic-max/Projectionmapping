@@ -226,6 +226,8 @@ class Capability:
     verify_with: str | None = None
     #: Human-readable reason this is gated, when provenance is untrusted.
     caveat: str | None = None
+    #: Labels for enumerated ``params`` (e.g. {"HD1": "HDMI"}), for the UI.
+    param_labels: Mapping[str, str] | None = None
 
     @property
     def requires_opt_in(self) -> bool:
@@ -244,6 +246,7 @@ class Capability:
             "verify_with": self.verify_with,
             "caveat": self.caveat,
             "requires_opt_in": self.requires_opt_in,
+            "param_labels": dict(self.param_labels) if self.param_labels else None,
         }
 
 

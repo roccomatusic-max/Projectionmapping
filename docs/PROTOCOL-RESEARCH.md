@@ -240,6 +240,34 @@ with "the projector said no".
 
 ---
 
+## 2a. Panasonic PT-DZ770 series (PT-DZ770 / PT-DW740 / PT-DX810)
+
+Panasonic documents these three under one control-command set, and groups
+them as one model family in its own monitoring software. Single-chip DLP,
+**two** 300 W lamps (2,000 h normal / 3,000 h eco), PJLink class 1, LAN
+command protocol on port 1024 — the same transport as §2.
+
+| Area | Commands | Provenance |
+|---|---|---|
+| Power, shutter, queries | `PON` `POF` `QPW` `OSH` `QSH` `QIN` `Q$S` `QLS` | `VERIFIED_DOC` (family document) |
+| Inputs | `IIS:` `RG1` `RG2` `DVI` `HD1` `VID` `SVD` | mnemonic `VERIFIED_DOC`; codes are Panasonic's standard vocabulary. No SDI, no DIGITAL LINK. A code the unit refuses (`ER401`) is struck through in the UI with the reason. |
+| Lamp runtime | `Q$L:1` `Q$L:2` | `VERIFIED_DOC` |
+| Lamp select | `LPM` (dual / single / lamp 1 / lamp 2) | mnemonic `VERIFIED_DOC`; **value encoding `INFERRED_FAMILY`**, gated |
+| Lamp power | `OLP` (normal / eco) | mnemonic `VERIFIED_DOC`; **value encoding `INFERRED_FAMILY`**, gated |
+| Lens, image, remote keys | as §2.5 | `INFERRED_FAMILY`, gated |
+
+The driver (`app/drivers/panasonic_ptdz770.py`) is a subclass of the DZ13K
+driver that overrides the input table, the lamp count and adds the two lamp
+commands; everything else is shared. That is the pattern for any further
+Panasonic model: override the class attributes, declare extra capabilities,
+handle them in `execute_supported_command`, defer the rest to `super()`.
+
+Validate it with the same procedure as the DZ13K
+([HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md)); stage 2 reads two lamps
+instead of four, and stage 6 covers `LPM`/`OLP` before enabling them.
+
+---
+
 ## 3. PJLink
 
 PJLink is an industry standard (JBMIA) and is implemented here as a

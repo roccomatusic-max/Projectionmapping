@@ -63,7 +63,7 @@ detail page shows it in the Recent commands table.
 | `QPW` | "Poll now" | Expected `00000` in standby, `00001` on (the parser also accepts `00QPW:000`) |
 | `QSH` | "Poll now" | `000` open or `001` closed |
 | `QIN` | "Poll now" | The input code after the ID, e.g. `00DVI` |
-| `Q$L:1`…`Q$L:4` | "Poll now" (deep poll) | **The exact format of the number** |
+| `Q$L:1`…`Q$L:4` (DZ13K) / `Q$L:1`–`Q$L:2` (DZ770) | "Poll now" (deep poll) | **The exact format of the number** |
 | `Q$S` | "Poll now" (deep poll) | The raw value |
 | `QLS` | API: `POST /api/projectors/{id}/command` `{"capability":"lamp.on_off"}` | The raw value |
 

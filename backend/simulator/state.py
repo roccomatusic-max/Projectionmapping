@@ -48,6 +48,20 @@ class SimulatedProjector:
 
     #: PJLink %1ERST digits: fan, lamp, temperature, cover, filter, other.
     erst: list[int] = field(default_factory=lambda: [0, 0, 0, 0, 0, 0])
+    #: Lamp select / lamp power as last commanded (LPM / OLP on dual-lamp models).
+    lamp_select: str = "0"
+    lamp_power: str = "0"
+
+    @classmethod
+    def dz770(cls, **overrides) -> SimulatedProjector:
+        """A PT-DZ770: single-chip, two lamps, S-VIDEO instead of SDI."""
+        defaults = dict(
+            name="SIM-PT-DZ770", model="PT-DZ770",
+            fitted_inputs={"RG1", "RG2", "VID", "SVD", "DVI", "HD1"},
+            lamp_hours=[812, 790], lamp_on=[False, False],
+        )
+        defaults.update(overrides)
+        return cls(**defaults)
 
     # -- fault injection, driven by tests and the --fault CLI flag ---------
     #: Drop the connection after this many commands (0 = never).
