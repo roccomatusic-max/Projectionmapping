@@ -149,10 +149,10 @@ class FakeMessages:
 class FakeClient:
     def __init__(self, answer: dict, calls: list):
         self.beta = SimpleNamespace(messages=FakeMessages(answer, calls))
-        self.models = SimpleNamespace(retrieve=self._retrieve)
+        self.models = SimpleNamespace(list=self._list)
 
-    async def _retrieve(self, model):
-        return SimpleNamespace(id=model)
+    async def _list(self, **kwargs):
+        return SimpleNamespace(data=[])
 
     async def __aenter__(self):
         return self
@@ -237,6 +237,50 @@ async def test_describe_is_hidden_until_a_key_is_set(api, monkeypatch):
 
     removed = await api.delete("/api/mapping/ai/key", headers=headers)
     assert removed.json()["available"] is False
+
+
+async def test_key_check_only_refuses_a_bad_key(api, monkeypatch):
+    """A key is refused only when Anthropic refuses the key itself; an
+    account problem (no credit yet) keeps the key and is explained when a
+    scene is described."""
+    import anthropic
+    import httpx2 as httpx
+
+    from app.services import scene_ai
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    headers = await login(api)
+    good = "sk-ant-api03-" + "g" * 40 + "GOOD"
+    seen: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.headers.get("x-api-key") != good:
+            return httpx.Response(401, json={"type": "error", "error": {
+                "type": "authentication_error", "message": "invalid x-api-key"}})
+        return httpx.Response(400, json={"type": "error", "error": {
+            "type": "invalid_request_error",
+            "message": "Your credit balance is too low to access the Anthropic API."}})
+
+    monkeypatch.setattr(scene_ai, "_client", lambda key: anthropic.AsyncAnthropic(
+        api_key=key, max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(answer))))
+
+    bad = await api.put("/api/mapping/ai/key", headers=headers,
+                        json={"key": "sk-ant-api03-" + "b" * 44})
+    assert bad.status_code == 400
+    assert "did not accept" in bad.json()["detail"]
+
+    saved = await api.put("/api/mapping/ai/key", headers=headers, json={"key": good})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["available"] is True
+    assert seen[-1] == "/v1/models"
+
+    described = await api.post("/api/mapping/scenes/describe", headers=headers,
+                               json={"prompt": "a gingerbread house"})
+    assert described.status_code == 502
+    assert "no credit" in described.json()["detail"]
+    await api.delete("/api/mapping/ai/key", headers=headers)
 
 
 async def test_only_admins_set_the_key(api):
