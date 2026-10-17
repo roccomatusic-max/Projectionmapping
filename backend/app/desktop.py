@@ -138,6 +138,47 @@ def first_run_password(folder: Path, database: Path) -> str | None:
     return password
 
 
+def reset_admin_password(folder: Path) -> int:
+    """Recover from a forgotten password: new random password for ``admin``.
+
+    Works while the server is running; it shares the database file.
+    """
+    import asyncio
+
+    database = folder / "projector-control.db"
+    if not database.exists():
+        print(f"No Projector Control database in {folder}.")
+        return 1
+    os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")
+    os.environ.setdefault("SECRET_KEY", ensure_secret_key(folder))
+
+    from sqlalchemy import select
+
+    from app.core.security import hash_password
+    from app.db.models import User
+    from app.db.session import session_scope
+
+    password = secrets.token_urlsafe(12)
+
+    async def apply() -> bool:
+        async with session_scope() as session:
+            user = (await session.execute(
+                select(User).where(User.username == "admin")
+            )).scalars().first()
+            if user is None:
+                return False
+            user.password_hash = hash_password(password)
+            user.is_active = True
+            return True
+
+    if not asyncio.run(apply()):
+        print("There is no account called admin.")
+        return 1
+    print(f"Sign in with username: admin   password: {password}")
+    print("Change it under Settings after you sign in.")
+    return 0
+
+
 def self_check(app, host: str, port: int, log: logging.Logger) -> int:
     """Start the server, wait for a healthy answer, stop. Exit code says which."""
     import uvicorn
@@ -185,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--uninstall", action="store_true",
                         help="Mac app: stop starting automatically (keeps the app and data)")
     parser.add_argument("--version", action="store_true", help="print the version and exit")
+    parser.add_argument("--reset-admin-password", action="store_true",
+                        help="give the admin account a new password, print it and exit")
     # Finder may add arguments of its own when it opens an app; ignore them.
     args, _unknown = parser.parse_known_args(argv)
 
@@ -198,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         return macservice.uninstall()
 
     folder = Path(args.data_dir).expanduser() if args.data_dir else data_dir()
+    if args.reset_admin_password:
+        return reset_admin_password(folder)
     folder.mkdir(parents=True, exist_ok=True)
     if sys.platform == "darwin" and macservice.running_bundle() and not (args.serve or args.check):
         return macservice.launch(folder)

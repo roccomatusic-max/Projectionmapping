@@ -226,17 +226,26 @@ def notify(message: str) -> None:
     )
 
 
-def server_answers(port: int = PORT, timeout: float = 90.0) -> bool:
+def server_version(expected: str, port: int = PORT, timeout: float = 90.0) -> str | None:
+    """Wait for the server to answer with ``expected``; return the version it last gave.
+
+    A different answer for the whole wait means some other copy holds the
+    port, most often one started by hand from Terminal.
+    """
+    import json
+
+    answered = None
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as r:  # noqa: S310
-                if r.status == 200:
-                    return True
+                answered = str(json.load(r).get("version") or "dev")
+                if answered == expected:
+                    return answered
         except Exception:  # noqa: BLE001 - not up yet
             pass
         time.sleep(1)
-    return False
+    return answered
 
 
 def first_run_credentials(folder: Path) -> str | None:
@@ -293,12 +302,24 @@ def launch(folder: Path) -> int:
         time.sleep(2)
 
     notify("Starting Projector Control…")
-    if not server_answers():
+    expected = bundle_version(target)
+    answered = server_version(expected)
+    if answered is None:
         dialog(
             "Projector Control is installed but the server has not answered yet.\n\n"
             f"Its log is in {logs}. Open the app again in a minute to retry.",
             error=True,
         )
+        return 1
+    if answered != expected:
+        dialog(
+            f"Another copy of Projector Control (version {answered}) is using port {PORT}, "
+            "so the installed one cannot start. It is usually one started from Terminal: "
+            "find that Terminal window, press Control-C and close it. The installed copy "
+            "then starts by itself within a few seconds.",
+            error=True,
+        )
+        subprocess.run(["open", f"http://127.0.0.1:{PORT}/"], check=False)
         return 1
 
     password = first_run_credentials(folder)
