@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
-from datetime import time as dtime
 from typing import Any
 
 from sqlalchemy import select
@@ -210,23 +209,9 @@ class AutomationEngine:
                             automation.name, expression, exc)
                 return False
 
-        at = schedule.get("at")
-        if not at:
-            return False
-        try:
-            hour, minute = (int(part) for part in str(at).split(":")[:2])
-            scheduled = dtime(hour=hour, minute=minute)
-        except (ValueError, TypeError):
-            log.warning("automation %s has an invalid time %r", automation.name, at)
-            return False
-        if (now.hour, now.minute) != (scheduled.hour, scheduled.minute):
-            return False
-        if automation.trigger_type == "daily":
-            return True
-        if automation.trigger_type == "weekly":
-            days = schedule.get("days") or []
-            return now.weekday() in days
-        return False
+        from app.services.automation_validation import schedule_matches
+
+        return schedule_matches(automation.trigger_type, schedule, now)
 
     # -- execution ---------------------------------------------------------
 

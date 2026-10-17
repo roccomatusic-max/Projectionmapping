@@ -38,6 +38,7 @@ from app.schemas import (
     SceneOut,
 )
 from app.services.automation import activate_scene, engine
+from app.services.automation_validation import validate_automation
 
 router = APIRouter(tags=["automation"])
 
@@ -70,6 +71,21 @@ async def create_automation(payload: AutomationIn, session: SessionDep,
     await session.commit()
     await session.refresh(automation)
     return automation
+
+
+@router.post("/automations/validate")
+async def validate_automation_draft(payload: AutomationIn, session: SessionDep,
+                                    _: RequireOperator) -> dict:
+    """Pre-flight a draft without saving it.
+
+    Checks the schedule, resolves every target, confirms each function exists
+    on each targeted projector's driver and is not gated there, checks the
+    parameters against the manifest, and previews the next run times.
+    """
+    return await validate_automation(
+        session, trigger_type=payload.trigger_type, schedule=payload.schedule,
+        steps=payload.steps,
+    )
 
 
 @router.get("/automations/{automation_id}", response_model=AutomationOut)

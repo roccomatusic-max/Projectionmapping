@@ -21,8 +21,12 @@ expensive, hard to reach, and the show starts whether or not they came up.
   their own control surface
 - **Monitoring** — four-tier polling, lamp-hour tracking, alerts with
   deduplication, email/webhook/MQTT notification
-- **Automation** — scheduled startup and shutdown sequences that wait for
-  projectors to actually reach the expected state, plus scenes
+- **Automation** — a visual builder for scheduled sequences (manual, once,
+  daily, weekly or cron). Steps are drawn from the targeted projectors'
+  capability manifests, so only functions those units support are offered;
+  a server-side Check validates every step and previews the next run times
+  before a sequence can be saved. Wait steps poll until projectors actually
+  reach the expected state. Scenes for one-shot actions.
 - **History** — telemetry charts, full command audit log, maintenance records
   with CSV export
 - **Integrations** — documented REST API, WebSocket live feed, MQTT with Home

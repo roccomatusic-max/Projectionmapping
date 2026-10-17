@@ -15,7 +15,6 @@ import {
   ErrorBanner,
   Panel,
   Spinner,
-  StatusDot,
   ToastStack,
   UnavailableNote,
   Value,
@@ -23,10 +22,30 @@ import {
 } from '@/components/ui'
 import { connectionTone } from '@/components/ProjectorCard'
 import {
+  InputBadge,
+  LampMeters,
+  PowerGlyph,
+  ProjectorMark,
+  ShutterGlyph,
+  SubsystemTiles,
+  inputIcon,
+} from '@/components/graphics'
+import {
+  BackIcon,
+  HdmiIcon,
+  LensIcon,
+  LiveIcon,
+  LogsIcon,
+  MonitoringIcon,
+  PowerIcon,
+  RefreshIcon,
+  RemoteIcon,
+  ShutterIcon,
+} from '@/components/icons'
+import {
   OUTCOME_HELP,
   OUTCOME_LABEL,
   POWER_LABEL,
-  SHUTTER_LABEL,
   classNames,
   formatDateTime,
   healthTone,
@@ -158,18 +177,20 @@ export default function ProjectorDetail({ session }: { session: Session }) {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link to="/projectors" className="text-xs text-slate-500 hover:text-slate-300">
-            ← All projectors
+          <Link to="/projectors" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
+            <BackIcon size={12} aria-hidden /> All projectors
           </Link>
-          <h1 className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-100">
-            <StatusDot tone={connectionTone(projector)} pulse={transitioning} />
-            {projector.name}
-          </h1>
-          <p className="mt-0.5 text-xs text-slate-400">
-            {projector.manufacturer} {projector.model} · {projector.host}:
-            {projector.port} · {projector.driver}
-            {projector.location && ` · ${projector.location}`}
-          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <ProjectorMark tone={connectionTone(projector)} pulse={transitioning} size="lg" />
+            <div>
+              <h1 className="text-lg font-semibold text-slate-100">{projector.name}</h1>
+              <p className="text-xs text-slate-400">
+                {projector.manufacturer} {projector.model} · {projector.host}:
+                {projector.port} · {projector.driver}
+                {projector.location && ` · ${projector.location}`}
+              </p>
+            </div>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Chip tone={live ? 'ok' : 'fault'}>{live ? 'Responding' : 'Not responding'}</Chip>
@@ -186,7 +207,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
               }
             }}
           >
-            Test connection
+            <LiveIcon size={15} aria-hidden /> Test connection
           </button>
           <button
             className="btn-default"
@@ -208,7 +229,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
               }
             }}
           >
-            Poll now
+            <RefreshIcon size={15} aria-hidden /> Poll now
           </button>
         </div>
       </div>
@@ -244,26 +265,12 @@ export default function ProjectorDetail({ session }: { session: Session }) {
       <div className="grid gap-4 xl:grid-cols-3">
         {/* -- Power ------------------------------------------------------ */}
         <Panel
+          icon={PowerIcon}
           title="Power"
           description="Confirmed by reading the state back, not by the acknowledgement."
         >
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Current</span>
-              <Chip
-                tone={
-                  !live
-                    ? 'unknown'
-                    : state.power === 'on'
-                      ? 'ok'
-                      : transitioning
-                        ? 'busy'
-                        : 'idle'
-                }
-              >
-                {live ? POWER_LABEL[state.power] : 'Unknown'}
-              </Chip>
-            </div>
+            <PowerGlyph state={state.power} live={live} size="lg" />
             {transitioning && (
               <p className="rounded-md bg-panel-850 px-3 py-2 text-xs text-sky-300">
                 {state.power === 'warming'
@@ -283,7 +290,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                   })
                 }
               >
-                Power on
+                <PowerIcon size={16} aria-hidden /> Power on
               </button>
               <button
                 className="btn-danger btn-lg"
@@ -297,21 +304,16 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                   })
                 }
               >
-                Power off
+                <PowerIcon size={16} aria-hidden /> Power off
               </button>
             </div>
           </div>
         </Panel>
 
         {/* -- Shutter / image -------------------------------------------- */}
-        <Panel title="Shutter">
+        <Panel icon={ShutterIcon} title="Shutter" description="Open shows the image; closed blanks it with the lamp still on.">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Current</span>
-              <Chip tone={!live ? 'unknown' : state.shutter === 'open' ? 'ok' : 'warn'}>
-                {live ? SHUTTER_LABEL[state.shutter] : 'Unknown'}
-              </Chip>
-            </div>
+            <ShutterGlyph state={state.shutter} live={live} size="lg" />
             <div className="grid grid-cols-2 gap-2">
               <button
                 className="btn-default btn-lg"
@@ -348,20 +350,34 @@ export default function ProjectorDetail({ session }: { session: Session }) {
         </Panel>
 
         {/* -- Input ------------------------------------------------------- */}
-        <Panel title="Input source">
+        <Panel icon={HdmiIcon} title="Input source">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Active</span>
-              <Value text={input.text} muted={input.muted} title={input.title} />
+            <div className="flex items-center justify-between rounded-lg bg-panel-850 px-3 py-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500">Active</span>
+              {input.muted ? (
+                <Value text={input.text} muted title={input.title} />
+              ) : (
+                <span className="text-sm">
+                  <InputBadge
+                    code={typeof state.active_input.value === 'object' ? state.active_input.value?.code ?? '' : ''}
+                    label={input.text}
+                  />
+                </span>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {inputs.map(([code, label]) => {
                 const unavailable = inputRetracted[`input.set:${code}`]
+                const Icon = inputIcon(code)
+                const active =
+                  typeof state.active_input.value === 'object' &&
+                  state.active_input.value?.code === code
                 return (
                   <button
                     key={code}
                     className={classNames(
-                      'btn-default',
+                      'btn-default justify-start',
+                      active && 'ring-1 ring-sky-500/60',
                       unavailable && 'line-through opacity-40',
                     )}
                     disabled={
@@ -376,7 +392,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                       })
                     }
                   >
-                    {label}
+                    <Icon size={15} className="text-slate-400" aria-hidden /> {label}
                   </button>
                 )
               })}
@@ -393,6 +409,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
       <div className="grid gap-4 xl:grid-cols-3">
         {/* -- Technical status -------------------------------------------- */}
         <Panel
+          icon={MonitoringIcon}
           title="Technical status"
           description="“n/a” means the model has no such query. “—” means it was not read."
           className="xl:col-span-2"
@@ -402,6 +419,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
 
         {/* -- Remote ------------------------------------------------------- */}
         <Panel
+          icon={RemoteIcon}
           title="Remote"
           description="Fire-and-forget: the projector does not report OSD cursor position."
         >
@@ -430,6 +448,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
 
       {/* -- Lens ---------------------------------------------------------- */}
       <Panel
+        icon={LensIcon}
         title="Lens"
         description="Discrete jogs, not press-and-hold: no explicit stop command is confirmed for this model."
       >
@@ -454,6 +473,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
 
       {/* -- Command history ----------------------------------------------- */}
       <Panel
+        icon={LogsIcon}
         title="Recent commands"
         description="Every command, with the exact frame sent and the projector's reply."
       >
@@ -521,7 +541,12 @@ function TechnicalStatus({ projector }: { projector: Projector }) {
       </dl>
 
       <div>
-        <h3 className="mb-2 text-xs uppercase tracking-wide text-slate-500">Lamps</h3>
+        <h3 className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+          Lamps
+          <span className="ml-2 normal-case tracking-normal text-slate-600">
+            warn {projector.lamp_warn_hours.toLocaleString()} h · replace {projector.lamp_critical_hours.toLocaleString()} h
+          </span>
+        </h3>
         {lamps.length === 0 ? (
           <Value
             text={state.lamp_hours.availability === 'unsupported' ? 'n/a' : '—'}
@@ -529,32 +554,17 @@ function TechnicalStatus({ projector }: { projector: Projector }) {
             title={state.lamp_hours.note ?? 'Lamp hours have not been read yet'}
           />
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {lamps.map((lamp) => {
-              const tone =
-                lamp.hours == null
-                  ? 'text-slate-500'
-                  : lamp.hours >= projector.lamp_critical_hours
-                    ? 'text-red-300'
-                    : lamp.hours >= projector.lamp_warn_hours
-                      ? 'text-amber-300'
-                      : 'text-slate-200'
-              return (
-                <div key={lamp.index} className="rounded-md bg-panel-850 px-3 py-2">
-                  <p className="text-xs text-slate-500">Lamp {lamp.index}</p>
-                  <p className={classNames('tnum text-sm', tone)}>
-                    {lamp.hours == null ? '—' : `${lamp.hours.toLocaleString()} h`}
-                  </p>
-                  {lamp.error && <p className="text-xs text-red-400">{lamp.error}</p>}
-                  {lamp.unparsed && (
-                    <p className="text-xs text-amber-400" title={lamp.raw}>
-                      unparsed reply
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          <LampMeters
+            lamps={lamps}
+            warn={projector.lamp_warn_hours}
+            critical={projector.lamp_critical_hours}
+          />
+        )}
+        {lamps.some((lamp) => lamp.unparsed || lamp.error) && (
+          <p className="mt-2 text-xs text-amber-400">
+            {lamps.filter((l) => l.unparsed).length > 0 && 'Some lamp replies were not understood — hover a lamp for the raw value. '}
+            {lamps.filter((l) => l.error).map((l) => `Lamp ${l.index}: ${l.error}`).join(' · ')}
+          </p>
         )}
       </div>
 
@@ -570,18 +580,7 @@ function TechnicalStatus({ projector }: { projector: Projector }) {
             }
           />
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(errorStatus.value ?? {}).map(([subsystem, severity]) => (
-              <Chip
-                key={subsystem}
-                tone={
-                  severity === 'error' ? 'fault' : severity === 'warning' ? 'warn' : 'ok'
-                }
-              >
-                {subsystem}: {severity}
-              </Chip>
-            ))}
-          </div>
+          <SubsystemTiles status={errorStatus.value ?? {}} />
         )}
       </div>
     </div>

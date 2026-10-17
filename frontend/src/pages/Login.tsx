@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react'
 import { api } from '@/api/client'
 import type { Session } from '@/api/client'
 import { ErrorBanner } from '@/components/ui'
+import { ProjectorIcon } from '@/components/icons'
 
 export default function Login({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
   const [username, setUsername] = useState('')
@@ -25,8 +26,15 @@ export default function Login({ onSignedIn }: { onSignedIn: (session: Session) =
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={submit} className="panel w-full max-w-sm p-6">
-        <h1 className="text-lg font-semibold text-slate-100">Projector Control</h1>
-        <p className="mt-1 text-sm text-slate-400">Sign in to manage the fleet.</p>
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300" aria-hidden>
+            <ProjectorIcon size={24} strokeWidth={1.75} />
+          </span>
+          <div>
+            <h1 className="text-lg font-semibold text-slate-100">Projector Control</h1>
+            <p className="text-sm text-slate-400">Sign in to manage the fleet.</p>
+          </div>
+        </div>
 
         <div className="mt-6 space-y-4">
           {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}

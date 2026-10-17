@@ -10,15 +10,26 @@ import {
   ErrorBanner,
   Panel,
   Spinner,
-  StatusDot,
   ToastStack,
   useToasts,
 } from '@/components/ui'
 import { connectionTone } from '@/components/ProjectorCard'
+import { PowerGlyph, ProjectorMark, ShutterGlyph, inputIcon } from '@/components/graphics'
+import {
+  CheckIcon,
+  ControlIcon,
+  GroupsIcon,
+  HdmiIcon,
+  LiveIcon,
+  LogsIcon,
+  OfflineIcon,
+  PowerIcon,
+  SceneIcon,
+  ShutterIcon,
+} from '@/components/icons'
 import {
   OUTCOME_HELP,
   OUTCOME_LABEL,
-  POWER_LABEL,
   classNames,
   formatClock,
   inputsFromCapabilities,
@@ -181,8 +192,12 @@ export default function ControlCenter({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Control Center</h1>
-          <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
-            <StatusDot tone={wsStatus === 'open' ? 'ok' : 'warn'} />
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+            {wsStatus === 'open' ? (
+              <LiveIcon size={13} className="text-emerald-400" aria-hidden />
+            ) : (
+              <OfflineIcon size={13} className="text-amber-400" aria-hidden />
+            )}
             {selected.size} of {projectors.length} selected
           </p>
         </div>
@@ -202,7 +217,7 @@ export default function ControlCenter({
       {error && <ErrorBanner message={error} />}
 
       {/* Selection */}
-      <Panel title="Selection">
+      <Panel icon={GroupsIcon} title="Selection">
         <div className="flex flex-wrap gap-2">
           <button className="btn-default" onClick={selectAll}>
             All projectors
@@ -257,6 +272,7 @@ export default function ControlCenter({
 
       {/* Bulk actions */}
       <Panel
+        icon={ControlIcon}
         title="Group actions"
         description="Commands are dispatched concurrently. Each projector acts at its own pace — this is not frame-accurate synchronisation."
       >
@@ -269,13 +285,20 @@ export default function ControlCenter({
                 disabled={!canControl || busy || selected.size === 0}
                 onClick={() => setPending({ action })}
               >
+                {action.capability === 'power.set' ? (
+                  <PowerIcon size={18} aria-hidden />
+                ) : (
+                  <ShutterIcon size={18} aria-hidden />
+                )}
                 {action.label}
               </button>
             ))}
           </div>
 
           <div>
-            <p className="label">Change input on selection</p>
+            <p className="label flex items-center gap-1.5">
+              <HdmiIcon size={12} aria-hidden /> Change input on selection
+            </p>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
               {inputs.map(([code, label]) => (
                 <button
@@ -293,6 +316,10 @@ export default function ControlCenter({
                     })
                   }
                 >
+                  {(() => {
+                    const Icon = inputIcon(code)
+                    return <Icon size={15} className="text-slate-400" aria-hidden />
+                  })()}
                   {label}
                 </button>
               ))}
@@ -301,7 +328,9 @@ export default function ControlCenter({
 
           {scenes.length > 0 && (
             <div>
-              <p className="label">Scenes</p>
+              <p className="label flex items-center gap-1.5">
+                <SceneIcon size={12} aria-hidden /> Scenes
+              </p>
               <div className="flex flex-wrap gap-2">
                 {scenes.map((scene) => (
                   <button
@@ -311,7 +340,7 @@ export default function ControlCenter({
                     onClick={() => setScenePending(scene)}
                     title={scene.description}
                   >
-                    {scene.name}
+                    <SceneIcon size={14} aria-hidden /> {scene.name}
                   </button>
                 ))}
               </div>
@@ -327,6 +356,7 @@ export default function ControlCenter({
       {/* Per-device results */}
       {lastResult && (
         <Panel
+          icon={LogsIcon}
           title="Last dispatch results"
           description={`${lastResult.capability} · dispatched at ${formatClock(lastResult.dispatched_at)}`}
           action={
@@ -442,33 +472,30 @@ function SelectTile({
         selected ? 'ring-2 ring-sky-500' : 'hover:bg-panel-850',
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2">
-          <StatusDot
-            tone={connectionTone(projector)}
-            pulse={projector.state.power === 'warming' || projector.state.power === 'cooling'}
-          />
-          <span className="truncate text-sm font-medium text-slate-100">
-            {projector.name}
-          </span>
+      <div className="flex items-center gap-3">
+        <ProjectorMark
+          tone={connectionTone(projector)}
+          size="sm"
+          pulse={projector.state.power === 'warming' || projector.state.power === 'cooling'}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-slate-100">{projector.name}</span>
+          <span className="block text-[11px] text-slate-500">{relativeTime(projector.state.last_seen_at)}</span>
         </span>
         <span
           className={classNames(
-            'text-xs',
-            selected ? 'text-sky-300' : 'text-slate-600',
+            'inline-flex h-5 w-5 items-center justify-center rounded-full border',
+            selected ? 'border-sky-400 bg-sky-500/20 text-sky-300' : 'border-slate-700 text-transparent',
           )}
+          aria-hidden
         >
-          {selected ? '✓' : ''}
+          <CheckIcon size={12} />
         </span>
       </div>
-      <p className="mt-1 text-xs text-slate-400">
-        {live ? POWER_LABEL[projector.state.power] : 'Offline'}
-        {' · '}
-        {projector.state.shutter === 'closed' ? 'shutter closed' : 'shutter open'}
-      </p>
-      <p className="mt-0.5 text-xs text-slate-600">
-        {relativeTime(projector.state.last_seen_at)}
-      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <PowerGlyph state={projector.state.power} live={live} size="sm" />
+        <ShutterGlyph state={projector.state.shutter} live={live} size="sm" />
+      </div>
     </button>
   )
 }

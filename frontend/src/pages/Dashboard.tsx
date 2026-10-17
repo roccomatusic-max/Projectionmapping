@@ -10,11 +10,21 @@ import {
   EmptyState,
   ErrorBanner,
   Spinner,
-  Stat,
-  StatusDot,
   ToastStack,
   useToasts,
 } from '@/components/ui'
+import { StatTile } from '@/components/graphics'
+import {
+  ControlIcon,
+  EnergyIcon,
+  FaultIcon,
+  LiveIcon,
+  OfflineIcon,
+  PowerIcon,
+  ProjectorIcon,
+  RefreshIcon,
+  WarningIcon,
+} from '@/components/icons'
 import { OUTCOME_HELP, OUTCOME_LABEL, outcomeTone } from '@/lib/format'
 
 type PendingCommand = {
@@ -72,8 +82,12 @@ export default function Dashboard({ session }: { session: Session }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Fleet overview</h1>
-          <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
-            <StatusDot tone={wsStatus === 'open' ? 'ok' : 'warn'} />
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+            {wsStatus === 'open' ? (
+              <LiveIcon size={13} className="text-emerald-400" aria-hidden />
+            ) : (
+              <OfflineIcon size={13} className="text-amber-400" aria-hidden />
+            )}
             {wsStatus === 'open'
               ? 'Live updates connected'
               : 'Live link down — falling back to periodic refresh'}
@@ -81,10 +95,10 @@ export default function Dashboard({ session }: { session: Session }) {
         </div>
         <div className="flex gap-2">
           <Link to="/control" className="btn-default">
-            Control Center
+            <ControlIcon size={15} aria-hidden /> Control Center
           </Link>
           <button className="btn-default" onClick={() => void refresh()}>
-            Refresh
+            <RefreshIcon size={15} aria-hidden /> Refresh
           </button>
         </div>
       </div>
@@ -92,33 +106,28 @@ export default function Dashboard({ session }: { session: Session }) {
       {error && <ErrorBanner message={error} />}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <Stat label="Registered" value={overview?.total ?? '—'} tone="idle" />
-        <Stat
+        <StatTile icon={ProjectorIcon} label="Registered" value={overview?.total ?? '—'} />
+        <StatTile
+          icon={LiveIcon}
           label="Online"
           value={online}
           tone={online > 0 ? 'ok' : 'idle'}
           hint="Counted from a successful poll inside the staleness window, not from a remembered state."
         />
-        <Stat
+        <StatTile
+          icon={PowerIcon}
           label="Powered on"
           value={overview?.powered_on ?? '—'}
           tone={(overview?.powered_on ?? 0) > 0 ? 'ok' : 'idle'}
         />
-        <Stat label="Standby" value={overview?.standby ?? '—'} tone="idle" />
-        <Stat
-          label="Warnings"
-          value={warnings}
-          tone={warnings > 0 ? 'warn' : 'idle'}
-        />
-        <Stat
-          label="Faults"
-          value={faults}
-          tone={faults > 0 ? 'fault' : 'idle'}
-        />
+        <StatTile icon={EnergyIcon} label="Standby" value={overview?.standby ?? '—'} />
+        <StatTile icon={WarningIcon} label="Warnings" value={warnings} tone={warnings > 0 ? 'warn' : 'idle'} />
+        <StatTile icon={FaultIcon} label="Faults" value={faults} tone={faults > 0 ? 'fault' : 'idle'} />
       </div>
 
       {(overview?.stale ?? 0) > 0 && (
-        <div className="rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          <OfflineIcon size={16} aria-hidden />
           {overview?.stale} projector(s) have not answered recently. Their last known
           values are shown as stale rather than live.
         </div>
@@ -127,9 +136,10 @@ export default function Dashboard({ session }: { session: Session }) {
       {(overview?.open_alerts ?? 0) > 0 && (
         <Link
           to="/monitoring"
-          className="flex items-center justify-between rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-200 hover:bg-red-500/15"
+          className="flex items-center justify-between rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-200 hover:bg-red-500/15"
         >
-          <span>
+          <span className="flex items-center gap-2">
+            <FaultIcon size={16} aria-hidden />
             {overview?.open_alerts} open alert(s)
             {(overview?.critical_alerts ?? 0) > 0 &&
               `, ${overview?.critical_alerts} critical`}

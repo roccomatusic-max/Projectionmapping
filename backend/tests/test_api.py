@@ -790,3 +790,64 @@ async def test_alert_recurrence_on_sqlite_updates_instead_of_raising(api):
               if a["kind"] == "offline"]
     assert len(alerts) == 1
     assert alerts[0]["details"].get("error") == "second time"
+
+
+async def test_validate_flags_gated_and_unknown_steps(api):
+    headers = await login(api)
+    projector_id = await add_projector(api, headers)
+    body = {
+        "name": "draft", "trigger_type": "daily", "schedule": {"at": "20:30"},
+        "steps": [
+            {"type": "command", "target": {"type": "projector", "id": projector_id},
+             "capability": "power.set", "params": {"state": "on"}},
+            {"type": "command", "target": {"type": "projector", "id": projector_id},
+             "capability": "lens.zoom", "params": {"direction": 1}},
+            {"type": "command", "target": {"type": "projector", "id": 999},
+             "capability": "power.set", "params": {"state": "on"}},
+            {"type": "command", "target": {"type": "all"},
+             "capability": "input.set", "params": {"input": "NOPE"}},
+        ],
+    }
+    response = await api.post("/api/automations/validate", headers=headers, json=body)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["ok"] is False
+    errors = {p["step"] for p in result["problems"] if p["severity"] == "error"}
+    assert errors == {1, 2, 3}
+    assert len(result["next_runs"]) == 5
+    assert result["timezone"]
+
+
+async def test_validate_passes_a_sound_draft(api):
+    headers = await login(api)
+    await add_projector(api, headers)
+    body = {
+        "name": "draft", "trigger_type": "weekly", "schedule": {"at": "09:00", "days": [0, 2]},
+        "steps": [
+            {"type": "check_online", "target": {"type": "all"}},
+            {"type": "command", "target": {"type": "all"},
+             "capability": "power.set", "params": {"state": "on"}},
+            {"type": "wait_state", "target": {"type": "all"}, "capability": "power.get",
+             "expect": "on", "timeout": 180, "interval": 5},
+            {"type": "delay", "seconds": 2},
+            {"type": "notify", "message": "done"},
+        ],
+    }
+    response = await api.post("/api/automations/validate", headers=headers, json=body)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["ok"] is True, result["problems"]
+    assert all(p["severity"] == "warning" for p in result["problems"])
+    assert len(result["next_runs"]) == 5
+
+
+async def test_validate_rejects_schedule_that_never_fires(api):
+    headers = await login(api)
+    response = await api.post("/api/automations/validate", headers=headers, json={
+        "name": "draft", "trigger_type": "weekly", "schedule": {"at": "09:00", "days": []},
+        "steps": [{"type": "delay", "seconds": 1}],
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["ok"] is False
+    assert result["next_runs"] == []

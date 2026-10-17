@@ -12,6 +12,7 @@ import {
   useToasts,
 } from '@/components/ui'
 import { OUTCOME_LABEL, formatClock, outcomeTone } from '@/lib/format'
+import { AddIcon, DeleteIcon, GroupsIcon, PowerIcon, ShutterIcon } from '@/components/icons'
 
 /** Suggested names from the brief — offered as shortcuts, not imposed. */
 const SUGGESTED = [
@@ -90,7 +91,7 @@ export default function Groups({ session }: { session: Session }) {
         <h1 className="text-lg font-semibold text-slate-100">Groups</h1>
         {isAdmin && (
           <button className="btn-primary" onClick={() => setEditing('new')}>
-            New group
+            <AddIcon size={15} aria-hidden /> New group
           </button>
         )}
       </div>
@@ -99,7 +100,7 @@ export default function Groups({ session }: { session: Session }) {
 
       {groups.length === 0 ? (
         <Panel>
-          <EmptyState title="No groups yet">
+          <EmptyState title="No groups yet" icon={GroupsIcon}>
             Group projectors by installation area so you can power a whole surface on
             or off in one action.
           </EmptyState>
@@ -135,7 +136,7 @@ export default function Groups({ session }: { session: Session }) {
                         className="btn-ghost text-xs text-red-300"
                         onClick={() => setDeleting(group)}
                       >
-                        Delete
+                        <DeleteIcon size={13} aria-hidden /> Delete
                       </button>
                     </span>
                   )
@@ -173,7 +174,7 @@ export default function Groups({ session }: { session: Session }) {
                         })
                       }
                     >
-                      Power on
+                      <PowerIcon size={15} aria-hidden /> Power on
                     </button>
                     <button
                       className="btn-default"
@@ -188,7 +189,7 @@ export default function Groups({ session }: { session: Session }) {
                         })
                       }
                     >
-                      Power off
+                      <PowerIcon size={15} aria-hidden /> Power off
                     </button>
                     <button
                       className="btn-default"
@@ -203,7 +204,7 @@ export default function Groups({ session }: { session: Session }) {
                         })
                       }
                     >
-                      Open shutters
+                      <ShutterIcon size={15} aria-hidden /> Open shutters
                     </button>
                     <button
                       className="btn-default"
@@ -218,7 +219,7 @@ export default function Groups({ session }: { session: Session }) {
                         })
                       }
                     >
-                      Close shutters
+                      <ShutterIcon size={15} aria-hidden /> Close shutters
                     </button>
                   </div>
 

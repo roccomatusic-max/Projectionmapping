@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
+import type { LucideIcon } from './icons'
 
 type Tone = 'ok' | 'warn' | 'fault' | 'idle' | 'busy' | 'unknown'
 
@@ -86,22 +87,31 @@ export function Panel({
   children,
   className,
   description,
+  icon: Icon,
 }: {
   title?: ReactNode
   action?: ReactNode
   children: ReactNode
   className?: string
   description?: ReactNode
+  icon?: LucideIcon
 }) {
   return (
     <section className={classNames('panel', className)}>
       {(title || action) && (
         <header className="flex items-start justify-between gap-3 border-b border-white/5 px-4 py-3">
-          <div>
+          <div className="flex min-w-0 items-start gap-2.5">
+            {Icon && (
+              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-panel-800 text-slate-400" aria-hidden>
+                <Icon size={14} strokeWidth={1.75} />
+              </span>
+            )}
+            <div className="min-w-0">
             {title && <h2 className="text-sm font-semibold text-slate-100">{title}</h2>}
             {description && (
               <p className="mt-0.5 text-xs text-slate-400">{description}</p>
             )}
+            </div>
           </div>
           {action}
         </header>
@@ -146,13 +156,20 @@ export function EmptyState({
   title,
   children,
   action,
+  icon: Icon,
 }: {
   title: string
   children?: ReactNode
   action?: ReactNode
+  icon?: LucideIcon
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+      {Icon && (
+        <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-panel-800 text-slate-500" aria-hidden>
+          <Icon size={24} strokeWidth={1.5} />
+        </span>
+      )}
       <p className="text-sm font-medium text-slate-300">{title}</p>
       {children && <p className="max-w-md text-sm text-slate-500">{children}</p>}
       {action}

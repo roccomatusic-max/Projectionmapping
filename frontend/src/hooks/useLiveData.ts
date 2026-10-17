@@ -4,6 +4,12 @@ import type { BusMessage, Overview, Projector } from '@/api/types'
 
 type WsStatus = 'connecting' | 'open' | 'closed'
 
+/** Take a telemetry field from a live update only when it carries a value. */
+function keepIfAvailable<T extends { availability: string } | undefined>(incoming: T, current: T): T {
+  if (incoming && incoming.availability === 'available') return incoming
+  return current ?? incoming
+}
+
 /**
  * Live fleet state.
  *
@@ -96,9 +102,21 @@ export function useFleet(pollMs = 15000) {
                       active_input:
                         (payload.active_input as Projector['state']['active_input']) ??
                         projector.state.active_input,
-                      lamp_hours:
-                        (payload.lamp_hours as Projector['state']['lamp_hours']) ??
+                      // Only the diagnostics tiers read lamp data; a shallow
+                      // poll carries an "unavailable" placeholder that must not
+                      // overwrite the last real reading.
+                      lamp_hours: keepIfAvailable(
+                        payload.lamp_hours as Projector['state']['lamp_hours'],
                         projector.state.lamp_hours,
+                      ),
+                      lamp_status: keepIfAvailable(
+                        payload.lamp_status as Projector['state']['lamp_status'],
+                        projector.state.lamp_status,
+                      ),
+                      error_status: keepIfAvailable(
+                        payload.error_status as Projector['state']['error_status'],
+                        projector.state.error_status,
+                      ),
                       errors: (payload.errors as string[]) ?? [],
                       warnings: (payload.warnings as string[]) ?? [],
                       last_error: online

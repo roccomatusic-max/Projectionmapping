@@ -36,3 +36,6 @@ backend/static/
 # PyInstaller outputs
 /build/
 /dist/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
