@@ -7,6 +7,10 @@ and kept beside it, and the default browser opens on the dashboard.
     python -m app.desktop            # from a checkout
     ProjectorControl.exe             # from a PyInstaller build
 
+On a Mac, opening ``Projector Control.app`` instead installs it as a service
+that starts at boot and restarts itself (see app/macservice.py); the service
+then runs this same program with ``--serve``.
+
 What this mode is for: a laptop at the show, a single-projector install, or
 evaluating the platform. What it is not: a 24/7 monitor. Alerts, polling
 and scheduled automations run only while this program is open and the
@@ -134,6 +138,28 @@ def first_run_password(folder: Path, database: Path) -> str | None:
     return password
 
 
+def self_check(app, host: str, port: int, log: logging.Logger) -> int:
+    """Start the server, wait for a healthy answer, stop. Exit code says which."""
+    import uvicorn
+
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{port}/api/health"
+    healthy = False
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline and thread.is_alive() and not healthy:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:  # noqa: S310
+                healthy = response.status == 200
+        except Exception:  # noqa: BLE001 - not up yet
+            time.sleep(0.5)
+    server.should_exit = True
+    thread.join(timeout=30)
+    log.info("self-check: %s", "healthy" if healthy else "FAILED")
+    return 0 if healthy else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="projector-control",
@@ -152,22 +178,46 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timezone", default=None,
                         help="IANA zone for schedules, e.g. Europe/London (default: this computer's)")
     parser.add_argument("--verbose", action="store_true")
-    args = parser.parse_args(argv)
+    parser.add_argument("--serve", action="store_true",
+                        help="Mac app: run the server here instead of installing the service")
+    parser.add_argument("--check", action="store_true",
+                        help="start, confirm the server answers, then exit (for build checks)")
+    parser.add_argument("--uninstall", action="store_true",
+                        help="Mac app: stop starting automatically (keeps the app and data)")
+    parser.add_argument("--version", action="store_true", help="print the version and exit")
+    # Finder may add arguments of its own when it opens an app; ignore them.
+    args, _unknown = parser.parse_known_args(argv)
+
+    from app import macservice
+    from app.paths import app_version
+
+    if args.version:
+        print(app_version())
+        return 0
+    if args.uninstall:
+        return macservice.uninstall()
 
     folder = Path(args.data_dir).expanduser() if args.data_dir else data_dir()
     folder.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "darwin" and macservice.running_bundle() and not (args.serve or args.check):
+        return macservice.launch(folder)
     configure_logging(folder, args.verbose)
     log = logging.getLogger("desktop")
 
     database = folder / "projector-control.db"
     host = args.host or ("0.0.0.0" if args.lan else "127.0.0.1")
-    port = pick_port(host, args.port)
+    managed = os.environ.get(macservice.SERVICE_ENV) == "1"
+    # The service keeps its port: the phone remote's link and QR code point at it.
+    # If something else holds it, exit and let launchd try again shortly.
+    port = args.port if managed else pick_port(host, args.port)
 
     # Environment must be set before app.config is imported anywhere.
     os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")
     os.environ.setdefault("SECRET_KEY", ensure_secret_key(folder))
     os.environ.setdefault("MEDIA_DIR", str(folder / "media"))
     os.environ.setdefault("ENVIRONMENT", "desktop")
+    os.environ["DESKTOP_DATA_DIR"] = str(folder)
+    os.environ["DESKTOP_PORT"] = str(port)
     if args.timezone:
         os.environ["SCHEDULE_TIMEZONE"] = args.timezone
     if host == "127.0.0.1":
@@ -183,6 +233,12 @@ def main(argv: list[str] | None = None) -> int:
 
     from app.main import app
 
+    log.info("Projector Control %s", app_version())
+    if managed:
+        macservice.pid_file(folder).write_text(str(os.getpid()), encoding="utf-8")
+        macservice.keep_awake()
+        log.info("running as the Mac service: starts at boot, restarts if it stops")
+
     reach = "this computer only" if host == "127.0.0.1" else f"every device on the network ({host})"
     log.info("data folder: %s", folder)
     log.info("serving on http://%s:%d — reachable from %s", "127.0.0.1" if host == "0.0.0.0" else host, port, reach)
@@ -191,7 +247,11 @@ def main(argv: list[str] | None = None) -> int:
     if host == "0.0.0.0":
         log.warning("--lan exposes the control UI on every interface. Use it on a trusted "
                     "network only; never port-forward it.")
-    log.info("Monitoring, alerts and schedules run only while this window is open.")
+    if not managed:
+        log.info("Monitoring, alerts and schedules run only while this window is open.")
+
+    if args.check:
+        return self_check(app, host, port, log)
 
     if not args.no_browser:
         url = f"http://127.0.0.1:{port}/"

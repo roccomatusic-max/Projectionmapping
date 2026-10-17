@@ -36,6 +36,9 @@ other by copying the database file.
 
 ## Getting it
 
+**On a Mac, download the ready-made app** instead of building: it installs
+itself as an always-on service. See [MAC-SERVER.md](MAC-SERVER.md).
+
 There is no pre-built download yet — PyInstaller cannot cross-compile, so
 each operating system's build has to be made on that operating system. The
 build takes about five minutes.
@@ -150,11 +153,10 @@ systemctl --user enable --now projector-control
 loginctl enable-linger $USER     # keep it running when you log out
 ```
 
-### macOS (launchd)
+### macOS
 
-Create `~/Library/LaunchAgents/local.projector-control.plist` with
-`ProgramArguments` pointing at the binary with `--no-browser --lan`,
-`RunAtLoad` and `KeepAlive` set to true, then `launchctl load` it.
+Use the Mac app instead: it installs itself as a service that starts at
+boot, restarts itself and updates from GitHub. See [MAC-SERVER.md](MAC-SERVER.md).
 
 ---
 

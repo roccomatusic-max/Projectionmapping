@@ -54,11 +54,13 @@ async def api(panasonic_sim, monkeypatch):
     import app.api.routes.monitoring as monitoring_routes
     import app.api.routes.projectors as projector_routes
     import app.api.routes.system as system_routes
+    import app.api.routes.updates as update_routes
     import app.api.routes.ws as ws_routes
     importlib.reload(deps_module)
     for module in (auth_routes, projector_routes, group_routes, monitoring_routes,
                    automation_routes, enclosure_routes, integration_routes,
-                   mapping_routes, player_routes, camera_routes, ws_routes, system_routes):
+                   mapping_routes, player_routes, camera_routes, ws_routes, system_routes,
+                   update_routes):
         importlib.reload(module)
     import app.main as main_module
     importlib.reload(main_module)
@@ -852,3 +854,18 @@ async def test_validate_rejects_schedule_that_never_fires(api):
     result = response.json()
     assert result["ok"] is False
     assert result["next_runs"] == []
+
+
+async def test_update_routes_are_admin_only_and_report_unsupported(api):
+    assert (await api.get("/api/system/updates")).status_code == 401
+    admin = await login(api)
+    response = await api.get("/api/system/updates", headers=admin)
+    assert response.status_code == 200
+    assert response.json()["supported"] is False
+    response = await api.post("/api/system/updates/install", json={}, headers=admin)
+    assert response.status_code == 428
+
+
+async def test_health_reports_the_version(api):
+    response = await api.get("/api/health")
+    assert response.json()["version"] == "dev"

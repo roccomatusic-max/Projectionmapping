@@ -30,8 +30,28 @@ backend/.venv/bin/pip install -q -r backend/requirements.txt -r desktop/requirem
 
 echo "==> pyinstaller"
 rm -rf build dist
+if [ "$(uname)" = "Darwin" ]; then
+  # App icon, from the same artwork as the phone remote.
+  mkdir -p build/ProjectorControl.iconset
+  for size in 16 32 128 256 512; do
+    sips -z $size $size frontend/public/remote-icon-512.png \
+      --out build/ProjectorControl.iconset/icon_${size}x${size}.png >/dev/null
+    double=$((size * 2)); [ $double -gt 512 ] && double=512
+    sips -z $double $double frontend/public/remote-icon-512.png \
+      --out build/ProjectorControl.iconset/icon_${size}x${size}@2x.png >/dev/null
+  done
+  iconutil -c icns build/ProjectorControl.iconset -o build/ProjectorControl.icns
+fi
 backend/.venv/bin/pyinstaller --noconfirm --clean desktop/projector-control.spec
 
 echo
 echo "Built: dist/ProjectorControl/ProjectorControl"
+if [ "$(uname)" = "Darwin" ]; then
+  # No Apple Developer account, so sign it ad hoc: Apple Silicon refuses to run
+  # unsigned code at all, and a consistent signature keeps macOS from calling
+  # the download "damaged".
+  codesign --force --deep --sign - "dist/Projector Control.app"
+  codesign --verify --deep --strict "dist/Projector Control.app"
+  echo "Built: dist/Projector Control.app (open it to install it as a service)"
+fi
 echo "Run it, and the dashboard opens in your browser."
