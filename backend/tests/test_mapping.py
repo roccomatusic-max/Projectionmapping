@@ -314,3 +314,80 @@ async def test_viewer_cannot_run_the_show(api):
     assert response.status_code == 403
     clock = await api.get("/api/mapping/clock", headers=viewer)
     assert clock.status_code == 200 and clock.json()["now_ms"] > 0
+
+
+# -- players -------------------------------------------------------------------
+
+DEVICE = {"device_id": "mini-pc-left-0001", "secret": "s" * 48, "name": "Left mini PC"}
+
+
+async def test_player_pairing_flow(api):
+    headers = await login(api)
+    first = await api.post("/api/mapping/players/hello", json=DEVICE)
+    assert first.status_code == 200, first.text
+    first = first.json()
+    assert first["status"] == "pending"
+    assert first["access_token"] is None
+    assert len(first["code"]) == 6
+
+    # Polling again returns the same code; no second player is made.
+    again = (await api.post("/api/mapping/players/hello", json=DEVICE)).json()
+    assert again["code"] == first["code"]
+    players = (await api.get("/api/mapping/players", headers=headers)).json()
+    assert len(players) == 1 and players[0]["approved"] is False
+
+    show = await make_show(api, headers)
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Left"})).json()
+    approved = await api.patch(f"/api/mapping/players/{first['player_id']}", headers=headers,
+                               json={"approved": True, "output_id": output["id"]})
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["show_id"] == show["id"]
+
+    claimed = (await api.post("/api/mapping/players/hello", json=DEVICE)).json()
+    assert claimed["status"] == "approved"
+    player_headers = {"Authorization": f"Bearer {claimed['access_token']}"}
+
+    assignment = await api.post("/api/mapping/players/me", headers=player_headers,
+                                json={"fps": 60, "drift_ms": 4, "cache": "on"})
+    assert assignment.status_code == 200, assignment.text
+    assert assignment.json() == {"player_id": first["player_id"], "name": "Left mini PC",
+                                 "output_id": output["id"], "show_id": show["id"]}
+    listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
+    assert listed["online"] is True
+    assert listed["report"]["fps"] == 60
+
+    # A player can watch the show but not run it or change it.
+    assert (await api.get(f"/api/mapping/shows/{show['id']}",
+                          headers=player_headers)).status_code == 200
+    assert (await transport(api, player_headers, action="go",
+                            show_id=show["id"])).status_code == 403
+
+    # Removing it revokes the token.
+    await api.delete(f"/api/mapping/players/{first['player_id']}", headers=headers)
+    revoked = await api.post("/api/mapping/players/me", headers=player_headers, json={})
+    assert revoked.status_code == 401
+
+
+async def test_player_secret_must_match(api):
+    await api.post("/api/mapping/players/hello", json=DEVICE)
+    impostor = await api.post("/api/mapping/players/hello",
+                              json={**DEVICE, "secret": "x" * 48})
+    assert impostor.status_code == 403
+
+
+async def test_pending_player_gets_no_token(api):
+    response = (await api.post("/api/mapping/players/hello", json=DEVICE)).json()
+    assert response["access_token"] is None
+
+
+async def test_only_admins_approve_players(api):
+    headers = await login(api)
+    player = (await api.post("/api/mapping/players/hello", json=DEVICE)).json()
+    await api.post("/api/auth/users", headers=headers,
+                   json={"username": "runner", "password": "runner-password",
+                         "role": "operator"})
+    operator = await login(api, "runner", "runner-password")
+    response = await api.patch(f"/api/mapping/players/{player['player_id']}",
+                               headers=operator, json={"approved": True})
+    assert response.status_code == 403

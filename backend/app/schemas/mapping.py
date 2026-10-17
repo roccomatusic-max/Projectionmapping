@@ -280,3 +280,57 @@ class TransportState(BaseModel):
     #: Bumped on every change, so a client can ignore a stale message.
     revision: int = 0
     server_time_ms: float = 0.0
+
+
+# -- players -------------------------------------------------------------------
+
+
+class PlayerHello(BaseModel):
+    device_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    secret: str = Field(min_length=32, max_length=128)
+    name: str = Field(default="Player", min_length=1, max_length=128)
+
+
+class PlayerHelloResponse(BaseModel):
+    player_id: int
+    status: Literal["pending", "approved"]
+    code: str
+    name: str
+    #: Present once approved: the player's access token.
+    access_token: str | None = None
+
+
+class PlayerOut(BaseModel):
+    id: int
+    name: str
+    code: str
+    approved: bool
+    output_id: int | None
+    show_id: int | None = None
+    online: bool
+    last_seen_at: datetime | None
+    report: dict = Field(default_factory=dict)
+
+
+class PlayerUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    approved: bool | None = None
+    output_id: int | None = None
+
+
+class PlayerReport(BaseModel):
+    fps: float | None = None
+    drift_ms: float | None = None
+    width: int | None = None
+    height: int | None = None
+    #: "on" when media plays from the local cache, "off" when streaming.
+    cache: str | None = Field(default=None, max_length=16)
+    cached_bytes: int | None = None
+    cue: str | None = Field(default=None, max_length=160)
+
+
+class PlayerAssignment(BaseModel):
+    player_id: int
+    name: str
+    output_id: int | None
+    show_id: int | None

@@ -542,3 +542,32 @@ class MappingCue(Base):
     follow_seconds: Mapped[float | None] = mapped_column(Float)
 
     show: Mapped[MappingShow] = relationship(back_populates="cues")
+
+
+class MappingPlayer(Base):
+    """A small computer beside a projector, running the output page.
+
+    It introduces itself with a random device secret and shows a pairing
+    code; an administrator approves it and assigns it an output. Approval
+    creates a dedicated viewer account for it, so removing the player
+    revokes its access the same way deactivating any user does.
+    """
+
+    __tablename__ = "mapping_players"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), unique=True)
+    #: SHA-256 of the device secret. The secret is 256 random bits, so a
+    #: fast hash is sufficient; it is checked on every poll.
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(128))
+    code: Mapped[str] = mapped_column(String(8))
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    output_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_outputs.id", ondelete="SET NULL")
+    )
+    #: Last report from the player: fps, drift, window size, cache state.
+    report: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
