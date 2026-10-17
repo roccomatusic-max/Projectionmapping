@@ -35,7 +35,28 @@ class UserOut(BaseModel):
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=10, description="Minimum 10 characters")
-    role: Literal["admin", "operator", "viewer"] = "viewer"
+    role: Literal["admin", "operator", "viewer", "ingest"] = "viewer"
+
+
+class ServiceTokenRequest(BaseModel):
+    """A long-lived token for an integration (Home Assistant, a sensor).
+
+    It carries the named user's role, so create a dedicated user with the
+    narrowest role that works: ``ingest`` for a sensor, ``operator`` for
+    an automation platform that must send commands. Deactivating or deleting
+    that user revokes every token issued for it.
+    """
+
+    username: str
+    days: int = Field(default=365, ge=1, le=3650)
+
+
+class ServiceTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    username: str
+    role: str
+    expires_at: datetime
 
 
 class PasswordChange(BaseModel):
@@ -275,6 +296,19 @@ class AutomationIn(BaseModel):
     schedule: dict[str, Any] = Field(default_factory=dict)
     steps: list[dict[str, Any]] = Field(default_factory=list)
     abort_on_failure: bool = True
+
+    @field_validator("schedule")
+    @classmethod
+    def _validate_schedule(cls, schedule: dict[str, Any], info) -> dict[str, Any]:
+        expression = schedule.get("cron")
+        if expression:
+            from app.services.cron import CronError, validate
+
+            try:
+                validate(str(expression))
+            except CronError as exc:
+                raise ValueError(f"invalid cron expression {expression!r}: {exc}") from exc
+        return schedule
 
     @field_validator("steps")
     @classmethod

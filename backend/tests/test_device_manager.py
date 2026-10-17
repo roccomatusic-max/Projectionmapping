@@ -92,8 +92,12 @@ async def test_gated_capability_explains_how_to_enable(worker):
 async def test_power_command_is_not_retried_when_state_is_uncertain(
     panasonic_sim, sim_state
 ):
-    """The core safety rule: never repeat a disruptive command blindly."""
-    sim_state.silent = True
+    """The core safety rule: never repeat a disruptive command blindly.
+
+    Command 1 is the worker's QPW probe (answered); command 2 is PON, whose
+    reply is withheld. The projector DID act; the controller cannot know.
+    """
+    sim_state.drop_reply_indices = {2}
     w = DeviceWorker(make_record(3, panasonic_sim.actual_port, command_timeout=0.4))
     await w.start()
     try:
@@ -101,18 +105,34 @@ async def test_power_command_is_not_retried_when_state_is_uncertain(
         assert result.outcome is CommandOutcome.TIMEOUT
         assert result.attempts == 1, "a power command must never be auto-retried"
         assert "not safe to repeat" in (result.error or "")
+        assert sim_state.power.value in ("warming", "on"), "the projector did act"
     finally:
         await w.stop()
 
 
 async def test_idempotent_query_is_retried(panasonic_sim, sim_state):
-    sim_state.silent = True
+    """Sequence: probe(1) ok, QPW(2) lost, reconnect probe(3) ok, QPW(4) lost,
+    reconnect probe(5) ok, QPW(6) ok — a read-only query keeps trying."""
+    sim_state.drop_reply_indices = {2, 4}
     w = DeviceWorker(make_record(4, panasonic_sim.actual_port, command_timeout=0.3))
     await w.start()
     try:
         result = await w.execute("power.get", timeout=20)
-        assert result.outcome is CommandOutcome.TIMEOUT
-        assert result.attempts > 1, "a read-only query should be retried"
+        assert result.outcome is CommandOutcome.OK
+        assert result.attempts == 3, "a read-only query should be retried"
+    finally:
+        await w.stop()
+
+
+async def test_silent_device_is_a_clear_connection_failure(panasonic_sim, sim_state):
+    """Accepts TCP, never answers: the operator gets the reason, not a dead socket."""
+    sim_state.silent = True
+    w = DeviceWorker(make_record(7, panasonic_sim.actual_port, command_timeout=0.3))
+    await w.start()
+    try:
+        result = await w.execute("power.get", timeout=20)
+        assert result.outcome is CommandOutcome.CONNECTION_ERROR
+        assert "did not answer" in (result.error or "")
     finally:
         await w.stop()
 
@@ -233,3 +253,36 @@ async def test_re_adding_a_device_replaces_the_worker(panasonic_sim):
         assert len(manager.workers) == 1
     finally:
         await manager.shutdown()
+
+
+async def test_worker_recovers_after_a_timeout(panasonic_sim, sim_state):
+    """A timed-out query reconnects on retry and the next command succeeds."""
+    sim_state.drop_reply_indices = {2}  # probe(1) ok, first QPW(2) lost
+    w = DeviceWorker(make_record(50, panasonic_sim.actual_port, command_timeout=0.4))
+    await w.start()
+    try:
+        first = await w.execute("power.get", timeout=20)
+        # Idempotent query: retried on a fresh socket, so it ends up OK.
+        assert first.outcome is CommandOutcome.OK
+        assert first.attempts == 2
+        second = await w.execute("shutter.get", timeout=20)
+        assert second.ok
+    finally:
+        await w.stop()
+
+
+async def test_idle_session_is_reconnected_before_a_command(pjlink_sim):
+    """PJLink projectors drop idle sessions; the worker reconnects first."""
+    w = DeviceWorker(make_record(51, pjlink_sim.actual_port, driver="pjlink"))
+    await w.start()
+    try:
+        assert (await w.execute("power.get")).ok
+        w.driver.config.idle_reconnect = 0.2
+        await asyncio.sleep(0.4)
+        before = w.driver._transport
+        assert (await w.execute("power.get")).ok
+        # Same transport object, but it was closed and reopened in between.
+        assert w.driver._transport is before
+        assert w.driver.connected
+    finally:
+        await w.stop()

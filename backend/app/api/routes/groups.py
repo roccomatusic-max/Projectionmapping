@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +18,7 @@ from app.api.deps import (
     require_confirmation,
     write_rate_limit,
 )
+from app.api.routes.projectors import _source
 from app.db.models import Event, Group, GroupMember, Projector, Severity
 from app.drivers import CommandOutcome
 from app.schemas import (
@@ -105,7 +106,7 @@ async def create_group(payload: GroupCreate, session: SessionDep,
 @router.post("/all/commands", response_model=GroupCommandResult,
              dependencies=[Depends(command_rate_limit)])
 async def all_command(payload: GroupCommand, session: SessionDep,
-                      user: RequireOperator) -> GroupCommandResult:
+                      user: RequireOperator, request: Request) -> GroupCommandResult:
     """Dispatch to every enabled projector."""
     projector_ids = list((await session.execute(
         select(Projector.id).where(Projector.enabled.is_(True)).order_by(Projector.name)
@@ -122,7 +123,7 @@ async def all_command(payload: GroupCommand, session: SessionDep,
         projector_ids, payload.capability, payload.params, priority=Priority.USER
     )
     await log_command_results(results, payload.capability, payload.params,
-                              source="ui", username=user.username, user_id=user.id)
+                              source=_source(request), username=user.username, user_id=user.id)
     return _summarise(dispatched_at, payload.capability, results)
 
 
@@ -132,6 +133,7 @@ async def selection_command(
     payload: GroupCommand,
     session: SessionDep,
     user: RequireOperator,
+    request: Request,
     projector_ids: Annotated[list[int], Query(min_length=1)],
 ) -> GroupCommandResult:
     """Dispatch to an ad-hoc selection, for the Control Center."""
@@ -149,7 +151,7 @@ async def selection_command(
         projector_ids, payload.capability, payload.params, priority=Priority.USER
     )
     await log_command_results(results, payload.capability, payload.params,
-                              source="ui", username=user.username, user_id=user.id)
+                              source=_source(request), username=user.username, user_id=user.id)
     return _summarise(dispatched_at, payload.capability, results)
 
 
@@ -196,7 +198,7 @@ async def delete_group(group_id: int, session: SessionDep, admin: RequireAdmin) 
 @router.post("/{group_id}/commands", response_model=GroupCommandResult,
              dependencies=[Depends(command_rate_limit)])
 async def group_command(group_id: int, payload: GroupCommand, session: SessionDep,
-                        user: RequireOperator) -> GroupCommandResult:
+                        user: RequireOperator, request: Request) -> GroupCommandResult:
     """Dispatch one capability to every projector in a group, concurrently.
 
     Commands are issued in parallel and each projector's result is reported
@@ -223,7 +225,7 @@ async def group_command(group_id: int, payload: GroupCommand, session: SessionDe
         projector_ids, payload.capability, payload.params, priority=Priority.USER
     )
     await log_command_results(results, payload.capability, payload.params,
-                              source="ui", username=user.username, user_id=user.id)
+                              source=_source(request), username=user.username, user_id=user.id)
     return _summarise(dispatched_at, payload.capability, results)
 
 

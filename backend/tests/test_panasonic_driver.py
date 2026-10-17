@@ -30,8 +30,8 @@ def test_digest_differs_from_pjlink_scheme():
 
 
 @pytest.mark.parametrize(("reply", "outcome"), [
-    ("00PON", CommandOutcome.ACCEPTED),
-    ("00QPW:001", CommandOutcome.OK),
+    ("00X", CommandOutcome.ACCEPTED),
+    ("00X:001", CommandOutcome.OK),
     ("ERR1", CommandOutcome.UNSUPPORTED),
     ("ERR2", CommandOutcome.REJECTED),
     ("ERR3", CommandOutcome.BUSY),
@@ -252,5 +252,70 @@ async def test_dropped_connection_is_reported(panasonic_sim, sim_state):
         await driver.get_power_state()
         second = await driver.get_power_state()
         assert second.outcome in (CommandOutcome.CONNECTION_ERROR, CommandOutcome.TIMEOUT)
+    finally:
+        await driver.disconnect()
+
+
+# -- reply shapes -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(("request_", "reply", "outcome", "value"), [
+    # Control command acknowledged by echoing the mnemonic.
+    ("00PON", "00PON", CommandOutcome.ACCEPTED, "PON"),
+    ("00OSH:1", "00OSH", CommandOutcome.ACCEPTED, "OSH"),
+    ("00OSH:1", "00OSH:1", CommandOutcome.ACCEPTED, "OSH:1"),
+    # Query answered with the value alone after the ID — Panasonic's form.
+    ("00QPW", "00001", CommandOutcome.OK, "001"),
+    ("00QSH", "000", CommandOutcome.OK, "0"),
+    ("00QIN", "00DVI", CommandOutcome.OK, "DVI"),
+    ("00Q$L:1", "0000001240", CommandOutcome.OK, "00001240"),
+    # Query answered as MNEMONIC:value — seen on some firmware.
+    ("00QPW", "00QPW:001", CommandOutcome.OK, "001"),
+    ("00QIN", "00QIN:HD1", CommandOutcome.OK, "HD1"),
+])
+def test_reply_shapes(request_, reply, outcome, value):
+    result = classify_response("x", request_, reply, 1)
+    assert result.outcome is outcome
+    assert result.value == value
+
+
+async def test_lost_auth_probe_reply_is_a_connection_failure(panasonic_sim, sim_state):
+    """A projector that accepts TCP but never answers must not look connected.
+
+    The simulator processes the first command (consuming the digest) but
+    withholds its reply. authenticate() has to raise so the worker reports a
+    clear connection failure instead of handing out a dead socket.
+    """
+    from app.drivers.transport import TransportError
+
+    sim_state.password = "panasonic"
+    sim_state.drop_reply_indices = {1}
+    driver = PanasonicPTDZ13KDriver(
+        panasonic_config(panasonic_sim, password="panasonic", timeout=0.4)
+    )
+    await driver.connect()
+    try:
+        with pytest.raises(TransportError, match="did not answer"):
+            await driver.authenticate()
+        assert not driver.connected
+        # A fresh session gets a fresh seed and works.
+        await driver.connect()
+        await driver.authenticate()
+        assert (await driver.get_power_state()).value is PowerState.OFF
+    finally:
+        await driver.disconnect()
+
+
+async def test_timeout_drops_the_socket_so_a_late_reply_cannot_mislead(
+    panasonic_sim, sim_state
+):
+    sim_state.drop_reply_indices = {1}
+    driver = PanasonicPTDZ13KDriver(panasonic_config(panasonic_sim, timeout=0.4))
+    await driver.connect()
+    try:
+        result = await driver.get_power_state()
+        assert result.outcome is CommandOutcome.TIMEOUT
+        assert result.outcome.state_is_uncertain
+        assert not driver.connected
     finally:
         await driver.disconnect()

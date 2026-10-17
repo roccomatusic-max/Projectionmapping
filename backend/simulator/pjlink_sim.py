@@ -83,7 +83,10 @@ class PJLinkSimulator:
                     line = line[32:]
                     authenticated = True
 
-                writer.write(f"{self._dispatch(line)}\r".encode())
+                response = self._dispatch(line)
+                if self.state.command_count in self.state.drop_reply_indices:
+                    continue  # processed, reply withheld
+                writer.write(f"{response}\r".encode())
                 await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError, asyncio.CancelledError):
             pass

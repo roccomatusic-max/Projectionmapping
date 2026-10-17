@@ -396,6 +396,9 @@ class ConnectionConfig:
     command_gap: float = 0.6
     #: Keep the TCP session open between commands.
     persistent: bool = True
+    #: Reconnect before a command if the session has been idle this long
+    #: (seconds). None lets the driver choose; 0 disables.
+    idle_reconnect: float | None = None
     allow_unverified_commands: bool = False
     #: Label shown in logs; set to the device name.
     label: str = ""
@@ -483,6 +486,18 @@ class ProjectorDriver:
                 ),
             )
         return None
+
+    @property
+    def idle_seconds(self) -> float:
+        """Time since the last frame went out on this session."""
+        if not self._last_command_at:
+            return 0.0
+        return time.monotonic() - self._last_command_at
+
+    @property
+    def idle_reconnect_after(self) -> float:
+        """Seconds of silence after which the worker reconnects first."""
+        return self.config.idle_reconnect or 0.0
 
     async def _respect_command_gap(self) -> None:
         gap = self.config.command_gap

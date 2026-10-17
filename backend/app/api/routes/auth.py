@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -11,7 +11,15 @@ from app.api.deps import CurrentUser, RequireAdmin, SessionDep, write_rate_limit
 from app.config import settings
 from app.core.security import create_access_token, hash_password, needs_rehash, verify_password
 from app.db.models import Event, Role, Severity, User
-from app.schemas import LoginRequest, PasswordChange, TokenResponse, UserCreate, UserOut
+from app.schemas import (
+    LoginRequest,
+    PasswordChange,
+    ServiceTokenRequest,
+    ServiceTokenResponse,
+    TokenResponse,
+    UserCreate,
+    UserOut,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -61,6 +69,35 @@ async def change_password(payload: PasswordChange, user: CurrentUser,
                       kind="password_changed",
                       message=f"{user.username} changed their password"))
     await session.commit()
+
+
+@router.post("/tokens", response_model=ServiceTokenResponse,
+             dependencies=[Depends(write_rate_limit)])
+async def create_service_token(payload: ServiceTokenRequest, session: SessionDep,
+                               admin: RequireAdmin) -> ServiceTokenResponse:
+    """Issue a long-lived token for an integration.
+
+    Interactive sign-ins expire in hours; a sensor in an enclosure or a Home
+    Assistant automation needs something that outlives that. The token is
+    bound to a user, so revocation is "deactivate that user".
+    """
+    user = (await session.execute(
+        select(User).where(User.username == payload.username)
+    )).scalars().first()
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"No active user named {payload.username!r}")
+    minutes = payload.days * 24 * 60
+    token = create_access_token(user.username, user.role, expires_minutes=minutes)
+    session.add(Event(projector_id=None, severity=Severity.WARNING.value,
+                      kind="service_token_issued",
+                      message=f"{admin.username} issued a {payload.days}-day token "
+                              f"for {user.username} ({user.role})"))
+    await session.commit()
+    return ServiceTokenResponse(
+        access_token=token, username=user.username, role=user.role,
+        expires_at=datetime.now(UTC) + timedelta(minutes=minutes),
+    )
 
 
 @router.get("/users", response_model=list[UserOut])

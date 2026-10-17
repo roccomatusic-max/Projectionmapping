@@ -77,6 +77,7 @@ export function useFleet(pollMs = 15000) {
         if (message.type === 'projector_state') {
           const payload = message.payload as Record<string, unknown>
           const id = payload.projector_id as number
+          const online = Boolean(payload.online)
           setProjectors((current) =>
             current.map((projector) =>
               projector.id === id
@@ -84,8 +85,10 @@ export function useFleet(pollMs = 15000) {
                     ...projector,
                     state: {
                       ...projector.state,
-                      online: Boolean(payload.online),
-                      stale: false,
+                      online,
+                      // A failed poll is news, but it is not a fresh reading:
+                      // keep the previous last-seen time and staleness.
+                      stale: online ? false : projector.state.stale,
                       power: (payload.power as Projector['state']['power']) ?? 'unknown',
                       shutter:
                         (payload.shutter as Projector['state']['shutter']) ?? 'unknown',
@@ -98,7 +101,12 @@ export function useFleet(pollMs = 15000) {
                         projector.state.lamp_hours,
                       errors: (payload.errors as string[]) ?? [],
                       warnings: (payload.warnings as string[]) ?? [],
-                      last_seen_at: new Date().toISOString(),
+                      last_error: online
+                        ? null
+                        : ((payload.errors as string[])?.[0] ?? projector.state.last_error),
+                      last_seen_at: online
+                        ? new Date().toISOString()
+                        : projector.state.last_seen_at,
                     },
                   }
                 : projector,

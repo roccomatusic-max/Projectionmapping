@@ -98,9 +98,11 @@ LENS_AXES: dict[str, str] = {
 }
 
 LENS_CAVEAT = (
-    "Lens axis encoding is taken from the PT-DZ780 specification, not from a "
-    "document naming the PT-DZ13K, and no explicit stop command could be "
-    "confirmed. Verify against your unit's manual before enabling."
+    "Lens axis numbering (LNSI2-5) comes from the PT-DZ780 specification, not from "
+    "a document naming the PT-DZ13K, and the parameter format this driver sends "
+    "(e.g. VXX:LNSI2+0001) is unconfirmed. No explicit stop command could be "
+    "confirmed either. Verify against your unit's control-command manual before "
+    "enabling, and test with the projector somewhere a lens movement cannot cause harm."
 )
 
 
@@ -161,19 +163,20 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
             # --- image adjustments, sibling-documented ---
             Capability("image.freeze", CapabilityKind.SET, FAM, "Freeze (OFZ)",
                        params=("on", "off"), idempotent=False,
-                       caveat="Documented for sibling models only."),
+                       caveat="Mnemonic documented for sibling models; parameter format unconfirmed."),
             Capability("image.brightness", CapabilityKind.SET, FAM, "Brightness (OBR)",
-                       value_range=(0, 63), caveat="Documented for sibling models only."),
+                       value_range=(0, 63),
+                       caveat="Mnemonic documented for sibling models; parameter format unconfirmed."),
             Capability("image.contrast", CapabilityKind.SET, FAM, "Contrast (OCS)",
-                       value_range=(0, 63), caveat="Documented for sibling models only."),
+                       value_range=(0, 63), caveat="Mnemonic documented for sibling models; parameter format unconfirmed."),
             Capability("image.color", CapabilityKind.SET, FAM, "Colour (OCO)",
-                       value_range=(0, 63), caveat="Documented for sibling models only."),
+                       value_range=(0, 63), caveat="Mnemonic documented for sibling models; parameter format unconfirmed."),
             Capability("image.tint", CapabilityKind.SET, FAM, "Tint (OTN)",
-                       value_range=(0, 63), caveat="Documented for sibling models only."),
+                       value_range=(0, 63), caveat="Mnemonic documented for sibling models; parameter format unconfirmed."),
             Capability("image.sharpness", CapabilityKind.SET, FAM, "Sharpness (OSP)",
-                       value_range=(0, 15), caveat="Documented for sibling models only."),
+                       value_range=(0, 15), caveat="Mnemonic documented for sibling models; parameter format unconfirmed."),
             Capability("osd.set", CapabilityKind.SET, FAM, "On-screen display (OSD)",
-                       params=("on", "off"), caveat="Documented for sibling models only."),
+                       params=("on", "off"), caveat="Mnemonic documented for sibling models; parameter format unconfirmed."),
         ]
         caps += [
             Capability(f"remote.{key}", CapabilityKind.ACTION, FAM,
@@ -472,8 +475,15 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
             status.error_status = self._telemetry_from(errors)
 
         # The platform does not fabricate what the protocol does not provide.
-        status.model = TelemetryValue.available("PT-DZ13K series")
-        status.manufacturer = TelemetryValue.available("Panasonic")
+        # Model and manufacturer come from the device record the operator
+        # entered, not from the projector: no query for them is confirmed.
+        status.model = TelemetryValue.unsupported(
+            "No model query is confirmed for the PT-DZ13K LAN protocol; the model shown "
+            "is from this device's configuration."
+        )
+        status.manufacturer = TelemetryValue.unsupported(
+            "No manufacturer query is confirmed for the PT-DZ13K LAN protocol."
+        )
         status.serial_number = TelemetryValue.unsupported(
             "No serial-number query is confirmed for the PT-DZ13K LAN protocol. "
             "PJLink class 2 (%2SNUM) provides it where the projector supports class 2."

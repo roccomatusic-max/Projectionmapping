@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from datetime import UTC
 
 import pytest
 import pytest_asyncio
@@ -58,7 +59,11 @@ async def api(panasonic_sim, monkeypatch):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             client.sim = panasonic_sim
             yield client
-    os.unlink(path)
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.unlink(path + suffix)
+        except FileNotFoundError:
+            pass
 
 
 async def login(client, username="admin", password="test-admin-password") -> dict:
@@ -588,3 +593,143 @@ async def test_overview_counts_live_devices(api):
     assert body["total"] == 1
     assert body["online"] == 1
     assert body["standby"] == 1
+
+
+# -- service tokens and the ingest role ---------------------------------------
+
+
+async def test_ingest_role_can_post_readings_and_nothing_else(api, roles):
+    admin = roles["admin"]
+    assert (await api.post("/api/auth/users", headers=admin, json={
+        "username": "enclosure-esp32", "password": "a-long-sensor-password", "role": "ingest",
+    })).status_code == 201
+    sensor = await login(api, "enclosure-esp32", "a-long-sensor-password")
+    enclosure_id = (await api.post("/api/enclosures", headers=admin,
+                                   json={"name": "Ingest Box"})).json()["id"]
+
+    posted = await api.post(f"/api/enclosures/{enclosure_id}/readings", headers=sensor,
+                            json={"metric": "internal_temp_c", "value": 28.5})
+    assert posted.status_code == 202
+
+    # Read access and control are both refused for an ingest-only account.
+    assert (await api.get("/api/projectors", headers=sensor)).status_code == 403
+    assert (await api.get("/api/enclosures", headers=sensor)).status_code == 403
+    pid = await add_projector(api, admin, name="Not for sensors")
+    assert (await api.post(f"/api/projectors/{pid}/power", headers=sensor,
+                           json={"state": "on", "confirm": True})).status_code == 403
+
+
+async def test_service_token_outlives_a_session_and_carries_the_role(api, roles):
+    admin = roles["admin"]
+    response = await api.post("/api/auth/tokens", headers=admin,
+                              json={"username": "operator1", "days": 30})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["role"] == "operator"
+    from app.core.security import decode_access_token
+    claims = decode_access_token(body["access_token"])
+    assert claims["sub"] == "operator1"
+    # Expiry is roughly 30 days out, not the 12-hour interactive default.
+    from datetime import datetime
+    assert claims["exp"] - datetime.now(UTC).timestamp() > 29 * 24 * 3600
+
+    headers = {"Authorization": f"Bearer {body['access_token']}"}
+    assert (await api.get("/api/projectors", headers=headers)).status_code == 200
+
+
+async def test_service_tokens_are_admin_only(api, roles):
+    response = await api.post("/api/auth/tokens", headers=roles["operator"],
+                              json={"username": "operator1"})
+    assert response.status_code == 403
+
+
+async def test_deactivated_user_revokes_its_tokens(api, roles):
+    admin = roles["admin"]
+    token = (await api.post("/api/auth/tokens", headers=admin,
+                            json={"username": "viewer1"})).json()["access_token"]
+    users = (await api.get("/api/auth/users", headers=admin)).json()
+    viewer_id = next(u["id"] for u in users if u["username"] == "viewer1")
+    assert (await api.delete(f"/api/auth/users/{viewer_id}", headers=admin)).status_code == 204
+    response = await api.get("/api/projectors", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+async def test_command_source_is_recorded_from_the_client_header(api):
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    await api.post(f"/api/projectors/{pid}/shutter", headers={**headers, "X-Client": "ui"},
+                   json={"state": "closed", "confirm": True})
+    await api.post(f"/api/projectors/{pid}/shutter", headers=headers,
+                   json={"state": "open", "confirm": True})
+    rows = (await api.get(f"/api/projectors/{pid}/commands", headers=headers)).json()["commands"]
+    assert [r["source"] for r in rows[:2]] == ["api", "ui"]
+
+
+async def test_usage_analytics_endpoint(api):
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    await api.get(f"/api/projectors/{pid}/status?refresh=true", headers=headers)
+    response = await api.get("/api/analytics/usage?days=7", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "estimate" in body["note"]
+    assert isinstance(body["usage"], list)
+
+
+async def test_unexpected_shutdown_alert_only_when_nobody_asked(api):
+    """Observed on→off with no power-off in the log is an alert; a commanded
+    power-off is not."""
+    from app.services.alerts import alerting
+
+    headers = await login(api)
+    pid = await add_projector(api, headers, name="Tripped")
+
+    await alerting._handle("power_changed", {"projector_id": pid, "name": "Tripped",
+                                             "from": "on", "to": "off"})
+    alerts = (await api.get("/api/alerts", headers=headers)).json()
+    assert any(a["kind"] == "unexpected_shutdown" for a in alerts)
+
+    # Power coming back resolves it.
+    await alerting._handle("projector_state", {"projector_id": pid, "name": "Tripped",
+                                               "power": "on"})
+    alerts = (await api.get("/api/alerts", headers=headers)).json()
+    assert not any(a["kind"] == "unexpected_shutdown" for a in alerts)
+
+    # A commanded power-off inside the window raises nothing.
+    await api.post(f"/api/projectors/{pid}/power", headers=headers,
+                   json={"state": "off", "confirm": True})
+    await alerting._handle("power_changed", {"projector_id": pid, "name": "Tripped",
+                                             "from": "on", "to": "off"})
+    alerts = (await api.get("/api/alerts", headers=headers)).json()
+    assert not any(a["kind"] == "unexpected_shutdown" for a in alerts)
+
+
+async def test_unverified_alert_resolves_on_verification(api):
+    from app.services.alerts import alerting
+
+    headers = await login(api)
+    pid = await add_projector(api, headers, name="Verify me")
+    await alerting._handle("command_unverified", {
+        "projector_id": pid, "name": "Verify me", "capability": "shutter.set",
+        "message": "not confirmed",
+    })
+    assert any(a["kind"] == "command_unverified"
+               for a in (await api.get("/api/alerts", headers=headers)).json())
+    await alerting._handle("command_verified", {
+        "projector_id": pid, "name": "Verify me", "capability": "shutter.set",
+    })
+    assert not any(a["kind"] == "command_unverified"
+                   for a in (await api.get("/api/alerts", headers=headers)).json())
+
+
+async def test_invalid_cron_is_rejected_at_the_api(api):
+    headers = await login(api)
+    response = await api.post("/api/automations", headers=headers, json={
+        "name": "Bad cron", "trigger_type": "cron", "schedule": {"cron": "61 * * * *"},
+    })
+    assert response.status_code == 422
+    assert "cron" in response.text
+    ok = await api.post("/api/automations", headers=headers, json={
+        "name": "Good cron", "trigger_type": "cron", "schedule": {"cron": "30 20 * * fri,sat"},
+    })
+    assert ok.status_code == 201, ok.text

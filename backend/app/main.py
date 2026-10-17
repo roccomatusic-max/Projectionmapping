@@ -7,11 +7,11 @@ and shuts them all down cleanly so no projector is left mid-command.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +33,8 @@ from app.api.routes import (
 from app.config import settings
 from app.core.security import hash_password
 from app.db.models import Role, User
-from app.db.session import create_all, session_scope
+from app.db.session import create_all, engine, session_scope
+from app.paths import alembic_dir, static_dir
 from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
 from app.services.device_manager import manager
@@ -46,6 +47,33 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("app")
+
+
+async def prepare_database() -> None:
+    """Bring the schema up to date.
+
+    Real databases go through Alembic so the version table is stamped and
+    later upgrades apply cleanly; ``create_all`` on a fresh database would
+    leave Alembic believing nothing exists and fail on the next upgrade.
+    The in-memory SQLite used by tests has no life beyond this process, so
+    it is created directly.
+    """
+    if settings.is_memory_sqlite or not settings.auto_migrate:
+        await create_all()
+        return
+
+    def _upgrade() -> None:
+        from alembic import command
+        from alembic.config import Config
+
+        config = Config()
+        config.set_main_option("script_location", str(alembic_dir()))
+        config.set_main_option("sqlalchemy.url", settings.database_url)
+        command.upgrade(config, "head")
+
+    # Alembic's env.py runs its own event loop; give it a thread of its own.
+    await asyncio.to_thread(_upgrade)
+    log.info("database schema is at the latest migration")
 
 
 async def bootstrap_admin() -> None:
@@ -81,7 +109,15 @@ async def bootstrap_admin() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     log.info("starting %s (%s)", settings.app_name, settings.environment)
-    await create_all()
+    if settings.secret_key_generated:
+        log.warning(
+            "\n%s\nSECRET_KEY is not set. A temporary key was generated for this run.\n"
+            "Every sign-in will be invalidated and every stored projector password\n"
+            "will become unreadable the next time the server restarts.\n"
+            "Set SECRET_KEY in .env before registering projectors.\n%s",
+            "=" * 72, "=" * 72,
+        )
+    await prepare_database()
     await bootstrap_admin()
     await load_projectors()
     await monitor.start()
@@ -100,6 +136,7 @@ async def lifespan(_: FastAPI):
         await alerting.stop()
         await mqtt_publisher.stop()
         await manager.shutdown()
+        await engine.dispose()
         log.info("shutdown complete")
 
 
@@ -150,7 +187,7 @@ for router in (
 # development the Vite dev server proxies /api instead and this block is a
 # no-op because ./static does not exist.
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+STATIC_DIR = static_dir()
 
 if STATIC_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")

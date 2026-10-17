@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 
 from app.config import settings
 from app.core.events import bus
+from app.core.lifecycle import stop_task, wait_or_stop
 from app.db.models import Event, Projector, ProjectorState, Severity, Telemetry
 from app.db.session import session_scope
 from app.drivers import Availability, CommandOutcome, HealthSeverity, PowerState
@@ -40,12 +41,14 @@ class MonitoringService:
     def __init__(self) -> None:
         self._tasks: list[asyncio.Task] = []
         self._running = False
+        self._stop = asyncio.Event()
         self._last_poll: dict[tuple[int, str], float] = {}
 
     async def start(self) -> None:
         if self._running:
             return
         self._running = True
+        self._stop = asyncio.Event()
         self._tasks = [
             asyncio.create_task(self._tier_loop(Tier.CONNECTIVITY, settings.poll_connectivity),
                                 name="monitor-connectivity"),
@@ -61,17 +64,21 @@ class MonitoringService:
 
     async def stop(self) -> None:
         self._running = False
-        for task in self._tasks:
-            task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._stop.set()
+        # Let each tier finish the poll it is persisting before cancelling.
+        await asyncio.gather(
+            *(stop_task(task, name=task.get_name()) for task in self._tasks),
+            return_exceptions=True,
+        )
         self._tasks.clear()
 
     # -- tier loops --------------------------------------------------------
 
     async def _tier_loop(self, tier: str, default_interval: int) -> None:
         # Stagger tiers so they do not all fire on the same second at boot.
-        await asyncio.sleep({"connectivity": 1, "operational": 3,
-                             "diagnostics": 7, "maintenance": 11}.get(tier, 1))
+        if await wait_or_stop(self._stop, {"connectivity": 1, "operational": 3,
+                                           "diagnostics": 7, "maintenance": 11}.get(tier, 1)):
+            return
         while self._running:
             started = time.monotonic()
             try:
@@ -81,7 +88,8 @@ class MonitoringService:
             except Exception:  # noqa: BLE001 - a bad cycle must not stop monitoring
                 log.exception("monitor tier %s failed", tier)
             elapsed = time.monotonic() - started
-            await asyncio.sleep(max(1.0, default_interval - elapsed))
+            if await wait_or_stop(self._stop, max(1.0, default_interval - elapsed)):
+                return
 
     async def _run_tier(self, tier: str, default_interval: int) -> None:
         workers = manager.workers
@@ -187,7 +195,11 @@ class MonitoringService:
             state.warnings = list(status.warnings)
             state.consecutive_failures = worker.consecutive_failures
             state.last_error = worker.last_error
-            state.stale_after = int(settings.poll_operational * settings.staleness_multiplier)
+            # The staleness window follows the interval this device is
+            # actually polled at, so a deliberately slow-polled projector is
+            # not flagged stale between its own polls.
+            effective = self._interval_for(worker, Tier.OPERATIONAL, settings.poll_operational)
+            state.stale_after = int(effective * settings.staleness_multiplier)
             if status.online:
                 state.last_seen_at = now
             if tier in (Tier.DIAGNOSTICS, Tier.MAINTENANCE):
@@ -267,7 +279,8 @@ class MonitoringService:
     async def _retention_loop(self) -> None:
         """Prune history daily so the database does not grow without bound."""
         while self._running:
-            await asyncio.sleep(3600 * 6)
+            if await wait_or_stop(self._stop, 3600 * 6):
+                return
             try:
                 await self._prune()
             except asyncio.CancelledError:
@@ -297,10 +310,17 @@ async def load_projectors() -> int:
         rows = (await session.execute(
             select(Projector).where(Projector.enabled.is_(True))
         )).scalars().all()
+        registered = 0
         for record in rows:
-            await manager.add(record)
-    log.info("registered %d projector(s)", len(rows))
-    return len(rows)
+            try:
+                await manager.add(record)
+                registered += 1
+            except KeyError as exc:
+                # A driver id that no longer exists (renamed, or hand-edited in
+                # the database) must not take the whole service down with it.
+                log.error("skipping projector %r: %s", record.name, exc)
+    log.info("registered %d projector(s)", registered)
+    return registered
 
 
 monitor = MonitoringService()

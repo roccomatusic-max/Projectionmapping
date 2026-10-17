@@ -84,6 +84,7 @@ export default function Automation({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<AutomationType | null>(null)
+  const [sceneConfirm, setSceneConfirm] = useState<Scene | null>(null)
   const [busy, setBusy] = useState(false)
   const { toasts, push, dismiss } = useToasts()
 
@@ -326,18 +327,7 @@ export default function Automation({ session }: { session: Session }) {
                 <button
                   className="btn-default text-xs"
                   disabled={!canRun || busy}
-                  onClick={async () => {
-                    setBusy(true)
-                    try {
-                      const result = await api.activateScene(scene.id)
-                      push(
-                        result.failed === 0 ? 'ok' : 'warn',
-                        `${result.name}: ${result.total - result.failed}/${result.total} succeeded`,
-                      )
-                    } finally {
-                      setBusy(false)
-                    }
-                  }}
+                  onClick={() => setSceneConfirm(scene)}
                 >
                   Activate
                 </button>
@@ -387,6 +377,30 @@ export default function Automation({ session }: { session: Session }) {
             void load()
           } catch (err) {
             push('fault', 'Run failed', err instanceof ApiError ? err.message : undefined)
+          } finally {
+            setBusy(false)
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={sceneConfirm !== null}
+        title={`Activate scene “${sceneConfirm?.name}”?`}
+        body={sceneConfirm?.description || 'Runs every action in the scene against live projectors.'}
+        confirmLabel="Activate"
+        onCancel={() => setSceneConfirm(null)}
+        onConfirm={async () => {
+          const scene = sceneConfirm
+          setSceneConfirm(null)
+          if (!scene) return
+          setBusy(true)
+          try {
+            const result = await api.activateScene(scene.id)
+            push(
+              result.failed === 0 ? 'ok' : 'warn',
+              `${result.name}: ${result.total - result.failed}/${result.total} succeeded`,
+            )
+          } catch (err) {
+            push('fault', 'Scene failed', err instanceof ApiError ? err.message : undefined)
           } finally {
             setBusy(false)
           }

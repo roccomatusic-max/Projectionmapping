@@ -54,10 +54,11 @@ export function ProjectorCard({
     typeof value === 'string' ? value : value.label,
   )
   const lamps = state.lamp_hours
-  const peakLampHours =
+  const lampHourValues =
     lamps.availability === 'available' && Array.isArray(lamps.value)
-      ? Math.max(...lamps.value.map((lamp) => lamp.hours ?? 0), 0)
-      : null
+      ? lamps.value.map((lamp) => lamp.hours).filter((h): h is number => h != null)
+      : []
+  const peakLampHours = lampHourValues.length > 0 ? Math.max(...lampHourValues) : null
   const lampTone =
     peakLampHours == null
       ? 'idle'

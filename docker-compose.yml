@@ -40,6 +40,11 @@ services:
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      # The scheduler reads "20:30" in this zone. Containers default to UTC,
+      # which is almost never what a show schedule means.
+      TZ: ${TZ:-UTC}
+      SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       POLL_CONNECTIVITY: ${POLL_CONNECTIVITY:-10}
       POLL_OPERATIONAL: ${POLL_OPERATIONAL:-15}
       POLL_DIAGNOSTICS: ${POLL_DIAGNOSTICS:-60}
@@ -56,6 +61,7 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       MQTT_PREFIX: ${MQTT_PREFIX:-projector}
+      MQTT_ALLOW_COMMANDS: ${MQTT_ALLOW_COMMANDS:-false}
     ports:
       # Bound to a single interface by default. Set BIND_ADDRESS to your
       # LAN or VPN address; 0.0.0.0 would publish the control UI on every

@@ -78,6 +78,8 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method: options.method ?? 'GET',
     headers: {
+      // Lets the audit log tell a click in this UI from a script using the API.
+      'X-Client': 'ui',
       ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
@@ -139,6 +141,11 @@ export const api = {
   createUser: (username: string, password: string, role: Role) =>
     request('/auth/users', { method: 'POST', body: { username, password, role } }),
   deleteUser: (id: number) => request<void>(`/auth/users/${id}`, { method: 'DELETE' }),
+  createServiceToken: (username: string, days: number) =>
+    request<{ access_token: string; username: string; role: Role; expires_at: string }>(
+      '/auth/tokens',
+      { method: 'POST', body: { username, days } },
+    ),
 
   // -- fleet --------------------------------------------------------------
   overview: () => request<Overview>('/overview'),

@@ -12,16 +12,29 @@ Interactive docs at `/api/docs`; the OpenAPI schema at
 
 ### Authentication
 
-```bash
-TOKEN=$(curl -s -X POST http://projector.local:8000/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"automation","password":"..."}' | jq -r .access_token)
+Interactive sign-ins produce a token that expires in 12 hours. Integrations
+need something longer-lived: **service tokens**, issued by an administrator
+under *Settings → Service tokens* or with:
 
-curl -s -H "Authorization: Bearer $TOKEN" http://projector.local:8000/api/projectors
+```bash
+curl -s -X POST http://projector.local:8000/api/auth/tokens \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"username":"homeassistant","days":365}'
 ```
 
-Create a dedicated user for integrations with the **operator** role — it can
-send commands but cannot change configuration or manage users.
+A service token carries its user's role and is revoked by deactivating or
+deleting that user. Create a dedicated user per integration with the
+narrowest role that works:
+
+| Integration | Role | Can |
+|---|---|---|
+| Enclosure sensor (ESP32, script) | `ingest` | post sensor readings — nothing else, not even read |
+| Home Assistant, show-control scripts | `operator` | read everything and send commands; cannot change configuration |
+| Dashboards, read-only displays | `viewer` | read everything |
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://projector.local:8000/api/projectors
+```
 
 ### Disruptive commands need `"confirm": true`
 
@@ -154,10 +167,27 @@ Availability is wired to the `available` topic, so a projector that stops
 responding shows as unavailable in Home Assistant rather than keeping its
 last state.
 
-> MQTT publishing is one-way today: the platform publishes state, and the
-> discovery configs advertise command topics for a future subscriber. Use
-> `rest_command` for actions until command subscription lands — the REST path
-> is also the one that enforces confirmation and writes an audit entry.
+### Commands over MQTT
+
+Off by default. Set `MQTT_ALLOW_COMMANDS=true` and the platform subscribes
+to:
+
+| Topic | Payload |
+|---|---|
+| `projector/<name>/power/set` | `on` / `off` |
+| `projector/<name>/shutter/set` | `open` / `closed` |
+| `projector/<name>/input/set` | an input code, e.g. `HD1` |
+
+Each message is dispatched through the same per-device queue as every other
+command, with the capability gate and the audit log (source `mqtt`) applied.
+Home Assistant discovery then advertises a power switch and a shutter switch;
+with commands disabled it advertises sensors only, so Home Assistant never
+shows a toggle that does nothing.
+
+**There is no confirmation step on this path** — publishing to the topic is
+the deliberate act — and anyone who can publish to your broker can drive
+the projectors. Enable it only with broker authentication and topic ACLs
+restricting who may publish under `projector/+/+/set`.
 
 ---
 

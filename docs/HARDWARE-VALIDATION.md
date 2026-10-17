@@ -60,9 +60,9 @@ detail page shows it in the Recent commands table.
 
 | Command | How to run | What to record |
 |---|---|---|
-| `QPW` | "Poll now" | Should be `00QPW:000` in standby |
-| `QSH` | "Poll now" | `00QSH:0` or `00QSH:1` |
-| `QIN` | "Poll now" | The input code, e.g. `00QIN:DVI` |
+| `QPW` | "Poll now" | Expected `00000` in standby, `00001` on (the parser also accepts `00QPW:000`) |
+| `QSH` | "Poll now" | `000` open or `001` closed |
+| `QIN` | "Poll now" | The input code after the ID, e.g. `00DVI` |
 | `Q$L:1`…`Q$L:4` | "Poll now" (deep poll) | **The exact format of the number** |
 | `Q$S` | "Poll now" (deep poll) | The raw value |
 | `QLS` | API: `POST /api/projectors/{id}/command` `{"capability":"lamp.on_off"}` | The raw value |

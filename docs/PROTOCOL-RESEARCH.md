@@ -84,8 +84,9 @@ commands on the same socket use the bare `00` form.
 
 | Response | Meaning |
 |---|---|
-| `00<COMMAND>\r` | Command accepted (ack echo) |
-| `00<COMMAND>:<value>\r` | Query result |
+| `00<COMMAND>\r` | Control command accepted (the mnemonic is echoed) |
+| `00<value>\r` | Query result: the ID followed by the value alone, e.g. `00001` for `QPW` — the form Panasonic's LAN examples show |
+| `00<COMMAND>:<value>\r` | Query result as reported on some firmware; the parser accepts both forms |
 | `ERR1\r` | Undefined control command |
 | `ERR2\r` | Parameter out of range |
 | `ERR3\r` | Busy / command not acceptable right now |

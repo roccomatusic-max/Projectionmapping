@@ -160,6 +160,18 @@ export default function Settings({ session }: { session: Session }) {
         </Panel>
       )}
 
+      {isAdmin && (
+        <Panel
+          title="Service tokens"
+          description="Long-lived tokens for Home Assistant, scripts and enclosure sensors. A token carries its user's role; deactivating the user revokes it."
+        >
+          <ServiceTokens
+            users={users}
+            onToast={(tone, title, detail) => push(tone, title, detail)}
+          />
+        </Panel>
+      )}
+
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )
@@ -220,6 +232,112 @@ function ChangePassword({
         {busy ? 'Changing…' : 'Change password'}
       </button>
     </form>
+  )
+}
+
+function ServiceTokens({
+  users,
+  onToast,
+}: {
+  users: Array<{ id: number; username: string; role: Role; is_active: boolean }>
+  onToast: (tone: 'ok' | 'fault', title: string, detail?: string) => void
+}) {
+  const [username, setUsername] = useState('')
+  const [days, setDays] = useState(365)
+  const [issued, setIssued] = useState<{ token: string; expires: string; user: string } | null>(
+    null,
+  )
+  const [busy, setBusy] = useState(false)
+  const selectable = users.filter((u) => u.is_active)
+
+  return (
+    <div className="space-y-3">
+      <form
+        className="grid gap-3 rounded-md bg-panel-850 p-3 sm:grid-cols-3"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          setBusy(true)
+          try {
+            const result = await api.createServiceToken(username, days)
+            setIssued({ token: result.access_token, expires: result.expires_at, user: username })
+          } catch (err) {
+            onToast('fault', 'Could not issue token', err instanceof ApiError ? err.message : undefined)
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <div>
+          <label className="label">User</label>
+          <select
+            className="input"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          >
+            <option value="">Choose a user…</option>
+            {selectable.map((u) => (
+              <option key={u.id} value={u.username}>
+                {u.username} ({u.role})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Valid for (days)</label>
+          <input
+            className="input tnum"
+            type="number"
+            min={1}
+            max={3650}
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+          />
+        </div>
+        <div className="flex items-end">
+          <button className="btn-primary w-full" disabled={busy || !username}>
+            Issue token
+          </button>
+        </div>
+      </form>
+
+      {issued && (
+        <div className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3">
+          <p className="text-sm text-slate-200">
+            Token for <span className="font-medium">{issued.user}</span>, valid until{' '}
+            {new Date(issued.expires).toLocaleDateString()}. It is shown once — copy it now.
+          </p>
+          <textarea
+            readOnly
+            className="input mt-2 h-24 font-mono text-xs"
+            value={issued.token}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <div className="mt-2 flex gap-2">
+            <button
+              className="btn-default text-xs"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(issued.token)
+                  onToast('ok', 'Token copied')
+                } catch {
+                  onToast('fault', 'Clipboard unavailable', 'Select the text and copy it manually.')
+                }
+              }}
+            >
+              Copy
+            </button>
+            <button className="btn-ghost text-xs" onClick={() => setIssued(null)}>
+              Dismiss
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Use it as <code>Authorization: Bearer …</code>. For a sensor, create an
+            <em> ingest</em> user first so the token cannot read or control anything.
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -326,6 +444,7 @@ function UserAdmin({
             <option value="viewer">Viewer (read-only)</option>
             <option value="operator">Operator (can send commands)</option>
             <option value="admin">Administrator</option>
+            <option value="ingest">Ingest (sensor uploads only, no read access)</option>
           </select>
         </div>
         <div className="flex items-end">

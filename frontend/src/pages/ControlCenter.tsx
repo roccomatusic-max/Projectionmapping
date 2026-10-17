@@ -86,6 +86,7 @@ export default function ControlCenter({
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastResult, setLastResult] = useState<GroupCommandResult | null>(null)
   const [pending, setPending] = useState<{ action: BulkAction } | null>(null)
+  const [scenePending, setScenePending] = useState<Scene | null>(null)
   const [busy, setBusy] = useState(false)
   const { toasts, push, dismiss } = useToasts()
   useTicker(5000)
@@ -296,7 +297,7 @@ export default function ControlCenter({
                     key={scene.id}
                     className="btn-default"
                     disabled={!canControl || busy}
-                    onClick={() => void runScene(scene)}
+                    onClick={() => setScenePending(scene)}
                     title={scene.description}
                   >
                     {scene.name}
@@ -384,6 +385,26 @@ export default function ControlCenter({
           const action = pending?.action
           setPending(null)
           if (action) void dispatch(action)
+        }}
+      />
+      <ConfirmDialog
+        open={scenePending !== null}
+        title={`Activate scene “${scenePending?.name}”?`}
+        body={
+          <>
+            <p>{scenePending?.description || 'Runs every action in the scene now.'}</p>
+            <p className="mt-2 text-xs text-slate-400">
+              {scenePending?.actions.length} action(s). Each projector reports its own
+              result.
+            </p>
+          </>
+        }
+        confirmLabel="Activate"
+        onCancel={() => setScenePending(null)}
+        onConfirm={() => {
+          const scene = scenePending
+          setScenePending(null)
+          if (scene) void runScene(scene)
         }}
       />
       <ToastStack toasts={toasts} onDismiss={dismiss} />

@@ -70,6 +70,9 @@ class PJLinkDriver(ProjectorDriver):
         super().__init__(config)
         if not config.command_gap:
             config.command_gap = 0.15
+        if config.idle_reconnect is None:
+            # PJLink projectors commonly close a connection idle for 30 s.
+            config.idle_reconnect = 20.0
         self._transport = LineTransport(
             config.host,
             config.port or self.default_port,
@@ -168,6 +171,11 @@ class PJLinkDriver(ProjectorDriver):
         result = await self._command("info.class", "%1CLSS ?")
         if result.outcome is CommandOutcome.AUTH_FAILED:
             raise TransportError("PJLink authentication rejected (PJLINK ERRA)")
+        if result.outcome in (CommandOutcome.TIMEOUT, CommandOutcome.CONNECTION_ERROR):
+            raise TransportError(
+                f"projector accepted the connection but did not answer %1CLSS "
+                f"({result.error})."
+            )
         self._authenticated = True
 
     async def _probe_class(self) -> None:
@@ -184,6 +192,12 @@ class PJLinkDriver(ProjectorDriver):
             raise TransportError(
                 "PJLink authentication rejected (PJLINK ERRA). Check the PJLink "
                 "password configured for this device."
+            )
+        if result.outcome in (CommandOutcome.TIMEOUT, CommandOutcome.CONNECTION_ERROR):
+            await self._transport.close()
+            raise TransportError(
+                f"projector accepted the connection but did not answer %1CLSS "
+                f"({result.error})."
             )
         detected = 1
         if result.ok and isinstance(result.value, str):
@@ -232,9 +246,18 @@ class PJLinkDriver(ProjectorDriver):
             payload = f"{prefix}{body}\r"
             started = time.monotonic()
             try:
-                reply = await self._transport.request(payload, timeout=timeout)
+                await self._transport.write(payload)
+                if prefix:
+                    # The digest is valid for the first command only, and the
+                    # projector has it as soon as the write lands — a timeout
+                    # on the reply must not cause it to be sent twice.
+                    self._authenticated = True
+                reply = await self._transport.read_line(timeout=timeout)
             except TransportTimeout as exc:
-                self._last_command_at = time.monotonic()
+                # Same reasoning as the Panasonic transport: a late reply on a
+                # protocol without request IDs must never be attributed to the
+                # next command, so the socket goes.
+                await self._transport.close()
                 return CommandResult(
                     capability=capability, outcome=CommandOutcome.TIMEOUT,
                     raw_request=body, error=str(exc),
@@ -250,9 +273,6 @@ class PJLinkDriver(ProjectorDriver):
                 self._last_command_at = time.monotonic()
 
             latency = int((time.monotonic() - started) * 1000)
-            if prefix:
-                # The digest is only valid for the first command of a session.
-                self._authenticated = True
             return self._parse_reply(capability, body, reply, latency)
 
     @staticmethod

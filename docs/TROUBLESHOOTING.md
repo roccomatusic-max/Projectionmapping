@@ -71,6 +71,36 @@ Other causes, in rough order of likelihood:
   (`md5(seed+password)` vs `md5(user:password:seed)`). A PJLink password in
   a Panasonic driver's password field produces exactly this error.
 
+### "accepted the connection but did not answer"
+
+TCP connects, the greeting arrives, and then the first query gets no reply.
+The platform reports this as a connection failure rather than pretending the
+projector is connected with a dead socket. Causes, most likely first:
+
+- **Another controller holds the control session.** Some Panasonic firmware
+  serves one controller at a time. Close other control software and the
+  projector's own web UI.
+- **Wrong protocol on the port.** The Panasonic driver against a PJLink port
+  (or vice versa) can get this far and no further.
+- **A device in between is answering the TCP handshake** — a proxy or a
+  firewall doing connection tracking — while the projector itself is off
+  the network.
+
+### "went to standby with no power-off command"
+
+An *unexpected shutdown* alert. The projector was on and is now in standby,
+and nothing in the command log asked for that in the last ten minutes
+(`UNEXPECTED_SHUTDOWN_WINDOW_MINUTES`). Lamp trip, thermal cut-out, power
+loss, or someone pressed the button on the projector. Check the projector's
+own indicators before powering it back on.
+
+### "was scheduled for … but the server was not running"
+
+A one-shot automation came due while the service was down and is now more
+than ten minutes late (`ONCE_GRACE_MINUTES`). Rather than fire a show
+start-up at the wrong time it was disabled and an alert raised. Re-enable
+it with a new time if you still want it.
+
 ### Connection drops repeatedly
 
 Check queue depth under Settings → Device connections. If it is climbing, the

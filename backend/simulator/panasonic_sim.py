@@ -2,7 +2,9 @@
 
 Speaks the wire protocol the PT-DZ13K driver expects: the NTCONTROL
 greeting, MD5 authentication, the ``00<CMD>`` framing and the ER4nn / ERRn
-error vocabulary.
+error vocabulary. Control commands are acknowledged by echoing the mnemonic
+(``00PON``); queries are answered with the ID followed by the value alone
+(``00001`` for ``QPW``), which is the form Panasonic's own LAN examples show.
 
 Its purpose is to let the control logic — queues, retries, verification,
 group dispatch — be exercised without putting a real projector at risk. It
@@ -96,6 +98,10 @@ class PanasonicSimulator:
                     authenticated = True
 
                 response = self._dispatch(line)
+                if self.state.command_count in self.state.drop_reply_indices:
+                    # Command processed, reply withheld: the controller must
+                    # treat this as a timeout with UNKNOWN device state.
+                    continue
                 writer.write(f"{response}\r".encode())
                 await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError, asyncio.CancelledError):
@@ -124,14 +130,14 @@ class PanasonicSimulator:
             case "POF":
                 return "00POF" if self.state.power_off() else "00ER403"
             case "QPW":
-                return "00QPW:001" if self.state.is_on else "00QPW:000"
+                return "00001" if self.state.is_on else "00000"
             case "OSH":
                 if param not in ("0", "1"):
                     return "00ER402"
                 self.state.set_shutter(param == "1")
                 return "00OSH"
             case "QSH":
-                return f"00QSH:{'1' if self.state.shutter_closed else '0'}"
+                return f"00{'1' if self.state.shutter_closed else '0'}"
             case "IIS":
                 if not param:
                     return "00ER402"
@@ -140,7 +146,7 @@ class PanasonicSimulator:
                 # retraction logic is written against.
                 return "00IIS" if self.state.set_input(param.upper()) else "00ER401"
             case "QIN":
-                return f"00QIN:{self.state.active_input}"
+                return f"00{self.state.active_input}"
             case "Q$L":
                 try:
                     index = int(param) - 1
@@ -148,11 +154,11 @@ class PanasonicSimulator:
                     return "00ER402"
                 if not 0 <= index < len(self.state.lamp_hours):
                     return "00ER401"
-                return f"00Q$L:{self.state.lamp_hours[index]:08d}"
+                return f"00{self.state.lamp_hours[index]:08d}"
             case "Q$S":
-                return f"00Q$S:{self._lamp_control_status()}"
+                return f"00{self._lamp_control_status()}"
             case "QLS":
-                return "00QLS:" + "".join("1" if on else "0" for on in self.state.lamp_on)
+                return "00" + "".join("1" if on else "0" for on in self.state.lamp_on)
             case "VXX":
                 return self._lens(param)
         return "00ER401"

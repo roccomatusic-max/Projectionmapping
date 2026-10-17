@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
-from app.api.deps import RequireAdmin, RequireOperator, RequireViewer, SessionDep
+from app.api.deps import RequireAdmin, RequireIngest, RequireViewer, SessionDep
 from app.core.events import bus
 from app.db.models import Enclosure, EnclosureReading, as_utc
 from app.schemas import EnclosureIn, EnclosureOut, EnclosureReadingIn
@@ -113,7 +113,7 @@ async def delete_enclosure(enclosure_id: int, session: SessionDep,
 
 @router.post("/{enclosure_id}/readings", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_reading(enclosure_id: int, payload: EnclosureReadingIn,
-                         session: SessionDep, _: RequireOperator) -> dict:
+                         session: SessionDep, _: RequireIngest) -> dict:
     """Ingest one sensor reading.
 
     Sensors can also publish over MQTT; this endpoint exists so a controller

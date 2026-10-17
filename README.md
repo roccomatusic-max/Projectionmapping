@@ -75,6 +75,18 @@ Commands are tagged:
 
 ---
 
+## Two ways to run it
+
+| | Server (Docker) | Desktop app |
+|---|---|---|
+| Runs on | a machine in the rack, 24/7 | your laptop or PC |
+| Database | PostgreSQL | SQLite file in your profile |
+| Monitoring and schedules | always | **only while the app is open** |
+| Set-up | `.env` + `docker compose up` | run the built executable |
+| Guide | below, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | [docs/DESKTOP.md](docs/DESKTOP.md) |
+
+Same code, same schema; you can move between them.
+
 ## Quick start
 
 ```bash
@@ -123,7 +135,7 @@ cd frontend && npm install && npm run dev      # proxies /api to :8000
 
 ```bash
 cd backend
-.venv/bin/python -m pytest -q          # 101 tests
+.venv/bin/python -m pytest -q
 .venv/bin/ruff check app simulator tests
 ```
 
@@ -153,6 +165,8 @@ frontend/src/
   components/         UI primitives and the projector card
   api/                Typed API client
 deploy/               Dockerfile (builds SPA + API into one image)
+desktop/              PyInstaller spec and build scripts for the desktop app
+.github/workflows/    CI: tests, lint, typecheck, image build and smoke test
 docs/                 Protocol research, architecture, deployment, validation,
                       safety, troubleshooting, integrations
 ```
@@ -169,7 +183,8 @@ docs/                 Protocol research, architecture, deployment, validation,
 | [HARDWARE-VALIDATION.md](docs/HARDWARE-VALIDATION.md) | Stage-by-stage procedure for validating against a real projector |
 | [SAFETY.md](docs/SAFETY.md) | What this software is and is not responsible for |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Reading outcomes, connection problems, missing telemetry |
-| [INTEGRATIONS.md](docs/INTEGRATIONS.md) | REST, WebSocket, MQTT, Home Assistant, enclosure sensors |
+| [INTEGRATIONS.md](docs/INTEGRATIONS.md) | REST, WebSocket, MQTT, Home Assistant, enclosure sensors, service tokens |
+| [DESKTOP.md](docs/DESKTOP.md) | Running it as a desktop application instead of a server |
 
 ---
 
@@ -197,7 +212,7 @@ in hardware that works when this software does not. See
 | 3 | Groups, bulk commands, per-device feedback | Implemented |
 | 4 | Telemetry history, scheduling, alerts, scenes | Implemented |
 | 5 | Enclosure monitoring, MQTT, Home Assistant | Sensor ingest, alerting and HA discovery implemented; no vendor-specific sensor drivers |
-| 6 | Hardening: tests, auth, deployment, recovery | Implemented; not yet load-tested at 25 devices |
+| 6 | Hardening: tests, auth, deployment, recovery | Implemented; CI builds the image; not yet load-tested at 25 devices |
 
 Known gaps, stated plainly:
 
@@ -206,7 +221,7 @@ Known gaps, stated plainly:
   their exact formats could not be confirmed offline.
 - RS-232 is designed for (via a network-to-serial gateway) but not
   implemented; Ethernet control came first.
-- MQTT is publish-only; actions go through REST, which is also where
-  confirmation and auditing live.
+- Commands over MQTT are off by default (`MQTT_ALLOW_COMMANDS`); anyone who
+  can publish to the broker could otherwise drive the projectors.
 - Lens memory is not implemented because no such command could be confirmed
   for this model.

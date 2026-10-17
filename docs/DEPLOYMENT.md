@@ -32,6 +32,13 @@ only:
 BIND_ADDRESS=192.168.10.5   # your server's LAN address
 ```
 
+Set the time zone, or every schedule will be read in UTC:
+
+```bash
+TZ=Europe/London
+SCHEDULE_TIMEZONE=Europe/London
+```
+
 Start it:
 
 ```bash
@@ -229,12 +236,19 @@ gunzip -c projector-2026-10-17.sql.gz | \
 ```bash
 git pull
 docker compose up -d --build
-docker compose exec api alembic upgrade head
 ```
 
-Migrations run separately from startup on purpose: an unattended schema change
-on a machine that is driving a show is not something to do implicitly. Take a
-backup first.
+Database migrations apply automatically when the API starts (`AUTO_MIGRATE`,
+on by default), so a fresh database is created through Alembic and stamped,
+and an existing one is brought forward. Take a backup first regardless.
+
+If you would rather control schema changes by hand — for instance you upgrade
+during a show window and want to stage the migration first — set
+`AUTO_MIGRATE=false` and run:
+
+```bash
+docker compose exec api alembic upgrade head
+```
 
 ---
 
@@ -253,3 +267,9 @@ curl -s http://localhost:8000/api/health | jq
 
 `GET /api/system/info` (authenticated) shows per-device socket state and queue
 depth — the first place to look when a projector feels unresponsive.
+
+Every push to GitHub runs the CI workflow in `.github/workflows/ci.yml`: the
+backend tests and lint, the frontend typecheck and build, a Docker image build
+from `deploy/Dockerfile`, and a smoke test that starts the image and signs in.
+A green check on the commit you are about to deploy is the cheapest
+pre-flight there is.

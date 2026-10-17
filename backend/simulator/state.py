@@ -52,8 +52,12 @@ class SimulatedProjector:
     # -- fault injection, driven by tests and the --fault CLI flag ---------
     #: Drop the connection after this many commands (0 = never).
     drop_after: int = 0
-    #: Never answer; exercises the controller's timeout path.
+    #: Never answer anything; exercises the controller's timeout path.
     silent: bool = False
+    #: 1-based sequence numbers of commands whose reply is withheld. The
+    #: command is still processed (authentication included) — distinct from
+    #: ``silent``: the device DID act, the controller just never hears it.
+    drop_reply_indices: set[int] = field(default_factory=set)
     #: Refuse everything with a busy error.
     busy: bool = False
     #: Require authentication.

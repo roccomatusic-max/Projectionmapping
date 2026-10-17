@@ -125,9 +125,13 @@ class NTControlTransport:
         if self._digest and not self._digest_consumed:
             prefix = self._digest
         payload = f"{prefix}{ID_PREFIX}{command}\r"
-        reply = await self._line.request(payload, timeout=timeout)
+        await self._line.write(payload)
         if prefix:
+            # Consumed on write, not on reply: if this first command times
+            # out the projector has still read the digest, and sending it
+            # again would turn the next command into an unparseable frame.
             self._digest_consumed = True
+        reply = await self._line.read_line(timeout=timeout)
         return f"{ID_PREFIX}{command}", reply
 
 
@@ -165,13 +169,6 @@ def classify_response(capability: str, request: str, reply: str, latency_ms: int
             latency_ms=latency_ms,
         )
 
-    if ":" in body:
-        _, _, value = body.partition(":")
-        return CommandResult(
-            capability=capability, outcome=CommandOutcome.OK, value=value.strip(),
-            raw_request=request, raw_response=text, latency_ms=latency_ms,
-        )
-
     if not body:
         return CommandResult(
             capability=capability, outcome=CommandOutcome.PARSE_ERROR,
@@ -179,9 +176,30 @@ def classify_response(capability: str, request: str, reply: str, latency_ms: int
             error="empty response frame", latency_ms=latency_ms,
         )
 
-    # Bare echo of the command mnemonic: an acknowledgement.
+    # What we sent, without the ID prefix: "QPW", "OSH:1", "Q$L:1".
+    sent = request[len(ID_PREFIX):] if request.upper().startswith(ID_PREFIX) else request
+    mnemonic = sent.split(":", 1)[0].upper()
+
+    # Control commands are acknowledged by echoing the mnemonic ("00PON"),
+    # sometimes with its parameter ("00OSH:1").
+    if body_upper in (mnemonic, sent.upper()):
+        return CommandResult(
+            capability=capability, outcome=CommandOutcome.ACCEPTED, value=body,
+            raw_request=request, raw_response=text, latency_ms=latency_ms,
+        )
+
+    # Query answered as "MNEMONIC:value" — seen on some firmware.
+    if body_upper.startswith(mnemonic + ":"):
+        return CommandResult(
+            capability=capability, outcome=CommandOutcome.OK,
+            value=body.partition(":")[2].strip(),
+            raw_request=request, raw_response=text, latency_ms=latency_ms,
+        )
+
+    # Query answered with the value alone after the ID ("00001" for QPW),
+    # which is the form Panasonic's own LAN examples show.
     return CommandResult(
-        capability=capability, outcome=CommandOutcome.ACCEPTED, value=body,
+        capability=capability, outcome=CommandOutcome.OK, value=body.strip(),
         raw_request=request, raw_response=text, latency_ms=latency_ms,
     )
 
@@ -226,6 +244,15 @@ class PanasonicNTControlDriver(ProjectorDriver):
                 "Panasonic LAN authentication rejected (ERRA). Check the web-control "
                 "administrator username and password configured for this device."
             )
+        if result.outcome in (CommandOutcome.TIMEOUT, CommandOutcome.CONNECTION_ERROR):
+            # A projector that accepts TCP but never answers is not usable.
+            # Reporting success here would hand the worker a closed socket
+            # and turn every later command into a misleading error.
+            raise TransportError(
+                f"projector accepted the connection but did not answer the QPW probe "
+                f"({result.error}). Another controller may hold the control session, "
+                f"or network control may be disabled."
+            )
 
     async def disconnect(self) -> None:
         await self._nt.close()
@@ -253,6 +280,10 @@ class PanasonicNTControlDriver(ProjectorDriver):
             try:
                 request, reply = await self._nt.send(command, timeout=timeout)
             except TransportTimeout as exc:
+                # No request IDs in this protocol: if the reply turns up late
+                # it would be read as the answer to the *next* command. Drop
+                # the socket so a late frame has nowhere to land.
+                await self._nt.close()
                 return CommandResult(
                     capability=capability, outcome=CommandOutcome.TIMEOUT,
                     raw_request=wire, error=str(exc),

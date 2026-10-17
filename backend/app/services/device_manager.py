@@ -418,7 +418,14 @@ class DeviceWorker:
 
     async def _ensure_connection(self) -> bool:
         if self.driver.connected:
-            return True
+            threshold = self.driver.idle_reconnect_after
+            if threshold and self.driver.idle_seconds > threshold:
+                # The far end has probably dropped a session this quiet.
+                # Reconnect now rather than letting an operator command find
+                # the dead socket.
+                await self._safe_disconnect()
+            else:
+                return True
         try:
             await self.driver.connect()
             await self.driver.authenticate()

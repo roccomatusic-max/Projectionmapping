@@ -2,7 +2,7 @@
 // generated so the comments explaining the honesty-critical fields
 // (availability, outcome, stale) live next to the types that carry them.
 
-export type Role = 'admin' | 'operator' | 'viewer'
+export type Role = 'admin' | 'operator' | 'viewer' | 'ingest'
 
 export type Outcome =
   | 'confirmed'

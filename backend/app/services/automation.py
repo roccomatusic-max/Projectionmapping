@@ -29,7 +29,9 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.config import settings
 from app.core.events import bus
+from app.core.lifecycle import stop_task, wait_or_stop
 from app.db.models import (
     Automation,
     AutomationRun,
@@ -46,6 +48,7 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.drivers import CommandOutcome, PowerState, ShutterState
+from app.services import cron
 from app.services.device_manager import Priority, manager
 
 log = logging.getLogger(__name__)
@@ -79,6 +82,7 @@ class AutomationEngine:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
         self._running = False
+        self._stop = asyncio.Event()
         #: Guards against a long run overlapping its own next schedule.
         self._in_flight: set[int] = set()
 
@@ -86,14 +90,14 @@ class AutomationEngine:
         if self._running:
             return
         self._running = True
+        self._stop = asyncio.Event()
         self._task = asyncio.create_task(self._scheduler_loop(), name="automation-scheduler")
         log.info("automation scheduler started")
 
     async def stop(self) -> None:
         self._running = False
-        if self._task:
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
+        self._stop.set()
+        await stop_task(self._task, name="automation scheduler")
         self._task = None
 
     # -- scheduling --------------------------------------------------------
@@ -112,10 +116,15 @@ class AutomationEngine:
                 return
             except Exception:  # noqa: BLE001
                 log.exception("automation scheduler tick failed")
-            await asyncio.sleep(30)
+            if await wait_or_stop(self._stop, 30):
+                return
 
     async def _tick(self) -> None:
-        now = datetime.now().astimezone()
+        # Schedules are interpreted in the configured zone (SCHEDULE_TIMEZONE,
+        # else the host's local zone). Inside Docker that is UTC unless TZ is
+        # set, which is why the compose file passes it through.
+        now = datetime.now(settings.tz)
+        due: list[Automation] = []
         async with session_scope() as session:
             automations = (await session.execute(
                 select(Automation).where(
@@ -123,7 +132,28 @@ class AutomationEngine:
                     Automation.trigger_type != "manual",
                 )
             )).scalars().all()
-            due = [a for a in automations if self._is_due(a, now)]
+            for automation in automations:
+                verdict = self._is_due(automation, now)
+                if verdict == "missed":
+                    # Due while the server was down, and now too late to be
+                    # the show the operator meant. Never fire it silently.
+                    automation.enabled = False
+                    automation.last_status = "missed"
+                    session.add(Event(
+                        projector_id=None, severity=Severity.CRITICAL.value,
+                        kind="automation_missed",
+                        message=(
+                            f"Automation '{automation.name}' was scheduled for "
+                            f"{automation.schedule.get('run_at')} but the server was "
+                            f"not running; it has been disabled rather than run late"
+                        ),
+                    ))
+                    bus.publish("automation_failed", {
+                        "automation_id": automation.id, "name": automation.name,
+                        "message": f"Automation '{automation.name}' missed its scheduled time",
+                    })
+                elif verdict:
+                    due.append(automation)
 
         for automation in due:
             if automation.id in self._in_flight:
@@ -135,14 +165,16 @@ class AutomationEngine:
             )
 
     @staticmethod
-    def _is_due(automation: Automation, now: datetime) -> bool:
+    def _is_due(automation: Automation, now: datetime) -> bool | str:
+        """True to run now, False to wait, ``"missed"`` for a one-shot that
+        is past its grace window and never ran."""
         schedule = automation.schedule or {}
         last = automation.last_run_at
 
         def already_ran_this_minute() -> bool:
             if last is None:
                 return False
-            last_local = as_utc(last).astimezone()
+            last_local = as_utc(last).astimezone(now.tzinfo)
             return last_local.strftime("%Y-%m-%d %H:%M") == now.strftime("%Y-%m-%d %H:%M")
 
         if already_ran_this_minute():
@@ -150,16 +182,33 @@ class AutomationEngine:
 
         if automation.trigger_type == "once":
             run_at = schedule.get("run_at")
-            if not run_at:
+            if not run_at or last is not None:
                 return False
             try:
-                target = datetime.fromisoformat(run_at)
+                target = datetime.fromisoformat(str(run_at))
             except ValueError:
+                log.warning("automation %s has an invalid run_at %r", automation.name, run_at)
                 return False
             if target.tzinfo is None:
-                target = target.astimezone()
-            # Fire once the moment passes, and only if we never ran it.
-            return last is None and now >= target
+                # A naive time means "in the schedule zone", not the host's.
+                target = target.replace(tzinfo=now.tzinfo)
+            grace = timedelta(minutes=settings.once_grace_minutes)
+            if now < target:
+                return False
+            if now <= target + grace:
+                return True
+            return "missed"
+
+        if automation.trigger_type == "cron":
+            expression = str(schedule.get("cron", "")).strip()
+            if not expression:
+                return False
+            try:
+                return cron.matches(expression, now)
+            except cron.CronError as exc:
+                log.warning("automation %s has an invalid cron %r: %s",
+                            automation.name, expression, exc)
+                return False
 
         at = schedule.get("at")
         if not at:

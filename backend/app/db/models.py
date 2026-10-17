@@ -55,8 +55,14 @@ class Role(str, enum.Enum):
     ADMIN = "admin"
     OPERATOR = "operator"
     VIEWER = "viewer"
+    #: Can post enclosure sensor readings and nothing else. For the ESP32 in
+    #: the enclosure, whose token should not be able to read the fleet, let
+    #: alone power a projector.
+    INGEST = "ingest"
 
     def at_least(self, required: Role) -> bool:
+        if self is Role.INGEST:
+            return False
         order = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
         return order[self] >= order[required]
 

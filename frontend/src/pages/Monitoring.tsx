@@ -54,7 +54,9 @@ export default function Monitoring({ session }: { session: Session }) {
       setProjectors(p)
       setUsage(u)
       setMaintenance(m)
-      if (p.length > 0 && selectedProjector === null) setSelectedProjector(p[0].id)
+      // Functional update: the 30 s refresh closes over the initial null and
+      // must not overwrite a projector the operator has since chosen.
+      if (p.length > 0) setSelectedProjector((current) => current ?? p[0].id)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load monitoring data')

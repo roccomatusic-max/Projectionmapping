@@ -49,8 +49,11 @@ async def current_user(
 CurrentUser = Annotated[User, Depends(current_user)]
 
 
-def require_role(minimum: Role):
+def require_role(minimum: Role, *, extra_roles: tuple[Role, ...] = ()):
     """Dependency factory enforcing a minimum role.
+
+    ``extra_roles`` admits roles that sit outside the viewer/operator/admin
+    ladder for this one endpoint — the ingest role on the sensor endpoint.
 
     Authorization lives here, not in the UI. Hiding a button is a usability
     choice; this is the control.
@@ -62,6 +65,8 @@ def require_role(minimum: Role):
         except ValueError:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="Unrecognised role") from None
+        if role in extra_roles:
+            return user
         if not role.at_least(minimum):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -76,6 +81,10 @@ def require_role(minimum: Role):
 RequireViewer = Annotated[User, Depends(require_role(Role.VIEWER))]
 RequireOperator = Annotated[User, Depends(require_role(Role.OPERATOR))]
 RequireAdmin = Annotated[User, Depends(require_role(Role.ADMIN))]
+#: Sensor uploads: operators and above, plus ingest-only accounts.
+RequireIngest = Annotated[
+    User, Depends(require_role(Role.OPERATOR, extra_roles=(Role.INGEST,)))
+]
 
 
 class _FixedWindow:

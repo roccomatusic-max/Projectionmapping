@@ -31,6 +31,13 @@ export default function Groups({ session }: { session: Session }) {
   const [editing, setEditing] = useState<Group | 'new' | null>(null)
   const [deleting, setDeleting] = useState<Group | null>(null)
   const [results, setResults] = useState<Record<number, GroupCommandResult>>({})
+  const [pending, setPending] = useState<{
+    group: Group
+    capability: string
+    params: Record<string, unknown>
+    label: string
+    danger: boolean
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   const { toasts, push, dismiss } = useToasts()
 
@@ -157,12 +164,13 @@ export default function Groups({ session }: { session: Session }) {
                       className="btn-default"
                       disabled={!canControl || busy || members.length === 0}
                       onClick={() =>
-                        void runGroupCommand(
+                        setPending({
                           group,
-                          'power.set',
-                          { state: 'on' },
-                          'Power on',
-                        )
+                          capability: 'power.set',
+                          params: { state: 'on' },
+                          label: 'Power on',
+                          danger: false,
+                        })
                       }
                     >
                       Power on
@@ -171,12 +179,13 @@ export default function Groups({ session }: { session: Session }) {
                       className="btn-default"
                       disabled={!canControl || busy || members.length === 0}
                       onClick={() =>
-                        void runGroupCommand(
+                        setPending({
                           group,
-                          'power.set',
-                          { state: 'off' },
-                          'Power off',
-                        )
+                          capability: 'power.set',
+                          params: { state: 'off' },
+                          label: 'Power off',
+                          danger: true,
+                        })
                       }
                     >
                       Power off
@@ -185,12 +194,13 @@ export default function Groups({ session }: { session: Session }) {
                       className="btn-default"
                       disabled={!canControl || busy || members.length === 0}
                       onClick={() =>
-                        void runGroupCommand(
+                        setPending({
                           group,
-                          'shutter.set',
-                          { state: 'open' },
-                          'Open shutters',
-                        )
+                          capability: 'shutter.set',
+                          params: { state: 'open' },
+                          label: 'Open shutters',
+                          danger: false,
+                        })
                       }
                     >
                       Open shutters
@@ -199,12 +209,13 @@ export default function Groups({ session }: { session: Session }) {
                       className="btn-default"
                       disabled={!canControl || busy || members.length === 0}
                       onClick={() =>
-                        void runGroupCommand(
+                        setPending({
                           group,
-                          'shutter.set',
-                          { state: 'closed' },
-                          'Close shutters',
-                        )
+                          capability: 'shutter.set',
+                          params: { state: 'closed' },
+                          label: 'Close shutters',
+                          danger: true,
+                        })
                       }
                     >
                       Close shutters
@@ -255,6 +266,40 @@ export default function Groups({ session }: { session: Session }) {
           onError={(message) => push('fault', 'Save failed', message)}
         />
       )}
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={`${pending?.label} — ${pending?.group.name}?`}
+        body={
+          <>
+            <p>
+              {pending?.capability === 'power.set'
+                ? pending.params.state === 'on'
+                  ? 'Every projector in the group will strike its lamp and warm up.'
+                  : 'Every projector in the group enters its cooling cycle and cannot restart until cooling completes.'
+                : pending?.params.state === 'closed'
+                  ? 'Images on every projector in the group will be blanked. Lamps stay on.'
+                  : 'Images will be shown on every projector in the group.'}
+            </p>
+            <ul className="mt-2 text-xs text-slate-400">
+              {projectors
+                .filter((p) => pending?.group.projector_ids.includes(p.id))
+                .map((p) => (
+                  <li key={p.id}>• {p.name}</li>
+                ))}
+            </ul>
+          </>
+        }
+        confirmLabel={pending?.label}
+        danger={pending?.danger}
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          const action = pending
+          setPending(null)
+          if (action)
+            void runGroupCommand(action.group, action.capability, action.params, action.label)
+        }}
+      />
 
       <ConfirmDialog
         open={deleting !== null}

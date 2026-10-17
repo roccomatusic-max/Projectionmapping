@@ -323,7 +323,13 @@ export default function ProjectorDetail({ session }: { session: Session }) {
               <button
                 className="btn-default btn-lg"
                 disabled={!canControl || busy || !live || !usable('shutter.set')}
-                onClick={() => void send('Shutter open', () => api.shutter(projectorId, 'open'))}
+                onClick={() =>
+                  setConfirm({
+                    title: `Open shutter on ${projector.name}?`,
+                    body: 'The image will be shown.',
+                    run: () => send('Shutter open', () => api.shutter(projectorId, 'open')),
+                  })
+                }
               >
                 Open
               </button>
@@ -331,7 +337,12 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                 className="btn-default btn-lg"
                 disabled={!canControl || busy || !live || !usable('shutter.set')}
                 onClick={() =>
-                  void send('Shutter close', () => api.shutter(projectorId, 'closed'))
+                  setConfirm({
+                    title: `Close shutter on ${projector.name}?`,
+                    body: 'The image will be blanked. The lamp stays on.',
+                    danger: true,
+                    run: () => send('Shutter close', () => api.shutter(projectorId, 'closed')),
+                  })
                 }
               >
                 Close
@@ -365,7 +376,11 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                     }
                     title={unavailable}
                     onClick={() =>
-                      void send(`Input ${label}`, () => api.input(projectorId, code))
+                      setConfirm({
+                        title: `Switch ${projector.name} to ${label}?`,
+                        body: 'The projector will change its input source. The image may blank briefly while it re-syncs.',
+                        run: () => send(`Input ${label}`, () => api.input(projectorId, code)),
+                      })
                     }
                   >
                     {label}

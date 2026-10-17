@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, tzinfo
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,13 +27,30 @@ class Settings(BaseSettings):
     #: Signs JWTs and derives the device-credential encryption key.
     #: MUST be set in production; a generated value invalidates all sessions
     #: and makes stored device passwords unreadable on restart.
-    secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
+    secret_key: str = ""
+    #: True when SECRET_KEY was not configured and a throwaway one was made.
+    #: Startup logs a loud warning, because stored projector passwords will
+    #: not survive a restart in that state.
+    secret_key_generated: bool = False
     access_token_minutes: int = 720
     #: Created on first boot when no users exist.
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str | None = None
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+
+    # -- scheduling -------------------------------------------------------
+    #: IANA zone the automation scheduler interprets "20:30" in. Unset means
+    #: the host's local zone, which inside Docker is UTC unless TZ is set.
+    schedule_timezone: str | None = None
+    #: A one-shot automation that was due while the server was down fires on
+    #: start-up only if it is at most this late; otherwise it is marked missed.
+    once_grace_minutes: int = 10
+    #: A projector observed going from on to standby with no power-off in the
+    #: command log inside this window raises an "unexpected shutdown" alert.
+    unexpected_shutdown_window_minutes: int = 10
+    #: Apply Alembic migrations on start-up (file and server databases).
+    auto_migrate: bool = True
 
     # -- polling tiers (seconds) -----------------------------------------
     poll_connectivity: int = 10
@@ -71,6 +90,10 @@ class Settings(BaseSettings):
     mqtt_username: str | None = None
     mqtt_password: str | None = None
     mqtt_prefix: str = "projector"
+    #: Accept power/shutter/input commands published to <prefix>/<name>/<x>/set.
+    #: Off by default: anyone who can publish to the broker could drive the
+    #: projectors, so turn it on only with broker authentication and ACLs.
+    mqtt_allow_commands: bool = False
     homeassistant_discovery: bool = True
     homeassistant_discovery_prefix: str = "homeassistant"
 
@@ -86,9 +109,36 @@ class Settings(BaseSettings):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    @model_validator(mode="after")
+    def _finalise(self) -> Settings:
+        if not self.secret_key:
+            self.secret_key = secrets.token_urlsafe(48)
+            self.secret_key_generated = True
+        if self.schedule_timezone:
+            try:
+                ZoneInfo(self.schedule_timezone)
+            except (ZoneInfoNotFoundError, ValueError) as exc:
+                raise ValueError(
+                    f"SCHEDULE_TIMEZONE={self.schedule_timezone!r} is not a valid IANA "
+                    f"time zone (try Europe/London or America/New_York)"
+                ) from exc
+        return self
+
+    @property
+    def tz(self) -> tzinfo:
+        """The zone schedules are interpreted in."""
+        if self.schedule_timezone:
+            return ZoneInfo(self.schedule_timezone)
+        local = datetime.now().astimezone().tzinfo
+        return local if local is not None else ZoneInfo("UTC")
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def is_memory_sqlite(self) -> bool:
+        return self.is_sqlite and ":memory:" in self.database_url
 
 
 @lru_cache

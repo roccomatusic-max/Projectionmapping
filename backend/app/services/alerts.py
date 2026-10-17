@@ -21,7 +21,8 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.core.events import bus
-from app.db.models import Alert, AlertRule, AlertState, Event, Severity
+from app.core.lifecycle import stop_task
+from app.db.models import Alert, AlertRule, AlertState, CommandLog, Event, Severity
 from app.db.session import session_scope
 
 log = logging.getLogger(__name__)
@@ -43,9 +44,7 @@ class AlertingService:
 
     async def stop(self) -> None:
         self._running = False
-        if self._task:
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
+        await stop_task(self._task, name="alerting")
         if self._queue:
             await bus.unsubscribe(self._queue)
         self._task = None
@@ -54,7 +53,11 @@ class AlertingService:
         assert self._queue is not None
         while self._running:
             try:
-                message = await self._queue.get()
+                # Short wait so a stop request is noticed between messages
+                # instead of the task having to be cancelled mid-write.
+                message = await asyncio.wait_for(self._queue.get(), timeout=0.5)
+            except TimeoutError:
+                continue
             except asyncio.CancelledError:
                 return
             try:
@@ -91,6 +94,13 @@ class AlertingService:
                     message=payload.get("message", f"{name}: command not confirmed"),
                     details=payload,
                 )
+            case "command_verified":
+                await self.resolve_alert(
+                    f"unverified:{projector_id}:{payload.get('capability')}",
+                    f"{name}: {payload.get('capability')} confirmed",
+                )
+            case "power_changed":
+                await self._evaluate_power_change(projector_id, name, payload)
             case "automation_failed":
                 await self.raise_alert(
                     dedupe_key=f"automation:{payload.get('automation_id')}",
@@ -102,11 +112,55 @@ class AlertingService:
             case "enclosure_reading":
                 await self._evaluate_enclosure(payload)
 
+    async def _evaluate_power_change(self, projector_id: int | None, name: str,
+                                     payload: dict[str, Any]) -> None:
+        """A projector observed dropping to standby.
+
+        Expected if someone (an operator, a scene, an automation) asked for
+        it inside the window; otherwise it is a lamp trip, a thermal cut-out,
+        a power loss or a hand on the projector's own buttons — all of which
+        an operator wants to hear about during a show.
+        """
+        if projector_id is None or payload.get("to") != "off":
+            return
+        since = datetime.now(UTC) - timedelta(
+            minutes=settings.unexpected_shutdown_window_minutes
+        )
+        async with session_scope() as session:
+            recent = (await session.execute(
+                select(CommandLog).where(
+                    CommandLog.projector_id == projector_id,
+                    CommandLog.capability == "power.set",
+                    CommandLog.created_at >= since,
+                )
+            )).scalars().all()
+        commanded = any(
+            str((row.params or {}).get("state", "")).lower() == "off"
+            and row.outcome in ("accepted", "confirmed", "ok", "pending")
+            for row in recent
+        )
+        if commanded:
+            return
+        await self.raise_alert(
+            dedupe_key=f"unexpected_shutdown:{projector_id}",
+            projector_id=projector_id, kind="unexpected_shutdown",
+            severity=Severity.CRITICAL,
+            message=(
+                f"{name} went to standby with no power-off command in the last "
+                f"{settings.unexpected_shutdown_window_minutes} minutes"
+            ),
+            details=payload,
+        )
+
     async def _evaluate_state(self, projector_id: int | None, name: str,
                               payload: dict[str, Any]) -> None:
         """Health and lamp-hour rules against a fresh status snapshot."""
         if projector_id is None:
             return
+
+        if payload.get("power") == "on":
+            await self.resolve_alert(f"unexpected_shutdown:{projector_id}",
+                                     f"{name} is powered on again")
 
         error_status = (payload.get("error_status") or {}).get("value") or {}
         if isinstance(error_status, dict):
@@ -148,6 +202,10 @@ class AlertingService:
             if hours is None:
                 continue
             key = f"lamp_hours:{projector_id}:{index}"
+            if hours < warn:
+                # A replaced lamp resets the counter; close the old alert.
+                await self.resolve_alert(key, f"{name}: lamp {index} at {hours}h")
+                continue
             if hours >= critical:
                 await self.raise_alert(
                     dedupe_key=key, projector_id=projector_id, kind="lamp_hours_critical",
@@ -246,9 +304,12 @@ class AlertingService:
                 )
             )).scalars().first()
 
-            rule = (await session.execute(
+            # A rule scoped to this projector wins over a fleet-wide one.
+            candidates = (await session.execute(
                 select(AlertRule).where(AlertRule.kind == kind, AlertRule.enabled.is_(True))
-            )).scalars().first()
+            )).scalars().all()
+            rule = next((r for r in candidates if r.projector_id == projector_id), None) \
+                or next((r for r in candidates if r.projector_id is None), None)
             renotify = rule.renotify_minutes if rule else settings.alert_renotify_minutes
             channels = rule.channels if rule else ["dashboard"]
             webhook = rule.webhook_url if rule else None
@@ -267,7 +328,6 @@ class AlertingService:
                     kind=f"alert_opened:{kind}", message=message, details=details or {},
                 ))
                 notify = True
-                alert_id = None
             else:
                 existing.message = message
                 existing.details = details or existing.details
@@ -280,7 +340,6 @@ class AlertingService:
                     existing.last_notified_at = now
                     existing.notify_count += 1
                     notify = True
-                alert_id = existing.id
 
         bus.publish("alert", {
             "dedupe_key": dedupe_key, "kind": kind, "severity": severity.value,
@@ -288,7 +347,6 @@ class AlertingService:
         })
         if notify:
             await self._notify(channels, webhook, severity, message, details or {})
-        del alert_id
 
     async def resolve_alert(self, dedupe_key: str, message: str) -> None:
         now = datetime.now(UTC)

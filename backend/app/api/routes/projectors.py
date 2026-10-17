@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 
 from app.api.deps import (
@@ -354,8 +354,14 @@ def _probe_detail(result) -> str:
 # -- control ----------------------------------------------------------------
 
 
+def _source(request: Request) -> str:
+    """Who sent this: the web UI tags itself; anything else is "api"."""
+    client = request.headers.get("x-client", "").strip().lower()
+    return client if client in ("ui", "homeassistant", "mqtt") else "api"
+
+
 async def _dispatch(projector_id: int, capability: str, params: dict, user,
-                    source: str = "ui") -> CommandResultOut:
+                    source: str = "api") -> CommandResultOut:
     worker = manager.get(projector_id)
     if worker is None:
         raise HTTPException(
@@ -372,34 +378,37 @@ async def _dispatch(projector_id: int, capability: str, params: dict, user,
 @router.post("/{projector_id}/power", response_model=CommandResultOut,
              dependencies=[Depends(command_rate_limit)])
 async def set_power(projector_id: int, payload: PowerRequest, session: SessionDep,
-                    user: RequireOperator) -> CommandResultOut:
+                    user: RequireOperator, request: Request) -> CommandResultOut:
     record, _state = await _load(session, projector_id)
     require_confirmation(payload.confirm, f"power {payload.state} {record.name}")
-    return await _dispatch(projector_id, "power.set", {"state": payload.state}, user)
+    return await _dispatch(projector_id, "power.set", {"state": payload.state}, user,
+                           source=_source(request))
 
 
 @router.post("/{projector_id}/shutter", response_model=CommandResultOut,
              dependencies=[Depends(command_rate_limit)])
 async def set_shutter(projector_id: int, payload: ShutterRequest, session: SessionDep,
-                      user: RequireOperator) -> CommandResultOut:
+                      user: RequireOperator, request: Request) -> CommandResultOut:
     record, _state = await _load(session, projector_id)
     require_confirmation(payload.confirm, f"{payload.state} the shutter on {record.name}")
-    return await _dispatch(projector_id, "shutter.set", {"state": payload.state}, user)
+    return await _dispatch(projector_id, "shutter.set", {"state": payload.state}, user,
+                           source=_source(request))
 
 
 @router.post("/{projector_id}/input", response_model=CommandResultOut,
              dependencies=[Depends(command_rate_limit)])
 async def set_input(projector_id: int, payload: InputRequest, session: SessionDep,
-                    user: RequireOperator) -> CommandResultOut:
+                    user: RequireOperator, request: Request) -> CommandResultOut:
     record, _state = await _load(session, projector_id)
     require_confirmation(payload.confirm, f"switch {record.name} to input {payload.input}")
-    return await _dispatch(projector_id, "input.set", {"input": payload.input}, user)
+    return await _dispatch(projector_id, "input.set", {"input": payload.input}, user,
+                           source=_source(request))
 
 
 @router.post("/{projector_id}/command", response_model=CommandResultOut,
              dependencies=[Depends(command_rate_limit)])
 async def generic_command(projector_id: int, payload: GenericCommand, session: SessionDep,
-                          user: RequireOperator) -> CommandResultOut:
+                          user: RequireOperator, request: Request) -> CommandResultOut:
     """Dispatch any capability the driver exposes.
 
     The capability gate still applies: a command the driver does not support,
@@ -413,7 +422,8 @@ async def generic_command(projector_id: int, payload: GenericCommand, session: S
         if cap is not None and cap.disruptive:
             require_confirmation(payload.confirm,
                                  f"{payload.capability} on {record.name}")
-    return await _dispatch(projector_id, payload.capability, payload.params, user)
+    return await _dispatch(projector_id, payload.capability, payload.params, user,
+                           source=_source(request))
 
 
 # -- history ----------------------------------------------------------------

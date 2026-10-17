@@ -264,4 +264,12 @@ power command — and user commands jump the queue ahead of polls by priority.
 | 3 | Groups, bulk commands, per-device feedback | Implemented |
 | 4 | Telemetry history, scheduling, alerts, scenes | Implemented |
 | 5 | Enclosure/MQTT/Home Assistant | Schema + MQTT publisher + HA discovery; sensor ingest implemented, no hardware-specific drivers |
-| 6 | Hardening: tests, auth, deploy, recovery | Implemented; load-testing at 25 devices not yet run |
+| 6 | Hardening: tests, auth, deploy, recovery | Implemented; CI builds and smoke-tests the image; load-testing at 25 devices not yet run |
+
+### Desktop mode
+
+`app/desktop.py` runs the identical application with SQLite in the user's
+profile folder and opens a browser; `desktop/` holds the PyInstaller packaging.
+It is the same process diagram minus the PostgreSQL box. The only behavioural
+difference is operational: the background services exist only while the
+program runs. See docs/DESKTOP.md.
