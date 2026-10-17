@@ -3,10 +3,15 @@
 Cameras (see mapping_camera.py) pair through the same endpoints with
 ``kind: camera`` and are listed here too.
 
-Setting one up is: open ``/player`` in a full-screen browser on it, read the
-pairing code off the projector, approve that code on the Mapping page and
-pick its output. Everything after that (which show, which cue, geometry
-changes) reaches it over the network.
+Setting one up is: install the Mini PC app on it (minipc/), or open
+``/player`` in a full-screen browser on it; read the pairing code off the
+projector, approve that code on the Mapping page and pick its output.
+Everything after that (which show, which cue, geometry changes) reaches it
+over the network.
+
+The Mini PC app also runs the camera when one is plugged in. That camera
+pairs with the same secret as the computer's player, which is how the
+server knows they are one machine: it is approved and removed with it.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
 
 from app.api.deps import CurrentUser, RequireAdmin, RequireViewer, SessionDep, write_rate_limit
+from app.config import settings
 from app.core.events import bus
 from app.core.security import create_access_token, hash_password
 from app.db.models import (
@@ -33,6 +39,7 @@ from app.db.models import (
     utcnow,
 )
 from app.schemas.mapping import (
+    NetworkInfo,
     PlayerAssignment,
     PlayerHello,
     PlayerHelloResponse,
@@ -40,6 +47,7 @@ from app.schemas.mapping import (
     PlayerReport,
     PlayerUpdate,
 )
+from app.services.discovery import lan_address
 
 router = APIRouter(prefix="/mapping/players", tags=["mapping"])
 
@@ -68,6 +76,28 @@ def is_online(player: MappingPlayer) -> bool:
     return seen is not None and (utcnow() - seen).total_seconds() <= ONLINE_SECONDS
 
 
+async def _companion(session, player: MappingPlayer) -> MappingPlayer | None:
+    """The other half of the same mini PC: same secret, the other kind."""
+    return (await session.execute(select(MappingPlayer).where(
+        MappingPlayer.secret_hash == player.secret_hash,
+        MappingPlayer.id != player.id,
+        MappingPlayer.kind != player.kind,
+    ))).scalars().first()
+
+
+async def _approve(session, player: MappingPlayer, message: str) -> None:
+    """Give the player its own viewer account; the caller commits."""
+    user = User(username=f"player-{player.id}-{secrets.token_hex(3)}",
+                password_hash=hash_password(secrets.token_urlsafe(32)),
+                role=Role.VIEWER.value)
+    session.add(user)
+    await session.flush()
+    player.user_id = user.id
+    player.approved = True
+    session.add(Event(projector_id=None, severity=Severity.INFO.value,
+                      kind="player_approved", message=message))
+
+
 async def _player_out(session, player: MappingPlayer) -> PlayerOut:
     show_id = None
     if player.output_id is not None:
@@ -79,6 +109,7 @@ async def _player_out(session, player: MappingPlayer) -> PlayerOut:
         approved=player.approved,
         output_id=player.output_id, show_id=show_id, online=is_online(player),
         last_seen_at=player.last_seen_at, report=player.report or {},
+        companion_id=getattr(await _companion(session, player), "id", None),
     )
 
 
@@ -123,6 +154,14 @@ async def hello(payload: PlayerHello, session: SessionDep) -> PlayerHelloRespons
         player.last_seen_at = utcnow()
         await session.commit()
 
+    if not player.approved and player.kind == "camera":
+        host = await _companion(session, player)
+        if host is not None and host.approved:
+            await _approve(session, player, f"camera {player.name} paired with mini PC {host.name}")
+            await session.commit()
+            await session.refresh(player)
+            _changed(player.id)
+
     token = None
     if player.approved and player.user_id is not None:
         user = await session.get(User, player.user_id)
@@ -133,6 +172,17 @@ async def hello(payload: PlayerHello, session: SessionDep) -> PlayerHelloRespons
         player_id=player.id, status="approved" if token else "pending",
         code=player.code, name=player.name, access_token=token,
     )
+
+
+@router.get("/network", response_model=NetworkInfo)
+async def network(_: RequireViewer) -> NetworkInfo:
+    """Whether mini PCs can reach this server, and how."""
+    address = None
+    if not settings.local_only and settings.advertise_port is not None:
+        ip = lan_address()
+        address = f"http://{ip}:{settings.advertise_port}" if ip else None
+    return NetworkInfo(local_only=settings.local_only,
+                       discoverable=settings.advertise_port is not None, address=address)
 
 
 @router.get("", response_model=list[PlayerOut])
@@ -168,23 +218,20 @@ async def update_player(player_id: int, payload: PlayerUpdate, session: SessionD
         player.name = changes["name"]
     if "output_id" in changes:
         player.output_id = changes["output_id"]
+    companion = await _companion(session, player)
     if changes.get("approved") and not player.approved:
-        user = User(username=f"player-{player.id}-{secrets.token_hex(3)}",
-                    password_hash=hash_password(secrets.token_urlsafe(32)),
-                    role=Role.VIEWER.value)
-        session.add(user)
-        await session.flush()
-        player.user_id = user.id
-        player.approved = True
-        session.add(Event(projector_id=None, severity=Severity.INFO.value,
-                          kind="player_approved",
-                          message=f"{admin.username} approved player {player.name} "
-                                  f"(code {player.code})"))
+        await _approve(session, player, f"{admin.username} approved player {player.name} "
+                                  f"(code {player.code})")
+        if companion is not None and not companion.approved:
+            await _approve(session, companion, f"camera {companion.name} paired with mini PC "
+                                         f"{player.name}")
     elif changes.get("approved") is False and player.approved:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="To revoke a player, remove it")
     await session.commit()
     _changed(player.id)
+    if companion is not None:
+        _changed(companion.id)
     return await _player_out(session, player)
 
 
@@ -192,15 +239,25 @@ async def update_player(player_id: int, payload: PlayerUpdate, session: SessionD
                dependencies=[Depends(write_rate_limit)])
 async def delete_player(player_id: int, session: SessionDep, admin: RequireAdmin) -> None:
     player = await _load(session, player_id)
-    if player.user_id is not None:
-        user = await session.get(User, player.user_id)
-        if user is not None:
-            await session.delete(user)
+    companion = await _companion(session, player)
+    if player.kind == "camera" and companion is not None:
+        # Its mini PC would only pair it again: the camera goes with it.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"This camera is part of mini PC {companion.name}. Remove "
+                                   "the mini PC, or unplug the camera from it.")
+    removed = [player] + ([companion] if companion is not None else [])
+    for gone in removed:
+        if gone.user_id is not None:
+            user = await session.get(User, gone.user_id)
+            if user is not None:
+                await session.delete(user)
+        await session.delete(gone)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="player_removed",
-                      message=f"{admin.username} removed player {player.name}"))
-    await session.delete(player)
+                      message=f"{admin.username} removed player {player.name}"
+                              + (" and its camera" if companion is not None else "")))
     await session.commit()
-    _changed(player_id)
+    for gone in removed:
+        _changed(gone.id)
 
 
 @router.post("/{player_id}/identify", status_code=status.HTTP_204_NO_CONTENT,

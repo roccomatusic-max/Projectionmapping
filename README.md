@@ -172,6 +172,7 @@ frontend/src/
 deploy/               Dockerfile (builds SPA + API into one image)
 desktop/              PyInstaller spec and build scripts for the desktop app
 camera-agent/         Camera program: projector calibration and people tracking
+minipc/               Mini PC app: one Windows install per projector (output, camera, auto-start)
 .github/workflows/    CI: tests, lint, typecheck, image build and smoke test
 docs/                 Protocol research, architecture, deployment, validation,
                       safety, troubleshooting, integrations

@@ -1,0 +1,81 @@
+name: Mini PC app
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["minipc/**", "camera-agent/**", ".github/workflows/minipc.yml"]
+  pull_request:
+    paths: ["minipc/**", "camera-agent/**", ".github/workflows/minipc.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Mini PC tests and lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: minipc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            minipc/requirements.txt
+            camera-agent/requirements.txt
+      - run: pip install -r requirements.txt pytest ruff
+      - run: ruff check .
+      - run: python -m pytest -q tests
+
+  windows:
+    name: Mini PC Windows installer
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build the app and its installer
+        shell: pwsh
+        run: ./minipc/build.ps1 -Version "1.0.${{ github.run_number }}"
+      - name: The built app starts and has everything it needs
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP "minipc"
+          $run = Start-Process dist\MiniPC\MiniPC.exe -ArgumentList "--check", "--data-dir", $data -Wait -PassThru
+          Get-Content (Join-Path $data "logs\minipc.log")
+          if ($run.ExitCode -ne 0) { throw "self-check failed with exit code $($run.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MiniPC-Setup
+          path: dist/MiniPC-Setup.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish the installer
+    # Only what is merged reaches the mini PCs.
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MiniPC-Setup
+      - name: Replace the minipc-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete minipc-latest --cleanup-tag --yes || true
+          gh release create minipc-latest MiniPC-Setup.exe --target "$GITHUB_SHA" \
+            --title "Mini PC app" \
+            --notes "Download MiniPC-Setup.exe and run it on each Windows computer beside a projector. Built from ${GITHUB_SHA::7}. Setup: docs/MAPPING.md, section Mini PCs."

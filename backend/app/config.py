@@ -104,6 +104,17 @@ class Settings(BaseSettings):
     #: Largest single upload accepted. Show content at 8K is easily 20 GB.
     media_max_upload_mb: int = 50_000
 
+    # -- mini PCs ------------------------------------------------------------
+    #: HTTP port other machines reach this server on. When set, the server
+    #: answers mini PCs looking for it (services/discovery.py). The desktop
+    #: launcher sets it in --lan mode.
+    advertise_port: int | None = None
+    #: UDP port mini PCs broadcast to when looking for the server.
+    discovery_port: int = 8765
+    #: Only this computer can reach the server (desktop mode without --lan),
+    #: so no mini PC or phone can. The Players tab says so.
+    local_only: bool = False
+
     # -- retention ---------------------------------------------------------
     telemetry_retention_days: int = 365
     command_log_retention_days: int = 180

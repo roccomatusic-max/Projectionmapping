@@ -95,7 +95,7 @@ stored projector passwords readable — **back it up with the database**) and
 ## Options
 
 ```
-ProjectorControl --lan              reachable from tablets and phones on your network
+ProjectorControl --lan              reachable from mini PCs, tablets and phones on your network
 ProjectorControl --port 9000        choose the port (default 8765)
 ProjectorControl --timezone Europe/London
 ProjectorControl --no-browser       do not open a browser window

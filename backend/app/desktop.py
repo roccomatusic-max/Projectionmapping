@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                         help=f"port to serve on (default {DEFAULT_PORT}; falls back to a free one)")
     parser.add_argument("--lan", action="store_true",
                         help="also accept connections from other devices on your network "
-                             "(tablet, phone). Default is this computer only.")
+                             "(mini PCs, tablet, phone). Default is this computer only.")
     parser.add_argument("--host", default=None,
                         help="explicit interface to bind (overrides --lan)")
     parser.add_argument("--no-browser", action="store_true", help="do not open the browser")
@@ -170,6 +170,11 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("ENVIRONMENT", "desktop")
     if args.timezone:
         os.environ["SCHEDULE_TIMEZONE"] = args.timezone
+    if host == "127.0.0.1":
+        os.environ.setdefault("LOCAL_ONLY", "true")
+    else:
+        # Mini PCs beside the projectors find the server by broadcasting.
+        os.environ.setdefault("ADVERTISE_PORT", str(port))
     password = first_run_password(folder, database)
     if password:
         os.environ.setdefault("BOOTSTRAP_ADMIN_PASSWORD", password)

@@ -127,6 +127,7 @@ matching how projector configuration is gated.
 | POST | `/outputs/{id}/identify` | Flash the output's name on its windows and players |
 | POST | `/players/hello` | Unauthenticated: a player introduces itself and polls for approval |
 | GET · PATCH · DELETE | `/players`, `/players/{id}` | List, approve and assign, remove |
+| GET | `/players/network` | Whether mini PCs can reach this server, and its address |
 | POST | `/players/{id}/identify` | Flash a player's name on its projector |
 | POST | `/players/me` | A player's heartbeat; returns its assignment |
 | POST | `/outputs/{id}/calibrate` | Ask a camera to calibrate this output |
@@ -147,16 +148,27 @@ Live changes go out on the existing WebSocket feed as `mapping_transport`,
 
 The main server holds the media, the shows and the show clock. Beside each
 projector sits a small computer (an Intel N100 mini PC or a Mac mini; both
-decode 4K H.264/HEVC in Chrome, a Raspberry Pi does not reliably). It runs
-nothing but a browser, full screen, on one address:
+decode 4K H.264/HEVC in Chrome, a Raspberry Pi does not reliably). It shows
+one address, full screen:
 
 ```
 http://<main-server>:8765/player
 ```
 
+On a Windows mini PC, the [Mini PC app](../minipc/README.md) does all of
+this: install it once and it finds the server by itself, opens that page as
+a kiosk with media caching on, reopens it if it closes, starts at sign-in,
+and runs a camera plugged into the same computer. The main server has to
+accept connections from the network for any of it (desktop app:
+`--lan`); the Players tab says when it does not. Under Docker, set
+`ADVERTISE_PORT` to the published HTTP port and use host networking so the
+broadcast reaches the server, or give each mini PC the address with
+`--server`.
+
 1. First start: the projector shows a six-letter pairing code.
 2. On the Mapping page, **Players** tab: the code appears; **Approve** it and
-   pick the output this machine drives.
+   pick the output this machine drives. A camera on the same mini PC is
+   approved with it.
 3. From then on the player shows that output, follows the transport, picks
    up geometry changes live, and resumes by itself after a reboot.
 
@@ -177,9 +189,10 @@ Browsers allow this cache only on a secure origin. On a LAN over plain HTTP,
 start the browser with the server marked as secure; without that flag the
 player still works but streams media from the server.
 
-### Starting a player as a kiosk
+### Starting a player as a kiosk without the Mini PC app
 
-Windows or Linux mini PC (Chrome or Chromium), in the startup programs:
+On a Mac mini, a Linux mini PC, or a Windows one without the app. Windows or
+Linux (Chrome or Chromium), in the startup programs:
 
 ```
 chrome --kiosk --autoplay-policy=no-user-gesture-required \
@@ -217,9 +230,13 @@ Operators can run the show; only administrators can change it.
 ## 6. Cameras: calibration and people
 
 A camera pointed at the building runs a small program,
-[`camera-agent/`](../camera-agent/README.md), on any computer on the show
-network. It pairs like a player (`kind: camera`) and gets a viewer account;
-what it may post is gated on that account belonging to an approved camera.
+[`camera-agent/`](../camera-agent/README.md). Plugged into a Windows mini PC,
+the Mini PC app runs it; on any other computer on the show network it is
+started by hand. It pairs like a player (`kind: camera`) and gets a viewer
+account; what it may post is gated on that account belonging to an approved
+camera. A camera that presents the same secret as an approved player is on
+that player's computer: it is approved with it, listed as part of it, and
+removed with it.
 
 **Calibration** is structured light. For one output at a time the camera
 asks the server to show black, white, then each bit of the Gray code of the
@@ -268,6 +285,8 @@ wall and approximate further out.
    the Mapping editor page, players with pairing and a media cache, and the
    phone remote. **Then:** the camera agent, camera calibration of corner
    pin and mesh, and people tracking with spotlight and ripple effects.
+   **Then:** the Mini PC app for Windows (server discovery, kiosk output,
+   camera, auto-start, one approval per machine).
 2. Automation step and projector-state preconditions; output thumbnails;
    media thumbnails and probe on the server (ffprobe when present).
 3. Layers and surfaces: several pieces of media placed on regions of the
