@@ -28,7 +28,7 @@ import {
 } from './icons'
 import { TONE_TEXT, type Tone } from './tone'
 
-export function LinkBadge({ projector, compact = false }: { projector: Projector; compact?: boolean }) {
+export function LinkBadge({ projector }: { projector: Projector; compact?: boolean }) {
   const link = linkState(projector)
   if (link === 'disabled') {
     return <Chip tone="unknown" title="Not polled and not controllable">Disabled</Chip>
@@ -36,7 +36,7 @@ export function LinkBadge({ projector, compact = false }: { projector: Projector
   if (link === 'online') {
     return (
       <Chip tone="ok" title="Answered its last poll inside the staleness window">
-        <LiveIcon size={11} aria-hidden /> {compact ? 'Online' : 'Online'}
+        <LiveIcon size={11} aria-hidden /> Online
       </Chip>
     )
   }
@@ -70,7 +70,7 @@ export function powerTone(projector: Projector): Tone {
 
 /** Power as the projector last reported it. Offline means unknown — a
  *  projector we cannot reach has no power state we can vouch for. */
-export function PowerBadge({ projector }: { projector: Projector }) {
+export function PowerBadge({ projector, short = false }: { projector: Projector; short?: boolean }) {
   const live = isLive(projector)
   const { power } = projector.state
   const tone = powerTone(projector)
@@ -78,28 +78,29 @@ export function PowerBadge({ projector }: { projector: Projector }) {
   return (
     <Chip tone={tone} title={live ? 'Read from the projector on the last poll' : 'Unknown while the projector is offline'}>
       {moving ? <StatusDot tone="busy" pulse /> : <PowerIcon size={11} aria-hidden />}
-      {live ? POWER_LABEL[power] : 'Power unknown'}
+      {live ? POWER_LABEL[power] : short ? 'Unknown' : 'Power unknown'}
     </Chip>
   )
 }
 
-export function ShutterBadge({ projector }: { projector: Projector }) {
+/** `short` drops the word "Shutter" where a column header already says it. */
+export function ShutterBadge({ projector, short = false }: { projector: Projector; short?: boolean }) {
   const live = isLive(projector)
   const { shutter } = projector.state
   if (!live || shutter === 'unknown') {
     return (
       <Chip tone="unknown" title={live ? 'Shutter state not read' : 'Unknown while the projector is offline'}>
-        Shutter —
+        {short ? '—' : 'Shutter —'}
       </Chip>
     )
   }
   return shutter === 'open' ? (
     <Chip tone="ok" title="Image is showing">
-      <ShowIcon size={11} aria-hidden /> Shutter open
+      <ShowIcon size={11} aria-hidden /> {short ? 'Open' : 'Shutter open'}
     </Chip>
   ) : (
     <Chip tone="idle" title="Image blanked by the shutter; the lamp may still be on">
-      <BlankIcon size={11} aria-hidden /> Shutter closed
+      <BlankIcon size={11} aria-hidden /> {short ? 'Closed' : 'Shutter closed'}
     </Chip>
   )
 }

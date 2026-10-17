@@ -66,22 +66,24 @@ const Row = memo(function Row({
       <td className="max-w-[16rem]">
         <Link to={`/projectors/${projector.id}`} className="group block min-w-0">
           <span className="block truncate font-medium text-slate-100 group-hover:text-sky-300">{projector.name}</span>
-          <span className="block truncate text-xs text-slate-500">
+          <span className="block truncate text-xs text-slate-500" title={projector.location || undefined}>
+            <span className="tnum text-slate-400">{projector.host}</span>
+            <span className="tnum text-slate-600">:{projector.port}</span>
+            {' · '}
             {projector.model || projector.manufacturer}
             {projector.location && ` · ${projector.location}`}
           </span>
         </Link>
         <CommandStrip command={command} className="mt-1" />
       </td>
-      <td className="tnum whitespace-nowrap text-xs text-slate-400">
-        {projector.host}
-        <span className="text-slate-600">:{projector.port}</span>
+      <td>
+        <LinkBadge projector={projector} />
+        <Freshness projector={projector} className="mt-1 block whitespace-nowrap text-2xs" />
       </td>
-      <td><LinkBadge projector={projector} /></td>
-      <td><PowerBadge projector={projector} /></td>
-      <td><ShutterBadge projector={projector} /></td>
-      <td className="max-w-[9rem] text-sm"><InputLabel projector={projector} /></td>
-      <td className="min-w-[8.5rem]">
+      <td><PowerBadge projector={projector} short /></td>
+      <td><ShutterBadge projector={projector} short /></td>
+      <td className="hidden max-w-[9rem] text-sm min-[1400px]:table-cell"><InputLabel projector={projector} /></td>
+      <td className="min-w-[7.5rem]">
         <LampMeter
           label=""
           hours={peakLampHours(projector)}
@@ -90,8 +92,7 @@ const Row = memo(function Row({
           compact
         />
       </td>
-      <td className="max-w-[14rem] text-xs"><Issues projector={projector} /></td>
-      <td className="text-xs"><Freshness projector={projector} /></td>
+      <td className="max-w-[13rem] text-xs"><Issues projector={projector} /></td>
       <td className="pr-3">
         <span className="flex items-center justify-end gap-1">
           <button
@@ -113,7 +114,12 @@ const Row = memo(function Row({
             <ShutterIcon size={15} />
           </button>
           {rowActions?.(projector)}
-          <Link to={`/projectors/${projector.id}`} className="btn-ghost btn-sm btn-icon" aria-label={`Open ${projector.name}`}>
+          {/* The name already links here; the chevron is a convenience for wide screens. */}
+          <Link
+            to={`/projectors/${projector.id}`}
+            className="btn-ghost btn-sm btn-icon hidden min-[1400px]:inline-flex"
+            aria-label={`Open ${projector.name}`}
+          >
             <ChevronIcon size={16} />
           </Link>
         </span>
@@ -174,14 +180,12 @@ const MobileRow = memo(function MobileRow({
 const COLUMNS: Array<{ label: string; sort?: SortKey; className?: string }> = [
   { label: '', className: 'pl-3' },
   { label: 'Projector', sort: 'name' },
-  { label: 'Address', sort: 'host' },
-  { label: 'Link', sort: 'status' },
+  { label: 'Link · verified', sort: 'status' },
   { label: 'Power' },
   { label: 'Shutter' },
-  { label: 'Input' },
+  { label: 'Input', className: 'hidden min-[1400px]:table-cell' },
   { label: 'Lamp', sort: 'lamp' },
   { label: 'Attention' },
-  { label: 'Last verified' },
   { label: '', className: 'pr-3' },
 ]
 
