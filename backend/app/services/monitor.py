@@ -106,6 +106,14 @@ class MonitoringService:
             last = self._last_poll.get(key, 0.0)
             if time.monotonic() - last < interval:
                 continue
+            # The connectivity tier exists to notice a device going quiet.
+            # One that answered an operational poll or an operator command
+            # inside this interval has already proved it is there, and a
+            # second round of the same queries would only sit in front of
+            # the next GO. Liveness stays observed: this never extends the
+            # staleness window, it only skips a question already answered.
+            if tier == Tier.CONNECTIVITY and self._recently_answered(worker, interval):
+                continue
             # An unreachable projector burns a full connect timeout per poll.
             # If its queue is already backed up, adding another poll only
             # delays the operator's next command behind it.
@@ -135,6 +143,11 @@ class MonitoringService:
             log.warning("ignoring invalid poll override %r for %s/%s",
                         override, worker.name, tier)
             return float(default_interval)
+
+    @staticmethod
+    def _recently_answered(worker: Any, interval: float) -> bool:
+        last = getattr(worker, "last_success_at", None)
+        return last is not None and (time.time() - last) < interval
 
     @staticmethod
     def _backoff(worker: Any, interval: float) -> float:
@@ -222,14 +235,23 @@ class MonitoringService:
     async def _write_telemetry(
         self, session, projector_id: int, status: Any, tier: str, now: datetime
     ) -> None:
-        """Record numeric history. Only values the device actually gave us."""
+        """Record numeric history. Only values the device actually gave us.
+
+        Each metric is sampled by exactly one tier. The usage report turns
+        power samples into hours by multiplying their count by the
+        operational interval, so a power row from any other tier inflates
+        the estimate (the connectivity tier alone would make it 2.5x). It
+        also keeps the history table to a few thousand rows a day per
+        projector instead of tens of thousands.
+        """
         rows: list[Telemetry] = []
-        rows.append(Telemetry(projector_id=projector_id, metric="online",
-                              value_num=1.0 if status.online else 0.0, recorded_at=now))
-        if status.power is not PowerState.UNKNOWN:
-            rows.append(Telemetry(projector_id=projector_id, metric="power",
-                                  value_num=1.0 if status.power is PowerState.ON else 0.0,
-                                  value_text=status.power.value, recorded_at=now))
+        if tier == Tier.OPERATIONAL:
+            rows.append(Telemetry(projector_id=projector_id, metric="online",
+                                  value_num=1.0 if status.online else 0.0, recorded_at=now))
+            if status.power is not PowerState.UNKNOWN:
+                rows.append(Telemetry(projector_id=projector_id, metric="power",
+                                      value_num=1.0 if status.power is PowerState.ON else 0.0,
+                                      value_text=status.power.value, recorded_at=now))
         if tier == Tier.MAINTENANCE and status.lamp_hours.availability is Availability.AVAILABLE:
             for lamp in status.lamp_hours.value or []:
                 hours = lamp.get("hours")
@@ -239,10 +261,11 @@ class MonitoringService:
                     projector_id=projector_id, metric=f"lamp{lamp.get('index', 1)}_hours",
                     value_num=float(hours), recorded_at=now,
                 ))
-        if status.health is not HealthSeverity.UNKNOWN:
+        if tier == Tier.DIAGNOSTICS and status.health is not HealthSeverity.UNKNOWN:
             rows.append(Telemetry(projector_id=projector_id, metric="health",
                                   value_text=status.health.value, recorded_at=now))
-        session.add_all(rows)
+        if rows:
+            session.add_all(rows)
 
     async def _write_transitions(
         self, session, worker: Any, status: Any,

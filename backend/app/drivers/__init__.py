@@ -9,6 +9,7 @@ from .base import (
     CommandResult,
     ConnectionConfig,
     HealthSeverity,
+    PollPreempted,
     PowerState,
     ProjectorDriver,
     ProjectorStatus,
@@ -21,7 +22,7 @@ from .registry import DriverInfo, available, build, capability_manifest, get, re
 __all__ = [
     "Availability", "Capability", "CapabilityKind", "CapabilityManifest",
     "CommandOutcome", "CommandResult", "ConnectionConfig", "HealthSeverity",
-    "PowerState", "ProjectorDriver", "ProjectorStatus", "Provenance",
+    "PollPreempted", "PowerState", "ProjectorDriver", "ProjectorStatus", "Provenance",
     "ShutterState", "TelemetryValue",
     "DriverInfo", "available", "build", "capability_manifest", "get", "register",
 ]

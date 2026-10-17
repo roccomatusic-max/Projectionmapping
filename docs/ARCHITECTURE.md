@@ -243,6 +243,25 @@ tier so 25 projectors do not get polled in the same 50 ms. Polls go through the
 same per-device queue as user commands, so a poll can never interleave with a
 power command — and user commands jump the queue ahead of polls by priority.
 
+Two rules keep the tiers from working against each other:
+
+- The connectivity poll is skipped for a projector that answered anything
+  (an operational poll, an operator command) within the last connectivity
+  interval. It exists to notice a device going quiet, and a device that just
+  answered has not. The staleness window is unchanged, so liveness is still
+  observed rather than remembered.
+- A shallow poll only reads power, shutter and input. Whatever the last deep
+  poll found (`%1ERST` severities, lamp hours, model and serial) is carried
+  into the shallow status for as long as the projector stays online, so a fan
+  fault does not disappear 15 s after the diagnostics poll reported it and
+  reappear a minute later. Going offline forgets it; the next deep poll
+  reads it afresh.
+
+History (`telemetry`) is sampled by one tier per metric: online and power by
+the operational tier, health by diagnostics, lamp hours by maintenance. The
+usage report multiplies power samples by the operational interval, which is
+only right when nothing else writes power samples.
+
 ## 7. Security model
 
 - Roles: `admin` (everything), `operator` (commands, no config), `viewer`

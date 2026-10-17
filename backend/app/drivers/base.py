@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -415,6 +415,16 @@ class AuthenticationError(DriverError):
     pass
 
 
+class PollPreempted(DriverError):
+    """A status read stepped aside for an operator command.
+
+    Raised from inside ``get_status`` at a command boundary, before any
+    frame goes out, when the driver's ``yield_to`` hook asks for it. The
+    device worker catches it and runs the poll again afterwards; drivers
+    never see it as a command outcome.
+    """
+
+
 class ProjectorDriver:
     """Interface every projector driver implements.
 
@@ -435,6 +445,11 @@ class ProjectorDriver:
         self._lock = asyncio.Lock()
         self._last_command_at: float = 0.0
         self._manifest: CapabilityManifest = CapabilityManifest([])
+        #: Set by the device worker for the duration of a status poll. When
+        #: it returns True at a command boundary the poll stops where it is
+        #: (see :class:`PollPreempted`), so a GO does not wait for the rest
+        #: of a lamp-hours read.
+        self.yield_to: Callable[[], bool] | None = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -503,12 +518,24 @@ class ProjectorDriver:
         return self.config.idle_reconnect or 0.0
 
     async def _respect_command_gap(self) -> None:
+        """Called before every frame. Also the point a poll can step aside."""
+        if self.yield_to is not None and self.yield_to():
+            raise PollPreempted
         gap = self.config.command_gap
         if gap <= 0:
             return
-        elapsed = time.monotonic() - self._last_command_at
-        if elapsed < gap:
-            await asyncio.sleep(gap - elapsed)
+        remaining = gap - (time.monotonic() - self._last_command_at)
+        if self.yield_to is None:
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            return
+        # A poll waits out the gap in short slices so an operator command
+        # arriving mid-gap is noticed within one slice, not one gap.
+        while remaining > 0:
+            await asyncio.sleep(min(remaining, 0.05))
+            if self.yield_to():
+                raise PollPreempted
+            remaining = gap - (time.monotonic() - self._last_command_at)
 
     # -- operations --------------------------------------------------------
 
