@@ -133,10 +133,11 @@ matching how projector configuration is gated.
 | POST | `/outputs/{id}/calibrate` | Ask a camera to calibrate this output |
 | POST | `/calibration/step` | Camera only: the pattern every window of the show should show now |
 | PUT · GET · DELETE | `/outputs/{id}/calibration` | The decoded camera → projector map (PUT is camera only) |
+| POST | `/shows/{id}/fit-canvas` | Place the canvas inside the projectors' light on the camera photo, and optionally set each output's slice from its light |
 | POST | `/shows/{id}/apply-calibration` | Set calibrated outputs' corner pin and mesh from the camera |
 | PUT | `/cameras/me/snapshot` | Camera only: its current photo |
 | GET | `/cameras/{id}/snapshot` | That photo, for marking the canvas corners; accepts `?token=` |
-| POST | `/cameras/{id}/command` | `snapshot` (take a new photo) or `background` (re-learn the empty scene) |
+| POST | `/cameras/{id}/command` | `snapshot` (take a new photo), `live` / `stop_live` (a photo about every second, for `seconds`), or `background` (re-learn the empty scene) |
 | POST | `/cameras/me/people` | Camera only: who it sees now; relayed, never stored |
 
 Live changes go out on the existing WebSocket feed as `mapping_transport`,
@@ -271,8 +272,15 @@ pixel, which projector column and row lit it, regardless of how dark that
 bit of wall is. The camera reduces this to a grid of cells over its photo
 and uploads it: a map from camera picture to projector pixels.
 
-The operator marks the four canvas corners on the camera's photo once, which
-gives canvas → camera. Chained with each output's camera → projector map,
+Where the canvas sits on the camera's photo gives canvas → camera. By
+default `fit-canvas` places it: the largest rectangle of the canvas's
+proportions that the calibrated projectors light, after closing small gaps
+in the light (dark glass, someone walking past), centred on the light. With
+`slices` it also sets each output's slice of the canvas to the bounding box
+of its own light, overlaps included. The operator can then place it by
+hand on the photo: four corners, or a grid of up to 7 × 7 canvas points
+(the show's `camera_view.mesh`). Canvas → camera is then the corners'
+homography plus the hand offsets, blended bilinearly between grid points. Chained with each output's camera → projector map,
 every canvas point gets a target in each projector, and
 `apply-calibration` writes the corner pin and the mesh offsets that put it
 there. Where the camera saw no light, a flat-wall homography fitted to all
@@ -280,7 +288,15 @@ decoded cells fills in, carrying the measured curvature a few cells past the
 edge of the light. In a test with the real output window photographed
 through a simulated camera, the corners land within 2 projector pixels.
 
-**People** come from a depth camera (Intel RealSense). The agent learns the
+**Cameras** are found by the agent itself (`camera-agent/sources.py`): an
+Intel RealSense, Orbbec or Luxonis OAK depth camera through its maker's SDK,
+otherwise the first webcam. Depth is aligned to the colour picture by each
+SDK, so a photo pixel and a depth pixel look at the same spot. `--camera
+sim` is a simulated depth camera looking at a made-up building lit by two
+keystoned projectors (one on a curved wall), used to try the whole flow
+without hardware.
+
+**People** come from a depth camera. The agent learns the
 empty scene's depth, labels anything clearly nearer as a person, keeps ids
 stable between frames, and posts them about 15 times a second. The server
 maps them onto the live show's canvas through the marked corners and relays

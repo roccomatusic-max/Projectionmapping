@@ -122,7 +122,7 @@ export interface ShowSummary {
 
 export interface Show extends ShowSummary {
   /** Where the canvas sits in a camera's picture: corners TL, TR, BR, BL in image fractions. */
-  camera_view: { camera_id: number; corners: Point[] } | null
+  camera_view: CameraView | null
   outputs: Output[]
   cues: Cue[]
 }
@@ -155,6 +155,36 @@ export interface TransportState {
 export type TransportAction = 'go' | 'goto' | 'pause' | 'resume' | 'stop' | 'blackout'
 
 // -- cameras -------------------------------------------------------------------
+
+/** Where the canvas sits in a camera's picture of the building. */
+export interface CameraView {
+  camera_id: number
+  /** Canvas corners TL, TR, BR, BL, in camera-image fractions. */
+  corners: Point[]
+  /**
+   * Finer placement by hand: ``cols`` × ``rows`` canvas points spread evenly
+   * over the canvas, row-major, each where it is on the photo.
+   */
+  mesh?: CameraMesh | null
+}
+
+export interface CameraMesh {
+  cols: number
+  rows: number
+  points: Point[]
+}
+
+/** The decoded camera → projector map of one output, as the server keeps it. */
+export interface CalibrationGrid {
+  camera_id: number
+  camera_width: number
+  camera_height: number
+  cols: number
+  rows: number
+  points: Array<Point | null>
+}
+
+export type CameraCommandName = 'snapshot' | 'background' | 'live' | 'stop_live'
 
 /** One structured-light frame, drawn in the projector's own pixels. */
 export interface PatternSpec {
