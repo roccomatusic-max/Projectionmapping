@@ -24,3 +24,12 @@ def alembic_dir() -> Path:
 
 def static_dir() -> Path:
     return resource_root() / "static"
+
+
+def app_version() -> str:
+    """The build number stamped by the release workflow, or ``dev`` for a checkout."""
+    try:
+        value = (resource_root() / "version.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "dev"
+    return value or "dev"

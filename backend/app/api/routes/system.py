@@ -12,6 +12,7 @@ from app.api.deps import RequireViewer, SessionDep
 from app.config import settings
 from app.core.events import bus
 from app.db.session import engine
+from app.paths import app_version
 from app.services.device_manager import manager
 
 router = APIRouter(tags=["system"])
@@ -38,6 +39,7 @@ async def health() -> dict:
 
     return {
         "status": "ok" if database_ok else "degraded",
+        "version": app_version(),
         "database": {"ok": database_ok, "error": database_error},
         "devices_registered": len(manager.workers),
         "ws_subscribers": bus.subscriber_count,

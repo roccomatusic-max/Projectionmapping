@@ -10,6 +10,7 @@ import {
   useToasts,
   PageHeader,
 } from '@/components/ui'
+import AppUpdates from '@/components/AppUpdates'
 import { ClockIcon, LiveIcon, ProjectorIcon, SettingsIcon, TokenIcon, UsersIcon } from '@/components/icons'
 
 export default function Settings({ session }: { session: Session }) {
@@ -152,6 +153,8 @@ export default function Settings({ session }: { session: Session }) {
           })}
         </div>
       </Panel>
+
+      {isAdmin && <AppUpdates />}
 
       {isAdmin && (
         <Panel icon={UsersIcon} title="Users">

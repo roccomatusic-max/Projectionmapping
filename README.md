@@ -94,6 +94,10 @@ Commands are tagged:
 
 Same code, same schema; you can move between them.
 
+On a Mac server, the [Mac app](docs/MAC-SERVER.md) is the easiest of all:
+download it, open it, and it starts at boot, restarts itself and updates
+from GitHub.
+
 ## Quick start
 
 ```bash
@@ -194,6 +198,7 @@ docs/                 Protocol research, architecture, deployment, validation,
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Reading outcomes, connection problems, missing telemetry |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | REST, WebSocket, MQTT, Home Assistant, enclosure sensors, service tokens |
 | [DESKTOP.md](docs/DESKTOP.md) | Running it as a desktop application instead of a server |
+| [MAC-SERVER.md](docs/MAC-SERVER.md) | The Mac app: download, open, and it runs as an always-on server that updates itself |
 | [MAPPING.md](docs/MAPPING.md) | Mapping media: shows, warping, blending, players beside the projectors, camera calibration and people tracking |
 
 ---

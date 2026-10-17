@@ -1,0 +1,87 @@
+name: Mac app
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "desktop/**"
+      - ".github/workflows/mac.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "desktop/**"
+      - ".github/workflows/mac.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Mac app (${{ matrix.chip }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chip: AppleSilicon
+            runner: macos-latest
+          - chip: Intel
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    env:
+      APP_VERSION: "1.0.${{ github.run_number }}"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the app
+        run: PYTHON=python ./desktop/build.sh
+      - name: The built app starts and answers
+        run: |
+          APP="dist/Projector Control.app"
+          test "$("$APP/Contents/MacOS/ProjectorControl" --version)" = "$APP_VERSION"
+          "$APP/Contents/MacOS/ProjectorControl" --check --no-browser --data-dir "$RUNNER_TEMP/pc"
+          tail -5 "$RUNNER_TEMP/pc/logs/projector-control.log"
+          # Running it must not have changed the bundle, or macOS would call it damaged.
+          codesign --verify --deep --strict "$APP"
+      - name: Zip it
+        # ditto keeps the bundle's symlinks and signature intact; plain zip breaks them.
+        run: ditto -c -k --keepParent "dist/Projector Control.app" "ProjectorControl-Mac-${{ matrix.chip }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjectorControl-Mac-${{ matrix.chip }}
+          path: ProjectorControl-Mac-${{ matrix.chip }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish the Mac app
+    # Only what is merged reaches the Mac server.
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ProjectorControl-Mac-*
+          merge-multiple: true
+      - name: Replace the mac-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: "1.0.${{ github.run_number }}"
+        run: |
+          gh release delete mac-latest --cleanup-tag --yes || true
+          gh release create mac-latest ProjectorControl-Mac-*.zip --target "$GITHUB_SHA" \
+            --title "Projector Control for Mac $VERSION" \
+            --notes "Download the zip for your Mac's chip (Apple menu → About This Mac: Apple M-series = AppleSilicon, Intel = Intel), unzip it and open Projector Control. Built from ${GITHUB_SHA::7}. Setup: docs/MAC-SERVER.md."
