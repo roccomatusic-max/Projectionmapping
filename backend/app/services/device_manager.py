@@ -28,6 +28,7 @@ from app.drivers import (
     CommandResult,
     ConnectionConfig,
     HealthSeverity,
+    PollPreempted,
     PowerState,
     ProjectorDriver,
     ProjectorStatus,
@@ -59,6 +60,8 @@ class _QueueItem:
     future: asyncio.Future = field(compare=False, default=None)  # type: ignore[assignment]
     #: Set for internal work (status polls) that is not a capability call.
     job: str | None = field(compare=False, default=None)
+    #: How many times this poll has stepped aside for an operator command.
+    preempted: int = field(compare=False, default=0)
 
 
 @dataclass(slots=True)
@@ -102,6 +105,9 @@ class DeviceWorker:
 
         self._queue: asyncio.PriorityQueue[_QueueItem] = asyncio.PriorityQueue()
         self._sequence = 0
+        #: Operator and automation items waiting in the queue. A status poll
+        #: in progress checks this between its queries and steps aside.
+        self._urgent_waiting = 0
         self._task: asyncio.Task | None = None
         self._running = False
         #: Background state-verification tasks, cancelled on stop so a worker
@@ -183,15 +189,22 @@ class DeviceWorker:
         """Enqueue work. Returns a future resolving to a CommandResult."""
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
-        self._sequence += 1
-        self._queue.put_nowait(
-            _QueueItem(
-                priority=int(priority), sequence=self._sequence,
-                capability=capability, params=dict(params or {}),
-                future=future, job=job,
-            )
-        )
+        self._enqueue(_QueueItem(
+            priority=int(priority), sequence=0,
+            capability=capability, params=dict(params or {}),
+            future=future, job=job,
+        ))
         return future
+
+    def _enqueue(self, item: _QueueItem) -> None:
+        self._sequence += 1
+        item.sequence = self._sequence
+        if item.priority <= Priority.AUTOMATION:
+            self._urgent_waiting += 1
+        self._queue.put_nowait(item)
+
+    def _urgent_is_waiting(self) -> bool:
+        return self._urgent_waiting > 0
 
     async def execute(
         self,
@@ -223,6 +236,8 @@ class DeviceWorker:
                 item = await self._queue.get()
             except asyncio.CancelledError:
                 return
+            if item.priority <= Priority.AUTOMATION:
+                self._urgent_waiting -= 1
             try:
                 result = await self._handle(item)
             except asyncio.CancelledError:
@@ -238,13 +253,29 @@ class DeviceWorker:
                 )
             finally:
                 self._queue.task_done()
+            if result is None:
+                continue  # the poll stepped aside and is back in the queue
             if item.future and not item.future.done():
                 item.future.set_result(result)
 
-    async def _handle(self, item: _QueueItem) -> CommandResult:
+    #: A poll steps aside this many times at most, so a stream of operator
+    #: commands cannot starve monitoring indefinitely.
+    MAX_PREEMPTIONS = 3
+
+    async def _handle(self, item: _QueueItem) -> CommandResult | None:
         if item.job == "status":
             deep = bool(item.params.get("deep"))
-            status = await self._poll(deep=deep)
+            # Let the poll step aside for an operator command at any of its
+            # command boundaries. A GO must not wait for the rest of a
+            # lamp-hours read; the poll runs again once the command is out.
+            try:
+                status = await self._poll(
+                    deep=deep, preemptible=item.preempted < self.MAX_PREEMPTIONS
+                )
+            except PollPreempted:
+                item.preempted += 1
+                self._enqueue(item)
+                return None
             return CommandResult(
                 capability="status", outcome=CommandOutcome.OK, value=status
             )
@@ -457,7 +488,8 @@ class DeviceWorker:
 
     # -- polling -----------------------------------------------------------
 
-    async def _poll(self, *, deep: bool = False) -> ProjectorStatus:
+    async def _poll(self, *, deep: bool = False,
+                    preemptible: bool = False) -> ProjectorStatus:
         if not await self._ensure_connection():
             self.consecutive_failures += 1
             self._deep_status = None
@@ -472,8 +504,14 @@ class DeviceWorker:
                 })
             return self.status
 
+        # Only the status read itself may step aside. Connecting and
+        # authenticating never do, so a half-opened session is never left
+        # behind for the operator command to find.
+        self.driver.yield_to = self._urgent_is_waiting if preemptible else None
         try:
             status = await self.driver.get_status(deep=deep)
+        except PollPreempted:
+            raise
         except Exception as exc:  # noqa: BLE001
             self.consecutive_failures += 1
             self.last_error = f"status read failed: {exc}"
@@ -481,6 +519,8 @@ class DeviceWorker:
             self._deep_status = None
             self.status = ProjectorStatus(online=False, errors=[self.last_error])
             return self.status
+        finally:
+            self.driver.yield_to = None
 
         previous = self.status
         if status.online:

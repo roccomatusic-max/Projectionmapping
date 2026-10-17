@@ -93,6 +93,53 @@ async def test_going_offline_forgets_the_deep_findings(pjlink_worker, sim_state,
     assert (await _poll(pjlink_worker, deep=True)).health is HealthSeverity.ERROR
 
 
+# -- a poll in progress steps aside for an operator command -----------------
+
+
+@pytest.fixture
+async def slow_worker(panasonic_sim):
+    """Real-world Panasonic pacing: 0.6 s between frames, so a deep poll
+    (six queries) holds the socket for about three seconds."""
+    w = DeviceWorker(make_record(9, panasonic_sim.actual_port, command_gap=0.6))
+    await w.start()
+    try:
+        yield w
+    finally:
+        await w.stop()
+
+
+async def test_operator_command_does_not_wait_for_a_poll_to_finish(slow_worker):
+    poll = slow_worker.submit("status", {"deep": True}, priority=Priority.MONITOR, job="status")
+    await asyncio.sleep(0.9)  # the poll is one or two queries in
+    started = time.monotonic()
+    result = await slow_worker.execute("power.get", timeout=10)
+    waited = time.monotonic() - started
+    assert result.outcome is CommandOutcome.OK
+    # Bound: the query in flight, one 50 ms slice, then its own 0.6 s gap.
+    assert waited < 0.9, f"operator command waited {waited:.2f}s behind the poll"
+    # The poll was not lost: it completes after the command, in full.
+    status = (await asyncio.wait_for(poll, timeout=15)).value
+    assert status.online
+    assert status.lamp_hours.availability is Availability.AVAILABLE
+
+
+async def test_poll_is_not_starved_by_a_stream_of_commands(slow_worker):
+    poll = slow_worker.submit("status", {"deep": False}, priority=Priority.MONITOR, job="status")
+    for _ in range(6):
+        await asyncio.sleep(0.3)
+        await slow_worker.execute("power.get", timeout=10)
+    status = (await asyncio.wait_for(poll, timeout=15)).value
+    assert status.online
+
+
+async def test_monitor_polls_are_not_preempted_by_each_other(slow_worker):
+    first = slow_worker.submit("status", {"deep": False}, priority=Priority.MONITOR, job="status")
+    await asyncio.sleep(0.3)
+    second = slow_worker.submit("status", {"deep": False}, priority=Priority.MONITOR, job="status")
+    results = await asyncio.wait_for(asyncio.gather(first, second), timeout=15)
+    assert all(r.outcome is CommandOutcome.OK and r.value.online for r in results)
+
+
 # -- the connectivity tier does not re-ask what was just answered -----------
 
 
