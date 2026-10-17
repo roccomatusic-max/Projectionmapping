@@ -47,7 +47,7 @@ from app.schemas.mapping import (
     PlayerReport,
     PlayerUpdate,
 )
-from app.services.discovery import lan_address
+from app.services.discovery import lan_address, tailscale_address
 
 router = APIRouter(prefix="/mapping/players", tags=["mapping"])
 
@@ -176,13 +176,15 @@ async def hello(payload: PlayerHello, session: SessionDep) -> PlayerHelloRespons
 
 @router.get("/network", response_model=NetworkInfo)
 async def network(_: RequireViewer) -> NetworkInfo:
-    """Whether mini PCs can reach this server, and how."""
-    address = None
+    """Whether mini PCs and phones can reach this server, and how."""
+    address = anywhere = None
     if not settings.local_only and settings.advertise_port is not None:
-        ip = lan_address()
+        ip, tailscale = lan_address(), tailscale_address()
         address = f"http://{ip}:{settings.advertise_port}" if ip else None
+        anywhere = f"http://{tailscale}:{settings.advertise_port}" if tailscale else None
     return NetworkInfo(local_only=settings.local_only,
-                       discoverable=settings.advertise_port is not None, address=address)
+                       discoverable=settings.advertise_port is not None, address=address,
+                       tailscale_address=anywhere)
 
 
 @router.get("", response_model=list[PlayerOut])

@@ -129,11 +129,13 @@ async def test_network_says_whether_mini_pcs_can_reach_the_server(api, monkeypat
     monkeypatch.setattr(players.settings, "local_only", True)
     monkeypatch.setattr(players.settings, "advertise_port", None)
     local = (await api.get("/api/mapping/players/network", headers=headers)).json()
-    assert local == {"local_only": True, "discoverable": False, "address": None}
+    assert local == {"local_only": True, "discoverable": False, "address": None,
+                     "tailscale_address": None}
 
     monkeypatch.setattr(players.settings, "local_only", False)
     monkeypatch.setattr(players.settings, "advertise_port", 8765)
     monkeypatch.setattr(players, "lan_address", lambda: "192.168.1.10")
+    monkeypatch.setattr(players, "tailscale_address", lambda: None)
     lan = (await api.get("/api/mapping/players/network", headers=headers)).json()
     assert lan == {"local_only": False, "discoverable": True,
-                   "address": "http://192.168.1.10:8765"}
+                   "address": "http://192.168.1.10:8765", "tailscale_address": None}

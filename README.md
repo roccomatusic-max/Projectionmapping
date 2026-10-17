@@ -29,6 +29,8 @@ expensive, hard to reach, and the show starts whether or not they came up.
   reach the expected state. Scenes for one-shot actions.
 - **History** — telemetry charts, full command audit log, maintenance records
   with CSV export
+- **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout
+  and projector power, from anywhere through Tailscale (Phone remote page)
 - **Integrations** — documented REST API, WebSocket live feed, MQTT with Home
   Assistant auto-discovery
 - **Enclosure monitoring** — temperature, humidity, leak and fan sensors, with

@@ -137,10 +137,11 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
 
 export const api = {
   // -- auth ---------------------------------------------------------------
-  async login(username: string, password: string): Promise<Session> {
+  /** ``remember``: stay signed in for months (the phone remote) rather than a day. */
+  async login(username: string, password: string, remember = false): Promise<Session> {
     const result = await request<{ access_token: string; role: Role; username: string }>(
       '/auth/login',
-      { method: 'POST', body: { username, password } },
+      { method: 'POST', body: { username, password, remember } },
     )
     const session = { username: result.username, role: result.role }
     setSession(result.access_token, session)

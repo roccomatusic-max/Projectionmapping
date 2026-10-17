@@ -13,6 +13,7 @@ the network (desktop ``--lan``, or ``ADVERTISE_PORT`` set by hand).
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import socket
@@ -83,3 +84,25 @@ def lan_address() -> str | None:
         except OSError:
             return None
     return None if address.startswith("127.") or address == "0.0.0.0" else address
+
+
+#: Tailscale gives every computer an address in this range, and answers DNS
+#: at 100.100.100.100 through its own network interface.
+TAILSCALE_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+TAILSCALE_DNS = "100.100.100.100"
+
+
+def tailscale_address() -> str | None:
+    """This computer's Tailscale address, when Tailscale is connected.
+
+    Phones signed in to the same Tailscale account reach the server at this
+    address from any internet connection, privately: nothing is opened to
+    the internet. Asked the same way as ``lan_address``.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect((TAILSCALE_DNS, 53))
+            address = probe.getsockname()[0]
+        except OSError:
+            return None
+    return address if ipaddress.ip_address(address) in TAILSCALE_NETWORK else None

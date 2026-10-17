@@ -357,14 +357,16 @@ class PlayerOut(BaseModel):
 
 
 class NetworkInfo(BaseModel):
-    """How mini PCs reach this server, for the Players tab."""
+    """How mini PCs and phones reach this server, for the Players and Phone pages."""
 
-    #: Only this computer can reach the server: no mini PC can pair.
+    #: Only this computer can reach the server: no mini PC or phone can.
     local_only: bool
     #: Mini PCs find the server by themselves.
     discoverable: bool
-    #: Where to point one by hand, when known.
+    #: Where to point one by hand on this network, when known.
     address: str | None = None
+    #: Where a phone with Tailscale reaches it from any internet connection.
+    tailscale_address: str | None = None
 
 
 class PlayerUpdate(BaseModel):

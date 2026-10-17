@@ -12,6 +12,7 @@ import {
   MappingIcon,
   MenuIcon,
   MonitoringIcon,
+  PhoneIcon,
   ProjectorIcon,
   SettingsIcon,
   SignOutIcon,
@@ -28,11 +29,13 @@ import Logs from '@/pages/Logs'
 // bundle so the dashboard loads fast on a tablet over site wifi.
 const Monitoring = lazy(() => import('@/pages/Monitoring'))
 import Settings from '@/pages/Settings'
+import PhoneRemote from '@/pages/PhoneRemote'
 // The mapping editor carries the WebGL renderer; output windows and players
 // load only what they draw.
 const Mapping = lazy(() => import('@/pages/Mapping'))
 const OutputPage = lazy(() => import('@/mapping/OutputPage'))
 const PlayerPage = lazy(() => import('@/mapping/PlayerPage'))
+const RemotePage = lazy(() => import('@/remote/RemotePage'))
 
 const NAV = [
   { to: '/', label: 'Dashboard', end: true, icon: DashboardIcon },
@@ -40,6 +43,7 @@ const NAV = [
   { to: '/groups', label: 'Groups', icon: GroupsIcon },
   { to: '/control', label: 'Control Center', icon: ControlIcon },
   { to: '/mapping', label: 'Mapping', icon: MappingIcon },
+  { to: '/phone', label: 'Phone remote', icon: PhoneIcon },
   { to: '/automation', label: 'Automation', icon: AutomationIcon },
   { to: '/monitoring', label: 'Monitoring', icon: MonitoringIcon },
   { to: '/logs', label: 'Logs', icon: LogsIcon },
@@ -70,6 +74,15 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <PlayerPage />
+      </Suspense>
+    )
+  }
+
+  // The phone remote has its own sign-in, laid out for a phone.
+  if (location.pathname === '/remote') {
+    return (
+      <Suspense fallback={null}>
+        <RemotePage />
       </Suspense>
     )
   }
@@ -201,6 +214,7 @@ export default function App() {
             }
           />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/phone" element={<PhoneRemote />} />
           <Route path="/settings" element={<Settings session={session} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

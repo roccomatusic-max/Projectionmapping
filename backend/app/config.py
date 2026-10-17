@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     #: not survive a restart in that state.
     secret_key_generated: bool = False
     access_token_minutes: int = 720
+    #: A sign-in that asks to be remembered (the phone remote's) lasts this long,
+    #: so a remote is not signed out in the middle of a show week.
+    remember_days: int = 90
     #: Created on first boot when no users exist.
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str | None = None

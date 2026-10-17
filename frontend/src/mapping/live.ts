@@ -105,9 +105,20 @@ export function useMappingFeed(onMessage: (message: BusMessage) => void): LinkSt
         timer = window.setTimeout(connect, 500 * 2 ** retry)
       }
     }
+    // A phone or laptop that slept has a dead socket and may be waiting
+    // out a long retry; reconnect the moment it is looked at again.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || disposed) return
+      if (socket && socket.readyState !== WebSocket.CLOSED) return
+      window.clearTimeout(timer)
+      retry = 0
+      connect()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     connect()
     return () => {
       disposed = true
+      document.removeEventListener('visibilitychange', onVisible)
       window.clearTimeout(timer)
       socket?.close()
     }
