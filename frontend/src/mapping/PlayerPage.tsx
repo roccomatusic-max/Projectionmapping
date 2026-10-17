@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, getToken, request } from '@/api/client'
+import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
 import { OutputScreen } from './OutputPage'
 import type { Show } from './types'
 
@@ -14,8 +14,6 @@ import type { Show } from './types'
  */
 
 const PLAYER_KEY = 'pc.player'
-const TOKEN_KEY = 'pc.token'
-const USER_KEY = 'pc.user'
 const HELLO_MS = 3000
 const REPORT_MS = 5000
 
@@ -52,6 +50,10 @@ function identity(): Identity {
   return created
 }
 
+// This tab is a player from the moment the page loads: every request,
+// media URL and the live feed below use the player's own token.
+enterPlayerMode()
+
 export default function PlayerPage() {
   const me = useRef(identity()).current
   const [code, setCode] = useState<string | null>(null)
@@ -79,8 +81,7 @@ export default function PlayerPage() {
         setCode(reply.code)
         setProblem(null)
         if (reply.access_token) {
-          localStorage.setItem(TOKEN_KEY, reply.access_token)
-          localStorage.setItem(USER_KEY, JSON.stringify({ username: me.name, role: 'viewer' }))
+          setPlayerToken(reply.access_token)
           setToken(reply.access_token)
         }
       } catch (err) {
@@ -114,8 +115,7 @@ export default function PlayerPage() {
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.status === 404)) {
         // Removed on the server: start pairing again.
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(USER_KEY)
+        setPlayerToken(null)
         setAssignment(null)
         setToken(null)
       } else {

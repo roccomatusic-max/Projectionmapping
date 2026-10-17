@@ -23,6 +23,20 @@ import type {
 
 const TOKEN_KEY = 'pc.token'
 const USER_KEY = 'pc.user'
+const PLAYER_TOKEN_KEY = 'pc.player.token'
+
+// A player tab (/player) keeps its own credentials, so opening a player in
+// an operator's browser neither borrows nor signs out their session.
+let playerMode = false
+
+export function enterPlayerMode() {
+  playerMode = true
+}
+
+export function setPlayerToken(token: string | null) {
+  if (token) localStorage.setItem(PLAYER_TOKEN_KEY, token)
+  else localStorage.removeItem(PLAYER_TOKEN_KEY)
+}
 
 export class ApiError extends Error {
   constructor(
@@ -46,7 +60,7 @@ export interface Session {
 }
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return localStorage.getItem(playerMode ? PLAYER_TOKEN_KEY : TOKEN_KEY)
 }
 
 export function getSession(): Session | null {
@@ -65,6 +79,7 @@ function setSession(token: string, session: Session) {
 }
 
 export function clearSession() {
+  if (playerMode) return setPlayerToken(null)
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
 }
