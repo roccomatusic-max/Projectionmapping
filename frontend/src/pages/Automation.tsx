@@ -10,6 +10,7 @@ import {
   Spinner,
   ToastStack,
   useToasts,
+  PageHeader,
 } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
 import { AddIcon, AutomationIcon, CopyIcon, EditIcon, SceneIcon } from '@/components/icons'
@@ -153,7 +154,7 @@ export default function Automation({ session }: { session: Session }) {
   if (builder) {
     return (
       <div className="space-y-5">
-        <h1 className="text-lg font-semibold text-slate-100">Automation</h1>
+        <PageHeader icon={AutomationIcon} title="Automation" subtitle={builder.id ? 'Editing an existing automation' : 'Building a new automation'} />
         <AutomationBuilder
           key={builder.id ?? 'new'}
           initial={builder.draft}
@@ -172,7 +173,7 @@ export default function Automation({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-100">Automation</h1>
+      <PageHeader icon={AutomationIcon} title="Automation" subtitle="Scheduled sequences, templates and scenes." />
       {error && <ErrorBanner message={error} />}
 
       <Panel

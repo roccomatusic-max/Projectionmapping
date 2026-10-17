@@ -121,6 +121,42 @@ export function Panel({
   )
 }
 
+/**
+ * Page header: icon, title, one-line context and the page's primary actions.
+ * Every page uses it so titles, spacing and action placement line up.
+ */
+export function PageHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  actions,
+  children,
+}: {
+  icon?: LucideIcon
+  title: ReactNode
+  subtitle?: ReactNode
+  actions?: ReactNode
+  children?: ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        {Icon && (
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300 ring-1 ring-sky-500/20" aria-hidden>
+            <Icon size={18} strokeWidth={1.75} />
+          </span>
+        )}
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight text-slate-100">{title}</h1>
+          {subtitle && <div className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">{subtitle}</div>}
+        </div>
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {children}
+    </div>
+  )
+}
+
 export function Stat({
   label,
   value,

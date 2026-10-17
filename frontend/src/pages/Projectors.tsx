@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
 import type { DriverInfo, Projector } from '@/api/types'
@@ -8,14 +8,23 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorBanner,
+  PageHeader,
   Panel,
   Spinner,
-  StatusDot,
   ToastStack,
   useToasts,
 } from '@/components/ui'
 import { connectionTone } from '@/components/ProjectorCard'
-import { POWER_LABEL, relativeTime } from '@/lib/format'
+import { InputBadge, LampMeter, ProjectorMark } from '@/components/graphics'
+import { AddIcon, ChevronIcon, ProjectorIcon } from '@/components/icons'
+import { POWER_LABEL, relativeTime, renderTelemetry } from '@/lib/format'
+
+function peakLampHours(projector: Projector): number | null {
+  const lamps = projector.state.lamp_hours
+  if (lamps.availability !== 'available' || !Array.isArray(lamps.value)) return null
+  const hours = lamps.value.map((l) => l.hours).filter((h): h is number => h != null)
+  return hours.length ? Math.max(...hours) : null
+}
 
 export default function Projectors({ session }: { session: Session }) {
   const { projectors, loading, error, refresh } = useFleet()
@@ -23,10 +32,22 @@ export default function Projectors({ session }: { session: Session }) {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Projector | null>(null)
   const [deleting, setDeleting] = useState<Projector | null>(null)
+  const [query, setQuery] = useState('')
   const { toasts, push, dismiss } = useToasts()
   useTicker(5000)
 
   const isAdmin = session.role === 'admin'
+  const driverName = useMemo(
+    () => Object.fromEntries(drivers.map((d) => [d.driver_id, d.display_name])),
+    [drivers],
+  )
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return projectors
+    return projectors.filter((p) =>
+      [p.name, p.model, p.location, p.host, p.driver].some((v) => v?.toLowerCase().includes(q)),
+    )
+  }, [projectors, query])
 
   useEffect(() => {
     void api
@@ -37,14 +58,29 @@ export default function Projectors({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-slate-100">Projectors</h1>
-        {isAdmin && (
-          <button className="btn-primary" onClick={() => setAdding(true)}>
-            Add projector
-          </button>
-        )}
-      </div>
+      <PageHeader
+        icon={ProjectorIcon}
+        title="Projectors"
+        subtitle={`${projectors.length} registered · ${projectors.filter((p) => p.state.online && !p.state.stale).length} responding`}
+        actions={
+          <>
+            {projectors.length > 3 && (
+              <input
+                className="input w-56"
+                placeholder="Search name, model, location, IP"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search projectors"
+              />
+            )}
+            {isAdmin && (
+              <button className="btn-primary" onClick={() => setAdding(true)}>
+                <AddIcon size={15} aria-hidden /> Add projector
+              </button>
+            )}
+          </>
+        }
+      />
 
       {error && <ErrorBanner message={error} />}
 
@@ -61,87 +97,145 @@ export default function Projectors({ session }: { session: Session }) {
           </EmptyState>
         </Panel>
       ) : (
-        <Panel>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="pb-2 pr-4 font-medium">Name</th>
-                  <th className="pb-2 pr-4 font-medium">Address</th>
-                  <th className="pb-2 pr-4 font-medium">Driver</th>
-                  <th className="pb-2 pr-4 font-medium">Power</th>
-                  <th className="pb-2 pr-4 font-medium">Last reply</th>
-                  <th className="pb-2 font-medium" />
+        <Panel className="overflow-hidden">
+          {/* Phone layout: one row per projector, no sideways scrolling. */}
+          <ul className="-m-4 divide-y divide-white/5 lg:hidden">
+            {shown.map((projector) => {
+              const live = projector.state.online && !projector.state.stale
+              const transitioning = projector.state.power === 'warming' || projector.state.power === 'cooling'
+              return (
+                <li key={projector.id} className="flex items-center gap-3 px-4 py-3">
+                  <Link to={`/projectors/${projector.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                    <ProjectorMark tone={connectionTone(projector)} size="sm" pulse={transitioning} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-slate-100">{projector.name}</span>
+                      <span className="block truncate text-xs text-slate-500">
+                        {projector.model || projector.manufacturer}
+                        {projector.location && ` · ${projector.location}`}
+                      </span>
+                      <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                        <Chip tone={!live ? 'unknown' : projector.state.power === 'on' ? 'ok' : transitioning ? 'busy' : 'idle'}>
+                          {live ? POWER_LABEL[projector.state.power] : 'Offline'}
+                        </Chip>
+                        <span className="tnum">{projector.host}:{projector.port}</span>
+                        <span className={projector.state.stale ? 'text-amber-400' : undefined}>
+                          {relativeTime(projector.state.last_seen_at)}{projector.state.stale && ' · stale'}
+                        </span>
+                      </span>
+                    </span>
+                  </Link>
+                  {isAdmin && (
+                    <button className="btn-ghost px-2 text-xs" onClick={() => setEditing(projector)}>
+                      Edit
+                    </button>
+                  )}
+                  <Link to={`/projectors/${projector.id}`} className="btn-ghost px-2" aria-label="Details">
+                    <ChevronIcon size={16} />
+                  </Link>
+                </li>
+              )
+            })}
+            {shown.length === 0 && (
+              <li className="px-4 py-6 text-center text-sm text-slate-500">No projector matches “{query}”.</li>
+            )}
+          </ul>
+          <div className="-m-4 hidden overflow-x-auto lg:block">
+            <table className="table">
+              <thead>
+                <tr className="border-b border-white/5">
+                  <th className="pl-4 pt-3">Projector</th>
+                  <th className="pt-3">Address</th>
+                  <th className="pt-3">Driver</th>
+                  <th className="pt-3">Power</th>
+                  <th className="pt-3">Input</th>
+                  <th className="min-w-[160px] pt-3">Lamp</th>
+                  <th className="whitespace-nowrap pt-3">Last reply</th>
+                  <th className="pr-4 pt-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
-                {projectors.map((projector) => (
-                  <tr key={projector.id}>
-                    <td className="py-2.5 pr-4">
-                      <Link
-                        to={`/projectors/${projector.id}`}
-                        className="flex items-center gap-2 text-slate-100 hover:text-sky-300"
-                      >
-                        <StatusDot tone={connectionTone(projector)} />
-                        <span>{projector.name}</span>
-                      </Link>
-                      {projector.location && (
-                        <p className="ml-4.5 pl-1 text-xs text-slate-500">
-                          {projector.location}
-                        </p>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4 tnum text-slate-400">
-                      {projector.host}:{projector.port}
-                    </td>
-                    <td className="py-2.5 pr-4 text-xs text-slate-400">
-                      {projector.driver}
-                      {projector.allow_unverified_commands && (
-                        <Chip tone="warn" title="Commands documented only for sibling models are enabled on this device.">
-                          unverified enabled
+              <tbody>
+                {shown.map((projector) => {
+                  const live = projector.state.online && !projector.state.stale
+                  const input = renderTelemetry(projector.state.active_input, (v) => (typeof v === 'string' ? v : v.label))
+                  const code = projector.state.active_input.availability === 'available' && typeof projector.state.active_input.value === 'object'
+                    ? projector.state.active_input.value?.code ?? '' : ''
+                  const transitioning = projector.state.power === 'warming' || projector.state.power === 'cooling'
+                  return (
+                    <tr key={projector.id} className={!projector.enabled ? 'opacity-60' : undefined}>
+                      <td className="pl-4">
+                        <Link to={`/projectors/${projector.id}`} className="flex items-center gap-3 group">
+                          <ProjectorMark tone={connectionTone(projector)} size="sm" pulse={transitioning} />
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-slate-100 group-hover:text-sky-300">{projector.name}</span>
+                            <span className="block truncate text-xs text-slate-500">
+                              {projector.model || projector.manufacturer}
+                              {projector.location && ` · ${projector.location}`}
+                              {!projector.enabled && ' · disabled'}
+                            </span>
+                          </span>
+                        </Link>
+                      </td>
+                      <td className="tnum text-slate-400">
+                        {projector.host}:{projector.port}
+                      </td>
+                      <td className="text-xs text-slate-400">
+                        <span className="block">{driverName[projector.driver] ?? projector.driver}</span>
+                        {projector.allow_unverified_commands && (
+                          <Chip tone="warn" title="Commands documented only for sibling models are enabled on this device.">
+                            unverified enabled
+                          </Chip>
+                        )}
+                      </td>
+                      <td>
+                        <Chip tone={!live ? 'unknown' : projector.state.power === 'on' ? 'ok' : transitioning ? 'busy' : 'idle'}>
+                          {live ? POWER_LABEL[projector.state.power] : 'Offline'}
                         </Chip>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4">
-                      <Chip
-                        tone={
-                          !projector.state.online || projector.state.stale
-                            ? 'unknown'
-                            : projector.state.power === 'on'
-                              ? 'ok'
-                              : 'idle'
-                        }
-                      >
-                        {projector.state.online && !projector.state.stale
-                          ? POWER_LABEL[projector.state.power]
-                          : 'Offline'}
-                      </Chip>
-                    </td>
-                    <td className="py-2.5 pr-4 text-xs text-slate-500">
-                      {relativeTime(projector.state.last_seen_at)}
-                    </td>
-                    <td className="py-2.5 text-right">
-                      {isAdmin && (
-                        <span className="flex justify-end gap-1">
-                          <button
-                            className="btn-ghost text-xs"
-                            onClick={() => setEditing(projector)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="btn-ghost text-xs text-red-300"
-                            onClick={() => setDeleting(projector)}
-                          >
-                            Remove
-                          </button>
+                      </td>
+                      <td className="text-sm">
+                        {input.muted ? (
+                          <span className="text-xs text-slate-500" title={input.title}>{input.text}</span>
+                        ) : (
+                          <InputBadge code={code} label={input.text} />
+                        )}
+                      </td>
+                      <td>
+                        <LampMeter
+                          label=""
+                          hours={peakLampHours(projector)}
+                          warn={projector.lamp_warn_hours}
+                          critical={projector.lamp_critical_hours}
+                          compact
+                        />
+                      </td>
+                      <td className={`tnum whitespace-nowrap text-xs ${projector.state.stale ? 'text-amber-400' : 'text-slate-500'}`}>
+                        {relativeTime(projector.state.last_seen_at)}
+                        {projector.state.stale && ' · stale'}
+                      </td>
+                      <td className="pr-3 text-right">
+                        <span className="flex items-center justify-end gap-1">
+                          {isAdmin && (
+                            <>
+                              <button className="btn-ghost text-xs" onClick={() => setEditing(projector)}>
+                                Edit
+                              </button>
+                              <button className="btn-ghost text-xs text-red-300" onClick={() => setDeleting(projector)}>
+                                Remove
+                              </button>
+                            </>
+                          )}
+                          <Link to={`/projectors/${projector.id}`} className="btn-ghost px-2" aria-label="Details">
+                            <ChevronIcon size={16} />
+                          </Link>
                         </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
+            {shown.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-slate-500">No projector matches “{query}”.</p>
+            )}
           </div>
         </Panel>
       )}

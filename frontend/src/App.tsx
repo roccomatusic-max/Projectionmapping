@@ -71,46 +71,57 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-panel-950/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1800px] items-stretch gap-3 px-4">
+    <div className="min-h-screen lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
+      {/* Desktop sidebar */}
+      <aside className="sticky top-0 hidden h-screen flex-col border-r border-white/5 bg-panel-950/80 px-3 py-4 backdrop-blur lg:flex">
+        <NavLink to="/" className="flex items-center gap-2.5 px-2 py-1 text-sm font-semibold tracking-tight text-slate-100">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/25" aria-hidden>
+            <ProjectorIcon size={17} strokeWidth={2} />
+          </span>
+          Projector Control
+        </NavLink>
+
+        <nav className="mt-6 flex flex-col gap-0.5">
+          {NAV.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                classNames('sidebar-link', isActive && 'sidebar-link-active')
+              }
+            >
+              <item.icon size={16} strokeWidth={1.75} aria-hidden />
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="mt-auto rounded-lg border border-white/5 bg-panel-900 px-3 py-2.5">
+          <p className="truncate text-sm text-slate-200">{session.username}</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">{session.role}</p>
+          <button className="btn-ghost mt-2 w-full justify-start px-0 text-xs" onClick={signOut}>
+            <SignOutIcon size={14} aria-hidden /> Sign out
+          </button>
+        </div>
+      </aside>
+
+      <div className="min-w-0">
+      {/* Mobile top bar */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-panel-950/95 backdrop-blur lg:hidden">
+        <div className="flex items-center gap-3 px-4">
           <span className="flex items-center gap-2 py-2.5 text-sm font-semibold tracking-tight text-slate-100">
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/15 text-sky-300" aria-hidden>
               <ProjectorIcon size={16} strokeWidth={2} />
             </span>
             Projector Control
           </span>
-
-          <nav className="ml-4 hidden items-stretch gap-1 lg:flex">
-            {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  classNames(
-                    'relative flex items-center gap-1.5 whitespace-nowrap px-2.5 text-sm transition-colors xl:px-3',
-                    isActive ? 'text-slate-100' : 'text-slate-400 hover:text-slate-200',
-                    isActive &&
-                      'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-sky-400',
-                  )
-                }
-              >
-                <item.icon size={15} strokeWidth={1.75} aria-hidden />
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-3 py-2">
-            <span className="hidden whitespace-nowrap text-xs text-slate-500 sm:inline">
-              {session.username} · {session.role}
-            </span>
+          <div className="ml-auto flex items-center gap-2 py-2">
             <button className="btn-ghost text-xs" onClick={signOut}>
               <SignOutIcon size={14} aria-hidden /> Sign out
             </button>
             <button
-              className="btn-ghost lg:hidden"
+              className="btn-ghost"
               onClick={() => setMenuOpen((open) => !open)}
               aria-label="Toggle navigation"
               aria-expanded={menuOpen}
@@ -121,17 +132,14 @@ export default function App() {
         </div>
 
         {menuOpen && (
-          <nav className="grid grid-cols-2 gap-1 border-t border-white/5 px-4 py-2 lg:hidden">
+          <nav className="grid grid-cols-2 gap-1 border-t border-white/5 px-4 py-2">
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  classNames(
-                    'flex items-center gap-2 rounded-lg px-3 py-2 text-sm',
-                    isActive ? 'bg-panel-800 text-slate-100' : 'text-slate-400',
-                  )
+                  classNames('sidebar-link', isActive && 'sidebar-link-active')
                 }
               >
                 <item.icon size={16} strokeWidth={1.75} aria-hidden />
@@ -142,7 +150,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="mx-auto max-w-[1800px] px-4 py-5">
+      <main className="mx-auto max-w-[1600px] px-4 py-5 lg:px-6 lg:py-6">
         <Routes>
           <Route path="/" element={<Dashboard session={session} />} />
           <Route path="/projectors" element={<Projectors session={session} />} />
@@ -163,6 +171,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      </div>
     </div>
   )
 }

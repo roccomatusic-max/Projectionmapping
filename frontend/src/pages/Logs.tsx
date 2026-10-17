@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import type { EventRow, Projector } from '@/api/types'
-import { Chip, EmptyState, ErrorBanner, Panel, Spinner } from '@/components/ui'
+import { Chip, EmptyState, ErrorBanner, PageHeader, Panel, Spinner, StatusDot } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
 import { LiveIcon, LogsIcon } from '@/components/icons'
 import { useBusMessages } from '@/hooks/useLiveData'
@@ -52,7 +52,7 @@ export default function Logs() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-100">Logs</h1>
+      <PageHeader icon={LogsIcon} title="Logs" subtitle="Commands with their wire frames and replies, plus system events." />
       {error && <ErrorBanner message={error} />}
 
       <Panel
@@ -65,30 +65,22 @@ export default function Logs() {
             Nothing yet. Activity appears here as commands are dispatched.
           </p>
         ) : (
-          <ul className="max-h-64 space-y-1 overflow-y-auto font-mono text-xs">
-            {live.map((message, index) => (
-              <li key={`${message.at}-${index}`} className="text-slate-400">
-                <span className="text-slate-600">
-                  {new Date(message.at).toLocaleTimeString()}
-                </span>{' '}
-                <span className="text-sky-400">{message.type}</span>{' '}
-                {String(message.payload.name ?? '')}{' '}
-                {String(message.payload.capability ?? message.payload.message ?? '')}{' '}
-                <span
-                  className={
-                    ['confirmed', 'accepted', 'ok'].includes(
-                      String(message.payload.outcome),
-                    )
-                      ? 'text-emerald-400'
-                      : message.payload.outcome
-                        ? 'text-red-400'
-                        : ''
-                  }
-                >
-                  {String(message.payload.outcome ?? '')}
-                </span>
-              </li>
-            ))}
+          <ul className="max-h-64 divide-y divide-white/5 overflow-y-auto text-xs">
+            {live.map((message, index) => {
+              const outcome = String(message.payload.outcome ?? '')
+              const good = ['confirmed', 'accepted', 'ok'].includes(outcome)
+              return (
+                <li key={`${message.at}-${index}`} className="flex items-center gap-3 py-1.5">
+                  <StatusDot tone={message.type === 'alert' ? 'fault' : !outcome ? 'busy' : good ? 'ok' : 'fault'} />
+                  <span className="tnum w-20 shrink-0 text-slate-500">{new Date(message.at).toLocaleTimeString()}</span>
+                  <span className="w-36 shrink-0 truncate text-slate-300">{String(message.payload.name ?? '—')}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-slate-400">
+                    {String(message.payload.capability ?? message.payload.message ?? message.type)}
+                  </span>
+                  {outcome && <span className={good ? 'text-emerald-400' : 'text-red-400'}>{outcome}</span>}
+                </li>
+              )
+            })}
           </ul>
         )}
       </Panel>
@@ -138,20 +130,29 @@ export default function Logs() {
           <EmptyState title="No events in this range" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="text-slate-500">
+            <table className="table text-xs">
+              <thead>
                 <tr>
-                  <th className="pb-2 pr-4 font-medium">Time</th>
-                  <th className="pb-2 pr-4 font-medium">Severity</th>
-                  <th className="pb-2 pr-4 font-medium">Projector</th>
-                  <th className="pb-2 pr-4 font-medium">Kind</th>
-                  <th className="pb-2 font-medium">Message</th>
+                  <th className="pl-3">Time</th>
+                  <th>Severity</th>
+                  <th>Projector</th>
+                  <th>Kind</th>
+                  <th>Message</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody>
                 {events.map((event) => (
-                  <tr key={event.id}>
-                    <td className="whitespace-nowrap py-1.5 pr-4 tnum text-slate-400">
+                  <tr
+                    key={event.id}
+                    className={
+                      event.severity === 'critical'
+                        ? 'shadow-[inset_3px_0_0_0_#ef4444]'
+                        : event.severity === 'warning'
+                          ? 'shadow-[inset_3px_0_0_0_#f59e0b]'
+                          : undefined
+                    }
+                  >
+                    <td className="whitespace-nowrap py-1.5 pl-3 pr-4 tnum text-slate-400">
                       {formatDateTime(event.created_at)}
                     </td>
                     <td className="py-1.5 pr-4">

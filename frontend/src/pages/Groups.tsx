@@ -6,12 +6,15 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorBanner,
+  PageHeader,
   Panel,
   Spinner,
+  StatusDot,
   ToastStack,
   useToasts,
 } from '@/components/ui'
-import { OUTCOME_LABEL, formatClock, outcomeTone } from '@/lib/format'
+import { connectionTone } from '@/components/ProjectorCard'
+import { OUTCOME_LABEL, POWER_LABEL, SHUTTER_LABEL, formatClock, outcomeTone } from '@/lib/format'
 import { AddIcon, DeleteIcon, GroupsIcon, PowerIcon, ShutterIcon } from '@/components/icons'
 
 /** Suggested names from the brief — offered as shortcuts, not imposed. */
@@ -87,14 +90,18 @@ export default function Groups({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-slate-100">Groups</h1>
-        {isAdmin && (
-          <button className="btn-primary" onClick={() => setEditing('new')}>
-            <AddIcon size={15} aria-hidden /> New group
-          </button>
-        )}
-      </div>
+      <PageHeader
+        icon={GroupsIcon}
+        title="Groups"
+        subtitle={`${groups.length} group(s) · commands go to every member at once`}
+        actions={
+          isAdmin && (
+            <button className="btn-primary" onClick={() => setEditing('new')}>
+              <AddIcon size={15} aria-hidden /> New group
+            </button>
+          )
+        }
+      />
 
       {error && <ErrorBanner message={error} />}
 
@@ -143,18 +150,26 @@ export default function Groups({ session }: { session: Session }) {
                 }
               >
                 <div className="space-y-3">
-                  <ul className="flex flex-wrap gap-1.5">
-                    {members.map((member) => (
-                      <li key={member.id}>
-                        <Chip
-                          tone={
-                            member.state.online && !member.state.stale ? 'ok' : 'fault'
-                          }
-                        >
-                          {member.name}
-                        </Chip>
-                      </li>
-                    ))}
+                  <ul className="grid gap-1.5 sm:grid-cols-2">
+                    {members.map((member) => {
+                      const live = member.state.online && !member.state.stale
+                      return (
+                        <li key={member.id} className="flex items-center gap-2.5 rounded-lg bg-panel-850 px-3 py-2">
+                          <StatusDot
+                            tone={connectionTone(member)}
+                            pulse={member.state.power === 'warming' || member.state.power === 'cooling'}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-slate-100">{member.name}</span>
+                            <span className="block truncate text-[11px] text-slate-500">
+                              {live
+                                ? `${POWER_LABEL[member.state.power]} · shutter ${SHUTTER_LABEL[member.state.shutter].toLowerCase()}`
+                                : 'Offline'}
+                            </span>
+                          </span>
+                        </li>
+                      )
+                    })}
                     {members.length === 0 && (
                       <li className="text-xs text-slate-500">No members</li>
                     )}

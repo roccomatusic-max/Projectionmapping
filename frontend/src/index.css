@@ -15,9 +15,20 @@
 
   body {
     /* Dark charcoal, not pure black: easier on the eyes through a long
-       night show while still killing stray light on a dim stage. */
+       night show while still killing stray light on a dim stage. A faint
+       cool glow top-left gives the panels something to sit on. */
     @apply bg-panel-950 text-slate-200;
+    background-image:
+      radial-gradient(1200px 600px at -10% -20%, rgba(56, 189, 248, 0.07), transparent 60%),
+      radial-gradient(900px 500px at 110% 0%, rgba(99, 102, 241, 0.05), transparent 60%);
+    background-attachment: fixed;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'tnum';
+  }
+
+  select.input {
+    @apply appearance-none bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+    background-position: right 0.6rem center;
   }
 
   /* Tabular numerals everywhere a value changes in place, so lamp hours
@@ -48,7 +59,40 @@
 @layer components {
   .panel {
     @apply bg-panel-900 border border-white/[0.06] rounded-xl shadow-panel;
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 40%);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 45%);
+  }
+  /* A panel that is itself a control (a filter tile, a selectable card). */
+  .panel-interactive {
+    @apply panel cursor-pointer transition-[border-color,background-color,transform] duration-150
+           hover:border-white/[0.14] hover:bg-panel-850 active:scale-[0.995];
+  }
+  .panel-active {
+    @apply border-sky-500/50 bg-sky-500/[0.06];
+  }
+
+  /* Dense data tables: a quiet header row, hairline dividers, row hover. */
+  .table {
+    @apply w-full text-left text-sm;
+  }
+  .table thead th {
+    @apply pb-2 pr-4 text-[11px] font-medium uppercase tracking-wide text-slate-500;
+  }
+  .table tbody {
+    @apply divide-y divide-white/5;
+  }
+  .table tbody tr {
+    @apply transition-colors hover:bg-white/[0.025];
+  }
+  .table td {
+    @apply py-2.5 pr-4 align-middle;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-400 transition-colors
+           hover:bg-white/[0.04] hover:text-slate-200;
+  }
+  .sidebar-link-active {
+    @apply bg-sky-500/10 text-slate-100 ring-1 ring-inset ring-sky-500/25;
   }
 
   .btn {
@@ -63,7 +107,7 @@
     @apply btn bg-panel-750 hover:bg-panel-700 text-slate-200 border border-white/5;
   }
   .btn-primary {
-    @apply btn bg-sky-600 hover:bg-sky-500 text-white;
+    @apply btn bg-sky-600 hover:bg-sky-500 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15)];
   }
   .btn-danger {
     @apply btn bg-red-700 hover:bg-red-600 text-white;

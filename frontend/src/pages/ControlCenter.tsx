@@ -12,6 +12,7 @@ import {
   Spinner,
   ToastStack,
   useToasts,
+  PageHeader,
 } from '@/components/ui'
 import { connectionTone } from '@/components/ProjectorCard'
 import { PowerGlyph, ProjectorMark, ShutterGlyph, inputIcon } from '@/components/graphics'
@@ -189,20 +190,21 @@ export default function ControlCenter({
 
   return (
     <div className={classNames('space-y-4', fullscreen && 'min-h-screen bg-panel-950 p-4')}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-100">Control Center</h1>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+      <PageHeader
+        icon={ControlIcon}
+        title="Control Center"
+        subtitle={
+          <>
             {wsStatus === 'open' ? (
               <LiveIcon size={13} className="text-emerald-400" aria-hidden />
             ) : (
               <OfflineIcon size={13} className="text-amber-400" aria-hidden />
             )}
             {selected.size} of {projectors.length} selected
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {fullscreen ? (
+          </>
+        }
+        actions={
+          fullscreen ? (
             <Link to="/control" className="btn-default">
               Exit full screen
             </Link>
@@ -210,9 +212,9 @@ export default function ControlCenter({
             <Link to="/control/fullscreen" className="btn-default">
               Full-screen view
             </Link>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {error && <ErrorBanner message={error} />}
 

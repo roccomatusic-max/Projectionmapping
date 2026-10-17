@@ -11,18 +11,30 @@ import {
   YAxis,
 } from 'recharts'
 import { ApiError, api, downloadCsv, type Session } from '@/api/client'
-import type { Alert, MaintenanceRecord, Projector, TelemetryPoint } from '@/api/types'
+import type { Alert, Enclosure, MaintenanceRecord, Projector, TelemetryPoint } from '@/api/types'
 import {
   Chip,
   EmptyState,
   ErrorBanner,
+  PageHeader,
   Panel,
   Spinner,
   ToastStack,
   useToasts,
 } from '@/components/ui'
-import { formatDateTime, relativeTime } from '@/lib/format'
-import { FaultIcon, LampIcon, MaintenanceIcon, MonitoringIcon, OkIcon } from '@/components/icons'
+import { Glyph, type Tone } from '@/components/graphics'
+import { classNames, formatDateTime, relativeTime } from '@/lib/format'
+import {
+  CoverIcon,
+  FaultIcon,
+  LampIcon,
+  MaintenanceIcon,
+  MonitoringIcon,
+  OkIcon,
+  TemperatureIcon,
+  WarningIcon,
+  type LucideIcon,
+} from '@/components/icons'
 
 const CHART_AXIS = { stroke: '#64748b', fontSize: 11 }
 const CHART_GRID = '#1f2733'
@@ -35,6 +47,7 @@ export default function Monitoring({ session }: { session: Session }) {
     usage: Array<{ projector_id: number; day: string; estimated_on_hours: number }>
   } | null>(null)
   const [maintenance, setMaintenance] = useState<MaintenanceRecord[]>([])
+  const [enclosures, setEnclosures] = useState<Enclosure[]>([])
   const [lampSeries, setLampSeries] = useState<TelemetryPoint[]>([])
   const [selectedProjector, setSelectedProjector] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -45,19 +58,25 @@ export default function Monitoring({ session }: { session: Session }) {
 
   const load = async () => {
     try {
-      const [a, p, u, m] = await Promise.all([
+      const [a, p, u, m, e] = await Promise.all([
         api.alerts(),
         api.listProjectors(),
         api.usage(30),
         api.maintenance(),
+        api.listEnclosures(),
       ])
       setAlerts(a)
       setProjectors(p)
       setUsage(u)
       setMaintenance(m)
+      setEnclosures(e)
       // Functional update: the 30 s refresh closes over the initial null and
-      // must not overwrite a projector the operator has since chosen.
-      if (p.length > 0) setSelectedProjector((current) => current ?? p[0].id)
+      // must not overwrite a projector the operator has since chosen. Prefer
+      // a projector that is actually answering for the charts.
+      if (p.length > 0) {
+        const first = p.find((x) => x.state.online && !x.state.stale) ?? p[0]
+        setSelectedProjector((current) => current ?? first.id)
+      }
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load monitoring data')
@@ -111,20 +130,27 @@ export default function Monitoring({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-slate-100">Monitoring</h1>
-        <select
-          className="input max-w-xs"
-          value={selectedProjector ?? ''}
-          onChange={(event) => setSelectedProjector(Number(event.target.value))}
-        >
-          {projectors.map((projector) => (
-            <option key={projector.id} value={projector.id}>
-              {projector.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <PageHeader
+        icon={MonitoringIcon}
+        title="Monitoring"
+        subtitle={`${alerts.filter((a) => a.state === 'open').length} open alert(s) · ${enclosures.length} enclosure(s)`}
+        actions={
+          <label className="flex items-center gap-2 text-xs text-slate-400">
+            Charts for
+            <select
+              className="input w-auto"
+              value={selectedProjector ?? ''}
+              onChange={(event) => setSelectedProjector(Number(event.target.value))}
+            >
+              {projectors.map((projector) => (
+                <option key={projector.id} value={projector.id}>
+                  {projector.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+      />
 
       {error && <ErrorBanner message={error} />}
 
@@ -176,6 +202,28 @@ export default function Monitoring({ session }: { session: Session }) {
               </li>
             ))}
           </ul>
+        )}
+      </Panel>
+
+      <Panel
+        icon={TemperatureIcon}
+        title="Enclosures"
+        description="Latest reading per sensor, each with its own age. A stale reading is shown as stale, never as current. Monitoring software is not a safety device."
+      >
+        {enclosures.length === 0 ? (
+          <EmptyState title="No enclosures configured" icon={CoverIcon}>
+            Register an enclosure and post sensor readings to it (see the Integrations guide) to see temperature, humidity and leak state here.
+          </EmptyState>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {enclosures.map((enclosure) => (
+              <EnclosureTile
+                key={enclosure.id}
+                enclosure={enclosure}
+                projectorName={enclosure.projector_id ? projectors.find((p) => p.id === enclosure.projector_id)?.name : undefined}
+              />
+            ))}
+          </div>
         )}
       </Panel>
 
@@ -439,6 +487,88 @@ function MaintenanceSection({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+const METRIC_ICON: Record<string, LucideIcon> = {
+  temperature: TemperatureIcon,
+  humidity: MonitoringIcon,
+  leak: WarningIcon,
+  door: CoverIcon,
+  fan: MonitoringIcon,
+}
+
+function readingTone(enclosure: Enclosure, metric: string, value: number | string | null, stale: boolean): Tone {
+  if (stale || value == null) return 'unknown'
+  const n = typeof value === 'number' ? value : Number(value)
+  if (metric === 'temperature' && !Number.isNaN(n)) {
+    if (n >= enclosure.temp_critical_c) return 'fault'
+    if (n >= enclosure.temp_warn_c) return 'warn'
+    return 'ok'
+  }
+  if (metric === 'humidity' && !Number.isNaN(n)) return n >= enclosure.humidity_warn_pct ? 'warn' : 'ok'
+  if (metric === 'leak' || metric === 'door') return n ? 'fault' : 'ok'
+  return 'ok'
+}
+
+function formatReading(metric: string, value: number | string | null): string {
+  if (value == null) return '—'
+  if (typeof value !== 'number') return String(value)
+  if (metric === 'temperature') return `${value.toFixed(1)} °C`
+  if (metric === 'humidity') return `${Math.round(value)} %`
+  if (metric === 'leak') return value ? 'Water detected' : 'Dry'
+  if (metric === 'door') return value ? 'Open' : 'Closed'
+  return value.toLocaleString()
+}
+
+function EnclosureTile({ enclosure, projectorName }: { enclosure: Enclosure; projectorName?: string }) {
+  const entries = Object.entries(enclosure.latest)
+  const worst = entries.reduce<Tone>((acc, [metric, r]) => {
+    const t = readingTone(enclosure, metric, r.value, r.stale)
+    const rank: Record<Tone, number> = { fault: 4, warn: 3, unknown: 2, busy: 1, ok: 0, idle: 0 }
+    return rank[t] > rank[acc] ? t : acc
+  }, entries.length ? 'ok' : 'unknown')
+  const ringTone: Record<Tone, string> = {
+    ok: 'ring-emerald-500/30', warn: 'ring-amber-500/40', fault: 'ring-red-500/50',
+    unknown: 'ring-white/10', idle: 'ring-white/10', busy: 'ring-sky-500/30',
+  }
+  return (
+    <div className={classNames('rounded-lg bg-panel-850 p-3 ring-1', ringTone[worst])}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-100">{enclosure.name}</p>
+          <p className="truncate text-xs text-slate-500">
+            {[enclosure.location, projectorName && `houses ${projectorName}`].filter(Boolean).join(' · ') || 'No location set'}
+          </p>
+        </div>
+        {enclosure.block_startup_on_fault && (
+          <Chip tone="idle" title="Automations with an enclosure check refuse to start while this enclosure reports a fault or stale data.">
+            blocks startup
+          </Chip>
+        )}
+      </div>
+      {entries.length === 0 ? (
+        <p className="mt-3 text-xs text-slate-500">No readings received yet.</p>
+      ) : (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {entries.map(([metric, r]) => (
+            <div key={metric}>
+              <Glyph
+                icon={METRIC_ICON[metric] ?? MonitoringIcon}
+                tone={readingTone(enclosure, metric, r.value, r.stale)}
+                caption={metric}
+                label={formatReading(metric, r.value)}
+                size="sm"
+              />
+              <p className={classNames('mt-1 pl-11 text-[11px]', r.stale ? 'text-amber-400' : 'text-slate-500')}>
+                {relativeTime(r.recorded_at)}{r.stale && ' · stale'}
+              </p>
+            </div>
+          ))}
         </div>
       )}
     </div>

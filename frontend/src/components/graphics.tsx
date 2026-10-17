@@ -375,21 +375,88 @@ export function StatTile({
   value,
   tone = 'idle',
   hint,
+  onClick,
+  active = false,
 }: {
   icon: LucideIcon
   label: string
   value: ReactNode
   tone?: Tone
   hint?: string
+  onClick?: () => void
+  active?: boolean
 }) {
-  return (
-    <div className="panel flex items-center gap-3 px-4 py-3" title={hint}>
+  const body = (
+    <>
       <span className={classNames('inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', TONE_SOFT_BG[tone])} aria-hidden>
         <Icon size={20} className={TONE_TEXT[tone]} strokeWidth={1.75} />
       </span>
-      <div className="min-w-0">
+      <div className="min-w-0 text-left">
         <p className="truncate text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
-        <p className="text-2xl font-semibold leading-tight text-slate-100">{value}</p>
+        <p className="tnum text-2xl font-semibold leading-tight text-slate-100">{value}</p>
+      </div>
+    </>
+  )
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={classNames('panel-interactive flex items-center gap-3 px-4 py-3', active && 'panel-active')}
+        title={hint}
+        onClick={onClick}
+        aria-pressed={active}
+      >
+        {body}
+      </button>
+    )
+  }
+  return (
+    <div className="panel flex items-center gap-3 px-4 py-3" title={hint}>
+      {body}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Fleet bar: one segment per projector state, in fleet order           */
+/* ------------------------------------------------------------------ */
+
+export type FleetSegmentKind = 'on' | 'transition' | 'standby' | 'offline'
+
+const SEGMENT_STYLE: Record<FleetSegmentKind, { fill: string; label: string }> = {
+  on: { fill: 'bg-emerald-400', label: 'Lamp on' },
+  transition: { fill: 'bg-sky-400', label: 'Starting / cooling' },
+  standby: { fill: 'bg-slate-500', label: 'Standby' },
+  offline: { fill: 'bg-red-400', label: 'Offline' },
+}
+
+export function FleetBar({ segments }: { segments: Array<{ name: string; kind: FleetSegmentKind }> }) {
+  if (segments.length === 0) return null
+  const counts = segments.reduce<Record<FleetSegmentKind, number>>(
+    (acc, s) => ({ ...acc, [s.kind]: acc[s.kind] + 1 }),
+    { on: 0, transition: 0, standby: 0, offline: 0 },
+  )
+  return (
+    <div>
+      <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Fleet state">
+        {segments.map((segment, index) => (
+          <span
+            key={`${segment.name}-${index}`}
+            className={classNames('h-full flex-1', SEGMENT_STYLE[segment.kind].fill)}
+            title={`${segment.name}: ${SEGMENT_STYLE[segment.kind].label}`}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+        {(Object.keys(SEGMENT_STYLE) as FleetSegmentKind[]).map((kind) =>
+          counts[kind] > 0 ? (
+            <span key={kind} className="flex items-center gap-1.5">
+              <span className={classNames('h-2 w-2 rounded-sm', SEGMENT_STYLE[kind].fill)} aria-hidden />
+              {SEGMENT_STYLE[kind].label}
+              <span className="tnum text-slate-200">{counts[kind]}</span>
+            </span>
+          ) : null,
+        )}
       </div>
     </div>
   )

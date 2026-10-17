@@ -8,6 +8,7 @@ import {
   Spinner,
   ToastStack,
   useToasts,
+  PageHeader,
 } from '@/components/ui'
 import { ClockIcon, LiveIcon, ProjectorIcon, SettingsIcon, TokenIcon, UsersIcon } from '@/components/icons'
 
@@ -46,7 +47,7 @@ export default function Settings({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-100">Settings</h1>
+      <PageHeader icon={SettingsIcon} title="Settings" subtitle="Account, polling, device links, drivers, users and service tokens." />
       {error && <ErrorBanner message={error} />}
 
       <div className="grid gap-4 lg:grid-cols-2">

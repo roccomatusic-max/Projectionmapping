@@ -280,11 +280,23 @@ export interface AutomationValidation {
   timezone: string
 }
 
+export interface EnclosureReading {
+  value: number | string | null
+  recorded_at: string
+  age_seconds: number
+  stale: boolean
+}
+
 export interface Enclosure {
   id: number
   name: string
   projector_id: number | null
   location: string
+  temp_warn_c: number
+  temp_critical_c: number
+  humidity_warn_pct: number
+  block_startup_on_fault: boolean
+  latest: Record<string, EnclosureReading>
 }
 
 export interface MaintenanceRecord {
