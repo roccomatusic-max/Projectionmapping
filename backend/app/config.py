@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     homeassistant_discovery: bool = True
     homeassistant_discovery_prefix: str = "homeassistant"
 
+    # -- mapping media ------------------------------------------------------
+    #: Folder holding the media library's files. Relative paths resolve
+    #: against the working directory, like the default SQLite database.
+    media_dir: str = "./data/media"
+    #: Largest single upload accepted. Show content at 8K is easily 20 GB.
+    media_max_upload_mb: int = 50_000
+
     # -- retention ---------------------------------------------------------
     telemetry_retention_days: int = 365
     command_log_retention_days: int = 180

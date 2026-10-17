@@ -24,6 +24,9 @@ from app.api.routes import (
     enclosure,
     groups,
     integration,
+    mapping,
+    mapping_camera,
+    mapping_players,
     monitoring,
     projectors,
     system,
@@ -39,6 +42,7 @@ from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
 from app.services.device_manager import manager
 from app.services.integration import mqtt_publisher
+from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
 
 logging.basicConfig(
@@ -121,6 +125,7 @@ async def lifespan(_: FastAPI):
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
         await automation_engine.stop()
+        await mapping_transport.stop_service()
         await monitor.stop()
         await alerting.stop()
         await mqtt_publisher.stop()
@@ -164,7 +169,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 for router in (
     system.router, auth.router, projectors.router, groups.router,
     monitoring.router, automation.router, enclosure.router, integration.router,
-    ws.router,
+    mapping.router, mapping_players.router, mapping_camera.router, ws.router,
 ):
     app.include_router(router, prefix="/api")
 

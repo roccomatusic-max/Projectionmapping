@@ -13,6 +13,7 @@ export {
   ChevronRight as ChevronIcon,
   CircleAlert as FaultIcon,
   CircleCheck as OkIcon,
+  Clapperboard as MappingIcon,
   Clock as ClockIcon,
   Copy as CopyIcon,
   Fan as FanIcon,

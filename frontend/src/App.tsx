@@ -9,6 +9,7 @@ import {
   DashboardIcon,
   GroupsIcon,
   LogsIcon,
+  MappingIcon,
   MenuIcon,
   MonitoringIcon,
   ProjectorIcon,
@@ -27,12 +28,18 @@ import Logs from '@/pages/Logs'
 // bundle so the dashboard loads fast on a tablet over site wifi.
 const Monitoring = lazy(() => import('@/pages/Monitoring'))
 import Settings from '@/pages/Settings'
+// The mapping editor carries the WebGL renderer; output windows and players
+// load only what they draw.
+const Mapping = lazy(() => import('@/pages/Mapping'))
+const OutputPage = lazy(() => import('@/mapping/OutputPage'))
+const PlayerPage = lazy(() => import('@/mapping/PlayerPage'))
 
 const NAV = [
   { to: '/', label: 'Dashboard', end: true, icon: DashboardIcon },
   { to: '/projectors', label: 'Projectors', icon: ProjectorIcon },
   { to: '/groups', label: 'Groups', icon: GroupsIcon },
   { to: '/control', label: 'Control Center', icon: ControlIcon },
+  { to: '/mapping', label: 'Mapping', icon: MappingIcon },
   { to: '/automation', label: 'Automation', icon: AutomationIcon },
   { to: '/monitoring', label: 'Monitoring', icon: MonitoringIcon },
   { to: '/logs', label: 'Logs', icon: LogsIcon },
@@ -58,7 +65,26 @@ export default function App() {
     setSession(null)
   }, [])
 
+  // A player pairs itself and holds its own token; it never sees the login.
+  if (location.pathname === '/player') {
+    return (
+      <Suspense fallback={null}>
+        <PlayerPage />
+      </Suspense>
+    )
+  }
+
   if (!session) return <Login onSignedIn={setSession} />
+
+  if (location.pathname.startsWith('/mapping/output/')) {
+    return (
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/mapping/output/:showId/:outputId" element={<OutputPage />} />
+        </Routes>
+      </Suspense>
+    )
+  }
 
   // The full-screen control-room view drops the chrome entirely.
   const fullscreen = location.pathname.startsWith('/control/fullscreen')
@@ -157,6 +183,14 @@ export default function App() {
           <Route path="/projectors/:id" element={<ProjectorDetail session={session} />} />
           <Route path="/groups" element={<Groups session={session} />} />
           <Route path="/control" element={<ControlCenter session={session} />} />
+          <Route
+            path="/mapping"
+            element={
+              <Suspense fallback={<Spinner label="Loading mapping…" />}>
+                <Mapping session={session} />
+              </Suspense>
+            }
+          />
           <Route path="/automation" element={<Automation session={session} />} />
           <Route
             path="/monitoring"

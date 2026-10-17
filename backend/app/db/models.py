@@ -431,3 +431,155 @@ class EnclosureReading(Base):
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
     )
+
+
+# --------------------------------------------------------------------------
+# Mapping media: content and how it is shaped onto the building
+# --------------------------------------------------------------------------
+
+
+class MediaAsset(Base):
+    """A video or still in the media library.
+
+    The file lives in the media folder under ``stored_name``; the database
+    holds only its description. Dimensions and duration are what the
+    uploading browser probed, since the server cannot decode video itself.
+    """
+
+    __tablename__ = "media_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    stored_name: Mapped[str] = mapped_column(String(128), unique=True)
+    kind: Mapped[str] = mapped_column(String(16))  # "video" | "image"
+    content_type: Mapped[str] = mapped_column(String(128))
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    duration: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MappingShow(Base):
+    """A content canvas, the outputs that slice it, and the cues that fill it."""
+
+    __tablename__ = "mapping_shows"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    canvas_width: Mapped[int] = mapped_column(Integer, default=3840)
+    canvas_height: Mapped[int] = mapped_column(Integer, default=2160)
+    #: Where the canvas sits in the calibration camera's view:
+    #: {"camera_id": n, "corners": [[x, y] * 4]} in camera-image fractions.
+    camera_view: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    outputs: Mapped[list[MappingOutput]] = relationship(
+        back_populates="show", cascade="all, delete-orphan",
+        order_by="MappingOutput.position",
+    )
+    cues: Mapped[list[MappingCue]] = relationship(
+        back_populates="show", cascade="all, delete-orphan",
+        order_by="MappingCue.position",
+    )
+
+
+class MappingOutput(Base):
+    """One projector's image: a slice of the canvas, warped, masked, blended.
+
+    Geometry is stored as JSON in normalised units so it survives a change
+    of display resolution: the source rect in canvas fractions, warp points
+    and masks in output fractions (0,0 top-left, 1,1 bottom-right).
+    """
+
+    __tablename__ = "mapping_outputs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("mapping_shows.id", ondelete="CASCADE"),
+                                         index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    projector_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projectors.id", ondelete="SET NULL")
+    )
+    width: Mapped[int] = mapped_column(Integer, default=1920)
+    height: Mapped[int] = mapped_column(Integer, default=1200)
+    #: {"x", "y", "w", "h"} in canvas fractions.
+    source: Mapped[dict] = mapped_column(JSON, default=dict)
+    #: {"corners": [[x,y]*4 TL,TR,BR,BL], "mesh": {"cols","rows","points":[[dx,dy]...]}|null}
+    warp: Mapped[dict] = mapped_column(JSON, default=dict)
+    #: [{"points": [[x,y]...], "feather": px, "invert": bool, "enabled": bool}]
+    masks: Mapped[list] = mapped_column(JSON, default=list)
+    #: {"left"|"right"|"top"|"bottom": {"width": frac, "gamma": g, "curve": c}}
+    blend: Mapped[dict] = mapped_column(JSON, default=dict)
+    #: {"brightness", "gamma", "red", "green", "blue"}
+    color: Mapped[dict] = mapped_column(JSON, default=dict)
+    #: "none" | "grid" | "id" | "white" | "black" | "red" | "green" | "blue"
+    test_pattern: Mapped[str] = mapped_column(String(16), default="none")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: Last camera calibration: which camera, when, and the decoded map from
+    #: camera image to projector pixels. See services/calibration.py.
+    calibration: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+
+    show: Mapped[MappingShow] = relationship(back_populates="outputs")
+
+
+class MappingCue(Base):
+    __tablename__ = "mapping_cues"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("mapping_shows.id", ondelete="CASCADE"),
+                                         index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    media_id: Mapped[int | None] = mapped_column(
+        ForeignKey("media_assets.id", ondelete="SET NULL")
+    )
+    #: "fill" (cover, crop) | "fit" (contain, letterbox) | "stretch"
+    fit: Mapped[str] = mapped_column(String(16), default="fill")
+    loop: Mapped[bool] = mapped_column(Boolean, default=True)
+    fade_seconds: Mapped[float] = mapped_column(Float, default=1.0)
+    #: How people tracked by a depth camera affect this cue:
+    #: "none" | "spotlight" (lit around them) | "ripple" (rings spread from them)
+    interaction: Mapped[str] = mapped_column(String(16), default="none",
+                                             server_default="none")
+    #: Seconds a still holds, or a non-looping video runs, before auto-follow.
+    #: None means hold until the next GO.
+    follow_seconds: Mapped[float | None] = mapped_column(Float)
+
+    show: Mapped[MappingShow] = relationship(back_populates="cues")
+
+
+class MappingPlayer(Base):
+    """A small computer beside a projector, running the output page.
+
+    It introduces itself with a random device secret and shows a pairing
+    code; an administrator approves it and assigns it an output. Approval
+    creates a dedicated viewer account for it, so removing the player
+    revokes its access the same way deactivating any user does.
+    """
+
+    __tablename__ = "mapping_players"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), unique=True)
+    #: SHA-256 of the device secret. The secret is 256 random bits, so a
+    #: fast hash is sufficient; it is checked on every poll.
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(128))
+    #: "player" drives a projector; "camera" runs the camera agent.
+    kind: Mapped[str] = mapped_column(String(16), default="player", server_default="player")
+    code: Mapped[str] = mapped_column(String(8))
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    output_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_outputs.id", ondelete="SET NULL")
+    )
+    #: Last report from the player: fps, drift, window size, cache state.
+    report: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

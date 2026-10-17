@@ -166,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     # Environment must be set before app.config is imported anywhere.
     os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")
     os.environ.setdefault("SECRET_KEY", ensure_secret_key(folder))
+    os.environ.setdefault("MEDIA_DIR", str(folder / "media"))
     os.environ.setdefault("ENVIRONMENT", "desktop")
     if args.timezone:
         os.environ["SCHEDULE_TIMEZONE"] = args.timezone

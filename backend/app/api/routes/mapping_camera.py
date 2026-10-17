@@ -1,0 +1,318 @@
+"""Cameras: calibration from projected patterns, and people tracking.
+
+A camera is a small program (``camera-agent/``) on a computer with a camera
+pointed at the building. It pairs exactly like a player, through
+``/mapping/players/hello`` with ``kind: camera``, and gets a viewer account.
+Everything a camera may do is gated on that account belonging to an
+approved camera, not on its role.
+
+Calibration of one output:
+
+1. An administrator asks for it (``POST /outputs/{id}/calibrate``); the
+   request reaches the camera over the WebSocket feed.
+2. The camera steps through black, white and Gray-code stripes
+   (``POST /calibration/step``). Each step is relayed to every output window
+   of that show: the output being calibrated draws the pattern in its own
+   pixels, the others go black so their light does not confuse the camera.
+3. The camera uploads what it decoded (``PUT /outputs/{id}/calibration``).
+4. With the canvas corners marked on the camera's photo (the show's
+   ``camera_view``), ``POST /shows/{id}/apply-calibration`` turns the
+   decoded maps into corner pins and mesh warps.
+
+People tracking: the camera posts the people it sees, in camera-image
+fractions, several times a second (``POST /cameras/me/people``). The server
+maps them onto the live show's canvas through the same ``camera_view`` and
+relays them to the output windows, which use them in cues with an
+interaction effect. Nothing of this is stored.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
+from sqlalchemy import select
+
+from app.api.deps import CurrentUser, RequireAdmin, RequireViewer, SessionDep, write_rate_limit
+from app.api.routes.mapping import _load_show, _media_user, _output_out, media_root
+from app.api.routes.mapping_players import is_online
+from app.core.events import bus
+from app.db.models import Event, MappingOutput, MappingPlayer, MappingShow, Severity, User, utcnow
+from app.schemas.mapping import (
+    ApplyCalibration,
+    ApplyResult,
+    CalibrateRequest,
+    CalibrationResult,
+    CalibrationStep,
+    CameraCommand,
+    OutputOut,
+    PeopleReport,
+    Warp,
+)
+from app.services.calibration import CalibrationError, apply, camera_to_canvas, solve_warp
+from app.services.mapping import now_ms, transport
+
+router = APIRouter(prefix="/mapping", tags=["mapping"])
+
+SNAPSHOT_MAX = 16 * 1024 * 1024
+SNAPSHOT_TYPES = {"image/jpeg": ".jpg", "image/png": ".png"}
+
+
+async def _this_camera(session, user: User) -> MappingPlayer:
+    camera = (await session.execute(
+        select(MappingPlayer).where(MappingPlayer.user_id == user.id,
+                                    MappingPlayer.kind == "camera",
+                                    MappingPlayer.approved.is_(True))
+    )).scalars().first()
+    if camera is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only a paired camera may do this")
+    return camera
+
+
+async def _load_camera(session, camera_id: int) -> MappingPlayer:
+    camera = await session.get(MappingPlayer, camera_id)
+    if camera is None or camera.kind != "camera":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Camera {camera_id} not found")
+    return camera
+
+
+async def _load_output(session, output_id: int) -> MappingOutput:
+    output = await session.get(MappingOutput, output_id)
+    if output is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Output {output_id} not found")
+    return output
+
+
+def _output_changed(output: MappingOutput) -> OutputOut:
+    out = _output_out(output)
+    bus.publish("mapping_output", {"show_id": output.show_id, "output": out.model_dump(mode="json")})
+    return out
+
+
+# -- calibration -----------------------------------------------------------------
+
+
+@router.post("/outputs/{output_id}/calibrate", status_code=status.HTTP_202_ACCEPTED,
+             dependencies=[Depends(write_rate_limit)])
+async def request_calibration(output_id: int, payload: CalibrateRequest, session: SessionDep,
+                              admin: RequireAdmin) -> dict:
+    output = await _load_output(session, output_id)
+    camera = await _load_camera(session, payload.camera_id)
+    if not camera.approved:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Approve camera {camera.name} first")
+    if not is_online(camera):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Camera {camera.name} is offline")
+    bus.publish("mapping_calibrate", {
+        "camera_id": camera.id, "output_id": output.id, "show_id": output.show_id,
+        "name": output.name, "width": output.width, "height": output.height,
+    })
+    session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="calibration_requested",
+                      message=f"{admin.username} asked camera {camera.name} to calibrate "
+                              f"output {output.name}"))
+    await session.commit()
+    return {"status": "requested"}
+
+
+@router.post("/calibration/step", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def calibration_step(payload: CalibrationStep, session: SessionDep,
+                           user: CurrentUser) -> None:
+    """Relay one pattern (or the end of the sequence) to the output windows."""
+    camera = await _this_camera(session, user)
+    output = await _load_output(session, payload.output_id)
+    bus.publish("mapping_calib_pattern", {
+        "camera_id": camera.id, "show_id": output.show_id, "output_id": output.id,
+        "pattern": payload.pattern.model_dump() if payload.pattern else None,
+        "step": payload.step, "steps": payload.steps,
+        "status": payload.status, "message": payload.message,
+    })
+
+
+@router.put("/outputs/{output_id}/calibration", response_model=OutputOut)
+async def store_calibration(output_id: int, payload: CalibrationResult, session: SessionDep,
+                            user: CurrentUser) -> OutputOut:
+    camera = await _this_camera(session, user)
+    output = await _load_output(session, output_id)
+    seen = sum(point is not None for point in payload.points)
+    coverage = round(seen / len(payload.points), 4)
+    output.calibration = {
+        "camera_id": camera.id, "captured_at": utcnow().isoformat(), "coverage": coverage,
+        **payload.model_dump(mode="json"),
+    }
+    session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="output_calibrated",
+                      message=f"Camera {camera.name} calibrated output {output.name} "
+                              f"({coverage:.0%} of its picture)"))
+    await session.commit()
+    await session.refresh(output)
+    return _output_changed(output)
+
+
+@router.get("/outputs/{output_id}/calibration")
+async def get_calibration(output_id: int, session: SessionDep, _: RequireViewer) -> dict:
+    output = await _load_output(session, output_id)
+    if not output.calibration:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Output {output.name} has not been calibrated")
+    return output.calibration
+
+
+@router.delete("/outputs/{output_id}/calibration", status_code=status.HTTP_204_NO_CONTENT,
+               response_model=None, dependencies=[Depends(write_rate_limit)])
+async def clear_calibration(output_id: int, session: SessionDep, _: RequireAdmin) -> None:
+    output = await _load_output(session, output_id)
+    output.calibration = {}
+    await session.commit()
+    await session.refresh(output)
+    _output_changed(output)
+
+
+@router.post("/shows/{show_id}/apply-calibration", response_model=list[ApplyResult],
+             dependencies=[Depends(write_rate_limit)])
+async def apply_calibration(show_id: int, payload: ApplyCalibration, session: SessionDep,
+                            admin: RequireAdmin) -> list[ApplyResult]:
+    """Set each calibrated output's corner pin and mesh from the camera.
+
+    Replaces the outputs' current warp; masks, blend and colour are kept.
+    """
+    show = await _load_show(session, show_id)
+    view = show.camera_view or {}
+    if not view.get("corners"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Mark where the canvas sits on the camera photo first")
+    results: list[ApplyResult] = []
+    changed: list[MappingOutput] = []
+    for output in show.outputs:
+        if payload.output_ids is not None and output.id not in payload.output_ids:
+            continue
+        calibration = output.calibration or {}
+        if calibration.get("camera_id") != view.get("camera_id"):
+            results.append(ApplyResult(output_id=output.id, name=output.name, applied=False,
+                                       reason="Not calibrated with this show's camera"))
+            continue
+        try:
+            warp, stats = solve_warp(output.source or {}, view["corners"], calibration,
+                                     mesh=payload.mesh, output_width=output.width)
+            output.warp = Warp.model_validate(warp).model_dump(mode="json")
+        except (CalibrationError, ValueError) as exc:
+            results.append(ApplyResult(output_id=output.id, name=output.name, applied=False,
+                                       reason=str(exc)))
+            continue
+        changed.append(output)
+        results.append(ApplyResult(output_id=output.id, name=output.name, applied=True,
+                                   measured=round(stats["measured"], 3),
+                                   residual_px=round(stats["residual_px"], 2)))
+    if changed:
+        session.add(Event(projector_id=None, severity=Severity.INFO.value,
+                          kind="calibration_applied",
+                          message=f"{admin.username} applied camera calibration to "
+                                  f"{', '.join(o.name for o in changed)} in {show.name}"))
+    await session.commit()
+    for output in changed:
+        await session.refresh(output)
+        _output_changed(output)
+    return results
+
+
+# -- the camera's own picture and commands ---------------------------------------
+
+
+def _snapshot_dir():
+    folder = media_root() / "cameras"
+    folder.mkdir(exist_ok=True)
+    return folder
+
+
+def _snapshot_path(camera_id: int):
+    for extension in SNAPSHOT_TYPES.values():
+        path = _snapshot_dir() / f"{camera_id}{extension}"
+        if path.is_file():
+            return path
+    return None
+
+
+@router.put("/cameras/me/snapshot", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def upload_snapshot(request: Request, session: SessionDep, user: CurrentUser) -> None:
+    """The camera's current picture, so the canvas corners can be marked on it."""
+    camera = await _this_camera(session, user)
+    content_type = request.headers.get("content-type", "").split(";")[0].strip()
+    if content_type not in SNAPSHOT_TYPES:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                            detail="Send the photo as image/jpeg or image/png")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > SNAPSHOT_MAX:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                detail="Photo is too large")
+    if not body:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The photo was empty")
+    folder = _snapshot_dir()
+    partial = folder / f".{uuid.uuid4().hex}.part"
+    partial.write_bytes(body)
+    for extension in SNAPSHOT_TYPES.values():
+        with contextlib.suppress(FileNotFoundError):
+            (folder / f"{camera.id}{extension}").unlink()
+    os.replace(partial, folder / f"{camera.id}{SNAPSHOT_TYPES[content_type]}")
+    bus.publish("mapping_camera", {"camera_id": camera.id, "snapshot_at": now_ms()})
+
+
+@router.get("/cameras/{camera_id}/snapshot")
+async def get_snapshot(camera_id: int, request: Request, session: SessionDep,
+                       token: str | None = Query(default=None)) -> FileResponse:
+    await _media_user(session, token, request)
+    await _load_camera(session, camera_id)
+    path = _snapshot_path(camera_id)
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="This camera has not sent a photo yet")
+    return FileResponse(path, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/cameras/{camera_id}/command", status_code=status.HTTP_204_NO_CONTENT,
+             response_model=None, dependencies=[Depends(write_rate_limit)])
+async def camera_command(camera_id: int, payload: CameraCommand, session: SessionDep,
+                         _: RequireAdmin) -> None:
+    camera = await _load_camera(session, camera_id)
+    if not is_online(camera):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Camera {camera.name} is offline")
+    bus.publish("mapping_camera_command", {"camera_id": camera.id, "command": payload.command})
+
+
+# -- people tracking --------------------------------------------------------------
+
+
+@router.post("/cameras/me/people", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def report_people(payload: PeopleReport, session: SessionDep, user: CurrentUser) -> None:
+    """Who the camera sees right now; relayed live, never stored.
+
+    Positions go out in camera fractions (``cx``, ``cy``) for the editor's
+    view of the photo, and in canvas fractions (``x``, ``y``) when the live
+    show has marked its canvas on this camera's picture.
+    """
+    camera = await _this_camera(session, user)
+    show_id = transport.snapshot().show_id
+    to_canvas = None
+    if show_id is not None:
+        view = (await session.execute(
+            select(MappingShow.camera_view).where(MappingShow.id == show_id)
+        )).scalar_one_or_none() or {}
+        if view.get("camera_id") == camera.id and view.get("corners"):
+            with contextlib.suppress(CalibrationError):
+                to_canvas = camera_to_canvas(view["corners"])
+    people = []
+    for person in payload.people:
+        x = y = None
+        if to_canvas is not None:
+            x, y = (round(v, 5) for v in apply(to_canvas, person.x, person.y))
+        people.append({"id": person.id, "cx": person.x, "cy": person.y, "x": x, "y": y,
+                       "z": person.z, "size": person.size})
+    bus.publish("mapping_people", {"camera_id": camera.id, "show_id": show_id,
+                                   "people": people, "at": now_ms()})

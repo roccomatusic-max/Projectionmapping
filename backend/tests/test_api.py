@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import tempfile
 from datetime import UTC
 
@@ -20,6 +21,8 @@ async def api(panasonic_sim, monkeypatch):
     handle, path = tempfile.mkstemp(suffix=".db")
     os.close(handle)
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
+    media = tempfile.mkdtemp(prefix="media-")
+    monkeypatch.setenv("MEDIA_DIR", media)
 
     # Rebuild the settings-dependent modules against this database.
     import importlib
@@ -34,8 +37,10 @@ async def api(panasonic_sim, monkeypatch):
     import app.services.alerts as alerts_module
     import app.services.audit as audit_module
     import app.services.automation as automation_module
+    import app.services.mapping as mapping_module
     import app.services.monitor as monitor_module
-    for module in (audit_module, monitor_module, alerts_module, automation_module):
+    for module in (audit_module, monitor_module, alerts_module, automation_module,
+                   mapping_module):
         importlib.reload(module)
     import app.api.deps as deps_module
     import app.api.routes.auth as auth_routes
@@ -43,6 +48,9 @@ async def api(panasonic_sim, monkeypatch):
     import app.api.routes.enclosure as enclosure_routes
     import app.api.routes.groups as group_routes
     import app.api.routes.integration as integration_routes
+    import app.api.routes.mapping as mapping_routes
+    import app.api.routes.mapping_camera as camera_routes
+    import app.api.routes.mapping_players as player_routes
     import app.api.routes.monitoring as monitoring_routes
     import app.api.routes.projectors as projector_routes
     import app.api.routes.system as system_routes
@@ -50,7 +58,7 @@ async def api(panasonic_sim, monkeypatch):
     importlib.reload(deps_module)
     for module in (auth_routes, projector_routes, group_routes, monitoring_routes,
                    automation_routes, enclosure_routes, integration_routes,
-                   ws_routes, system_routes):
+                   mapping_routes, player_routes, camera_routes, ws_routes, system_routes):
         importlib.reload(module)
     import app.main as main_module
     importlib.reload(main_module)
@@ -63,6 +71,7 @@ async def api(panasonic_sim, monkeypatch):
     for suffix in ("", "-wal", "-shm"):
         with contextlib.suppress(FileNotFoundError):
             os.unlink(path + suffix)
+    shutil.rmtree(media, ignore_errors=True)
 
 
 async def login(client, username="admin", password="test-admin-password") -> dict:
