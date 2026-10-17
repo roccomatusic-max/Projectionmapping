@@ -93,3 +93,42 @@ async def test_outside_the_mac_app_nothing_is_checked_or_installed(tmp_path):
     assert status["supported"] is False and status["latest"] is None
     with pytest.raises(UpdateError):
         await updater.install()
+
+
+async def test_automatic_update_installs_only_when_quiet(tmp_path, monkeypatch):
+    monkeypatch.setattr(Updater, "supported", property(lambda self: True))  # tests run on Linux
+    updater = make_updater(tmp_path)
+    assert updater.auto is True  # on unless switched off
+    installs = []
+
+    async def fake_check(*, force=False):
+        updater.apply_release(200, release("1.0.7"))
+        return updater.status()
+
+    async def fake_install():
+        installs.append(updater.latest)
+
+    monkeypatch.setattr(updater, "check", fake_check)
+    monkeypatch.setattr(updater, "install", fake_install)
+
+    async def busy():
+        return "a mapping show is playing"
+
+    async def quiet():
+        return None
+
+    await updater.auto_tick(busy)
+    assert installs == [] and updater.status()["waiting"] == "a mapping show is playing"
+    await updater.auto_tick(quiet)
+    assert installs == ["1.0.7"] and updater.waiting is None
+
+    # A version that failed and was rolled back is not retried by itself.
+    updater.work_dir.mkdir(parents=True, exist_ok=True)
+    updater.result_path.write_text("rolled-back 1.0.7")
+    await updater.auto_tick(quiet)
+    assert installs == ["1.0.7"]
+
+    updater.set_auto(False)
+    updater.result_path.unlink()
+    await updater.auto_tick(quiet)
+    assert installs == ["1.0.7"] and updater.status()["auto"] is False

@@ -21,6 +21,8 @@ interface UpdateStatus {
   installing: boolean
   last_result: string | null
   repository: string
+  auto: boolean
+  waiting: string | null
 }
 
 const keyLink = (repository: string) => {
@@ -128,6 +130,36 @@ export default function AppUpdates() {
           <button className="btn-primary" disabled={busy} onClick={() => setConfirming(true)}>
             Install {status.latest}
           </button>
+        )}
+
+        {!status.needs_key && (
+          <label className="flex items-start gap-2 text-slate-300">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={status.auto}
+              disabled={busy}
+              onChange={(e) =>
+                void run(() =>
+                  request<UpdateStatus>('/system/updates/auto', {
+                    method: 'PUT',
+                    body: { enabled: e.target.checked },
+                  }),
+                )
+              }
+            />
+            <span>
+              Install updates by themselves
+              <span className="block text-xs text-slate-500">
+                Only when no show is playing and nobody has controlled the projectors for 10
+                minutes.
+              </span>
+            </span>
+          </label>
+        )}
+
+        {status.waiting && !status.installing && (
+          <p className="text-xs text-slate-400">Waiting to install: {status.waiting}.</p>
         )}
 
         {status.last_result?.startsWith('rolled-back') && (

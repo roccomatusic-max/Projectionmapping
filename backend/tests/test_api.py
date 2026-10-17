@@ -882,6 +882,14 @@ async def test_update_routes_are_admin_only_and_report_unsupported(api):
     assert response.json()["supported"] is False
     response = await api.post("/api/system/updates/install", json={}, headers=admin)
     assert response.status_code == 428
+    response = await api.put("/api/system/updates/auto", json={"enabled": False}, headers=admin)
+    assert response.status_code == 409
+
+
+async def test_nothing_running_counts_as_quiet(api):
+    from app.services.updates import busy_reason
+
+    assert await busy_reason() is None
 
 
 async def test_health_reports_the_version(api):

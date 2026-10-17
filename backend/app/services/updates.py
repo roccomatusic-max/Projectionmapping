@@ -14,12 +14,18 @@ when an administrator opens Settings, and installs it on request:
 The repository is private, so reading its releases needs a GitHub access key
 with read-only access to its contents. It is kept in the data folder, readable
 only by this account.
+
+Automatic updates (on unless switched off in Settings) check every 15 minutes
+and install only while the system is quiet: no mapping show playing, paused
+or blacked out, no automation running, and no projector command sent in the
+last 10 minutes. A version that was rolled back is never retried automatically.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import platform
@@ -45,6 +51,9 @@ ASSETS = {
     "x86_64": "ProjectorControl-Mac-Intel.zip",
 }
 CHECK_EVERY = timedelta(minutes=15)
+AUTO_EVERY = 15 * 60
+#: How long since the last projector command before the system counts as quiet.
+QUIET_FOR = timedelta(minutes=10)
 VERSION_RE = re.compile(r"\b(\d+\.\d+\.\d+)\b")
 
 WATCH_SCRIPT = r"""#!/bin/bash
@@ -89,6 +98,8 @@ class Updater:
         self.error: str | None = None
         self.needs_key = False
         self.installing = False
+        #: Why an automatic install is waiting, for the Settings panel.
+        self.waiting: str | None = None
         self._lock = asyncio.Lock()
 
     # -- files in the data folder -----------------------------------------
@@ -104,6 +115,23 @@ class Updater:
     @property
     def result_path(self) -> Path:
         return self.work_dir / "last-result.txt"
+
+    @property
+    def auto_path(self) -> Path:
+        return self.work_dir / "auto.json"
+
+    @property
+    def auto(self) -> bool:
+        try:
+            return bool(json.loads(self.auto_path.read_text(encoding="utf-8"))["enabled"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return True
+
+    def set_auto(self, enabled: bool) -> None:
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        self.auto_path.write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
+        if not enabled:
+            self.waiting = None
 
     def key(self) -> str | None:
         with contextlib.suppress(OSError):
@@ -134,10 +162,12 @@ class Updater:
             and macservice.version_key(self.latest) > macservice.version_key(self.current)
         )
 
-    def status(self) -> dict:
-        last = None
+    def last_result(self) -> str | None:
         with contextlib.suppress(OSError):
-            last = self.result_path.read_text(encoding="utf-8").strip() or None
+            return self.result_path.read_text(encoding="utf-8").strip() or None
+        return None
+
+    def status(self) -> dict:
         return {
             "supported": self.supported,
             "current": self.current,
@@ -148,7 +178,9 @@ class Updater:
             "checked_at": self.checked_at,
             "error": self.error,
             "installing": self.installing,
-            "last_result": last,
+            "last_result": self.last_result(),
+            "auto": self.auto,
+            "waiting": self.waiting if self.auto and self.available else None,
             "repository": REPOSITORY,
         }
 
@@ -224,6 +256,27 @@ class Updater:
         asyncio.get_running_loop().call_later(1.5, os.kill, os.getpid(), signal.SIGTERM)
         return self.status()
 
+    async def auto_tick(self, quiet_check) -> None:
+        """One automatic round: install the latest version if the system is quiet."""
+        if not (self.supported and self.auto) or self.installing:
+            return
+        await self.check(force=True)
+        if not self.available:
+            self.waiting = None
+            return
+        if self.last_result() == f"rolled-back {self.latest}":
+            self.waiting = f"{self.latest} did not start last time; press Install to retry it"
+            return
+        reason = await quiet_check()
+        if reason:
+            if reason != self.waiting:
+                log.info("update: %s is ready; waiting because %s", self.latest, reason)
+            self.waiting = reason
+            return
+        self.waiting = None
+        log.warning("update: installing %s automatically", self.latest)
+        await self.install()
+
     async def _download(self) -> Path:
         shutil.rmtree(self.work_dir / "new", ignore_errors=True)
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -277,6 +330,56 @@ class Updater:
             start_new_session=True, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+
+
+async def busy_reason() -> str | None:
+    """Why now is not a good moment to restart, or None when it is."""
+    from sqlalchemy import func, select
+
+    from app.db.models import AutomationRun, CommandLog
+    from app.db.session import session_scope
+    from app.services.mapping import transport
+
+    status = transport.snapshot().status
+    if status != "stopped":
+        return f"a mapping show is {status}"
+    now = datetime.now(UTC)
+    async with session_scope() as session:
+        recent = await session.scalar(
+            select(func.count()).select_from(CommandLog).where(
+                CommandLog.source != "monitor", CommandLog.created_at > now - QUIET_FOR,
+            )
+        )
+        running = await session.scalar(
+            select(func.count()).select_from(AutomationRun).where(
+                AutomationRun.status == "running",
+                AutomationRun.started_at > now - timedelta(hours=6),
+            )
+        )
+    if recent:
+        return "projectors were controlled in the last 10 minutes"
+    if running:
+        return "an automation is running"
+    return None
+
+
+async def _auto_loop(updater: Updater) -> None:
+    await asyncio.sleep(120)  # let a fresh start settle (and a just-updated one prove itself)
+    while True:
+        try:
+            await updater.auto_tick(busy_reason)
+        except Exception:  # noqa: BLE001 - try again next round
+            log.exception("update: automatic update failed")
+            updater.installing = False
+        await asyncio.sleep(AUTO_EVERY)
+
+
+def start_auto_updates() -> asyncio.Task | None:
+    """Run automatic updates in the background, only in the installed Mac app."""
+    updater = get_updater()
+    if not updater.supported:
+        return None
+    return asyncio.create_task(_auto_loop(updater), name="auto-update")
 
 
 _updater: Updater | None = None
