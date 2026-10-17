@@ -1,0 +1,15 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "B008",  # FastAPI dependency defaults are idiomatic
+    "E501",  # line length handled by the formatter
+]
+
+[lint.per-file-ignores]
+"app/drivers/__init__.py" = ["F401"]  # re-export surface
+"simulator/__init__.py" = ["F401"]
+# dict(**kwargs) + update() reads better than a literal for fixture builders
+"tests/*" = ["SIM117", "C408"]

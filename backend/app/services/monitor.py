@@ -1,0 +1,280 @@
+"""Background monitoring service.
+
+Four polling tiers run independently so a slow diagnostic read never delays
+the cheap connectivity probe. Every poll is submitted to the owning device
+worker at MONITOR priority, so operator commands always jump ahead of it.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from sqlalchemy import delete, select
+
+from app.config import settings
+from app.core.events import bus
+from app.db.models import Event, Projector, ProjectorState, Severity, Telemetry
+from app.db.session import session_scope
+from app.drivers import Availability, CommandOutcome, HealthSeverity, PowerState
+from app.services.device_manager import Priority, manager
+
+log = logging.getLogger(__name__)
+
+
+class Tier:
+    CONNECTIVITY = "connectivity"
+    OPERATIONAL = "operational"
+    DIAGNOSTICS = "diagnostics"
+    MAINTENANCE = "maintenance"
+
+
+class MonitoringService:
+    def __init__(self) -> None:
+        self._tasks: list[asyncio.Task] = []
+        self._running = False
+        self._last_poll: dict[tuple[int, str], float] = {}
+
+    async def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._tasks = [
+            asyncio.create_task(self._tier_loop(Tier.CONNECTIVITY, settings.poll_connectivity),
+                                name="monitor-connectivity"),
+            asyncio.create_task(self._tier_loop(Tier.OPERATIONAL, settings.poll_operational),
+                                name="monitor-operational"),
+            asyncio.create_task(self._tier_loop(Tier.DIAGNOSTICS, settings.poll_diagnostics),
+                                name="monitor-diagnostics"),
+            asyncio.create_task(self._tier_loop(Tier.MAINTENANCE, settings.poll_maintenance),
+                                name="monitor-maintenance"),
+            asyncio.create_task(self._retention_loop(), name="monitor-retention"),
+        ]
+        log.info("monitoring service started")
+
+    async def stop(self) -> None:
+        self._running = False
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks.clear()
+
+    # -- tier loops --------------------------------------------------------
+
+    async def _tier_loop(self, tier: str, default_interval: int) -> None:
+        # Stagger tiers so they do not all fire on the same second at boot.
+        await asyncio.sleep({"connectivity": 1, "operational": 3,
+                             "diagnostics": 7, "maintenance": 11}.get(tier, 1))
+        while self._running:
+            started = time.monotonic()
+            try:
+                await self._run_tier(tier, default_interval)
+            except asyncio.CancelledError:
+                return
+            except Exception:  # noqa: BLE001 - a bad cycle must not stop monitoring
+                log.exception("monitor tier %s failed", tier)
+            elapsed = time.monotonic() - started
+            await asyncio.sleep(max(1.0, default_interval - elapsed))
+
+    async def _run_tier(self, tier: str, default_interval: int) -> None:
+        workers = manager.workers
+        if not workers:
+            return
+        # Spread devices across the interval so 25 projectors are not all
+        # polled in the same 50ms.
+        spacing = min(0.4, max(0.0, (default_interval * 0.5) / max(len(workers), 1)))
+        tasks = []
+        for index, worker in enumerate(workers):
+            interval = self._interval_for(worker, tier, default_interval)
+            key = (worker.projector_id, tier)
+            last = self._last_poll.get(key, 0.0)
+            if time.monotonic() - last < interval:
+                continue
+            self._last_poll[key] = time.monotonic()
+            tasks.append(self._poll_device(worker, tier, delay=index * spacing))
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    @staticmethod
+    def _interval_for(worker: Any, tier: str, default_interval: int) -> float:
+        """Per-device override, clamped to a sane floor.
+
+        A projector with a slow or rate-limited control interface can be
+        polled less often without changing the global tier schedule. The
+        floor stops a typo from turning a tier into a busy loop.
+        """
+        override = (worker.poll_overrides or {}).get(tier)
+        if override is None:
+            return float(default_interval)
+        try:
+            return max(5.0, float(override))
+        except (TypeError, ValueError):
+            log.warning("ignoring invalid poll override %r for %s/%s",
+                        override, worker.name, tier)
+            return float(default_interval)
+
+    async def _poll_device(self, worker: Any, tier: str, delay: float = 0.0) -> None:
+        if delay:
+            await asyncio.sleep(delay)
+        deep = tier in (Tier.DIAGNOSTICS, Tier.MAINTENANCE)
+        future = worker.submit("status", {"deep": deep}, priority=Priority.MONITOR, job="status")
+        try:
+            result = await asyncio.wait_for(future, timeout=45.0)
+        except TimeoutError:
+            log.warning("poll of %s (%s) did not complete in 45s", worker.name, tier)
+            return
+        if result.outcome is not CommandOutcome.OK:
+            return
+        status = result.value
+        await self.persist_status(worker, status, tier)
+
+    # -- persistence -------------------------------------------------------
+
+    async def persist_status(self, worker: Any, status: Any,
+                             tier: str = Tier.OPERATIONAL) -> None:
+        """Write a status snapshot to the database and publish it.
+
+        Public because an on-demand refresh from the API takes the same path:
+        a poll the operator triggered must update the stored state exactly as
+        a scheduled one does, or the dashboard keeps showing stale data right
+        after the operator asked for fresh data.
+        """
+        now = datetime.now(UTC)
+        async with session_scope() as session:
+            state = await session.get(ProjectorState, worker.projector_id)
+            if state is None:
+                state = ProjectorState(projector_id=worker.projector_id)
+                session.add(state)
+
+            previously_online = state.online
+            previous_power = state.power
+
+            state.online = status.online
+            state.power = status.power.value
+            state.shutter = status.shutter.value
+            state.health = status.health.value
+            state.active_input = status.active_input.as_dict()
+            state.errors = list(status.errors)
+            state.warnings = list(status.warnings)
+            state.consecutive_failures = worker.consecutive_failures
+            state.last_error = worker.last_error
+            state.stale_after = int(settings.poll_operational * settings.staleness_multiplier)
+            if status.online:
+                state.last_seen_at = now
+            if tier in (Tier.DIAGNOSTICS, Tier.MAINTENANCE):
+                state.lamp_hours = status.lamp_hours.as_dict()
+                state.lamp_status = status.lamp_status.as_dict()
+                state.error_status = status.error_status.as_dict()
+
+            await self._write_telemetry(session, worker.projector_id, status, tier, now)
+            await self._write_transitions(
+                session, worker, status, previously_online, previous_power, now
+            )
+
+        bus.publish("projector_state", {
+            "projector_id": worker.projector_id,
+            "name": worker.name,
+            "tier": tier,
+            **status.as_dict(),
+        })
+
+    async def _write_telemetry(
+        self, session, projector_id: int, status: Any, tier: str, now: datetime
+    ) -> None:
+        """Record numeric history. Only values the device actually gave us."""
+        rows: list[Telemetry] = []
+        rows.append(Telemetry(projector_id=projector_id, metric="online",
+                              value_num=1.0 if status.online else 0.0, recorded_at=now))
+        if status.power is not PowerState.UNKNOWN:
+            rows.append(Telemetry(projector_id=projector_id, metric="power",
+                                  value_num=1.0 if status.power is PowerState.ON else 0.0,
+                                  value_text=status.power.value, recorded_at=now))
+        if tier == Tier.MAINTENANCE and status.lamp_hours.availability is Availability.AVAILABLE:
+            for lamp in status.lamp_hours.value or []:
+                hours = lamp.get("hours")
+                if hours is None:
+                    continue
+                rows.append(Telemetry(
+                    projector_id=projector_id, metric=f"lamp{lamp.get('index', 1)}_hours",
+                    value_num=float(hours), recorded_at=now,
+                ))
+        if status.health is not HealthSeverity.UNKNOWN:
+            rows.append(Telemetry(projector_id=projector_id, metric="health",
+                                  value_text=status.health.value, recorded_at=now))
+        session.add_all(rows)
+
+    async def _write_transitions(
+        self, session, worker: Any, status: Any,
+        previously_online: bool, previous_power: str, now: datetime,
+    ) -> None:
+        if previously_online and not status.online:
+            session.add(Event(
+                projector_id=worker.projector_id, severity=Severity.CRITICAL.value,
+                kind="projector_offline",
+                message=f"{worker.name} stopped responding",
+                details={"last_error": worker.last_error,
+                         "power_before": previous_power},
+                created_at=now,
+            ))
+        elif not previously_online and status.online:
+            session.add(Event(
+                projector_id=worker.projector_id, severity=Severity.INFO.value,
+                kind="projector_online",
+                message=f"{worker.name} is responding again",
+                created_at=now,
+            ))
+        if previous_power == PowerState.ON.value and status.power is PowerState.OFF:
+            session.add(Event(
+                projector_id=worker.projector_id, severity=Severity.WARNING.value,
+                kind="power_off_observed",
+                message=f"{worker.name} is now in standby",
+                details={"note": "Observed by polling. If no operator or automation "
+                                 "issued a power-off, treat this as an unexpected shutdown."},
+                created_at=now,
+            ))
+
+    # -- retention ---------------------------------------------------------
+
+    async def _retention_loop(self) -> None:
+        """Prune history daily so the database does not grow without bound."""
+        while self._running:
+            await asyncio.sleep(3600 * 6)
+            try:
+                await self._prune()
+            except asyncio.CancelledError:
+                return
+            except Exception:  # noqa: BLE001
+                log.exception("retention pruning failed")
+
+    async def _prune(self) -> None:
+        from app.db.models import CommandLog
+
+        now = datetime.now(UTC)
+        async with session_scope() as session:
+            await session.execute(delete(Telemetry).where(
+                Telemetry.recorded_at < now - timedelta(days=settings.telemetry_retention_days)
+            ))
+            await session.execute(delete(CommandLog).where(
+                CommandLog.created_at < now - timedelta(days=settings.command_log_retention_days)
+            ))
+            await session.execute(delete(Event).where(
+                Event.created_at < now - timedelta(days=settings.event_retention_days)
+            ))
+
+
+async def load_projectors() -> int:
+    """Register every enabled projector with the device manager."""
+    async with session_scope() as session:
+        rows = (await session.execute(
+            select(Projector).where(Projector.enabled.is_(True))
+        )).scalars().all()
+        for record in rows:
+            await manager.add(record)
+    log.info("registered %d projector(s)", len(rows))
+    return len(rows)
+
+
+monitor = MonitoringService()

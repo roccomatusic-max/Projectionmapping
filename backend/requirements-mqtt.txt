@@ -1,0 +1,3 @@
+# Optional: enable MQTT publishing and Home Assistant discovery.
+-r requirements.txt
+aiomqtt==2.3.0
