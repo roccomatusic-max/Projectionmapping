@@ -83,7 +83,7 @@ change up over the WebSocket feed.
 Chrome and Edge expose the Window Management API: the editor lists the
 connected displays by name and opens each output full-screen on the chosen
 one. Other browsers open the window and the operator drags it across and
-presses F (full-screen). macOS: set the projector displays to *not* mirror,
+clicks once in it (or presses F) to fill the display. macOS: set the projector displays to *not* mirror,
 and turn off "Displays have separate Spaces" if a full-screen window refuses
 to stay on its display.
 
@@ -187,6 +187,12 @@ open -na "Google Chrome" --args --kiosk --autoplay-policy=no-user-gesture-requir
   --user-data-dir=$HOME/.mapping-player \
   http://<main-server>:8765/player
 ```
+
+Kiosk mode shows nothing of the browser: no tabs, address bar or window
+frame, from the moment the machine boots, and the player hides the mouse
+cursor and its status overlay. A player opened in an ordinary browser window
+shows "Click anywhere to fill the screen" until someone clicks once; Esc
+leaves full screen.
 
 Set the computer's display output to the projector's native resolution; the
 player's status overlay (press H) warns when the window and the output's

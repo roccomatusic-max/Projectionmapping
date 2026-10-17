@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
-import { OutputScreen } from './OutputPage'
+import { enterFullscreen, OutputScreen } from './OutputPage'
 import type { Show } from './types'
 
 /**
@@ -223,9 +223,29 @@ export default function PlayerPage() {
 }
 
 function Screen({ children }: { children: React.ReactNode }) {
+  // In kiosk mode the window already covers the display; anywhere else the
+  // browser's own bars are still showing until someone clicks once.
+  const [framed, setFramed] = useState(isFramed)
+  useEffect(() => {
+    const update = () => setFramed(isFramed())
+    document.addEventListener('fullscreenchange', update)
+    window.addEventListener('resize', update)
+    return () => {
+      document.removeEventListener('fullscreenchange', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [])
   return (
-    <div className="fixed inset-0 flex cursor-none flex-col items-center justify-center gap-6 bg-black">
+    <div
+      className="fixed inset-0 flex cursor-none flex-col items-center justify-center gap-6 bg-black"
+      onClick={enterFullscreen}
+    >
       {children}
+      {framed && <p className="text-sm text-slate-500">Click anywhere to fill the screen.</p>}
     </div>
   )
+}
+
+function isFramed() {
+  return !document.fullscreenElement && window.innerHeight < window.screen.height
 }

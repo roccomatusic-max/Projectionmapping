@@ -22,7 +22,7 @@ export default function OutputPage() {
 /**
  * The image that feeds one projector: full screen, no chrome.
  *
- * Double-click or F toggles full screen; H toggles the status overlay.
+ * A click enters full screen, F toggles it; H toggles the status overlay.
  */
 export function OutputScreen({
   showId,
@@ -86,7 +86,7 @@ export function OutputScreen({
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen()
-    else void document.documentElement.requestFullscreen().catch(() => undefined)
+    else enterFullscreen()
   }, [])
 
   useEffect(() => {
@@ -120,7 +120,7 @@ export function OutputScreen({
   const mismatch = size[0] !== output.width || size[1] !== output.height
 
   return (
-    <div className="fixed inset-0 bg-black" style={{ cursor }} onDoubleClick={toggleFullscreen}>
+    <div className="fixed inset-0 bg-black" style={{ cursor }} onClick={enterFullscreen}>
       <OutputView
         output={shown}
         canvasWidth={show.canvas_width}
@@ -149,11 +149,20 @@ export function OutputScreen({
             {mismatch ? ' (mismatch: check the display resolution)' : ''}
           </p>
           {hudExtra}
-          <p className="text-slate-500">F full screen · H hide this · double-click full screen</p>
+          <p className="text-slate-500">click or F full screen · Esc leave it · H hide this</p>
         </div>
       )}
     </div>
   )
+}
+
+/**
+ * Fill the display, hiding every part of the browser. Browsers allow this
+ * only from a click or key press; a player started in kiosk mode is full
+ * screen from boot and never needs it.
+ */
+export function enterFullscreen() {
+  if (!document.fullscreenElement) void document.documentElement.requestFullscreen().catch(() => undefined)
 }
 
 function pixelSize(): [number, number] {
