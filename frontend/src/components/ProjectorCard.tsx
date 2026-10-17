@@ -1,38 +1,25 @@
 import { Link } from 'react-router-dom'
 import type { Projector } from '@/api/types'
-import { Chip, StatusDot, Value } from './ui'
+import { classNames, relativeTime, renderTelemetry } from '@/lib/format'
 import {
-  POWER_LABEL,
-  SHUTTER_LABEL,
-  classNames,
-  relativeTime,
-  renderTelemetry,
-} from '@/lib/format'
+  InputBadge,
+  LampMeter,
+  PowerGlyph,
+  ProjectorMark,
+  ShutterGlyph,
+  type Tone,
+} from './graphics'
+import { ChevronIcon, PowerIcon, ShutterIcon, WarningIcon } from './icons'
 
 /** Connection tone. A stale device is never green: liveness is observed,
  *  not remembered. */
-export function connectionTone(projector: Projector) {
+export function connectionTone(projector: Projector): Tone {
   const { state } = projector
-  if (!projector.enabled) return 'idle' as const
-  if (state.stale || !state.online) return 'fault' as const
-  if (state.health === 'error') return 'fault' as const
-  if (state.health === 'warning') return 'warn' as const
-  return 'ok' as const
-}
-
-function powerTone(projector: Projector) {
-  if (!projector.state.online || projector.state.stale) return 'unknown' as const
-  switch (projector.state.power) {
-    case 'on':
-      return 'ok' as const
-    case 'warming':
-    case 'cooling':
-      return 'busy' as const
-    case 'off':
-      return 'idle' as const
-    default:
-      return 'unknown' as const
-  }
+  if (!projector.enabled) return 'idle'
+  if (state.stale || !state.online) return 'fault'
+  if (state.health === 'error') return 'fault'
+  if (state.health === 'warning') return 'warn'
+  return 'ok'
 }
 
 export function ProjectorCard({
@@ -50,164 +37,125 @@ export function ProjectorCard({
 }) {
   const { state } = projector
   const live = state.online && !state.stale
+  const transitioning = state.power === 'warming' || state.power === 'cooling'
   const input = renderTelemetry(state.active_input, (value) =>
     typeof value === 'string' ? value : value.label,
   )
+  const inputCode =
+    state.active_input.availability === 'available' && typeof state.active_input.value === 'object'
+      ? state.active_input.value?.code ?? ''
+      : ''
   const lamps = state.lamp_hours
-  const lampHourValues =
+  const lampValues =
     lamps.availability === 'available' && Array.isArray(lamps.value)
       ? lamps.value.map((lamp) => lamp.hours).filter((h): h is number => h != null)
       : []
-  const peakLampHours = lampHourValues.length > 0 ? Math.max(...lampHourValues) : null
-  const lampTone =
-    peakLampHours == null
-      ? 'idle'
-      : peakLampHours >= projector.lamp_critical_hours
-        ? 'fault'
-        : peakLampHours >= projector.lamp_warn_hours
-          ? 'warn'
-          : 'ok'
-
-  const transitioning = state.power === 'warming' || state.power === 'cooling'
+  const peakLampHours = lampValues.length > 0 ? Math.max(...lampValues) : null
+  const problems = [...state.errors, ...state.warnings]
+  const offlineReason = !state.online && state.last_error && !state.errors.includes(state.last_error)
+    ? state.last_error
+    : null
 
   return (
-    <article
-      className={classNames(
-        'panel flex flex-col transition-colors',
-        !projector.enabled && 'opacity-60',
-      )}
-    >
-      <header className="flex items-start justify-between gap-3 border-b border-white/5 px-4 py-3">
-        <div className="min-w-0">
+    <article className={classNames('panel flex flex-col', !projector.enabled && 'opacity-60')}>
+      <header className="flex items-center gap-3 px-4 pt-4">
+        <ProjectorMark tone={connectionTone(projector)} pulse={transitioning} />
+        <div className="min-w-0 flex-1">
           <Link
             to={`/projectors/${projector.id}`}
-            className="flex items-center gap-2 text-sm font-semibold text-slate-100 hover:text-sky-300"
+            className="block truncate text-sm font-semibold text-slate-100 hover:text-sky-300"
           >
-            <StatusDot tone={connectionTone(projector)} pulse={transitioning} />
-            <span className="truncate">{projector.name}</span>
+            {projector.name}
           </Link>
-          <p className="mt-0.5 truncate text-xs text-slate-400">
-            {projector.manufacturer} {projector.model}
-            {projector.location && ` · ${projector.location}`}
+          <p className="truncate text-xs text-slate-400">
+            {projector.model}
+            {projector.location && <span className="text-slate-500"> · {projector.location}</span>}
           </p>
         </div>
-        <Chip tone={powerTone(projector)}>
-          {live ? POWER_LABEL[state.power] : 'Offline'}
-        </Chip>
+        <span
+          className={classNames(
+            'tnum shrink-0 text-[11px]',
+            state.stale ? 'text-amber-400' : 'text-slate-500',
+          )}
+          title={
+            state.stale
+              ? 'No successful poll inside the staleness window — last known value, not a live reading.'
+              : 'Last successful reply'
+          }
+        >
+          {relativeTime(state.last_seen_at)}
+          {state.stale && ' · stale'}
+        </span>
       </header>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 px-4 py-3 text-xs">
-        <div>
-          <dt className="text-slate-500">Address</dt>
-          <dd className="tnum text-slate-300">
-            {projector.host}:{projector.port}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">Input</dt>
-          <dd>
-            <Value text={input.text} muted={input.muted} title={input.title} />
-          </dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">Shutter</dt>
-          <dd
-            className={classNames(
-              state.shutter === 'closed' ? 'text-amber-300' : 'text-slate-300',
-            )}
-          >
-            {live ? SHUTTER_LABEL[state.shutter] : '—'}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">Lamp hours</dt>
-          <dd>
-            {peakLampHours == null ? (
-              <Value
-                text={lamps.availability === 'unsupported' ? 'n/a' : '—'}
-                muted
-                title={lamps.note ?? 'Not read yet'}
-              />
-            ) : (
-              <span
-                className={classNames(
-                  'tnum',
-                  lampTone === 'fault'
-                    ? 'text-red-300'
-                    : lampTone === 'warn'
-                      ? 'text-amber-300'
-                      : 'text-slate-300',
-                )}
-                title={`Highest of ${(lamps.value ?? []).length} lamp(s). Warn at ${projector.lamp_warn_hours}h, replace at ${projector.lamp_critical_hours}h.`}
-              >
-                {peakLampHours.toLocaleString()} h
-              </span>
-            )}
-          </dd>
-        </div>
-        <div className="col-span-2">
-          <dt className="text-slate-500">Last reply</dt>
-          <dd
-            className={classNames(
-              'tnum',
-              state.stale ? 'text-amber-300' : 'text-slate-300',
-            )}
-            title={
-              state.stale
-                ? 'No successful poll inside the staleness window — this is the last known value, not a live reading.'
-                : undefined
-            }
-          >
-            {relativeTime(state.last_seen_at)}
-            {state.stale && ' · stale'}
-            {state.queue_depth > 0 && ` · ${state.queue_depth} queued`}
-          </dd>
-        </div>
-      </dl>
-
-      {(state.errors.length > 0 || state.warnings.length > 0 || state.last_error) && (
-        <div className="mx-4 mb-3 space-y-1">
-          {state.errors.map((error) => (
-            <p key={error} className="text-xs text-red-300">
-              ● {error}
-            </p>
-          ))}
-          {state.warnings.map((warning) => (
-            <p key={warning} className="text-xs text-amber-300">
-              ● {warning}
-            </p>
-          ))}
-          {state.last_error && !state.online && !state.errors.includes(state.last_error) && (
-            <p className="break-words text-xs text-slate-500">{state.last_error}</p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-4">
+        <PowerGlyph state={state.power} live={live} size="sm" />
+        <ShutterGlyph state={state.shutter} live={live} size="sm" />
+        <div className="col-span-2 flex items-center justify-between gap-3 rounded-lg bg-panel-850 px-3 py-2">
+          <span className="text-[11px] uppercase tracking-wide text-slate-500">Input</span>
+          {input.muted ? (
+            <span className="text-xs text-slate-500" title={input.title}>
+              {input.text}
+            </span>
+          ) : (
+            <span className="text-sm">
+              <InputBadge code={inputCode} label={input.text} />
+            </span>
           )}
         </div>
+        <div className="col-span-2">
+          <LampMeter
+            label={lampValues.length > 1 ? `Lamp hours (highest of ${lampValues.length})` : 'Lamp hours'}
+            hours={peakLampHours}
+            warn={projector.lamp_warn_hours}
+            critical={projector.lamp_critical_hours}
+            compact
+            note={
+              peakLampHours == null
+                ? (lamps.note ?? 'Lamp hours have not been read yet')
+                : undefined
+            }
+          />
+        </div>
+      </div>
+
+      {(problems.length > 0 || offlineReason) && (
+        <ul className="mx-4 mb-3 space-y-1">
+          {state.errors.map((error) => (
+            <li key={error} className="flex items-start gap-1.5 text-xs text-red-300">
+              <WarningIcon size={13} className="mt-0.5 shrink-0" aria-hidden /> <span className="break-words">{error}</span>
+            </li>
+          ))}
+          {state.warnings.map((warning) => (
+            <li key={warning} className="flex items-start gap-1.5 text-xs text-amber-300">
+              <WarningIcon size={13} className="mt-0.5 shrink-0" aria-hidden /> <span className="break-words">{warning}</span>
+            </li>
+          ))}
+          {offlineReason && <li className="break-words text-xs text-slate-500">{offlineReason}</li>}
+        </ul>
       )}
 
-      <footer className="mt-auto flex flex-wrap items-center gap-2 border-t border-white/5 px-4 py-3">
+      <footer className="mt-auto flex items-center gap-2 border-t border-white/5 px-3 py-2.5">
         <button
           className="btn-default flex-1"
           disabled={!canControl || busy || !live || transitioning}
           onClick={() => onPower(projector, state.power === 'on' ? 'off' : 'on')}
-          title={
-            transitioning
-              ? `Projector is ${POWER_LABEL[state.power].toLowerCase()}; wait for it to settle`
-              : undefined
-          }
+          title={transitioning ? 'Wait for the projector to finish its transition' : undefined}
         >
+          <PowerIcon size={15} aria-hidden />
           {state.power === 'on' ? 'Power off' : 'Power on'}
         </button>
         <button
           className="btn-default flex-1"
           disabled={!canControl || busy || !live || state.power !== 'on'}
-          onClick={() =>
-            onShutter(projector, state.shutter === 'closed' ? 'open' : 'closed')
-          }
+          onClick={() => onShutter(projector, state.shutter === 'closed' ? 'open' : 'closed')}
           title={state.power !== 'on' ? 'Shutter control needs the lamp on' : undefined}
         >
-          {state.shutter === 'closed' ? 'Open shutter' : 'Close shutter'}
+          <ShutterIcon size={15} aria-hidden />
+          {state.shutter === 'closed' ? 'Open' : 'Close'}
         </button>
-        <Link to={`/projectors/${projector.id}`} className="btn-ghost">
-          Details →
+        <Link to={`/projectors/${projector.id}`} className="btn-ghost px-2" aria-label="Details">
+          <ChevronIcon size={18} />
         </Link>
       </footer>
     </article>

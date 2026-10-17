@@ -12,6 +12,7 @@ import {
   useToasts,
 } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
+import { AutomationIcon, SceneIcon } from '@/components/icons'
 
 /** Templates matching the startup/shutdown sequences in the project brief.
  *  Each is a real, runnable step list, not an illustration. */
@@ -146,6 +147,7 @@ export default function Automation({ session }: { session: Session }) {
       {error && <ErrorBanner message={error} />}
 
       <Panel
+        icon={AutomationIcon}
         title="Automations"
         description="Multi-step sequences. Each step reports its own per-projector result."
       >
@@ -199,7 +201,7 @@ export default function Automation({ session }: { session: Session }) {
                       disabled={!canRun || busy}
                       onClick={() => setConfirming(automation)}
                     >
-                      Run now
+                      <SceneIcon size={13} aria-hidden /> Run now
                     </button>
                     {isAdmin && (
                       <button
@@ -309,7 +311,7 @@ export default function Automation({ session }: { session: Session }) {
         </Panel>
       )}
 
-      <Panel title="Scenes" description="Reusable one-shot actions over projectors or groups.">
+      <Panel icon={SceneIcon} title="Scenes" description="Reusable one-shot actions over projectors or groups.">
         {scenes.length === 0 ? (
           <EmptyState title="No scenes defined">
             Scenes activate a fixed set of commands in one action.

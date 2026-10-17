@@ -3,6 +3,18 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { clearSession, getSession, type Session } from '@/api/client'
 import { classNames } from '@/lib/format'
 import { Spinner } from '@/components/ui'
+import {
+  AutomationIcon,
+  ControlIcon,
+  DashboardIcon,
+  GroupsIcon,
+  LogsIcon,
+  MenuIcon,
+  MonitoringIcon,
+  ProjectorIcon,
+  SettingsIcon,
+  SignOutIcon,
+} from '@/components/icons'
 import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
 import Projectors from '@/pages/Projectors'
@@ -17,14 +29,14 @@ const Monitoring = lazy(() => import('@/pages/Monitoring'))
 import Settings from '@/pages/Settings'
 
 const NAV = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/projectors', label: 'Projectors' },
-  { to: '/groups', label: 'Groups' },
-  { to: '/control', label: 'Control Center' },
-  { to: '/automation', label: 'Automation' },
-  { to: '/monitoring', label: 'Monitoring' },
-  { to: '/logs', label: 'Logs' },
-  { to: '/settings', label: 'Settings' },
+  { to: '/', label: 'Dashboard', end: true, icon: DashboardIcon },
+  { to: '/projectors', label: 'Projectors', icon: ProjectorIcon },
+  { to: '/groups', label: 'Groups', icon: GroupsIcon },
+  { to: '/control', label: 'Control Center', icon: ControlIcon },
+  { to: '/automation', label: 'Automation', icon: AutomationIcon },
+  { to: '/monitoring', label: 'Monitoring', icon: MonitoringIcon },
+  { to: '/logs', label: 'Logs', icon: LogsIcon },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ]
 
 export default function App() {
@@ -61,12 +73,15 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b border-white/5 bg-panel-950/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1800px] items-center gap-3 px-4 py-2.5">
-          <span className="text-sm font-semibold tracking-tight text-slate-100">
+        <div className="mx-auto flex max-w-[1800px] items-stretch gap-3 px-4">
+          <span className="flex items-center gap-2 py-2.5 text-sm font-semibold tracking-tight text-slate-100">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/15 text-sky-300" aria-hidden>
+              <ProjectorIcon size={16} strokeWidth={2} />
+            </span>
             Projector Control
           </span>
 
-          <nav className="ml-4 hidden items-center gap-0.5 lg:flex">
+          <nav className="ml-4 hidden items-stretch gap-1 lg:flex">
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
@@ -74,24 +89,25 @@ export default function App() {
                 end={item.end}
                 className={({ isActive }) =>
                   classNames(
-                    'whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors xl:px-3',
-                    isActive
-                      ? 'bg-panel-800 text-slate-100'
-                      : 'text-slate-400 hover:bg-panel-900 hover:text-slate-200',
+                    'relative flex items-center gap-1.5 whitespace-nowrap px-2.5 text-sm transition-colors xl:px-3',
+                    isActive ? 'text-slate-100' : 'text-slate-400 hover:text-slate-200',
+                    isActive &&
+                      'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-sky-400',
                   )
                 }
               >
+                <item.icon size={15} strokeWidth={1.75} aria-hidden />
                 {item.label}
               </NavLink>
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3 py-2">
             <span className="hidden whitespace-nowrap text-xs text-slate-500 sm:inline">
               {session.username} · {session.role}
             </span>
             <button className="btn-ghost text-xs" onClick={signOut}>
-              Sign out
+              <SignOutIcon size={14} aria-hidden /> Sign out
             </button>
             <button
               className="btn-ghost lg:hidden"
@@ -99,7 +115,7 @@ export default function App() {
               aria-label="Toggle navigation"
               aria-expanded={menuOpen}
             >
-              ☰
+              <MenuIcon size={18} />
             </button>
           </div>
         </div>
@@ -113,11 +129,12 @@ export default function App() {
                 end={item.end}
                 className={({ isActive }) =>
                   classNames(
-                    'rounded-md px-3 py-2 text-sm',
+                    'flex items-center gap-2 rounded-lg px-3 py-2 text-sm',
                     isActive ? 'bg-panel-800 text-slate-100' : 'text-slate-400',
                   )
                 }
               >
+                <item.icon size={16} strokeWidth={1.75} aria-hidden />
                 {item.label}
               </NavLink>
             ))}

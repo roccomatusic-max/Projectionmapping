@@ -3,6 +3,7 @@ import { api } from '@/api/client'
 import type { EventRow, Projector } from '@/api/types'
 import { Chip, EmptyState, ErrorBanner, Panel, Spinner } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
+import { LiveIcon, LogsIcon } from '@/components/icons'
 import { useBusMessages } from '@/hooks/useLiveData'
 
 export default function Logs() {
@@ -55,6 +56,7 @@ export default function Logs() {
       {error && <ErrorBanner message={error} />}
 
       <Panel
+        icon={LiveIcon}
         title="Live activity"
         description="Commands and alerts as they happen on this server."
       >
@@ -92,6 +94,7 @@ export default function Logs() {
       </Panel>
 
       <Panel
+        icon={LogsIcon}
         title="Event history"
         action={
           <div className="flex flex-wrap gap-2">

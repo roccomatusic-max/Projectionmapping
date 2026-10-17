@@ -9,6 +9,7 @@ import {
   ToastStack,
   useToasts,
 } from '@/components/ui'
+import { ClockIcon, LiveIcon, ProjectorIcon, SettingsIcon, TokenIcon, UsersIcon } from '@/components/icons'
 
 export default function Settings({ session }: { session: Session }) {
   const [info, setInfo] = useState<Awaited<ReturnType<typeof api.systemInfo>> | null>(null)
@@ -49,7 +50,7 @@ export default function Settings({ session }: { session: Session }) {
       {error && <ErrorBanner message={error} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="Your account">
+        <Panel icon={SettingsIcon} title="Your account">
           <ChangePassword
             onDone={() => push('ok', 'Password changed')}
             onError={(message) => push('fault', 'Could not change password', message)}
@@ -59,7 +60,7 @@ export default function Settings({ session }: { session: Session }) {
           </p>
         </Panel>
 
-        <Panel title="Polling intervals" description="Server-side defaults, in seconds.">
+        <Panel icon={ClockIcon} title="Polling intervals" description="Server-side defaults, in seconds.">
           <dl className="grid grid-cols-2 gap-y-2 text-sm">
             {Object.entries(info.polling).map(([tier, seconds]) => (
               <div key={tier} className="contents">
@@ -76,6 +77,7 @@ export default function Settings({ session }: { session: Session }) {
       </div>
 
       <Panel
+        icon={LiveIcon}
         title="Device connections"
         description="Live transport state for each registered projector."
       >
@@ -109,6 +111,7 @@ export default function Settings({ session }: { session: Session }) {
       </Panel>
 
       <Panel
+        icon={ProjectorIcon}
         title="Drivers and command provenance"
         description="Where each command comes from. Commands marked as sibling-model are refused unless a projector opts in."
       >
@@ -150,7 +153,7 @@ export default function Settings({ session }: { session: Session }) {
       </Panel>
 
       {isAdmin && (
-        <Panel title="Users">
+        <Panel icon={UsersIcon} title="Users">
           <UserAdmin
             users={users}
             currentUser={session.username}
@@ -162,6 +165,7 @@ export default function Settings({ session }: { session: Session }) {
 
       {isAdmin && (
         <Panel
+          icon={TokenIcon}
           title="Service tokens"
           description="Long-lived tokens for Home Assistant, scripts and enclosure sensors. A token carries its user's role; deactivating the user revokes it."
         >

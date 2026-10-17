@@ -22,6 +22,7 @@ import {
   useToasts,
 } from '@/components/ui'
 import { formatDateTime, relativeTime } from '@/lib/format'
+import { FaultIcon, LampIcon, MaintenanceIcon, MonitoringIcon, OkIcon } from '@/components/icons'
 
 const CHART_AXIS = { stroke: '#64748b', fontSize: 11 }
 const CHART_GRID = '#1f2733'
@@ -128,11 +129,12 @@ export default function Monitoring({ session }: { session: Session }) {
       {error && <ErrorBanner message={error} />}
 
       <Panel
+        icon={FaultIcon}
         title="Open alerts"
         description="One notification per unresolved condition. Acknowledging silences repeats without resolving it."
       >
         {alerts.length === 0 ? (
-          <EmptyState title="No open alerts">Everything the platform monitors is nominal.</EmptyState>
+          <EmptyState title="No open alerts" icon={OkIcon}>Everything the platform monitors is nominal.</EmptyState>
         ) : (
           <ul className="divide-y divide-white/5">
             {alerts.map((alert) => (
@@ -179,6 +181,7 @@ export default function Monitoring({ session }: { session: Session }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel
+          icon={MonitoringIcon}
           title="Estimated daily operating hours"
           description={usage?.note}
         >
@@ -207,6 +210,7 @@ export default function Monitoring({ session }: { session: Session }) {
         </Panel>
 
         <Panel
+          icon={LampIcon}
           title="Lamp hours over time"
           description="Read from the projector's own runtime counter — the authoritative figure."
         >
@@ -247,6 +251,7 @@ export default function Monitoring({ session }: { session: Session }) {
       </div>
 
       <Panel
+        icon={MaintenanceIcon}
         title="Maintenance"
         action={
           <button
