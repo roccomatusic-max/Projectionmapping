@@ -77,6 +77,8 @@ class MQTTPublisher:
         self._announced: set[str] = set()
         #: name slug -> projector id, for routing inbound command topics.
         self._slugs: dict[str, int] = {}
+        #: In-flight inbound commands, each its own task.
+        self._commands: set[asyncio.Task] = set()
 
     @property
     def enabled(self) -> bool:
@@ -110,6 +112,8 @@ class MQTTPublisher:
 
     async def stop(self) -> None:
         self._running = False
+        for task in list(self._commands):
+            task.cancel()
         await stop_task(self._task, name="mqtt", grace=2.0)
         if self._queue:
             await bus.unsubscribe(self._queue)
@@ -166,31 +170,42 @@ class MQTTPublisher:
         There is no confirmation step on this path: publishing to a command
         topic *is* the deliberate act, which is why it is off by default.
         """
-        from app.services.audit import log_command_results
-        from app.services.device_manager import Priority, manager
-
         async for message in client.messages:
             topic = str(message.topic)
             try:
                 payload = (message.payload or b"").decode("utf-8", errors="replace")
             except AttributeError:
                 payload = str(message.payload)
-            parsed = parse_command_topic(settings.mqtt_prefix, topic, payload)
-            if parsed is None:
-                log.warning("ignoring MQTT message on %s with payload %r", topic, payload[:40])
-                continue
-            slug, capability, params = parsed
-            pid = self._slugs.get(slug)
-            worker = manager.get(pid) if pid is not None else None
-            if worker is None:
-                log.warning("MQTT command for unknown projector %r", slug)
-                continue
-            result = await worker.execute(capability, params, priority=Priority.AUTOMATION)
-            await log_command_results(
-                [{"projector_id": pid, "name": worker.name, **result.as_dict()}],
-                capability, params, source="mqtt", username="mqtt",
-            )
-            log.info("MQTT %s on %s -> %s", capability, worker.name, result.outcome.value)
+            # Each command runs as its own task so an unreachable projector
+            # (which takes a full timeout to fail) cannot hold up the next
+            # command for a live one.
+            task = asyncio.create_task(self.handle_command(topic, payload))
+            self._commands.add(task)
+            task.add_done_callback(self._commands.discard)
+
+    async def handle_command(self, topic: str, payload: str, *,
+                             timeout: float = 30.0) -> dict[str, Any] | None:
+        """Route one inbound command topic to a projector. Returns the result."""
+        from app.services.audit import log_command_results
+        from app.services.device_manager import Priority, manager
+
+        parsed = parse_command_topic(settings.mqtt_prefix, topic, payload)
+        if parsed is None:
+            log.warning("ignoring MQTT message on %s with payload %r", topic, payload[:40])
+            return None
+        slug, capability, params = parsed
+        pid = self._slugs.get(slug)
+        worker = manager.get(pid) if pid is not None else None
+        if worker is None:
+            log.warning("MQTT command for unknown projector %r", slug)
+            return None
+        result = await worker.execute(
+            capability, params, priority=Priority.AUTOMATION, timeout=timeout
+        )
+        record = {"projector_id": pid, "name": worker.name, **result.as_dict()}
+        await log_command_results([record], capability, params, source="mqtt", username="mqtt")
+        log.info("MQTT %s on %s -> %s", capability, worker.name, result.outcome.value)
+        return record
 
     async def _publish_message(self, client: Any, kind: str, payload: dict[str, Any]) -> None:
         prefix = settings.mqtt_prefix

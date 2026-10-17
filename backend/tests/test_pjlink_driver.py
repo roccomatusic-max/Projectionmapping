@@ -145,3 +145,21 @@ async def test_bad_password_raises_on_connect(sim_state):
     finally:
         await driver.disconnect()
         await simulator.stop()
+
+
+async def test_connect_and_authenticate_send_one_class_probe(sim_state):
+    """The probe during connect() is the authentication; do not repeat it."""
+    sim_state.password = "pjlink-secret"
+    simulator = PJLinkSimulator(sim_state, host="127.0.0.1", port=0)
+    await simulator.start()
+    driver = PJLinkDriver(ConnectionConfig(
+        host="127.0.0.1", port=simulator.actual_port,
+        password="pjlink-secret", command_gap=0.0, timeout=3.0,
+    ))
+    try:
+        await driver.connect()
+        await driver.authenticate()
+        assert sim_state.command_count == 1
+    finally:
+        await driver.disconnect()
+        await simulator.stop()

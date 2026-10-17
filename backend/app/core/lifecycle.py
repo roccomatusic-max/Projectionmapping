@@ -9,6 +9,7 @@ short grace period to finish the item it is on before being cancelled.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 log = logging.getLogger(__name__)
@@ -29,10 +30,8 @@ async def stop_task(task: asyncio.Task | None, *, name: str,
     except Exception:  # noqa: BLE001 - the task's own error, already logged there
         return
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError, Exception):  # shutdown path
         await task
-    except (asyncio.CancelledError, Exception):  # noqa: BLE001 - shutdown path
-        pass
 
 
 async def wait_or_stop(stop: asyncio.Event, seconds: float) -> bool:

@@ -496,11 +496,16 @@ class DeviceWorker:
             bus.publish("projector_online", {
                 "projector_id": self.projector_id, "name": self.name,
             })
-        if before.power is PowerState.ON and after.power is PowerState.OFF:
-            # Powered down without a command from us: worth an alert.
+        powered = (PowerState.ON, PowerState.WARMING)
+        unpowered = (PowerState.OFF, PowerState.COOLING)
+        if before.power in powered and after.power in unpowered:
+            # Left the powered state between two polls. PJLink reports a
+            # cooling step on the way down and Panasonic does not; both are
+            # the same event to the operator, so both are reported as "off".
             bus.publish("power_changed", {
                 "projector_id": self.projector_id, "name": self.name,
-                "from": before.power.value, "to": after.power.value,
+                "from": before.power.value, "to": "off",
+                "observed": after.power.value,
             })
 
     def snapshot(self) -> DeviceSnapshot:

@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from app.core.events import bus
 from app.core.security import decode_access_token
-from app.db.models import User
+from app.db.models import Role, User
 from app.db.session import SessionLocal
 
 log = logging.getLogger(__name__)
@@ -38,7 +38,16 @@ async def _authenticate(token: str | None) -> User | None:
         user = (await session.execute(
             select(User).where(User.username == payload["sub"])
         )).scalars().first()
-    return user if user and user.is_active else None
+    if user is None or not user.is_active:
+        return None
+    # The live feed is read access to the whole fleet. An ingest-only
+    # account (a sensor's token) may post readings and nothing else.
+    try:
+        if not Role(user.role).at_least(Role.VIEWER):
+            return None
+    except ValueError:
+        return None
+    return user
 
 
 @router.websocket("/ws")

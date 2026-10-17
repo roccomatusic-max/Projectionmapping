@@ -126,11 +126,21 @@ class Settings(BaseSettings):
 
     @property
     def tz(self) -> tzinfo:
-        """The zone schedules are interpreted in."""
+        """The zone schedules are interpreted in.
+
+        A proper ZoneInfo, not the fixed offset ``astimezone()`` would give:
+        a one-shot scheduled for a date on the other side of a DST change
+        must be resolved with that date's offset, not today's.
+        """
         if self.schedule_timezone:
             return ZoneInfo(self.schedule_timezone)
-        local = datetime.now().astimezone().tzinfo
-        return local if local is not None else ZoneInfo("UTC")
+        try:
+            from tzlocal import get_localzone
+
+            return get_localzone()
+        except Exception:  # noqa: BLE001 - tzlocal missing or host misconfigured
+            local = datetime.now().astimezone().tzinfo
+            return local if local is not None else ZoneInfo("UTC")
 
     @property
     def is_sqlite(self) -> bool:

@@ -165,7 +165,9 @@ class PJLinkDriver(ProjectorDriver):
         Issuing ``%1CLSS ?`` is the cheapest way to force that exchange and
         find out whether the password was accepted.
         """
-        if self._auth_digest is None:
+        if self._auth_digest is None or self._authenticated:
+            # connect() already sent %1CLSS ? through _probe_class, which is
+            # where a rejected password surfaces; nothing left to do.
             self._authenticated = True
             return
         result = await self._command("info.class", "%1CLSS ?")

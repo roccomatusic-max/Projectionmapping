@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from datetime import UTC
@@ -60,10 +61,8 @@ async def api(panasonic_sim, monkeypatch):
             client.sim = panasonic_sim
             yield client
     for suffix in ("", "-wal", "-shm"):
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(path + suffix)
-        except FileNotFoundError:
-            pass
 
 
 async def login(client, username="admin", password="test-admin-password") -> dict:
@@ -733,3 +732,53 @@ async def test_invalid_cron_is_rejected_at_the_api(api):
         "name": "Good cron", "trigger_type": "cron", "schedule": {"cron": "30 20 * * fri,sat"},
     })
     assert ok.status_code == 201, ok.text
+
+
+async def test_ingest_role_cannot_open_the_live_feed(api, roles):
+    from app.api.routes import ws as ws_module
+
+    admin = roles["admin"]
+    await api.post("/api/auth/users", headers=admin, json={
+        "username": "sensor2", "password": "a-long-sensor-password", "role": "ingest",
+    })
+    token = (await api.post("/api/auth/login", json={
+        "username": "sensor2", "password": "a-long-sensor-password",
+    })).json()["access_token"]
+    assert await ws_module._authenticate(token) is None
+    viewer_token = (await api.post("/api/auth/login", json={
+        "username": "viewer1", "password": "a-long-test-password",
+    })).json()["access_token"]
+    assert (await ws_module._authenticate(viewer_token)) is not None
+
+
+async def test_timed_out_power_off_is_still_a_commanded_shutdown(api):
+    """Reply lost on a deliberate power-off must not page the operator."""
+    from app.services.alerts import alerting
+    from app.services.audit import log_command_results
+
+    headers = await login(api)
+    pid = await add_projector(api, headers, name="Lost reply")
+    await log_command_results(
+        [{"projector_id": pid, "name": "Lost reply", "outcome": "timeout"}],
+        "power.set", {"state": "off"}, source="ui", username="admin",
+    )
+    await alerting._handle("power_changed", {"projector_id": pid, "name": "Lost reply",
+                                             "from": "on", "to": "off"})
+    alerts = (await api.get("/api/alerts", headers=headers)).json()
+    assert not any(a["kind"] == "unexpected_shutdown" for a in alerts)
+
+
+async def test_alert_recurrence_on_sqlite_updates_instead_of_raising(api):
+    """The second occurrence of an open condition compares timestamps that
+    SQLite hands back naive; it must update the alert, not throw."""
+    from app.services.alerts import alerting
+
+    headers = await login(api)
+    pid = await add_projector(api, headers, name="Flapper")
+    payload = {"projector_id": pid, "name": "Flapper", "was_powered": "on"}
+    await alerting._handle("projector_offline", payload)
+    await alerting._handle("projector_offline", {**payload, "error": "second time"})
+    alerts = [a for a in (await api.get("/api/alerts", headers=headers)).json()
+              if a["kind"] == "offline"]
+    assert len(alerts) == 1
+    assert alerts[0]["details"].get("error") == "second time"

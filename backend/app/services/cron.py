@@ -88,8 +88,10 @@ def matches(expression: str, when: datetime) -> bool:
     """True if ``when`` (to the minute) satisfies ``expression``."""
     minute, hour, dom, month, dow = parse(expression)
     fields = expression.split()
-    dom_restricted = fields[2] != "*"
-    dow_restricted = fields[4] != "*"
+    # As in Vixie cron, a field beginning with '*' (including '*/2') counts
+    # as unrestricted for the day-of-month OR day-of-week rule.
+    dom_restricted = not fields[2].startswith("*")
+    dow_restricted = not fields[4].startswith("*")
     cron_dow = (when.weekday() + 1) % 7  # Python Mon=0 -> cron Sun=0
     if when.minute not in minute or when.hour not in hour or when.month not in month:
         return False

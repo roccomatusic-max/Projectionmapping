@@ -286,3 +286,46 @@ async def test_idle_session_is_reconnected_before_a_command(pjlink_sim):
         assert w.driver.connected
     finally:
         await w.stop()
+
+
+async def test_power_loss_via_cooling_is_reported(panasonic_sim):
+    """PJLink reports on -> cooling -> off; the event must fire on the first step."""
+    from app.core.events import bus
+    from app.drivers import PowerState, ProjectorStatus
+
+    w = DeviceWorker(make_record(60, panasonic_sim.actual_port))
+    queue = await bus.subscribe()
+    try:
+        w._detect_transitions(ProjectorStatus(online=True, power=PowerState.ON),
+                              ProjectorStatus(online=True, power=PowerState.COOLING))
+        kinds = []
+        while not queue.empty():
+            kinds.append(queue.get_nowait())
+        changed = [m for m in kinds if m.type == "power_changed"]
+        assert changed and changed[0].payload["to"] == "off"
+        assert changed[0].payload["observed"] == "cooling"
+        # cooling -> off is the tail of the same event, not a second one.
+        w._detect_transitions(ProjectorStatus(online=True, power=PowerState.COOLING),
+                              ProjectorStatus(online=True, power=PowerState.OFF))
+        again = [queue.get_nowait() for _ in range(queue.qsize())]
+        assert not any(m.type == "power_changed" for m in again)
+    finally:
+        await bus.unsubscribe(queue)
+
+
+async def test_mqtt_command_routes_through_the_device_manager(panasonic_sim, sim_state):
+    from app.services.device_manager import manager
+    from app.services.integration import mqtt_publisher
+
+    record = make_record(61, panasonic_sim.actual_port, name="House Left")
+    await manager.add(record)
+    mqtt_publisher._slugs["house_left"] = 61
+    try:
+        result = await mqtt_publisher.handle_command("projector/house_left/shutter/set", "closed")
+        assert result is not None and result["outcome"] == "accepted"
+        assert sim_state.shutter_closed is True
+        assert await mqtt_publisher.handle_command("projector/nobody/power/set", "on") is None
+        assert await mqtt_publisher.handle_command("projector/house_left/power/set", "maybe") is None
+    finally:
+        await manager.remove(61)
+        mqtt_publisher._slugs.pop("house_left", None)

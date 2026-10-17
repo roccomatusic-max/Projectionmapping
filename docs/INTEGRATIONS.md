@@ -254,7 +254,9 @@ clear.
 
 ## WebSocket
 
-`/api/ws?token=<jwt>` streams everything live. Message types:
+`/api/ws?token=<jwt>` streams everything live. Any token with read access
+(viewer and above) may connect; an `ingest` token is refused, since the feed
+is the whole fleet's state. Message types:
 `projector_state`, `command_result`, `command_verified`,
 `command_unverified`, `projector_offline`, `projector_online`, `alert`,
 `alert_resolved`, `automation_started`, `automation_step`,

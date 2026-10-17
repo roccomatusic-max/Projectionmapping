@@ -15,3 +15,5 @@ websockets==14.1
 python-multipart==0.0.20
 # IANA zone database for the scheduler; Windows and slim images lack a system copy.
 tzdata==2024.2
+# Resolves the host's zone to a real IANA zone (DST-correct), including on Windows.
+tzlocal==5.2

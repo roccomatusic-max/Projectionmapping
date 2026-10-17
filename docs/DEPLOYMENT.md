@@ -240,7 +240,10 @@ docker compose up -d --build
 
 Database migrations apply automatically when the API starts (`AUTO_MIGRATE`,
 on by default), so a fresh database is created through Alembic and stamped,
-and an existing one is brought forward. Take a backup first regardless.
+and an existing one is brought forward. A database created by an early build
+that predates migrations (tables present, no `alembic_version`) is detected,
+stamped at the revision it matches, and then upgraded — it does not need a
+manual `alembic stamp`. Take a backup first regardless.
 
 If you would rather control schema changes by hand — for instance you upgrade
 during a show window and want to stage the migration first — set

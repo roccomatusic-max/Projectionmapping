@@ -7,7 +7,6 @@ and shuts them all down cleanly so no projector is left mid-command.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import secrets
 import sys
@@ -32,9 +31,10 @@ from app.api.routes import (
 )
 from app.config import settings
 from app.core.security import hash_password
+from app.db.migrate import upgrade_to_head
 from app.db.models import Role, User
 from app.db.session import create_all, engine, session_scope
-from app.paths import alembic_dir, static_dir
+from app.paths import static_dir
 from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
 from app.services.device_manager import manager
@@ -61,19 +61,8 @@ async def prepare_database() -> None:
     if settings.is_memory_sqlite or not settings.auto_migrate:
         await create_all()
         return
-
-    def _upgrade() -> None:
-        from alembic import command
-        from alembic.config import Config
-
-        config = Config()
-        config.set_main_option("script_location", str(alembic_dir()))
-        config.set_main_option("sqlalchemy.url", settings.database_url)
-        command.upgrade(config, "head")
-
-    # Alembic's env.py runs its own event loop; give it a thread of its own.
-    await asyncio.to_thread(_upgrade)
-    log.info("database schema is at the latest migration")
+    state = await upgrade_to_head(engine, settings.database_url)
+    log.info("database schema is at the latest migration (%s database)", state)
 
 
 async def bootstrap_admin() -> None:

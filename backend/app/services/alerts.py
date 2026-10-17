@@ -22,7 +22,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.core.events import bus
 from app.core.lifecycle import stop_task
-from app.db.models import Alert, AlertRule, AlertState, CommandLog, Event, Severity
+from app.db.models import Alert, AlertRule, AlertState, CommandLog, Event, Severity, as_utc
 from app.db.session import session_scope
 
 log = logging.getLogger(__name__)
@@ -33,14 +33,26 @@ class AlertingService:
         self._task: asyncio.Task | None = None
         self._running = False
         self._queue: asyncio.Queue | None = None
+        #: dedupe keys of alerts currently open or acknowledged. Lets
+        #: resolve_alert() — called on every poll of every healthy projector —
+        #: return without a query when there is nothing to resolve.
+        self._open_keys: set[str] = set()
 
     async def start(self) -> None:
         if self._running:
             return
         self._running = True
         self._queue = await bus.subscribe()
+        await self._load_open_keys()
         self._task = asyncio.create_task(self._run(), name="alerting")
-        log.info("alerting service started")
+        log.info("alerting service started (%d open)", len(self._open_keys))
+
+    async def _load_open_keys(self) -> None:
+        async with session_scope() as session:
+            rows = (await session.execute(
+                select(Alert.dedupe_key).where(Alert.state != AlertState.RESOLVED.value)
+            )).scalars().all()
+        self._open_keys = set(rows)
 
     async def stop(self) -> None:
         self._running = False
@@ -134,9 +146,14 @@ class AlertingService:
                     CommandLog.created_at >= since,
                 )
             )).scalars().all()
+        # A power-off whose reply was lost still very probably happened: the
+        # drivers close the socket on timeout precisely because the device
+        # state is unknown. Give it the benefit of the doubt rather than page
+        # the operator for the shutdown they just requested.
         commanded = any(
             str((row.params or {}).get("state", "")).lower() == "off"
-            and row.outcome in ("accepted", "confirmed", "ok", "pending")
+            and row.outcome in ("accepted", "confirmed", "ok", "pending",
+                                "timeout", "connection_error")
             for row in recent
         )
         if commanded:
@@ -331,16 +348,15 @@ class AlertingService:
             else:
                 existing.message = message
                 existing.details = details or existing.details
-                stale = (
-                    existing.last_notified_at is None
-                    or existing.last_notified_at < now - timedelta(minutes=renotify)
-                )
+                last_notified = as_utc(existing.last_notified_at)  # SQLite returns naive
+                stale = last_notified is None or last_notified < now - timedelta(minutes=renotify)
                 # An acknowledged alert stays quiet until it resolves and recurs.
                 if stale and existing.state == AlertState.OPEN.value:
                     existing.last_notified_at = now
                     existing.notify_count += 1
                     notify = True
 
+        self._open_keys.add(dedupe_key)
         bus.publish("alert", {
             "dedupe_key": dedupe_key, "kind": kind, "severity": severity.value,
             "message": message, "projector_id": projector_id, "state": "open",
@@ -349,6 +365,8 @@ class AlertingService:
             await self._notify(channels, webhook, severity, message, details or {})
 
     async def resolve_alert(self, dedupe_key: str, message: str) -> None:
+        if dedupe_key not in self._open_keys:
+            return  # nothing open under this key; skip the round-trip
         now = datetime.now(UTC)
         resolved = False
         async with session_scope() as session:
@@ -368,6 +386,7 @@ class AlertingService:
                     kind="alert_resolved", message=message,
                     details={"dedupe_key": dedupe_key},
                 ))
+        self._open_keys.discard(dedupe_key)
         if resolved:
             bus.publish("alert_resolved", {"dedupe_key": dedupe_key, "message": message})
 

@@ -111,3 +111,32 @@ def test_cron_trigger_evaluated():
     now = datetime(2026, 10, 17, 20, 30, tzinfo=LONDON)
     assert AutomationEngine._is_due(automation("cron", {"cron": "30 20 * * sat"}), now) is True
     assert AutomationEngine._is_due(automation("cron", {"cron": "nonsense"}), now) is False
+
+
+def test_star_step_fields_are_unrestricted_for_the_or_rule():
+    """'0 20 */2 * 1-5' = every other day of the month AND a weekday."""
+    # 2026-10-15 is a Thursday and an odd day: dom (*/2 → odd days from 1) ok,
+    # dow ok → fires.
+    assert cron.matches("0 20 */2 * 1-5", datetime(2026, 10, 15, 20, 0)) is True
+    # 2026-10-16 (Friday) is an even day → dom fails → must NOT fire.
+    assert cron.matches("0 20 */2 * 1-5", datetime(2026, 10, 16, 20, 0)) is False
+    # 2026-10-17 (Saturday, odd) → dow fails → must NOT fire.
+    assert cron.matches("0 20 */2 * 1-5", datetime(2026, 10, 17, 20, 0)) is False
+
+
+def test_settings_tz_is_a_real_zone_not_a_fixed_offset():
+    from zoneinfo import ZoneInfo
+
+    from app.config import Settings
+
+    tz = Settings(secret_key="x" * 40, schedule_timezone=None).tz
+    assert isinstance(tz, ZoneInfo), type(tz)
+
+
+def test_once_naive_time_across_a_dst_boundary():
+    """Scheduled in BST for a date in GMT: the GMT offset must apply."""
+    now = datetime(2026, 11, 5, 20, 0, tzinfo=LONDON)  # GMT (+00:00)
+    assert AutomationEngine._is_due(automation("once", {"run_at": "2026-11-05T20:00"}), now) is True
+    assert AutomationEngine._is_due(
+        automation("once", {"run_at": "2026-11-05T20:00"}), now - timedelta(hours=1)
+    ) is False

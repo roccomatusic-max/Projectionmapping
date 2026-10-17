@@ -21,13 +21,18 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.database_url)
+if not config.get_main_option("sqlalchemy.url"):
+    # CLI use: take the application's database. A programmatic caller
+    # (start-up migration, tests) sets the URL explicitly and that wins.
+    # '%' is ConfigParser's interpolation character; escape it so a password
+    # containing one survives.
+    config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.database_url,
+        url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
