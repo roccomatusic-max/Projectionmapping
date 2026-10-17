@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    /* Dark charcoal, not pure black: easier on the eyes through a long
+       night show while still killing stray light on a dim stage. */
+    @apply bg-panel-950 text-slate-200;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'tnum';
+  }
+
+  /* Tabular numerals everywhere a value changes in place, so lamp hours
+     and latencies do not jitter as they update. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-panel-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-panel-700 rounded;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-panel-600;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-sky-500/70 ring-offset-2 ring-offset-panel-950;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-panel-900 border border-white/5 rounded-lg shadow-panel;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2
+           text-sm font-medium transition-colors select-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-default {
+    @apply btn bg-panel-750 hover:bg-panel-700 text-slate-200 border border-white/5;
+  }
+  .btn-primary {
+    @apply btn bg-sky-600 hover:bg-sky-500 text-white;
+  }
+  .btn-danger {
+    @apply btn bg-red-700 hover:bg-red-600 text-white;
+  }
+  .btn-ghost {
+    @apply btn hover:bg-panel-800 text-slate-300;
+  }
+  /* Large hit areas: these get used on a tablet, outdoors, in the dark. */
+  .btn-lg {
+    @apply px-4 py-3 text-base;
+  }
+
+  .input {
+    @apply w-full rounded-md bg-panel-850 border border-white/10 px-3 py-2
+           text-sm text-slate-100 placeholder:text-slate-500
+           focus:border-sky-500 focus:outline-none;
+  }
+  .label {
+    @apply block text-xs font-medium uppercase tracking-wide text-slate-400 mb-1.5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2 py-0.5
+           text-xs font-medium;
+  }
+  .card-grid {
+    @apply grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4;
+  }
+}
+
+/* Honour the operator's reduced-motion preference: this is control
+   software, animation is never load-bearing here. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

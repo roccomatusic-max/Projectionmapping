@@ -11,10 +11,12 @@ import logging
 import secrets
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
 from app.api.routes import (
@@ -141,10 +143,46 @@ for router in (
     app.include_router(router, prefix="/api")
 
 
-@app.get("/", include_in_schema=False)
-async def root() -> dict:
-    return {
-        "name": settings.app_name,
-        "docs": "/api/docs",
-        "health": "/api/health",
-    }
+# -- single-page app ------------------------------------------------------
+#
+# The built frontend is served from the same origin as the API, so there is
+# no CORS in production and no second web server to configure. In
+# development the Vite dev server proxies /api instead and this block is a
+# no-op because ./static does not exist.
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+if STATIC_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    async def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa_fallback(path: str) -> FileResponse:
+        """Serve the SPA for client-side routes.
+
+        An unknown /api/* path must still 404 as JSON rather than being
+        handed the HTML shell, or API clients get a 200 with a web page
+        when they typo an endpoint.
+        """
+        if path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        candidate = (STATIC_DIR / path).resolve()
+        # Only serve files inside the static root.
+        if candidate.is_file() and candidate.is_relative_to(STATIC_DIR):
+            return FileResponse(candidate)
+        return FileResponse(STATIC_DIR / "index.html")
+
+else:
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> dict:
+        return {
+            "name": settings.app_name,
+            "docs": "/api/docs",
+            "health": "/api/health",
+            "note": "No built frontend found. Run the Vite dev server, or build "
+                    "the image with deploy/Dockerfile which bundles the UI.",
+        }

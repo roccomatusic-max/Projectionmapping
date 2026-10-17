@@ -1,0 +1,46 @@
+# Adds two simulated projectors so you can exercise the platform before any
+# hardware is on the network.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.simulator.yml up
+#
+# Register them in the UI as:
+#   sim-left   host: sim-left   port: 1024   driver: panasonic_pt_dz13k
+#   sim-right  host: sim-right  port: 1024   driver: panasonic_pt_dz13k
+#
+# Everything these report is SIMULATED. Nothing here substitutes for
+# validating against the real PT-DZ13K — see docs/HARDWARE-VALIDATION.md.
+
+services:
+  sim-left:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    command: >
+      python -m simulator.panasonic_sim
+      --host 0.0.0.0 --port 1024 --warmup 25 --cooldown 35
+    expose:
+      - "1024"
+    restart: unless-stopped
+
+  sim-right:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    command: >
+      python -m simulator.panasonic_sim
+      --host 0.0.0.0 --port 1024 --warmup 30 --cooldown 40
+      --password panasonic --with-sdi
+    expose:
+      - "1024"
+    restart: unless-stopped
+
+  sim-pjlink:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    command: >
+      python -m simulator.pjlink_sim
+      --host 0.0.0.0 --port 4352 --class 2
+    expose:
+      - "4352"
+    restart: unless-stopped

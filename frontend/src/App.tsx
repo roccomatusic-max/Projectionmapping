@@ -1,0 +1,151 @@
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { clearSession, getSession, type Session } from '@/api/client'
+import { classNames } from '@/lib/format'
+import { Spinner } from '@/components/ui'
+import Login from '@/pages/Login'
+import Dashboard from '@/pages/Dashboard'
+import Projectors from '@/pages/Projectors'
+import ProjectorDetail from '@/pages/ProjectorDetail'
+import Groups from '@/pages/Groups'
+import ControlCenter from '@/pages/ControlCenter'
+import Automation from '@/pages/Automation'
+import Logs from '@/pages/Logs'
+// Monitoring pulls in the charting library; keep it out of the initial
+// bundle so the dashboard loads fast on a tablet over site wifi.
+const Monitoring = lazy(() => import('@/pages/Monitoring'))
+import Settings from '@/pages/Settings'
+
+const NAV = [
+  { to: '/', label: 'Dashboard', end: true },
+  { to: '/projectors', label: 'Projectors' },
+  { to: '/groups', label: 'Groups' },
+  { to: '/control', label: 'Control Center' },
+  { to: '/automation', label: 'Automation' },
+  { to: '/monitoring', label: 'Monitoring' },
+  { to: '/logs', label: 'Logs' },
+  { to: '/settings', label: 'Settings' },
+]
+
+export default function App() {
+  const [session, setSession] = useState<Session | null>(() => getSession())
+  const [menuOpen, setMenuOpen] = useState(false)
+  const location = useLocation()
+
+  // The API client fires this when a request comes back 401.
+  useEffect(() => {
+    const onUnauthorized = () => setSession(null)
+    window.addEventListener('pc:unauthorized', onUnauthorized)
+    return () => window.removeEventListener('pc:unauthorized', onUnauthorized)
+  }, [])
+
+  useEffect(() => setMenuOpen(false), [location.pathname])
+
+  const signOut = useCallback(() => {
+    clearSession()
+    setSession(null)
+  }, [])
+
+  if (!session) return <Login onSignedIn={setSession} />
+
+  // The full-screen control-room view drops the chrome entirely.
+  const fullscreen = location.pathname.startsWith('/control/fullscreen')
+  if (fullscreen) {
+    return (
+      <Routes>
+        <Route path="/control/fullscreen" element={<ControlCenter fullscreen session={session} />} />
+      </Routes>
+    )
+  }
+
+  return (
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-panel-950/95 backdrop-blur">
+        <div className="mx-auto flex max-w-[1800px] items-center gap-3 px-4 py-2.5">
+          <span className="text-sm font-semibold tracking-tight text-slate-100">
+            Projector Control
+          </span>
+
+          <nav className="ml-4 hidden items-center gap-0.5 lg:flex">
+            {NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  classNames(
+                    'rounded-md px-3 py-1.5 text-sm transition-colors',
+                    isActive
+                      ? 'bg-panel-800 text-slate-100'
+                      : 'text-slate-400 hover:bg-panel-900 hover:text-slate-200',
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="ml-auto flex items-center gap-3">
+            <span className="hidden text-xs text-slate-500 sm:inline">
+              {session.username} · {session.role}
+            </span>
+            <button className="btn-ghost text-xs" onClick={signOut}>
+              Sign out
+            </button>
+            <button
+              className="btn-ghost lg:hidden"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label="Toggle navigation"
+              aria-expanded={menuOpen}
+            >
+              ☰
+            </button>
+          </div>
+        </div>
+
+        {menuOpen && (
+          <nav className="grid grid-cols-2 gap-1 border-t border-white/5 px-4 py-2 lg:hidden">
+            {NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  classNames(
+                    'rounded-md px-3 py-2 text-sm',
+                    isActive ? 'bg-panel-800 text-slate-100' : 'text-slate-400',
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
+      </header>
+
+      <main className="mx-auto max-w-[1800px] px-4 py-5">
+        <Routes>
+          <Route path="/" element={<Dashboard session={session} />} />
+          <Route path="/projectors" element={<Projectors session={session} />} />
+          <Route path="/projectors/:id" element={<ProjectorDetail session={session} />} />
+          <Route path="/groups" element={<Groups session={session} />} />
+          <Route path="/control" element={<ControlCenter session={session} />} />
+          <Route path="/automation" element={<Automation session={session} />} />
+          <Route
+            path="/monitoring"
+            element={
+              <Suspense fallback={<Spinner label="Loading monitoring…" />}>
+                <Monitoring session={session} />
+              </Suspense>
+            }
+          />
+          <Route path="/logs" element={<Logs />} />
+          <Route path="/settings" element={<Settings session={session} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+    </div>
+  )
+}
