@@ -409,7 +409,7 @@ export default function Mapping({ session }: { session: Session }) {
 
                 <Panel
                   title="Canvas"
-                  description={`${show.canvas_width} × ${show.canvas_height}. Each numbered box is the part of the canvas one projector shows.${canEdit ? ' Drag a box to move it, or pull its edges to resize it.' : ''}`}
+                  description={`${show.canvas_width} × ${show.canvas_height}. Each numbered box is the part of the canvas one projector shows; after the camera calibration they sit on the building where each projector's light lands.${canEdit ? ' Drag a box to move it, or pull its edges to resize it.' : ''}`}
                   action={
                     canEdit ? (
                       <div className="flex gap-2">
