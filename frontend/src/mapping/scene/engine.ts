@@ -271,10 +271,13 @@ export class SceneEngine {
       count: Math.min(1, total / 4),
       closeness,
     }
-    // Smooth over about half a second so a layer swells rather than jumps.
-    const k = 1 - Math.exp(-dt / 0.5)
+    // Rise quickly, so a layer answers someone at once, and settle over
+    // about half a second, so it swells and fades rather than flickers.
+    const rise = 1 - Math.exp(-dt / 0.08)
+    const fall = 1 - Math.exp(-dt / 0.5)
     for (const key of Object.keys(target) as Array<keyof Levels>) {
-      this.levels[key] += (target[key] - this.levels[key]) * k
+      const gap = target[key] - this.levels[key]
+      this.levels[key] += gap * (gap > 0 ? rise : fall)
     }
   }
 

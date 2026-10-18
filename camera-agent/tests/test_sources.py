@@ -147,3 +147,116 @@ def test_live_view_sends_photos_until_it_runs_out(monkeypatch):
     worker.live_last = 0
     worker.live_tick()
     assert len([c for c in server.calls if c[1] == "/mapping/cameras/me/snapshot"]) == 1
+
+
+# -- speed of people tracking --------------------------------------------------------
+
+
+class FakeSocket:
+    def __init__(self, fail: bool = False) -> None:
+        self.sent: list[dict] = []
+        self.fail = fail
+
+    def send(self, text: str) -> None:
+        if self.fail:
+            raise OSError("socket closed")
+        import json
+
+        self.sent.append(json.loads(text))
+
+
+def tracking_agent(server) -> agent.Agent:
+    args = agent.build_parser().parse_args(["--server", "http://x"])
+    return agent.Agent(server, Fake("Depth camera", depth=True), 1, args)
+
+
+def test_people_go_over_the_open_socket_with_their_age():
+    server = FakeServer()
+    server.server_ms = lambda monotonic: 1000.0
+    worker = tracking_agent(server)
+    worker.ws, worker.ws_people = FakeSocket(), True
+    frame = Frame(color=np.zeros((4, 4, 3), np.uint8), captured=time.monotonic() - 0.03)
+    person = SimpleNamespace(id=3, x=0.25, y=0.5, z=2.0, size=0.1)
+    worker.send_people([person], frame)
+
+    assert not server.calls, "no request when the socket takes it"
+    (message,) = worker.ws.sent
+    assert message["type"] == "mapping_people_report"
+    body = message["payload"]
+    assert body["people"] == [{"id": 3, "x": 0.25, "y": 0.5, "z": 2.0, "size": 0.1}]
+    assert 25 <= body["age_ms"] < 500 and body["captured_at"] == 1000.0
+
+
+def test_people_fall_back_to_a_request_and_move_to_the_colour_picture():
+    server = FakeServer()
+    server.server_ms = lambda monotonic: None
+    worker = tracking_agent(server)
+    worker.ws, worker.ws_people = FakeSocket(fail=True), True
+    frame = Frame(color=np.zeros((4, 4, 3), np.uint8),
+                  to_color=lambda x, y, z: (x + 0.1, y - 0.1))
+    worker.send_people([SimpleNamespace(id=1, x=0.5, y=0.5, z=3.0, size=0.1)], frame)
+
+    assert not worker.ws_people
+    method, path, kwargs = server.calls[0]
+    assert (method, path) == ("POST", "/mapping/cameras/me/people")
+    assert kwargs["json"]["people"][0]["x"] == 0.6 and kwargs["json"]["people"][0]["y"] == 0.4
+    assert "captured_at" not in kwargs["json"]
+
+
+def test_server_time_of_a_moment():
+    server = agent.Server("http://x")
+    assert server.server_ms(time.monotonic()) is None
+    server.offset_ms = 5000.0
+    then = time.monotonic() - 0.1
+    assert abs(server.server_ms(then) - (time.time() * 1000 - 100 + 5000)) < 20
+
+
+def test_the_simulated_camera_keeps_camera_time():
+    source = SimSource()
+    source.read()
+    started = time.monotonic()
+    frames = [source.read() for _ in range(6)]
+    took = time.monotonic() - started
+    assert 0.15 < took < 0.4  # 30 a second
+    assert all(0 <= time.monotonic() - f.captured < 0.5 for f in frames)
+    assert frames[-1].captured > frames[0].captured
+
+
+def test_realsense_people_land_where_align_would_put_them():
+    rs = pytest.importorskip("pyrealsense2")
+    depth, color = rs.intrinsics(), rs.intrinsics()
+    for intr, (w, h, f) in ((depth, (848, 480, 420.0)), (color, (1280, 720, 640.0))):
+        intr.width, intr.height, intr.fx, intr.fy = w, h, f, f
+        intr.ppx, intr.ppy = w / 2, h / 2
+        intr.model = rs.distortion.none
+        intr.coeffs = [0.0] * 5
+    extrinsics = rs.extrinsics()
+    extrinsics.rotation = [1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0]
+    extrinsics.translation = [-0.059, 0.0, 0.0]  # colour sensor 59 mm to the side
+
+    def stream(intr):
+        return SimpleNamespace(as_video_stream_profile=lambda: SimpleNamespace(
+            get_intrinsics=lambda: intr, get_extrinsics_to=lambda _other: extrinsics))
+
+    profile = SimpleNamespace(get_stream=lambda kind: stream(depth if kind == rs.stream.depth else color))
+    source = sources.RealSenseSource.__new__(sources.RealSenseSource)
+    source._rs = rs
+    source._setup_tracking(profile)
+    # Straight ahead, 3 m away: the centre of the depth picture, and in
+    # colour 59 mm to the left at 640 px focal length.
+    x, y = source.to_color(0.5, 0.5, 3.0)
+    assert abs(x - (0.5 - 0.059 / 3.0 * 640 / 1280)) < 1e-4 and abs(y - 0.5) < 1e-4
+
+
+def test_oak_frames_carry_their_real_age():
+    dai = pytest.importorskip("depthai")
+    import datetime
+
+    source = sources.OakSource.__new__(sources.OakSource)
+    source._dai = dai
+    taken = dai.Clock.now() - datetime.timedelta(milliseconds=40)
+    captured = source._captured(SimpleNamespace(getTimestamp=lambda: taken))
+    assert 0.03 < time.monotonic() - captured < 0.2
+    # Without timestamps, the usual delay for the camera.
+    captured = source._captured(SimpleNamespace())
+    assert abs(time.monotonic() - captured - source.sensor_delay) < 0.01

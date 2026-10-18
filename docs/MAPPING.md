@@ -317,10 +317,41 @@ without hardware.
 
 **People** come from a depth camera. The agent learns the
 empty scene's depth, labels anything clearly nearer as a person, keeps ids
-stable between frames, and posts them about 15 times a second. The server
-maps them onto the live show's canvas through the marked corners and relays
-them; output windows smooth them and apply the live cue's effect:
-`spotlight` (content lit only around people) or `ripple`.
+stable between frames, and reports them on every camera frame (30 a second
+on the supported cameras). The server maps them onto the live show's canvas
+through the marked corners and relays them; output windows apply the live
+cue's effect: `spotlight` (content lit only around people) or `ripple`, and
+scenes react to them.
+
+**Tracking delay** is kept as low as the camera allows:
+
+- The agent takes each frame as it arrives instead of on a timer, and
+  sends who it sees over the live feed WebSocket it already holds open
+  (`mapping_people_report`) rather than one HTTP request per report; older
+  servers, which do not list it in the socket's `connected` message, still
+  get requests. A RealSense's depth is not lined up with the colour picture
+  pixel by pixel any more: only each person's centre is moved onto it, with
+  the SDK's own intrinsics, which is the slowest step skipped.
+- Every report says when its picture was taken (`captured_at`, server time):
+  the agent keeps its clock in step with the server like the output windows
+  do, and the RealSense and OAK stamp their frames, so the age is measured
+  (other cameras use a typical figure for their sensor).
+- Output windows do not ease toward the last report, which trailed a
+  walking person by about a tenth of a second. `people.ts` tracks each
+  person's position and velocity (an alpha-beta filter whose smoothing
+  drops as they speed up) and draws them where they are by the time the
+  picture is on the projector. The price: when someone stops dead, the
+  effect runs on a little past them (about 1% of the canvas at walking
+  pace) and comes back within a fifth of a second.
+- Players tab: a camera shows its updates a second and how old each is when
+  sent; each player shows "camera to here", the age on arrival.
+
+Measured with the simulated camera on one computer (`--camera sim`): 30
+reports a second instead of 15, 1.7 ms from frame to output window instead
+of 7. The camera's own exposure and USB (about 30–50 ms) and the
+projector's input lag are hardware and are not measured here; on Wi-Fi the
+mini PC to Mac hop adds a few milliseconds and occasional spikes, so wire
+the mini PC with the camera to the network when you can.
 
 A camera's position on the canvas is where the person appears against the
 building from the camera's point of view, which is right for people near the

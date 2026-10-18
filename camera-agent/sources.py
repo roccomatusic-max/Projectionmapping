@@ -26,7 +26,7 @@ import logging
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
@@ -38,13 +38,24 @@ log = logging.getLogger("camera-agent")
 class Frame:
     #: BGR, uint8, height × width × 3.
     color: np.ndarray
-    #: Metres, float32, same size as ``color``; None without a depth sensor.
+    #: Metres, float32; None without a depth sensor. The same size as
+    #: ``color`` unless ``to_color`` is set.
     depth: np.ndarray | None = None
+    #: When the camera took this picture (``time.monotonic()``), as near as
+    #: the camera lets us know; people reports carry their age from it.
+    captured: float = field(default_factory=time.monotonic)
+    #: When ``depth`` is in the depth sensor's own pixels rather than lined
+    #: up with ``color``: (x, y fractions, metres) in depth → (x, y) in colour.
+    #: Moving the few people found is far quicker than lining up every pixel.
+    to_color: Callable[[float, float, float], tuple[float, float]] | None = None
 
 
 class Source:
     name = "camera"
     has_depth = False
+    #: Seconds from light reaching the sensor to the frame arriving here,
+    #: when the camera gives no timestamps to measure it. Estimates.
+    sensor_delay = 0.0
 
     def read(self) -> Frame:
         raise NotImplementedError
@@ -77,6 +88,7 @@ def depth_to_color(depth: np.ndarray, color: np.ndarray) -> np.ndarray:
 
 class RealSenseSource(Source):
     has_depth = True
+    sensor_delay = 0.035
 
     def __init__(self) -> None:
         import pyrealsense2 as rs  # optional dependency
@@ -105,6 +117,7 @@ class RealSenseSource(Source):
         self.name = f"{device.get_info(rs.camera_info.name)}"
         self.depth_scale = device.first_depth_sensor().get_depth_scale()
         self.align = rs.align(rs.stream.color)
+        self._setup_tracking(profile)
         self.color_sensor = next(
             (s for s in device.query_sensors()
              if any(p.stream_type() == rs.stream.color for p in s.get_stream_profiles())),
@@ -113,11 +126,59 @@ class RealSenseSource(Source):
         for _ in range(15):  # let auto exposure settle
             self.pipeline.wait_for_frames()
 
+    def _setup_tracking(self, profile) -> None:
+        """Intrinsics and extrinsics for moving people from depth to colour pixels.
+
+        Tracking reads the depth picture as the sensor sends it and moves
+        only each person's centre onto the colour picture (where the canvas
+        is marked), with the same maths the SDK's align uses on every pixel.
+        That skips lining up the whole picture each frame, the slowest step
+        on a small PC. Without these, frames are aligned as before.
+        """
+        rs = self._rs
+        self.to_color = None
+        try:
+            depth = profile.get_stream(rs.stream.depth).as_video_stream_profile()
+            color = profile.get_stream(rs.stream.color).as_video_stream_profile()
+            di, ci = depth.get_intrinsics(), color.get_intrinsics()
+            extrinsics = depth.get_extrinsics_to(color)
+        except Exception as exc:  # noqa: BLE001 - an SDK without these: align as before
+            log.debug("RealSense intrinsics unavailable: %s", exc)
+            return
+
+        def to_color(x: float, y: float, metres: float) -> tuple[float, float]:
+            point = rs.rs2_deproject_pixel_to_point(di, [x * di.width, y * di.height], metres)
+            point = rs.rs2_transform_point_to_point(extrinsics, point)
+            u, v = rs.rs2_project_point_to_pixel(ci, point)
+            return u / ci.width, v / ci.height
+
+        self.to_color = to_color
+
+    def _captured(self, frame) -> float:
+        """When the frame was exposed, from the camera's own clock when it has one."""
+        rs = self._rs
+        try:
+            if frame.get_frame_timestamp_domain() == rs.timestamp_domain.global_time:
+                age = time.time() - frame.get_timestamp() / 1000.0
+                if 0 <= age < 0.5:
+                    return time.monotonic() - age
+        except Exception:  # noqa: BLE001 - no metadata on this model or driver
+            pass
+        return time.monotonic() - self.sensor_delay
+
     def read(self) -> Frame:
-        frames = self.align.process(self.pipeline.wait_for_frames())
+        frames = self.pipeline.wait_for_frames()
+        if self.to_color is not None:
+            depth_frame = frames.get_depth_frame()
+            color = np.asanyarray(frames.get_color_frame().get_data()).copy()
+            depth = np.asanyarray(depth_frame.get_data()).astype(np.float32) * self.depth_scale
+            return Frame(color=color, depth=depth, captured=self._captured(depth_frame),
+                         to_color=self.to_color)
+        captured = self._captured(frames.get_depth_frame())
+        frames = self.align.process(frames)
         color = np.asanyarray(frames.get_color_frame().get_data()).copy()
         depth = np.asanyarray(frames.get_depth_frame().get_data()).astype(np.float32) * self.depth_scale
-        return Frame(color=color, depth=depth_to_color(depth, color))
+        return Frame(color=color, depth=depth_to_color(depth, color), captured=captured)
 
     def fresh(self) -> Frame:
         # The pipeline queues a frame or two; skip past them.
@@ -193,6 +254,8 @@ def _orbbec_bgr(frame, ob) -> np.ndarray | None:
 
 
 class OrbbecSource(Source):
+    sensor_delay = 0.040
+
     def __init__(self) -> None:
         ob = self._ob = _orbbec()
         self.pipeline = ob.Pipeline()
@@ -248,7 +311,7 @@ class OrbbecSource(Source):
                 depth_frame.get_height(), depth_frame.get_width())
             # The SDK's scale gives millimetres.
             depth = depth_to_color(raw.astype(np.float32) * (depth_frame.get_depth_scale() / 1000.0), color)
-        return Frame(color=color, depth=depth)
+        return Frame(color=color, depth=depth, captured=time.monotonic() - self.sensor_delay)
 
     def fresh(self) -> Frame:
         for _ in range(2):
@@ -276,6 +339,8 @@ def _oak_cameras() -> list[str]:
 
 
 class OakSource(Source):
+    sensor_delay = 0.050
+
     def __init__(self) -> None:
         import depthai as dai
 
@@ -339,12 +404,24 @@ class OakSource(Source):
         for _ in range(15):
             self.rgb.get()
 
+    def _captured(self, message) -> float:
+        """The OAK stamps each frame on the host's steady clock: its real age."""
+        try:
+            age = (self._dai.Clock.now() - message.getTimestamp()).total_seconds()
+            if 0 <= age < 0.5:
+                return time.monotonic() - age
+        except Exception:  # noqa: BLE001 - an older depthai
+            pass
+        return time.monotonic() - self.sensor_delay
+
     def read(self) -> Frame:
-        color = self.rgb.get().getCvFrame()
+        message = self.rgb.get()
+        color = message.getCvFrame()
         depth = None
         if self.depth is not None:
-            depth = depth_to_color(self.depth.get().getFrame().astype(np.float32) / 1000.0, color)
-        return Frame(color=color, depth=depth)
+            message = self.depth.get()
+            depth = depth_to_color(message.getFrame().astype(np.float32) / 1000.0, color)
+        return Frame(color=color, depth=depth, captured=self._captured(message))
 
     def fresh(self) -> Frame:
         self.rgb.tryGetAll()
@@ -366,6 +443,8 @@ class OakSource(Source):
 
 
 class WebcamSource(Source):
+    sensor_delay = 0.060
+
     def __init__(self, index: int = 0, width: int = 1280, height: int = 720) -> None:
         self.capture = _open_capture(index)
         if self.capture is None:
@@ -385,7 +464,7 @@ class WebcamSource(Source):
         ok, color = self.capture.read()
         if not ok:
             raise RuntimeError("the camera stopped sending pictures")
-        return Frame(color=color)
+        return Frame(color=color, captured=time.monotonic() - self.sensor_delay)
 
     def fresh(self) -> Frame:
         # Most drivers buffer a few frames regardless of BUFFERSIZE.

@@ -23,6 +23,7 @@ from sources import Frame, Source
 from vision import gray_stripe
 
 WIDTH, HEIGHT = 1280, 720
+FRAME_SECONDS = 1 / 30
 
 #: Where each projector's image corners land in the camera picture (pixels).
 PROJECTORS = [
@@ -100,6 +101,13 @@ class SimSource(Source):
         self.lock = threading.Lock()
         yy, _ = np.mgrid[0:HEIGHT, 0:WIDTH].astype(np.float32)
         self.wall_depth = (9.0 - 0.6 * (yy / HEIGHT)).astype(np.float32)
+        # Sensor noise, made once and cycled: making it fresh each frame
+        # would be slower than the camera it stands for.
+        self._noise = [self.rng.normal(0, 2.5, (HEIGHT, WIDTH, 3)).astype(np.float32) for _ in range(5)]
+        self._noise_index = 0
+        self._lit_key: tuple | None = None
+        self._lit_image: np.ndarray | None = None
+        self._next_frame = 0.0
 
     def show_pattern(self, output_id: int | None, pattern: dict | None, width: int = 0,
                      height: int = 0) -> None:
@@ -137,16 +145,30 @@ class SimSource(Source):
             people.append((x, 0.78 - 0.04 * i, 3.5 + i))
         return people
 
+    def _lit(self) -> np.ndarray:
+        """The building as lit now, before people and noise; kept while the light holds."""
+        with self.lock:
+            pattern = self.pattern
+        key = None if pattern is None else (pattern[0], repr(pattern[1]), pattern[2], pattern[3])
+        if self._lit_key != key or self._lit_image is None:
+            exposure = 0.26 + 0.74 * self._light()  # ambient street light plus projectors
+            self._lit_image = (self.scene * exposure[..., None] * 255.0).astype(np.float32)
+            self._lit_key = key
+        return self._lit_image
+
     def read(self) -> Frame:
-        t = time.monotonic() - self.started
-        light = self._light()
-        exposure = 0.26 + 0.74 * light  # ambient street light plus projectors
-        color = self.scene * exposure[..., None] * 255.0
+        # Like a real camera: a new picture every 1/30 s, whenever it is asked.
+        now = time.monotonic()
+        self._next_frame = max(self._next_frame + FRAME_SECONDS, now)
+        time.sleep(max(0.0, self._next_frame - now))
+        captured = time.monotonic()
+        t = captured - self.started
+        color = self._lit().copy()
         depth = self.wall_depth.copy()
         for x, y, metres in self._people(t):
             cx, cy = int(x * WIDTH), int(y * HEIGHT)
             cv2.ellipse(depth, (cx, cy), (28, 85), 0, 0, 360, metres, -1)
             cv2.ellipse(color, (cx, cy), (28, 85), 0, 0, 360, (40, 45, 60), -1)
-        color += self.rng.normal(0, 2.5, color.shape)
-        time.sleep(1 / 30)
-        return Frame(color=np.clip(color, 0, 255).astype(np.uint8), depth=depth)
+        self._noise_index = (self._noise_index + 1) % len(self._noise)
+        color += self._noise[self._noise_index]
+        return Frame(color=np.clip(color, 0, 255).astype(np.uint8), depth=depth, captured=captured)

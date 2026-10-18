@@ -9,8 +9,9 @@ the mapping system:
   warp. Aligning a projector goes from dragging corners by eye to pressing
   one button, and again whenever a projector gets bumped.
 - **People tracking** (depth cameras only). It learns what the empty scene
-  looks like in depth, then reports anyone in front of the building several
-  times a second. Cues can react to them: a spotlight that follows each
+  looks like in depth, then reports anyone in front of the building on
+  every camera frame (30 a second), each with the moment its picture was
+  taken so the projectors can draw people where they are by now. Cues can react to them: a spotlight that follows each
   person, or ripples spreading from them.
 
 It pairs with the server exactly like a player: it prints a six-letter code,
