@@ -467,6 +467,11 @@ class PlayerReport(BaseModel):
     people: int | None = None
     #: What the camera is doing: "idle", "calibrating", "tracking".
     activity: str | None = Field(default=None, max_length=32)
+    #: People reports a second, and how old each is when sent (ms).
+    tracking_rate: float | None = None
+    tracking_ms: float | None = None
+    # Players: how old the camera's people reports are on arrival (ms).
+    people_ms: float | None = None
 
 
 class PlayerAssignment(BaseModel):
@@ -567,6 +572,11 @@ class TrackedPerson(BaseModel):
 
 class PeopleReport(BaseModel):
     people: list[TrackedPerson] = Field(default_factory=list, max_length=16)
+    #: How long ago the camera took the picture, by the camera's own clock (ms).
+    age_ms: float | None = None
+    #: When it took the picture in server time (ms), from a camera whose
+    #: clock is in step with the server's; counts the network hop too.
+    captured_at: float | None = None
 
 
 # -- scenes ----------------------------------------------------------------------

@@ -37,6 +37,8 @@ log = logging.getLogger("camera-agent")
 
 HELLO_SECONDS = 3
 REPORT_SECONDS = 5
+#: How often to re-measure the server clock.
+CLOCK_SECONDS = 30
 #: Frames of the empty scene to learn before tracking.
 BACKGROUND_FRAMES = 30
 #: Live view: seconds between photos, and the photos' size and quality.
@@ -54,6 +56,8 @@ class Server:
         self.base = base.rstrip("/")
         self.http = requests.Session()
         self.token: str | None = None
+        #: Server clock minus ours (ms), once measured; see sync_clock.
+        self.offset_ms: float | None = None
 
     @property
     def ws_url(self) -> str:
@@ -70,6 +74,31 @@ class Server:
             raise Revoked(f"{path}: {response.status_code}")
         response.raise_for_status()
         return response
+
+    def sync_clock(self, samples: int = 5) -> None:
+        """Measure the server clock against ours, keeping the quickest round trip.
+
+        People reports then say when their picture was taken in server
+        time, so the output windows know exactly how old each one is.
+        """
+        best = None
+        for _ in range(samples):
+            sent = time.time() * 1000
+            try:
+                now_ms = self.call("GET", "/mapping/clock", timeout=2).json()["now_ms"]
+            except (requests.RequestException, KeyError, ValueError):
+                continue
+            back = time.time() * 1000
+            if best is None or back - sent < best[0]:
+                best = (back - sent, now_ms - (sent + back) / 2)
+        if best is not None and best[0] < 250:
+            self.offset_ms = best[1]
+
+    def server_ms(self, monotonic: float) -> float | None:
+        """A ``time.monotonic()`` moment in server time (ms), once the clock is synced."""
+        if self.offset_ms is None:
+            return None
+        return (time.time() - (time.monotonic() - monotonic)) * 1000 + self.offset_ms
 
 
 def load_identity(path: Path, name: str | None) -> dict:
@@ -129,6 +158,11 @@ class Agent:
         #: Live view runs until this time (monotonic), for mapping by hand.
         self.live_until = 0.0
         self.live_last = 0.0
+        #: The live feed socket, and whether this server takes people on it.
+        self.ws = None
+        self.ws_people = False
+        #: Recent reports: (sent at, age when sent), for the Players tab.
+        self.sent: list[tuple[float, float]] = []
 
     # -- talking to the server ---------------------------------------------------
 
@@ -137,10 +171,20 @@ class Agent:
                 "activity": self.activity}
         if self.people_count is not None:
             body["people"] = self.people_count
+        recent = [s for s in self.sent if s[0] > time.monotonic() - REPORT_SECONDS]
+        if len(recent) > 1:
+            body["tracking_rate"] = round((len(recent) - 1) / (recent[-1][0] - recent[0][0]), 1)
+            ages = sorted(age for _, age in recent)
+            body["tracking_ms"] = round(ages[len(ages) // 2] * 1000)
         self.server.call("POST", "/mapping/players/me", json=body)
 
     def heartbeat(self) -> None:
+        synced = 0.0
         while not self.stopping.is_set():
+            if time.monotonic() - synced > CLOCK_SECONDS:
+                synced = time.monotonic()
+                with contextlib.suppress(Revoked):
+                    self.server.sync_clock()
             try:
                 self.report()
             except Revoked:
@@ -161,14 +205,23 @@ class Agent:
             except ValueError:
                 return
             payload = message.get("payload") or {}
+            if message.get("type") == "connected":
+                # A server new enough takes people reports on this socket.
+                self.ws_people = "mapping_people_report" in (payload.get("accepts") or [])
+                return
             if payload.get("camera_id") != self.camera_id:
                 return
             if message.get("type") in ("mapping_calibrate", "mapping_camera_command"):
                 self.jobs.put(message)
 
+        def on_close(*_args) -> None:
+            self.ws_people = False
+
         while not self.stopping.is_set() and not self.revoked.is_set():
-            app = websocket.WebSocketApp(self.server.ws_url, on_message=on_message)
+            app = websocket.WebSocketApp(self.server.ws_url, on_message=on_message, on_close=on_close)
+            self.ws = app
             app.run_forever(ping_interval=20, ping_timeout=10)
+            self.ws_people = False
             self.stopping.wait(2)
 
     def step(self, output_id: int, pattern: dict | None, index: int, total: int, *,
@@ -265,13 +318,42 @@ class Agent:
         self.tracker.learn([self.source.read().depth for _ in range(BACKGROUND_FRAMES)])
 
     def track_once(self, had_people: bool) -> bool:
-        people = self.tracker.update(self.source.read().depth)
+        frame = self.source.read()
+        people = self.tracker.update(frame.depth)
         self.people_count = len(people)
         if people or had_people:  # one empty report, so effects fade out
-            self.server.call("POST", "/mapping/cameras/me/people", json={"people": [
-                {"id": p.id, "x": p.x, "y": p.y, "z": p.z, "size": p.size} for p in people[:16]
-            ]}, timeout=2)
+            self.send_people(people, frame)
         return bool(people)
+
+    def send_people(self, people: list, frame) -> None:
+        """Who is there, as fast as possible: over the open live feed socket when
+        the server takes it (no request per report), else as a request."""
+        found = []
+        for p in people[:16]:
+            x, y = p.x, p.y
+            if frame.to_color is not None and p.z > 0:
+                with contextlib.suppress(Exception):  # noqa: BLE001 - keep the depth position
+                    x, y = frame.to_color(p.x, p.y, p.z)
+            found.append({"id": p.id, "x": round(min(1.5, max(-0.5, x)), 5),
+                          "y": round(min(1.5, max(-0.5, y)), 5), "z": p.z, "size": p.size})
+        now = time.monotonic()
+        age = max(0.0, now - frame.captured)
+        body = {"people": found, "age_ms": round(age * 1000, 1)}
+        captured = self.server.server_ms(frame.captured)
+        if captured is not None:
+            body["captured_at"] = round(captured, 1)
+        self.sent.append((now, age))
+        if len(self.sent) > 300:
+            del self.sent[:150]
+        ws = self.ws
+        if self.ws_people and ws is not None:
+            try:
+                ws.send(json.dumps({"type": "mapping_people_report", "payload": body}))
+                return
+            except Exception as exc:  # noqa: BLE001 - socket dropped: the request below
+                log.debug("people over the live feed failed: %s", exc)
+                self.ws_people = False
+        self.server.call("POST", "/mapping/cameras/me/people", json=body, timeout=2)
 
     # -- main loop -----------------------------------------------------------------
 
@@ -291,6 +373,8 @@ class Agent:
         self.learn_background()
         self.activity = "tracking" if self.tracker else "idle"
         had_people = False
+        # Tracking takes each frame as the camera sends it, so no report
+        # waits for a timer; --rate only caps a very fast camera.
         period = 1.0 / max(1.0, self.args.rate)
         while not self.stopping.is_set():
             if self.revoked.is_set():
@@ -348,7 +432,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="finest stripe in projector pixels (default 4; raise it from far away)")
     parser.add_argument("--contrast", type=float, default=18.0,
                         help="grey levels between white and black for a lit pixel (default 18)")
-    parser.add_argument("--rate", type=float, default=15.0, help="people reports per second (default 15)")
+    parser.add_argument("--rate", type=float, default=60.0,
+                        help="most people reports per second (default 60; the camera's own rate, "
+                             "usually 30, is what it gets)")
     parser.add_argument("--no-tracking", action="store_true", help="calibration only, no people tracking")
     parser.add_argument("--verbose", action="store_true")
     return parser

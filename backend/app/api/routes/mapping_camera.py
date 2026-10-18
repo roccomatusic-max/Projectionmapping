@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -45,6 +46,7 @@ from app.api.routes.mapping import _load_show, _media_user, _output_out, _touch,
 from app.api.routes.mapping_players import is_online
 from app.core.events import bus
 from app.db.models import Event, MappingOutput, MappingPlayer, MappingShow, Severity, User, utcnow
+from app.db.session import SessionLocal
 from app.schemas.mapping import (
     ApplyCalibration,
     ApplyResult,
@@ -349,20 +351,49 @@ async def camera_command(camera_id: int, payload: CameraCommand, session: Sessio
 async def report_people(payload: PeopleReport, session: SessionDep, user: CurrentUser) -> None:
     """Who the camera sees right now; relayed live, never stored.
 
-    Positions go out in camera fractions (``cx``, ``cy``) for the editor's
-    view of the photo, and in canvas fractions (``x``, ``y``) when the live
-    show has marked its canvas on this camera's picture.
+    Cameras that can send their reports over the live feed WebSocket do
+    (see ``ws.py``): no request per report, so less delay. This route
+    stays for older cameras.
     """
     camera = await _this_camera(session, user)
+    await relay_people(session, camera.id, payload)
+
+
+#: Camera-to-canvas homography by the corners it was solved from: the same
+#: corners give the same matrix, so it is solved once, not on every report.
+_to_canvas: dict[tuple, object] = {}
+
+
+def _canvas_transform(corners: list) -> object | None:
+    key = tuple(tuple(c) for c in corners)
+    if key not in _to_canvas:
+        if len(_to_canvas) > 32:
+            _to_canvas.clear()
+        try:
+            _to_canvas[key] = camera_to_canvas(corners)
+        except CalibrationError:
+            _to_canvas[key] = None
+    return _to_canvas[key]
+
+
+async def relay_people(session, camera_id: int, payload: PeopleReport) -> None:
+    """Map a camera's people onto the live canvas and send them to the output windows.
+
+    Positions go out in camera fractions (``cx``, ``cy``) for the editor's
+    view of the photo, and in canvas fractions (``x``, ``y``) when the live
+    show has marked its canvas on this camera's picture. ``captured_at`` is
+    when the camera took the picture, in server time, so output windows can
+    tell how old each report is and draw people where they are by now.
+    """
+    now = now_ms()
     show_id = transport.snapshot().show_id
     to_canvas = None
     if show_id is not None:
         view = (await session.execute(
             select(MappingShow.camera_view).where(MappingShow.id == show_id)
         )).scalar_one_or_none() or {}
-        if view.get("camera_id") == camera.id and view.get("corners"):
-            with contextlib.suppress(CalibrationError):
-                to_canvas = camera_to_canvas(view["corners"])
+        if view.get("camera_id") == camera_id and view.get("corners"):
+            to_canvas = _canvas_transform(view["corners"])
     people = []
     for person in payload.people:
         x = y = None
@@ -370,5 +401,43 @@ async def report_people(payload: PeopleReport, session: SessionDep, user: Curren
             x, y = (round(v, 5) for v in apply(to_canvas, person.x, person.y))
         people.append({"id": person.id, "cx": person.x, "cy": person.y, "x": x, "y": y,
                        "z": person.z, "size": person.size})
-    bus.publish("mapping_people", {"camera_id": camera.id, "show_id": show_id,
-                                   "people": people, "at": now_ms()})
+    captured_at = None
+    if payload.captured_at is not None and now - 2000 < payload.captured_at <= now + 50:
+        captured_at = min(now, payload.captured_at)
+    elif payload.age_ms is not None and 0 <= payload.age_ms < 2000:
+        captured_at = now - payload.age_ms
+    bus.publish("mapping_people", {"camera_id": camera_id, "show_id": show_id,
+                                   "people": people, "at": now, "captured_at": captured_at})
+
+
+class PeopleFeed:
+    """People reports arriving on one camera's live feed WebSocket.
+
+    The socket already proved who it is, so a report costs no login and no
+    request; which camera that account is gets looked up once and then
+    re-checked every few seconds, so a removed camera stops counting.
+    """
+
+    RECHECK_SECONDS = 5.0
+
+    def __init__(self, user_id: int) -> None:
+        self.user_id = user_id
+        self.camera_id: int | None = None
+        self.checked = -1e9
+
+    async def report(self, raw: object) -> None:
+        try:
+            payload = PeopleReport.model_validate(raw)
+        except ValueError:
+            return
+        async with SessionLocal() as session:
+            clock = time.monotonic()
+            if clock - self.checked > self.RECHECK_SECONDS:
+                self.checked = clock
+                self.camera_id = (await session.execute(
+                    select(MappingPlayer.id).where(MappingPlayer.user_id == self.user_id,
+                                                   MappingPlayer.kind == "camera",
+                                                   MappingPlayer.approved.is_(True))
+                )).scalars().first()
+            if self.camera_id is not None:
+                await relay_people(session, self.camera_id, payload)

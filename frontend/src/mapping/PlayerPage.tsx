@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
 import { enterFullscreen, OutputScreen } from './OutputPage'
+import { trackingDelayMs } from './people'
 import type { Show } from './types'
 
 /**
@@ -224,6 +225,7 @@ export default function PlayerPage() {
           width: s.width,
           height: s.height,
           cue: s.cue,
+          people_ms: trackingDelayMs(),
         }
       }}
       hudExtra={

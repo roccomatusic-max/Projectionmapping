@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
+from app.api.routes.mapping_camera import PeopleFeed
 from app.core.events import bus
 from app.core.security import decode_access_token
 from app.db.models import Role, User
@@ -77,19 +78,34 @@ async def websocket_endpoint(websocket: WebSocket,
                 "at": datetime.now(UTC).isoformat(),
             }))
 
-    async def receive() -> None:
-        """Drain client frames.
+    people = PeopleFeed(user.id)
 
-        The client sends only keepalives and subscription hints today, but
-        reading is required: an unread receive buffer eventually stalls the
-        connection.
+    async def receive() -> None:
+        """Read client frames.
+
+        Browsers send only keepalives and subscription hints. A camera
+        sends who it sees, many times a second (``mapping_people_report``):
+        over this open socket instead of a request each, which is quicker.
+        Reading is required anyway: an unread receive buffer eventually
+        stalls the connection.
         """
         while True:
-            await websocket.receive_text()
+            text = await websocket.receive_text()
+            try:
+                message = json.loads(text)
+            except ValueError:
+                continue
+            if isinstance(message, dict) and message.get("type") == "mapping_people_report":
+                try:
+                    await people.report(message.get("payload"))
+                except Exception:  # noqa: BLE001 - a bad report must not drop the feed
+                    log.debug("people report failed", exc_info=True)
 
     await websocket.send_text(json.dumps({
         "type": "connected",
-        "payload": {"username": user.username, "role": user.role},
+        "payload": {"username": user.username, "role": user.role,
+                    # What this server accepts on the socket, for cameras.
+                    "accepts": ["mapping_people_report"]},
         "at": datetime.now(UTC).isoformat(),
     }))
 

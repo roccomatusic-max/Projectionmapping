@@ -22,6 +22,7 @@ from app.services.calibration import (
     solve_warp,
     square_to_quad,
 )
+from app.services.mapping import now_ms
 from tests.test_api import api, login  # noqa: F401 - fixture
 from tests.test_mapping import PNG, make_cue, make_show, transport, upload
 
@@ -484,5 +485,68 @@ async def test_live_view_asks_the_camera_for_photos(api):
         assert sent.status_code == 204, sent.text
         message = await next_message(queue, "mapping_camera_command")
         assert message == {"camera_id": camera_id, "command": "live", "seconds": 120}
+    finally:
+        await bus.unsubscribe(queue)
+
+
+async def test_people_say_when_their_picture_was_taken(api):
+    headers = await login(api)
+    _, camera = await pair(api, headers, CAMERA)
+    person = {"id": 1, "x": 0.5, "y": 0.5, "z": 3.0, "size": 0.1}
+    queue = await bus.subscribe()
+    try:
+        await api.post("/api/mapping/cameras/me/people", headers=camera,
+                       json={"people": [person], "age_ms": 40})
+        message = await next_message(queue, "mapping_people")
+        assert 30 < message["at"] - message["captured_at"] < 1000
+
+        # A camera whose clock is in step says it in server time.
+        taken = now_ms() - 25
+        await api.post("/api/mapping/cameras/me/people", headers=camera,
+                       json={"people": [person], "age_ms": 10, "captured_at": taken})
+        assert (await next_message(queue, "mapping_people"))["captured_at"] == taken
+
+        # One whose clock is far off falls back to its own age; none at all says nothing.
+        await api.post("/api/mapping/cameras/me/people", headers=camera,
+                       json={"people": [person], "age_ms": 10, "captured_at": taken + 60_000})
+        message = await next_message(queue, "mapping_people")
+        assert message["at"] - message["captured_at"] < 1000
+        await api.post("/api/mapping/cameras/me/people", headers=camera, json={"people": [person]})
+        assert (await next_message(queue, "mapping_people"))["captured_at"] is None
+    finally:
+        await bus.unsubscribe(queue)
+
+
+async def test_people_over_the_live_feed_socket(api):
+    """A camera sends who it sees on its open WebSocket: no request per report."""
+    import app.api.routes.mapping_camera as camera_routes
+    from app.db.models import MappingPlayer
+
+    headers = await login(api)
+    camera_id, _ = await pair(api, headers, CAMERA)
+    show = await make_show(api, headers)
+    media = (await upload(api, headers, body=PNG)).json()
+    await make_cue(api, headers, show["id"], media_id=media["id"], interaction="spotlight")
+    await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers,
+                    json={"camera_view": {"camera_id": camera_id, "corners": VIEW}})
+    await transport(api, headers, action="go", show_id=show["id"])
+    async with camera_routes.SessionLocal() as session:
+        user_id = (await session.get(MappingPlayer, camera_id)).user_id
+
+    feed = camera_routes.PeopleFeed(user_id)
+    queue = await bus.subscribe()
+    try:
+        await feed.report({"people": [{"id": 2, "x": 0.5, "y": 0.5, "z": 2.0, "size": 0.1}], "age_ms": 12})
+        live = await next_message(queue, "mapping_people")
+        assert live["camera_id"] == camera_id and live["show_id"] == show["id"]
+        want = apply(invert(square_to_quad(VIEW)), 0.5, 0.5)
+        assert math.dist((live["people"][0]["x"], live["people"][0]["y"]), want) < 1e-4
+        assert live["captured_at"] is not None
+
+        # Rubbish is ignored, and an account that is not a camera relays nothing.
+        await feed.report({"people": "nobody"})
+        await camera_routes.PeopleFeed(user_id + 1000).report({"people": []})
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(next_message(queue, "mapping_people"), timeout=0.3)
     finally:
         await bus.unsubscribe(queue)

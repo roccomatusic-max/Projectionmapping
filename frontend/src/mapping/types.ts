@@ -228,6 +228,8 @@ export interface PeopleMessage {
   show_id: number | null
   people: Person[]
   at: number
+  /** When the camera took the picture, server time in ms (newer servers and cameras). */
+  captured_at?: number
 }
 
 export interface ApplyResult {

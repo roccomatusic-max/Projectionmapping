@@ -29,7 +29,7 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
   const playback = playbackRef.current
   const mediaRef = useRef<MediaAsset[]>([])
   const [scenes, setScenes] = useState<MappingScene[]>([])
-  const people = useMemo(() => new PeopleTracker(showId ?? -1), [showId])
+  const people = useMemo(() => new PeopleTracker(showId ?? -1, clock), [showId, clock])
 
   useEffect(() => {
     playback.setPeople(people)

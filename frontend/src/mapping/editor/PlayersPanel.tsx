@@ -29,6 +29,11 @@ export interface Player {
     depth?: boolean
     people?: number
     activity?: string
+    /** Camera: people reports a second, and their age when sent (ms). */
+    tracking_rate?: number
+    tracking_ms?: number
+    /** Player: how old the camera's people reports are when they arrive (ms). */
+    people_ms?: number
   }
   /** The other half of a mini PC: its camera on a player, its player on a camera. */
   companion_id: number | null
@@ -208,7 +213,10 @@ export function PlayersPanel({
               <p className="flex-1 text-xs text-slate-500">
                 {player.online
                   ? `${player.report.camera ?? 'camera'}${player.report.depth ? ' · depth' : ''} · ${player.report.activity ?? 'idle'}` +
-                    (player.report.people != null ? ` · ${player.report.people} people` : '')
+                    (player.report.people != null ? ` · ${player.report.people} people` : '') +
+                    (player.report.tracking_rate
+                      ? ` · ${player.report.tracking_rate.toFixed(0)} updates/s, ${player.report.tracking_ms ?? '?'} ms`
+                      : '')
                   : player.companion_id != null
                     ? 'Not seen recently. Check the camera is plugged in.'
                     : 'Start the camera program on its computer.'}
@@ -250,6 +258,7 @@ export function PlayersPanel({
             <p className="tnum mt-2 text-xs text-slate-500">
               {player.report.fps != null ? `${player.report.fps.toFixed(0)} fps` : '— fps'}
               {player.report.drift_ms != null ? ` · drift ${player.report.drift_ms} ms` : ''}
+              {player.report.people_ms != null ? ` · camera to here ${player.report.people_ms} ms` : ''}
               {player.report.width ? ` · ${player.report.width}×${player.report.height}` : ''}
               {` · cache ${player.report.cache ?? 'off'}`}
               {player.report.cached_bytes ? ` (${formatBytes(player.report.cached_bytes)})` : ''}
