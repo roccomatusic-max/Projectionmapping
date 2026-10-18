@@ -559,7 +559,7 @@ export class SceneEngine {
       this.blend(layer.blend)
       if (pins) {
         this.pinData.fill(0)
-        pins.forEach((pin, i) => this.pinData.set([pin.x, pin.y, pin.size, 0], i * 4))
+        pins.forEach((pin, i) => this.pinData.set([pin.x, pin.y, pin.size, ((pin.rotation ?? 0) * Math.PI) / 180], i * 4))
         gl.uniform4fv(this.u(p, 'uPins'), this.pinData)
         gl.uniform2i(this.u(p, 'uGrid'), pins.length, 1)
         gl.drawArrays(gl.TRIANGLES, 0, pins.length * 6)

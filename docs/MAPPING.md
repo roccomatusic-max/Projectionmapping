@@ -414,12 +414,23 @@ saved to the media library and starts a scene with it as a picture layer
 Keys are kept in files beside the media folder (`anthropic-api-key`,
 `openai-api-key`, mode 600) and never sent back to a browser.
 
+**Placed by hand**: an objects layer or a countdown set to Placement →
+"Where I put them" / "Where I put it" keeps a list of pins (`x`, `y` on the
+canvas, `size` against the layer's Size, `rotation` in degrees clockwise; up
+to 64). On the scene preview a click adds one, a drag moves one, and the
+picked one has a square handle to size it and a round handle to turn it
+(it settles on straight and quarter turns); the layer card has the same Size
+and Turn sliders. Changing a scene in words gives the pins back to a layer of
+the same type.
+
 **Christmas countdown** is a layer type (`countdown`, in
-`frontend/src/mapping/scene/countdown.ts`) and a ready-made scene: days until
-Christmas as a big number with a ribbon, holly and a ticking hours/minutes/
-seconds clock, in four looks (gold and holly, frosted, candy cane, marquee
-lights). It is centred on its "Where" area (Size and Height place it; colour
-is the ribbon, second colour the glow). It counts by the wall clock: the
+`frontend/src/mapping/scene/countdown.ts`) that can be added to any scene,
+and a ready-made scene: days until Christmas as a big number with a ribbon,
+holly and a ticking hours/minutes/seconds clock, in four looks (gold and
+holly, frosted, candy cane, marquee lights). New countdowns are an element
+placed by hand: one pin, dragged, sized and turned on the preview. Scenes
+saved before that have no pins and stay centred on their "Where" area (Size
+and Height place it). Colour is the ribbon, second colour the glow. It counts by the wall clock: the
 server's time in each computer's own time zone, so a mini PC's time zone must
 be right. On Christmas Eve the number becomes hours, then minutes; on the
 25th it reads "Merry Christmas", and from the 26th it counts to next year.

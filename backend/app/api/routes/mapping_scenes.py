@@ -175,18 +175,17 @@ async def delete_ai_key(admin: RequireAdmin, session: SessionDep) -> AiStatus:
     return await ai_status(admin)
 
 
-def _keep_placed(layers: list, placed: list[tuple[str, list]]) -> None:
-    """Give objects placed by hand back to the changed scene: first to an
-    objects layer of the same style, then to the remaining objects layers in
-    order."""
-    shapes = [layer for layer in layers if layer.type == "shapes"]
+def _keep_placed(layers: list, placed: list[tuple[str, str, list]]) -> None:
+    """Give things placed by hand back to the changed scene: first to a layer
+    of the same type and style, then to the remaining layers of that type in
+    order (objects to objects, a countdown to a countdown)."""
     for match_style in (True, False):
-        for style, pins in list(placed):
-            target = next((layer for layer in shapes if layer.pins is None
+        for kind, style, pins in list(placed):
+            target = next((layer for layer in layers if layer.type == kind and layer.pins is None
                            and (layer.style == style or not match_style)), None)
             if target is not None:
                 target.pins = [ObjectPin.model_validate(pin) for pin in pins]
-                placed.remove((style, pins))
+                placed.remove((kind, style, pins))
 
 
 @router.post("/scenes/describe", response_model=SceneOut,
@@ -200,7 +199,7 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
     current = None
     scene = None
     pictures: list[dict] = []
-    placed: list[tuple[str, list]] = []
+    placed: list[tuple[str, str, list]] = []
     if payload.scene_id is not None:
         scene = await _load_scene(session, payload.scene_id)
         current = SceneOut.model_validate(scene).model_dump(
@@ -213,7 +212,7 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
         for layer in current["layers"]:
             pins = layer.pop("pins", None)
             if pins is not None:
-                placed.append((layer["style"], pins))
+                placed.append((layer["type"], layer["style"], pins))
     try:
         result = await scene_ai.describe(payload.prompt, surfaces=surfaces, current=current)
     except scene_ai.SceneAiError as exc:

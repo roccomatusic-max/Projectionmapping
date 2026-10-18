@@ -738,6 +738,7 @@ void main() {
   float h2 = hash(cell + 9.0);
   vec2 c = (cell + 0.5 + (hash2(cell + 3.1) - 0.5) * 0.5) * cs;
   float own = mix(0.8, 1.2, h2);
+  float turned = 0.0;
   if (uPinCount > 0) {
     // Placed by hand: one object on each pin, at the size it was given.
     vec4 pin = uPins[min(id, 63)];
@@ -746,6 +747,7 @@ void main() {
     h2 = hash(cell + 9.0);
     c = vec2(pin.x * aspect, pin.y);
     own = pin.z;
+    turned = pin.w;
   } else {
     bool hidden = h > mix(0.08, 0.95, uDial.z) || c.x > aspect || c.y > 1.0;
     // Floating objects rise over everything; the rest sit on their target.
@@ -762,7 +764,7 @@ void main() {
   float sp = mix(0.2, 2.5, uDial.y);
   float ph = h * 6.2832;
   vec2 off = vec2(0.0);
-  float rot = 0.0;
+  float rot = turned;
   float scale = 1.0;
   float bright = 1.0;
   float alpha = 1.0;

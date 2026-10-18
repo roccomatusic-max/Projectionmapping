@@ -354,7 +354,7 @@ export const LAYER_KINDS: LayerKind[] = [
   {
     type: 'countdown',
     label: 'Christmas countdown',
-    about: 'Days until Christmas with a ribbon and a ticking clock; colour is the ribbon, second colour the glow',
+    about: 'Days until Christmas with a ribbon and a ticking clock: drag it, size it and turn it on the preview. Colour is the ribbon, second colour the glow',
     group: 'objects',
     styles: [
       { id: 'gold', label: 'Gold and holly' },
@@ -367,6 +367,9 @@ export const LAYER_KINDS: LayerKind[] = [
     defaults: {
       blend: 'normal', color: '#b3122a', color2: '#ffcf70', size: 0.75, fade: 0.5, speed: 0.4, amount: 0.6,
       target: 'building', reacts_to: 'always', near: 'light', reach: 0.5,
+      // An element placed by hand; scenes saved before that have no pins
+      // and stay centred on their "Where" area.
+      pins: [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }],
     },
   },
 ]

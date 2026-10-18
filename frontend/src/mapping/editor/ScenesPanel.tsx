@@ -22,6 +22,7 @@ import {
   TARGETS,
 } from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
+import { countdownPinHeight, DESIGN_H, DESIGN_W } from '../scene/countdown'
 import { objectRadius } from '../scene/engine'
 import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
@@ -33,6 +34,20 @@ import { SceneRecorder } from './SceneRecorder'
 const SAVE_DELAY_MS = 400
 const SCENE_KEY = 'pc.mapping.scene'
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
+
+/** Layers whose things can be placed by hand on the preview. */
+const PLACEABLE = new Set<LayerType>(['shapes', 'countdown'])
+
+/** What the preview needs to place, pick, size and turn a layer's things. */
+function placingFor(layer: SceneLayer, selected: number | null) {
+  if (layer.type === 'countdown') {
+    // One countdown, a rectangle the shape of its artwork.
+    const h = countdownPinHeight(layer.size)
+    const w = (h * DESIGN_W) / DESIGN_H
+    return { pins: layer.pins!, radius: Math.hypot(w, h) / 2, box: { w, h }, max: 1, selected }
+  }
+  return { pins: layer.pins!, radius: objectRadius(layer.size), selected }
+}
 
 /**
  * Scenes: reactive designs made of layers (a glow around each person,
@@ -227,10 +242,10 @@ export function ScenesPanel({
 
   const hasHouse = surfaces.length > 0
   // An open objects layer that is placed by hand turns clicks on the preview into placing.
-  const placingLayer = canEdit ? scene?.layers.find((l) => l.id === openLayer && l.type === 'shapes' && l.pins) : undefined
-  const placing = placingLayer
-    ? { pins: placingLayer.pins!, radius: objectRadius(placingLayer.size), selected: selectedPin }
-    : null
+  const placingLayer = canEdit ? scene?.layers.find((l) => l.id === openLayer && PLACEABLE.has(l.type) && l.pins) : undefined
+  // A lone countdown is always the picked one, so its handles show at once.
+  const pickedPin = selectedPin ?? (placingLayer?.type === 'countdown' && placingLayer.pins!.length > 0 ? 0 : null)
+  const placing = placingLayer ? placingFor(placingLayer, pickedPin) : null
 
   return (
     <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -588,7 +603,7 @@ export function ScenesPanel({
                     layer={layer}
                     media={media}
                     open={openLayer === layer.id}
-                    selectedPin={openLayer === layer.id ? selectedPin : null}
+                    selectedPin={openLayer === layer.id ? pickedPin : null}
                     onSelectPin={setSelectedPin}
                     hasHouse={hasHouse}
                     canEdit={canEdit}
@@ -726,7 +741,8 @@ function LayerCard({
   const kind = KIND[layer.type]
   if (!kind) return null
   const usesColors = layer.type !== 'distort' && layer.type !== 'picture'
-  const placed = layer.type === 'shapes' && layer.pins != null
+  const placed = PLACEABLE.has(layer.type) && layer.pins != null
+  const single = layer.type === 'countdown'
   const usesTarget = (kind.group !== 'people' || layer.type === 'particles') && !placed
   const near = nearOf(layer)
   const pin = placed && selectedPin != null ? layer.pins![selectedPin] : undefined
@@ -801,16 +817,17 @@ function LayerCard({
                 </label>
               </div>
             )}
-            {layer.type === 'shapes' && (
+            {PLACEABLE.has(layer.type) && (
               <label className="block">
                 <span className="label">Placement</span>
                 <select className="input py-1 text-sm" value={placed ? 'hand' : 'spread'} disabled={!canEdit}
                   onChange={(e) => {
-                    onSelectPin(null)
-                    onChange({ pins: e.target.value === 'hand' ? [] : null })
+                    const hand = e.target.value === 'hand'
+                    onSelectPin(hand && single ? 0 : null)
+                    onChange({ pins: hand ? (single ? [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }] : []) : null })
                   }}>
-                  <option value="spread">Spread over an area</option>
-                  <option value="hand">Where I put them</option>
+                  <option value="spread">{single ? 'Centred on an area' : 'Spread over an area'}</option>
+                  <option value="hand">{single ? 'Where I put it' : 'Where I put them'}</option>
                 </select>
               </label>
             )}
@@ -874,15 +891,19 @@ function LayerCard({
           {placed && (
             <div className="rounded-md bg-panel-900 px-3 py-2.5 text-xs ring-1 ring-sky-500/30">
               <p className="text-slate-300">
-                {layer.pins!.length === 0
-                  ? 'Click on the preview to put the first one where you want it.'
-                  : `${layer.pins!.length} placed. Click the preview to add more, drag one to move it, click one to pick it.`}
+                {single
+                  ? layer.pins!.length === 0
+                    ? 'Click on the preview to put it where you want it.'
+                    : 'Drag it on the preview, or click where it should go. Drag the square corner handle to size it and the round handle to turn it.'
+                  : layer.pins!.length === 0
+                    ? 'Click on the preview to put the first one where you want it.'
+                    : `${layer.pins!.length} placed. Click the preview to add more, drag one to move it, click one to pick it, then use its handles to size or turn it.`}
               </p>
               {canEdit && (
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
                   {pin ? (
                     <>
-                      <span className="text-slate-400">Picked one:</span>
+                      {!single && <span className="text-slate-400">Picked one:</span>}
                       <label className="flex items-center gap-1.5 text-slate-400">
                         Size
                         <input type="range" min={0.3} max={3} step={0.05} value={pin.size} className="w-28 accent-sky-500"
@@ -891,17 +912,29 @@ function LayerCard({
                           })} />
                         <span className="tnum w-9 text-slate-200">{Math.round(pin.size * 100)}%</span>
                       </label>
-                      <button className="btn-ghost px-2 py-0.5 text-xs text-red-300" onClick={() => {
-                        onSelectPin(null)
-                        onChange({ pins: layer.pins!.filter((_, i) => i !== selectedPin) })
-                      }}>
-                        Remove it
-                      </button>
+                      <label className="flex items-center gap-1.5 text-slate-400">
+                        Turn
+                        <input type="range" min={-180} max={180} step={1} value={pin.rotation ?? 0} className="w-28 accent-sky-500"
+                          onChange={(e) => onChange({
+                            pins: layer.pins!.map((p, i) => (i === selectedPin ? { ...p, rotation: Number(e.target.value) } : p)),
+                          })} />
+                        <span className="tnum w-9 text-slate-200">{Math.round(pin.rotation ?? 0)}°</span>
+                      </label>
+                      {!single && (
+                        <button className="btn-ghost px-2 py-0.5 text-xs text-red-300" onClick={() => {
+                          onSelectPin(null)
+                          onChange({ pins: layer.pins!.filter((_, i) => i !== selectedPin) })
+                        }}>
+                          Remove it
+                        </button>
+                      )}
                     </>
                   ) : (
-                    layer.pins!.length > 0 && <span className="text-slate-500">Click one on the preview to resize or remove it.</span>
+                    layer.pins!.length > 0 && (
+                      <span className="text-slate-500">{single ? 'Click it on the preview to size or turn it.' : 'Click one on the preview to size, turn or remove it.'}</span>
+                    )
                   )}
-                  {layer.pins!.length > 0 && (
+                  {layer.pins!.length > 0 && !single && (
                     <button className="btn-ghost ml-auto px-2 py-0.5 text-xs" onClick={() => {
                       onSelectPin(null)
                       onChange({ pins: [] })
@@ -924,7 +957,7 @@ function LayerCard({
               <Slider label="How much it reacts" value={layer.reaction} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ reaction: v })} />
             )}
-            {DIALS.filter((d) => kind.dials[d] && !(placed && d === 'amount')).map((d) => (
+            {DIALS.filter((d) => kind.dials[d] && !(placed && d === (single ? 'fade' : 'amount'))).map((d) => (
               <Slider key={d} label={kind.dials[d]!} value={layer[d]} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}`} onChange={(v) => onChange({ [d]: v })} />
             ))}
