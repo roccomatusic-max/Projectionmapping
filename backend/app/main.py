@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import re
 import secrets
 import sys
 from contextlib import asynccontextmanager
@@ -40,7 +39,7 @@ from app.api.routes import (
     ws,
 )
 from app.config import settings
-from app.core.security import hash_password
+from app.core.security import HideTokens, hash_password
 from app.db.migrate import upgrade_to_head
 from app.db.models import Role, User
 from app.db.session import create_all, engine, session_scope
@@ -60,19 +59,6 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("app")
-
-
-class HideTokens(logging.Filter):
-    """uvicorn logs each WebSocket's path with its query string, and a
-    browser can only send its sign-in token there; keep it out of logs."""
-
-    TOKEN = re.compile(r"(token=)[^&\s\"]+")
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.args, tuple):
-            record.args = tuple(self.TOKEN.sub(r"\1hidden", a) if isinstance(a, str) else a
-                                for a in record.args)
-        return True
 
 
 async def prepare_database() -> None:

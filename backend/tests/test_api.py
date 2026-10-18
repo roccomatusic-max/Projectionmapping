@@ -1273,7 +1273,7 @@ async def test_changing_the_admin_password_removes_the_first_run_note(api, roles
 def test_websocket_log_lines_hide_the_token():
     import logging
 
-    from app.main import HideTokens
+    from app.core.security import HideTokens
 
     record = logging.LogRecord("uvicorn.error", logging.INFO, __file__, 1,
                                '%s - "WebSocket %s" [accepted]',

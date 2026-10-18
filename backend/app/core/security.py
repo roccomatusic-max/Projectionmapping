@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -94,3 +96,16 @@ def token_predates(payload: dict[str, Any], created_at: datetime | None) -> bool
     if created_at.tzinfo is None:  # SQLite hands datetimes back naive
         created_at = created_at.replace(tzinfo=UTC)
     return issued < created_at.timestamp() - 1
+
+
+class HideTokens(logging.Filter):
+    """uvicorn logs each WebSocket's path with its query string, and a
+    browser can only send its sign-in token there; keep it out of logs."""
+
+    TOKEN = re.compile(r"(token=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(self.TOKEN.sub(r"\1hidden", a) if isinstance(a, str) else a
+                                for a in record.args)
+        return True
