@@ -363,6 +363,30 @@ def test_a_port_in_real_use_is_not_taken(tmp_path):
         assert pick_port("127.0.0.1", port) != port
 
 
+def test_a_listener_on_another_address_counts_as_taken(monkeypatch):
+    """macOS lets 0.0.0.0 share a port with a 127.0.0.1 listener under
+    SO_REUSEADDR; a Terminal copy there must not be joined by the service."""
+    import contextlib
+    import socket
+
+    from app import desktop
+
+    class BindsAnything(contextlib.AbstractContextManager):
+        def __exit__(self, *exc):
+            return None
+
+        def bind(self, address):
+            pass
+
+    monkeypatch.setattr(desktop, "probe_socket", lambda: BindsAnything())
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        assert not desktop.port_free("0.0.0.0", port)
+    assert desktop.port_free("0.0.0.0", port)
+
+
 def test_the_service_exits_before_starting_when_its_port_is_taken(tmp_path, monkeypatch):
     import socket
 
