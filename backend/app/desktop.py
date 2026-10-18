@@ -84,6 +84,11 @@ def probe_socket() -> socket.socket:
 
 
 def port_free(host: str, port: int) -> bool:
+    # With SO_REUSEADDR, macOS lets a bind to one address share the port
+    # with a listener on another (0.0.0.0 beside 127.0.0.1), so also ask
+    # whether anything already answers there.
+    with contextlib.suppress(OSError), socket.create_connection(("127.0.0.1", port), timeout=0.5):
+        return False
     with probe_socket() as probe:
         try:
             probe.bind((host, port))
