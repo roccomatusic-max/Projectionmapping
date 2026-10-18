@@ -22,6 +22,8 @@ log = logging.getLogger(__name__)
 
 MODEL = "claude-opus-5-5"
 KEY_FILE = "anthropic-api-key"
+#: Seconds each attempt of the key check may take (the SDK retries twice).
+KEY_CHECK_SECONDS = 20.0
 
 MOTIONS = ["none", "bob", "sway", "spin", "drift", "bounce", "orbit", "rise", "flutter"]
 CHANGES = ["none", "pulse", "twinkle", "colour", "flicker", "blink"]
@@ -290,7 +292,10 @@ def _explain(exc) -> str:
         message = str(body["error"].get("message") or "").strip()
     if "credit balance" in message.lower():
         return ("The Anthropic account has no credit yet. Add some under Billing at "
-                "console.anthropic.com, then try again.")
+                f"console.anthropic.com, then try again. (Anthropic: {message})")
+    if exc.status_code == 429:
+        return ("Anthropic's limit for this account was reached. Try again in a minute."
+                + (f" (Anthropic: {message})" if message else ""))
     if message:
         return f"Anthropic answered with an error ({exc.status_code}): {message}"
     return f"Anthropic answered with an error ({exc.status_code}). Try again."
@@ -308,7 +313,8 @@ async def check_key(key: str) -> None:
 
     try:
         async with _client(key) as client:
-            await client.models.list(limit=1)
+            # A key check answers at once; the long timeout is for describing.
+            await client.models.list(limit=1, timeout=KEY_CHECK_SECONDS)
     except anthropic.AuthenticationError:
         raise SceneAiError("Anthropic did not accept that key. Copy it again from "
                            "console.anthropic.com → API keys.") from None
@@ -455,9 +461,8 @@ async def describe(prompt: str, *, surfaces: list[dict], current: dict | None = 
     except anthropic.AuthenticationError:
         raise SceneAiError("Anthropic no longer accepts the saved key. Enter a new one "
                            "in Settings.") from None
-    except anthropic.RateLimitError:
-        raise SceneAiError("Anthropic is busy or the account's limit was reached. Try "
-                           "again in a minute.") from None
+    except anthropic.APITimeoutError:
+        raise SceneAiError("Anthropic took too long to answer. Try again.") from None
     except anthropic.APIConnectionError:
         raise SceneAiError("Could not reach Anthropic. Check this computer's internet "
                            "connection.") from None
@@ -473,8 +478,11 @@ async def describe(prompt: str, *, surfaces: list[dict], current: dict | None = 
     try:
         data = json.loads(text)
     except ValueError:
-        raise SceneAiError("Claude's answer could not be read. Try again.") from None
-    layers = to_layers(data.get("layers") or [])
+        data = None
+    if not isinstance(data, dict):
+        raise SceneAiError("Claude's answer could not be read. Try again.")
+    layers = data.get("layers")
+    layers = to_layers(layers if isinstance(layers, list) else [])
     if not layers:
         raise SceneAiError("Claude's answer had no usable layers. Try describing it "
                            "differently.")

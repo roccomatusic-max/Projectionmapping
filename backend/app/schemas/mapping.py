@@ -7,13 +7,15 @@ the edge of the image is a legitimate way to overscan a surface.
 
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator, model_validator
 
-Point = tuple[float, float]
+#: NaN and infinity are refused: stored, they would break every later read of the show.
+Point = tuple[FiniteFloat, FiniteFloat]
 
 #: How far outside the unit square a point may sit.
 _REACH = 4.0
@@ -45,7 +47,7 @@ class MediaUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     width: int | None = Field(default=None, ge=1, le=32768)
     height: int | None = Field(default=None, ge=1, le=32768)
-    duration: float | None = Field(default=None, ge=0)
+    duration: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 # -- output geometry -----------------------------------------------------------
@@ -61,7 +63,8 @@ class SourceRect(BaseModel):
 class Mesh(BaseModel):
     cols: int = Field(ge=2, le=17)
     rows: int = Field(ge=2, le=17)
-    #: Offsets from the undistorted grid position, row-major, in output fractions.
+    #: Offsets from the undistorted grid position, row-major, in unit-square
+    #: space (before the corner pin).
     points: list[Point]
 
     @model_validator(mode="after")
@@ -477,6 +480,16 @@ class PlayerReport(BaseModel):
     tracking_ms: float | None = None
     # Players: how old the camera's people reports are on arrival (ms).
     people_ms: float | None = None
+
+    @model_validator(mode="after")
+    def _finite(self) -> PlayerReport:
+        # A Python sender writes NaN for "no measurement yet"; stored, it would
+        # make the players list unreadable for everyone. Keep the report.
+        for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms"):
+            value = getattr(self, name)
+            if value is not None and not math.isfinite(value):
+                setattr(self, name, None)
+        return self
 
 
 class PlayerAssignment(BaseModel):

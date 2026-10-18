@@ -227,3 +227,34 @@ async def test_rename_delete_and_permissions(api):
     # Deleting a map leaves the show it came from alone.
     show = (await api.get(f"/api/mapping/shows/{original['id']}", headers=headers)).json()
     assert len(show["outputs"]) == 2
+
+
+async def test_a_saved_map_always_downloads_and_applies(api):
+    """Regression: a show with more outputs, or more mini PCs on one output, than a
+    map file holds saved fine, then its download and apply failed with a 500."""
+    from app.schemas.mapping_maps import MAX_MAP_OUTPUTS
+
+    headers = await login(api)
+    show = await make_show(api, headers, "Stadium")
+    url = f"/api/mapping/shows/{show['id']}/outputs"
+    for n in range(MAX_MAP_OUTPUTS + 1):
+        await api.post(url, headers=headers, json={"name": f"P{n}"})
+    too_many = await save(api, headers, show["id"], name="Stadium")
+    assert too_many.status_code == 400, too_many.text
+    assert str(MAX_MAP_OUTPUTS) in too_many.json()["detail"]
+    assert (await api.get("/api/mapping/maps", headers=headers)).json() == []
+
+    small = await make_show(api, headers, "Shed")
+    output = (await api.post(f"/api/mapping/shows/{small['id']}/outputs", headers=headers,
+                             json={"name": "Only"})).json()
+    for n in range(18):
+        hello = (await api.post("/api/mapping/players/hello", json={
+            "device_id": f"mini-pc-many-{n:04d}", "secret": "m" * 48, "name": f"PC {n}"})).json()
+        await api.patch(f"/api/mapping/players/{hello['player_id']}", headers=headers,
+                        json={"approved": True, "output_id": output["id"]})
+    saved = await save(api, headers, small["id"], name="Shed")
+    assert saved.status_code == 201, saved.text
+    assert (await api.get(f"/api/mapping/maps/{saved.json()['id']}", headers=headers)).status_code == 200
+    applied = await api.post(f"/api/mapping/shows/{small['id']}/apply-map", headers=headers,
+                             json={"map_id": saved.json()["id"], "players": True})
+    assert applied.status_code == 200, applied.text

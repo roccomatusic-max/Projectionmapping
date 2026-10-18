@@ -52,8 +52,13 @@ def size_for(canvas_width: int, canvas_height: int) -> tuple[int, int]:
 
 def _explain(response: httpx.Response) -> str:
     try:
-        error = response.json().get("error") or {}
+        body = response.json()
     except ValueError:
+        body = None
+    error = body.get("error") if isinstance(body, dict) else None
+    if isinstance(error, str):  # some proxies answer {"error": "..."}
+        error = {"message": error}
+    if not isinstance(error, dict):
         error = {}
     message = str(error.get("message") or "").strip()
     code = str(error.get("code") or "")
@@ -62,7 +67,8 @@ def _explain(response: httpx.Response) -> str:
     if code == "moderation_blocked":
         return "OpenAI declined that description. Try wording it differently."
     if code == "insufficient_quota":
-        return "The OpenAI account has no credit left. Add some under Billing on platform.openai.com."
+        return ("The OpenAI account has no credit left. Add some under Billing on "
+                "platform.openai.com." + (f" (OpenAI: {message})" if message else ""))
     if response.status_code == 429:
         return "OpenAI is busy or the account's limit was reached. Try again in a minute."
     if response.status_code == 403 and message:

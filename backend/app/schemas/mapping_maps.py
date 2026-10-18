@@ -24,6 +24,8 @@ from app.schemas.mapping import (
 
 #: More outputs than any one building plausibly has; bounds an imported file.
 MAX_MAP_OUTPUTS = 32
+#: Mini PCs remembered per output.
+MAX_OUTPUT_PLAYERS = 16
 
 MAP_FORMAT = "projector-control-map"
 MAP_VERSION = 1
@@ -38,7 +40,7 @@ class SavedCalibration(CalibrationResult):
 class MapOutput(OutputBase):
     calibration: SavedCalibration | None = None
     #: Mini PCs that showed this output when the map was saved.
-    player_ids: list[int] = Field(default_factory=list, max_length=16)
+    player_ids: list[int] = Field(default_factory=list, max_length=MAX_OUTPUT_PLAYERS)
 
 
 class MapBody(BaseModel):

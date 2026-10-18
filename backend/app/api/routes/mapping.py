@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -76,7 +77,8 @@ MEDIA_TYPES: dict[str, tuple[str, str]] = {
     ".webp": ("image", "image/webp"),
 }
 
-CHUNK = 1024 * 1024
+#: Upload bytes gathered before each write to disk.
+UPLOAD_BATCH = 1024 * 1024
 
 
 def media_root() -> Path:
@@ -104,7 +106,7 @@ async def upload_media(
     name: Annotated[str, Query(min_length=1, max_length=255)],
     width: Annotated[int | None, Query(ge=1, le=32768)] = None,
     height: Annotated[int | None, Query(ge=1, le=32768)] = None,
-    duration: Annotated[float | None, Query(ge=0)] = None,
+    duration: Annotated[float | None, Query(ge=0, allow_inf_nan=False)] = None,
 ) -> MediaAsset:
     """Upload one file as the raw request body.
 
@@ -134,6 +136,9 @@ async def upload_media(
     written = 0
     try:
         with partial.open("wb") as handle:
+            # Written in batches off the event loop: a disk that falls behind
+            # on a multi-gigabyte file must not stall the show's live feed.
+            pending = bytearray()
             async for chunk in request.stream():
                 written += len(chunk)
                 if written > limit:
@@ -141,7 +146,12 @@ async def upload_media(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=f"Upload exceeds {settings.media_max_upload_mb} MB",
                     )
-                handle.write(chunk)
+                pending.extend(chunk)
+                if len(pending) >= UPLOAD_BATCH:
+                    await asyncio.to_thread(handle.write, bytes(pending))
+                    pending.clear()
+            if pending:
+                await asyncio.to_thread(handle.write, bytes(pending))
         if written == 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                 detail="The upload was empty")
