@@ -310,11 +310,18 @@ async def upload_snapshot(request: Request, session: SessionDep, user: CurrentUs
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The photo was empty")
     folder = _snapshot_dir()
     partial = folder / f".{uuid.uuid4().hex}.part"
-    partial.write_bytes(body)
-    for extension in SNAPSHOT_TYPES.values():
+    target = folder / f"{camera.id}{SNAPSHOT_TYPES[content_type]}"
+    try:
+        partial.write_bytes(body)
+        # Replace first, so a viewer never finds no photo at all mid-update.
+        os.replace(partial, target)
+    finally:
         with contextlib.suppress(FileNotFoundError):
-            (folder / f"{camera.id}{extension}").unlink()
-    os.replace(partial, folder / f"{camera.id}{SNAPSHOT_TYPES[content_type]}")
+            partial.unlink()
+    for extension in SNAPSHOT_TYPES.values():
+        if extension != target.suffix:
+            with contextlib.suppress(FileNotFoundError):
+                (folder / f"{camera.id}{extension}").unlink()
     bus.publish("mapping_camera", {"camera_id": camera.id, "snapshot_at": now_ms()})
 
 

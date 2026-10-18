@@ -452,3 +452,29 @@ async def test_player_name_cannot_be_cleared(api):
     assert response.status_code == 200, response.text
     assert response.json()["name"] == "Left mini PC"
     assert response.json()["approved"] is True
+
+
+
+async def test_non_finite_numbers_are_kept_out_of_the_database(api):
+    """NaN or infinity from a script must not be stored: reading it back fails."""
+    headers = await login(api)
+    show = await make_show(api, headers, name="NaN")
+    body = '{"name": "Out", "warp": {"corners": [[NaN, 0], [1, 0], [1, 1], [0, 1]]}}'
+    response = await api.post(f"/api/mapping/shows/{show['id']}/outputs", content=body,
+                              headers={**headers, "Content-Type": "application/json"})
+    assert response.status_code == 422
+    assert (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).status_code == 200
+
+    # A camera agent written in Python sends NaN for "no measurement yet":
+    # the report is kept, the bad numbers dropped, and the list still loads.
+    first = (await api.post("/api/mapping/players/hello", json=DEVICE)).json()
+    await api.patch(f"/api/mapping/players/{first['player_id']}", headers=headers,
+                    json={"approved": True})
+    token = (await api.post("/api/mapping/players/hello", json=DEVICE)).json()["access_token"]
+    beat = await api.post("/api/mapping/players/me", content='{"fps": NaN, "drift_ms": Infinity, "cache": "on"}',
+                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    assert beat.status_code == 200, beat.text
+    listed = await api.get("/api/mapping/players", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert listed.json()[0]["report"]["cache"] == "on"
+    assert listed.json()[0]["report"].get("fps") is None

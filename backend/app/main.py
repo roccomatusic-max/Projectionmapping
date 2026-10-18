@@ -8,11 +8,14 @@ and shuts them all down cleanly so no projector is left mid-command.
 from __future__ import annotations
 
 import logging
+import math
 import secrets
 import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -165,6 +168,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _printable(value):
+    """``value`` with NaN and infinity written as text, which JSON can carry."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _printable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_printable(item) for item in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's usual 422, except that a rejected NaN or infinity (Python's
+    JSON reader accepts them from scripts) is echoed as text instead of
+    failing to encode and turning the answer into a 500."""
+    return JSONResponse(status_code=422,
+                        content={"detail": _printable(jsonable_encoder(exc.errors()))})
 
 
 @app.exception_handler(Exception)
