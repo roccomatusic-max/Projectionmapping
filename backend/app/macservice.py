@@ -128,12 +128,13 @@ INSTALL_SCRIPT = f"""#!/bin/bash
 set -e
 install -m 644 -o root -g wheel "$1" "{SERVICE_PLIST}"
 launchctl bootout system/{LABEL} 2>/dev/null || true
+# Before bootstrap: launchd refuses to load a job that was disabled.
+launchctl enable system/{LABEL}
 # bootout returns before the old job is fully gone; retry briefly.
 for i in 1 2 3 4 5 6 7 8 9 10; do
   launchctl bootstrap system "{SERVICE_PLIST}" && break
   sleep 1
 done
-launchctl enable system/{LABEL}
 launchctl kickstart system/{LABEL} || true
 """
 
@@ -175,10 +176,23 @@ def register_service(definition: dict) -> bool:
         )
 
 
+def is_server(pid: int) -> bool:
+    """Whether ``pid`` is Projector Control, not another program that reused the number.
+
+    The pid file outlives the server: after a reboot without it, the number
+    can belong to anything.
+    """
+    probe = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
+                           capture_output=True, text=True, check=False)
+    return EXECUTABLE in probe.stdout
+
+
 def restart_server(folder: Path) -> None:
     """Stop the running server; launchd starts it again from the bundle on disk."""
     with contextlib.suppress(OSError, ValueError):
-        os.kill(int(pid_file(folder).read_text().strip()), signal.SIGTERM)
+        pid = int(pid_file(folder).read_text().strip())
+        if is_server(pid):
+            os.kill(pid, signal.SIGTERM)
 
 
 # -- copying the app into place ---------------------------------------------
@@ -307,7 +321,9 @@ def launch(folder: Path) -> int:
     if answered is None:
         dialog(
             "Projector Control is installed but the server has not answered yet.\n\n"
-            f"Its log is in {logs}. Open the app again in a minute to retry.",
+            f"Its log is in {logs}. Open the app again in a minute to retry. If it "
+            "still does not answer, check that ProjectorControl is switched on in "
+            "System Settings → General → Login Items, under Allow in the Background.",
             error=True,
         )
         return 1

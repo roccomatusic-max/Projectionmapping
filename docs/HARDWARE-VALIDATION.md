@@ -7,7 +7,10 @@ means it validates the *controller*, not the *documentation*.
 
 This document is the procedure that turns documented commands into verified
 ones. Work through it once, with a projector you can afford to have
-misbehave, before you hang anything on a building.
+misbehave, before you hang anything on a building. Stages 1–7 cover the
+projectors; stages 8–12 cover everything else that has only run against
+simulators so far: the Mac server, the mini PCs, the projected output,
+the cameras and the phone remote.
 
 ---
 
@@ -210,6 +213,151 @@ alone.
 
 ---
 
+## Stage 8 — The Mac server
+
+The Mac app was installed and opened on a real Mac on 2026-10-17. Nothing
+below has been tried there yet. Do this before the server runs a show. In
+the commands, the data folder is `~/Library/Application Support/ProjectorControl`.
+
+1. **The service is loaded.** In Terminal:
+   ```bash
+   sudo launchctl print system/com.projectorcontrol.server | grep -E "state =|pid ="
+   ```
+   Expected: `state = running` and a pid.
+2. **Start at boot, nobody signed in.** Restart the Mac and leave it at the
+   sign-in screen. From another computer open `http://YOUR-MAC.local:8765`
+   (Local hostname: System Settings → General → Sharing). Expected: the
+   sign-in page within about two minutes. With FileVault on, the Mac stops
+   before this point until someone types the password (MAC-SERVER.md).
+3. **Restarts if it stops.** Stop the server on purpose:
+   ```bash
+   pkill -f "Projector Control.app/Contents/MacOS/ProjectorControl"
+   ```
+   then, after 15 seconds:
+   ```bash
+   curl -s http://localhost:8765/api/health
+   ```
+   Expected: an answer with `"version"` in it.
+4. **Keeps the Mac awake.**
+   ```bash
+   pmset -g assertions | grep -i caffeinate
+   ```
+   Expected: a line naming caffeinate. Leave the Mac idle for longer than its
+   sleep setting and confirm the dashboard still answers from another computer.
+5. **Power cut.** With **Start up automatically after a power failure** on
+   (System Settings → Energy), pull the plug, wait, plug it back in. Expected:
+   the dashboard answers again without anyone touching the Mac.
+6. **Reaches the projector network.** Register a projector and press **Test
+   connection** (stage 1). If it says *No TCP connection* while
+   `nc -vz <projector-ip> 1024` works in Terminal, macOS is blocking the
+   service: turn ProjectorControl on under System Settings → Privacy &
+   Security → Local Network, and record that it was needed.
+7. **Update by hand from Settings.** After a change is merged on GitHub (the
+   Mac app workflow takes about ten minutes to publish it): Settings → App
+   updates → **Check now** → **Install**. Expected: the page comes back by
+   itself in about a minute showing the new version, and
+   ```bash
+   cat ~/Library/Application\ Support/ProjectorControl/updates/last-result.txt
+   ```
+   says `installed 1.0.<number>`. If the panel says *Operation not
+   permitted*, allow ProjectorControl under System Settings → Privacy &
+   Security → App Management and try again; record that it was needed.
+8. **Automatic update, and that it waits for a show.** Leave **Install
+   updates by themselves** on. Play a mapping show, then merge a change.
+   Expected: within 15 minutes the panel says *Waiting to install: a mapping
+   show is playing*, and nothing restarts. Stop the show and leave the
+   projectors alone. Expected: within about 25 minutes the version changes.
+   The log shows each decision:
+   ```bash
+   grep "update:" ~/Library/Application\ Support/ProjectorControl/logs/projector-control.log
+   ```
+
+A rolled-back update cannot be tested without a deliberately broken
+release; do not try it on the show server.
+
+---
+
+## Stage 9 — Mini PCs (players)
+
+On each Windows mini PC, with the projector as its only or main display:
+
+1. **Install and pair** (minipc/README.md). Expected: the projector shows a
+   six-letter code, the code appears on Mapping → **Players**, and
+   **Approve** with an output makes the projector show that output. If no
+   code ever appears on the Players tab, the mini PC did not find the
+   server: check that Windows did not block the Mini PC app in its firewall,
+   or give it the address with `--server http://<mac>:8765`.
+2. **Truly full screen.** Expected: the projected image shows no tabs,
+   address bar, window frame, taskbar or mouse pointer, edge to edge.
+   Press H: the status overlay must not warn that the window and the
+   output's resolution differ. Record the display resolution Windows uses.
+3. **Comes back by itself.** Restart the mini PC (and once, cut its power).
+   Expected: Windows signs in without a password and the output returns
+   without anyone touching it.
+4. **Media cache.** Upload the real show media and open the Players tab.
+   Expected: each player shows `cache on` (not `syncing` or `off`) before
+   the show. Then
+   unplug the mini PC's network cable for ten seconds during playback:
+   cached media keeps playing.
+5. **Sync.** With two players side by side, play content with motion across
+   the seam. Record the clock drift the Players tab shows and whether the
+   seam visibly tears.
+6. **Identify and Remove.** **Identify** flashes the right projector;
+   **Remove** sends it back to a pairing code.
+
+---
+
+## Stage 10 — Projected output on the building
+
+1. **Test pattern.** Turn on the canvas grid on every output. Drag corner
+   pins and mesh points until the grids meet across projectors. Record how
+   close they got.
+2. **Edge blend.** Set blends on the overlaps with a white pattern. Expected:
+   no brighter band where two projectors overlap. Record the blend widths.
+3. **Masks.** Mask a window. Expected: it stays black, with feathered edges.
+4. **Blackout.** Press blackout on Mapping → Remote and on the phone remote.
+   Expected: every output goes black at once.
+
+---
+
+## Stage 11 — Cameras
+
+1. **Detection.** Plug the camera into the mini PC (or start
+   `camera-agent/agent.py` by hand). Expected: it appears on the Players tab
+   (with its mini PC), its row names the camera and says `depth` for a
+   RealSense, Orbbec or OAK. Record the model.
+2. **Calibration** (camera-agent/README.md, Calibrating), at night: each
+   projector shows its patterns for about half a minute. Expected: after
+   **Correct**, the canvas grid lands straight on the building. Record how
+   far off it is before and after **Map by hand**.
+3. **People.** Walk in front of the building with a *Spotlight* cue live.
+   Expected: the light follows you, nothing lights where nobody is, and two
+   people get two lights. Then **Re-learn empty scene** with the area clear.
+4. **Tracking delay.** On the Players tab, record the camera's `updates/s`
+   (about 30 is expected on a depth camera) and each player's
+   `camera to here`. Film yourself walking with a phone at 240 fps if it has
+   it, and count the frames between your movement and the light's; that
+   includes the camera's exposure and USB (about 30–50 ms) and the
+   projector's input lag, which the software cannot measure.
+
+---
+
+## Stage 12 — The phone remote
+
+1. **On the venue Wi-Fi.** Open **Phone remote** in the dashboard, scan the QR
+   code, **Share → Add to Home Screen**, open it from the Home Screen and
+   sign in. Expected: it opens full screen with its own icon.
+2. **The buttons.** GO, pause, stop and blackout act on the show within a
+   moment. Projector power asks first, and the list shows what each
+   projector reports afterwards.
+3. **From anywhere.** With Tailscale on the Mac and the phone, switch the
+   phone to mobile data. Expected: the remote still works.
+4. **Wake-up.** Lock the phone for a few minutes, change the cue from the
+   dashboard, unlock. Expected: the remote shows the new cue at once, or says
+   it cannot reach the server; never the old state as if it were live.
+
+---
+
 ## Results table
 
 Fill this in and keep it with the installation notes.
@@ -233,6 +381,17 @@ Fill this in and keep it with the installation notes.
 | 6 | `VXX:LNSI1` (home) | | | |
 | 6 | `VXX:LNSI2` (shift H) | | | stopped on its own? |
 | 7 | `%1ERST` | | | |
+| 8 | Service loaded, start at boot | | | time to dashboard: ___ |
+| 8 | Restart after stop, awake, power cut | | | |
+| 8 | Reaches projectors | | | Local Network permission needed? |
+| 8 | Update from Settings | | | App Management needed? |
+| 8 | Automatic update waits for show | | | |
+| 9 | Pairing, full screen, reboot | | | resolution: ___ |
+| 9 | Media cache, sync | | | drift: ___ ms |
+| 10 | Grid alignment, blend, masks, blackout | | | |
+| 11 | Camera detected, calibration | | | model: ___ |
+| 11 | People, tracking delay | | | ___ updates/s, ___ ms |
+| 12 | Phone remote: Wi-Fi, mobile data, wake | | | |
 
 ---
 

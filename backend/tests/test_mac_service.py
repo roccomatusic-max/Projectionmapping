@@ -140,3 +140,268 @@ def test_reset_admin_password_without_a_database(tmp_path, capsys):
     assert reset_admin_password(tmp_path / "missing") == 1
     assert "No Projector Control database" in capsys.readouterr().out
     assert not (tmp_path / "missing").exists()
+
+
+# -- talking to GitHub ---------------------------------------------------------
+
+API = "https://api.github.com/repos/"
+
+
+def github(monkeypatch, handler):
+    """Route the updater's HTTP calls to ``handler`` instead of GitHub."""
+    import httpx
+
+    from app.services import updates
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(updates.httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.setattr(Updater, "supported", property(lambda self: True))  # tests run on Linux
+
+
+async def test_rate_limit_is_not_reported_as_a_key_problem(tmp_path, monkeypatch):
+    import httpx
+
+    github(monkeypatch, lambda request: httpx.Response(
+        403, json={"message": "API rate limit exceeded"},
+        headers={"x-ratelimit-remaining": "0"}))
+    status = await make_updater(tmp_path).check(force=True)
+    assert status["needs_key"] is False
+    assert "limiting" in status["error"]
+
+
+async def test_public_repository_between_releases_needs_no_key(tmp_path, monkeypatch):
+    import httpx
+
+    def handler(request):
+        if request.url.path.endswith("/releases/tags/mac-latest"):
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(200, json={"private": False})  # the repository itself
+
+    github(monkeypatch, handler)
+    status = await make_updater(tmp_path).check(force=True)
+    assert status["needs_key"] is False and "No Mac release" in status["error"]
+
+
+async def test_private_repository_still_asks_for_a_key(tmp_path, monkeypatch):
+    import httpx
+
+    github(monkeypatch, lambda request: httpx.Response(404, json={"message": "Not Found"}))
+    status = await make_updater(tmp_path).check(force=True)
+    assert status["needs_key"] is True
+
+
+async def test_an_error_page_instead_of_json_is_reported_not_raised(tmp_path, monkeypatch):
+    import httpx
+
+    github(monkeypatch, lambda request: httpx.Response(502, text="<html>Bad gateway</html>"))
+    status = await make_updater(tmp_path).check(force=True)
+    assert status["error"] == "GitHub answered 502." and status["available"] is False
+
+
+async def test_nothing_is_installed_from_an_earlier_answer(tmp_path, monkeypatch):
+    import httpx
+
+    downloads = []
+
+    def handler(request):
+        if "/assets/" in request.url.path:
+            downloads.append(request.url)
+        raise httpx.ConnectError("offline")
+
+    github(monkeypatch, handler)
+    updater = make_updater(tmp_path)
+    updater.apply_release(200, release("1.0.7"))
+    assert updater.available
+    with pytest.raises(UpdateError, match="Could not reach GitHub"):
+        await updater.install()
+    assert downloads == [] and updater.installing is False
+
+
+async def test_a_second_install_is_refused_while_one_is_under_way(tmp_path, monkeypatch):
+    github(monkeypatch, lambda request: None)
+    updater = make_updater(tmp_path)
+    updater.installing = True
+    with pytest.raises(UpdateError, match="already"):
+        await updater.install()
+
+
+async def test_a_failed_download_is_reported_and_can_be_retried(tmp_path, monkeypatch):
+    import httpx
+
+    def handler(request):
+        if request.url.path.endswith("/releases/tags/mac-latest"):
+            return httpx.Response(200, json=release("1.0.7"))
+        raise httpx.ReadError("connection reset")  # the download drops
+
+    github(monkeypatch, handler)
+    updater = make_updater(tmp_path)
+    with pytest.raises(UpdateError, match="could not be installed: connection reset"):
+        await updater.install()
+    assert updater.installing is False
+
+
+# -- the watcher that confirms or rolls back an update ------------------------
+
+def run_watcher(tmp_path, port, *, attempts=2):
+    import subprocess
+
+    from app.services.updates import WATCH_SCRIPT
+
+    apps = tmp_path / "Applications"
+    bundle, previous, failed = (apps / "Projector Control.app",
+                                apps / ".Projector Control.previous.app",
+                                apps / ".Projector Control.failed.app")
+    (bundle / "new").mkdir(parents=True)
+    (previous / "old").mkdir(parents=True)
+    script = tmp_path / "watch.sh"
+    script.write_text(WATCH_SCRIPT.replace("seq 1 120", f"seq 1 {attempts}"))
+    result = tmp_path / "result.txt"
+    subprocess.run(["/bin/bash", str(script), str(bundle), str(previous), "1.0.7", str(port),
+                    str(tmp_path / "server.pid"), str(result), str(failed)],
+                   check=True, timeout=60)
+    return apps, result.read_text().strip()
+
+
+def test_watcher_rolls_back_into_a_hidden_folder(tmp_path):
+    import socket
+
+    with socket.socket() as unused:  # nothing listens here
+        unused.bind(("127.0.0.1", 0))
+        port = unused.getsockname()[1]
+    apps, result = run_watcher(tmp_path, port)
+    assert result == "rolled-back 1.0.7"
+    assert (apps / "Projector Control.app" / "old").is_dir()
+    # Never a visible, openable "Projector Control.failed" app in Applications.
+    assert sorted(p.name for p in apps.iterdir()) == [".Projector Control.failed.app",
+                                                     "Projector Control.app"]
+
+
+def test_watcher_keeps_the_new_version_once_it_answers(tmp_path):
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Health(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"status": "ok", "version": "1.0.7"}, separators=(",", ":"))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Health)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        apps, result = run_watcher(tmp_path, server.server_address[1])
+    finally:
+        server.shutdown()
+    assert result == "installed 1.0.7"
+    assert sorted(p.name for p in apps.iterdir()) == ["Projector Control.app"]
+    assert (apps / "Projector Control.app" / "new").is_dir()
+
+
+def test_restart_never_signals_a_process_that_reused_a_stale_pid(tmp_path):
+    import shutil
+    import subprocess
+
+    stranger = subprocess.Popen(["sleep", "30"])
+    ours_exe = tmp_path / "Projector Control.app" / "Contents" / "MacOS" / "ProjectorControl"
+    ours_exe.parent.mkdir(parents=True)
+    shutil.copy(shutil.which("sleep"), ours_exe)
+    ours = subprocess.Popen([str(ours_exe), "30"])
+    try:
+        macservice.pid_file(tmp_path).write_text(str(stranger.pid))
+        macservice.restart_server(tmp_path)
+        with pytest.raises(subprocess.TimeoutExpired):  # left alone
+            stranger.wait(timeout=1)
+
+        macservice.pid_file(tmp_path).write_text(str(ours.pid))
+        macservice.restart_server(tmp_path)
+        assert ours.wait(timeout=10) == -15  # SIGTERM
+    finally:
+        for process in (stranger, ours):
+            process.kill()
+            process.wait()
+
+
+# -- the desktop launcher's port --------------------------------------------------
+
+def test_a_port_left_in_time_wait_by_the_last_run_is_kept(tmp_path):
+    import socket
+
+    from app.desktop import pick_port
+
+    # The server end closes first, as when a server stops while a browser is
+    # connected: that connection lingers in TIME_WAIT on the server's port.
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    client = socket.create_connection(("127.0.0.1", port))
+    served, _ = listener.accept()
+    served.close()
+    listener.close()
+    try:
+        assert pick_port("127.0.0.1", port) == port
+    finally:
+        client.close()
+
+
+def test_a_port_in_real_use_is_not_taken(tmp_path):
+    import socket
+
+    from app.desktop import pick_port
+
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        assert pick_port("127.0.0.1", port) != port
+
+
+def test_a_listener_on_another_address_counts_as_taken(monkeypatch):
+    """macOS lets 0.0.0.0 share a port with a 127.0.0.1 listener under
+    SO_REUSEADDR; a Terminal copy there must not be joined by the service."""
+    import contextlib
+    import socket
+
+    from app import desktop
+
+    class BindsAnything(contextlib.AbstractContextManager):
+        def __exit__(self, *exc):
+            return None
+
+        def bind(self, address):
+            pass
+
+    monkeypatch.setattr(desktop, "probe_socket", lambda: BindsAnything())
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        assert not desktop.port_free("0.0.0.0", port)
+    assert desktop.port_free("0.0.0.0", port)
+
+
+def test_the_service_exits_before_starting_when_its_port_is_taken(tmp_path, monkeypatch):
+    import socket
+
+    from app import desktop
+
+    for name in ("DESKTOP_DATA_DIR", "DESKTOP_PORT", "MEDIA_DIR", "ENVIRONMENT", "LOCAL_ONLY"):
+        monkeypatch.setenv(name, "x")
+        monkeypatch.delenv(name)
+    monkeypatch.setenv(macservice.SERVICE_ENV, "1")
+    monkeypatch.setattr(desktop, "configure_logging", lambda folder, verbose: None)
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        assert desktop.main(["--serve", "--no-browser", "--port", str(port),
+                             "--data-dir", str(tmp_path)]) == 1
+    assert not (tmp_path / "FIRST-RUN-PASSWORD.txt").exists()
+    assert not (tmp_path / "projector-control.db").exists()

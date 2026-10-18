@@ -2,7 +2,8 @@
 
 Every merge to the default branch publishes a new build to the ``mac-latest``
 release (``.github/workflows/mac.yml``). The installed Mac service checks it
-when an administrator opens Settings, and installs it on request:
+when an administrator opens Settings, and installs it on request or by itself
+(below):
 
 1. download the zip for this Mac's chip and unpack it beside the data folder,
 2. check the new copy runs (``--version``),
@@ -11,9 +12,9 @@ when an administrator opens Settings, and installs it on request:
    version. If it has not answered with its new version number within two
    minutes, the watcher puts the old copy back and restarts that.
 
-The repository is private, so reading its releases needs a GitHub access key
-with read-only access to its contents. It is kept in the data folder, readable
-only by this account.
+The repository is public, so no GitHub key is needed. Should it ever be made
+private, the panel asks for a read-only access key, kept in the data folder
+and readable only by this account.
 
 Automatic updates (on unless switched off in Settings) check every 15 minutes
 and install only while the system is quiet: no mapping show playing, paused
@@ -59,7 +60,7 @@ VERSION_RE = re.compile(r"\b(\d+\.\d+\.\d+)\b")
 WATCH_SCRIPT = r"""#!/bin/bash
 # Detached from the server it replaced: confirm the new version came up,
 # otherwise put the previous copy back and let launchd start that instead.
-BUNDLE=$1 PREVIOUS=$2 VERSION=$3 PORT=$4 PIDFILE=$5 RESULT=$6
+BUNDLE=$1 PREVIOUS=$2 VERSION=$3 PORT=$4 PIDFILE=$5 RESULT=$6 FAILED=$7
 for i in $(seq 1 120); do
   sleep 1
   if curl -sf --max-time 2 "http://127.0.0.1:$PORT/api/health" | grep -q "\"version\":\"$VERSION\""; then
@@ -68,12 +69,15 @@ for i in $(seq 1 120); do
     exit 0
   fi
 done
-FAILED="${BUNDLE%.app}.failed.app"
 rm -rf "$FAILED"
 mv "$BUNDLE" "$FAILED" && mv "$PREVIOUS" "$BUNDLE"
 PID=$(cat "$PIDFILE" 2>/dev/null)
 if [ -n "$PID" ] && ps -p "$PID" -o comm= | grep -q ProjectorControl; then
   kill "$PID"
+  # launchd starts the old copy only once this one has exited; one stuck in
+  # start-up may never stop on a polite request.
+  for i in $(seq 1 30); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
+  kill -0 "$PID" 2>/dev/null && kill -9 "$PID"
 fi
 echo "rolled-back $VERSION" > "$RESULT"
 """
@@ -197,27 +201,57 @@ class Updater:
         if not force and self.checked_at and datetime.now(UTC) - self.checked_at < CHECK_EVERY:
             return self.status()
         url = f"https://api.github.com/repos/{REPOSITORY}/releases/tags/{RELEASE_TAG}"
+        public = False
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.get(url, headers=self._headers())
+                if response.status_code == 404 and self.key() is None:
+                    # A public repository between releases (each merge deletes and
+                    # republishes mac-latest) also answers 404; it needs no key.
+                    probe = await client.get(f"https://api.github.com/repos/{REPOSITORY}",
+                                             headers=self._headers())
+                    public = probe.status_code == 200
         except httpx.HTTPError as exc:
             self.error = f"Could not reach GitHub: {exc}"
+            self.latest = self.asset_url = None
             return self.status()
         self.checked_at = datetime.now(UTC)
-        self.apply_release(response.status_code, response.json() if response.content else {})
+        try:
+            release = response.json() if response.content else {}
+        except ValueError:  # an error page from GitHub or a proxy, not JSON
+            release = {}
+        # Unauthenticated checks are limited to 60 an hour per network address.
+        rate_limited = response.status_code == 429 or (
+            response.status_code == 403
+            and (response.headers.get("x-ratelimit-remaining") == "0"
+                 or "retry-after" in response.headers)
+        )
+        self.apply_release(response.status_code, release if isinstance(release, dict) else {},
+                           rate_limited=rate_limited, public=public)
         return self.status()
 
-    def apply_release(self, status_code: int, release: dict) -> None:
+    def apply_release(self, status_code: int, release: dict, *, rate_limited: bool = False,
+                      public: bool = False) -> None:
         """Read a GitHub release response into this updater's state."""
         self.error = None
         self.needs_key = False
+        if status_code != 200:
+            # Nothing may be installed from an earlier answer: its download may be gone.
+            self.latest = self.asset_url = None
+        if rate_limited:
+            self.error = ("GitHub is limiting update checks from this network for now. "
+                          "It checks again by itself later.")
+            return
         if status_code in (401, 403):
             self.needs_key = True
             self.error = "GitHub did not accept the access key. Make a new one and paste it here."
             return
         if status_code == 404:
             # A private repository answers 404, not 403, without a key.
-            if self.key() is None:
+            if public:
+                self.error = ("No Mac release is published right now; a new one may be "
+                              "uploading. It checks again by itself.")
+            elif self.key() is None:
                 self.needs_key = True
             else:
                 self.error = ("No Mac release is published yet, or the access key cannot "
@@ -241,6 +275,10 @@ class Updater:
         if not self.supported:
             raise UpdateError("Updates are only installed by the Mac app.")
         async with self._lock:
+            # Stays set until the restart: a second install would delete the
+            # copy the watcher needs to roll back to.
+            if self.installing:
+                raise UpdateError("An update is already being installed.")
             await self.check(force=True)
             if not self.available:
                 raise UpdateError(self.error or "Already up to date.")
@@ -248,6 +286,16 @@ class Updater:
             try:
                 new_bundle = await self._download()
                 await asyncio.to_thread(self._swap_in, new_bundle)
+            except UpdateError:
+                self.installing = False
+                raise
+            except (httpx.HTTPError, OSError, subprocess.SubprocessError) as exc:
+                # A dropped download, a full disk, a refused move in /Applications.
+                self.installing = False
+                log.exception("update: installing %s failed", self.latest)
+                raise UpdateError(
+                    f"The update could not be installed: {str(exc) or type(exc).__name__}"
+                ) from exc
             except Exception:
                 self.installing = False
                 raise
@@ -310,7 +358,10 @@ class Updater:
         assert self.bundle is not None
         staging = self.bundle.with_name(".Projector Control.installing.app")
         previous = self.bundle.with_name(".Projector Control.previous.app")
-        for leftover in (staging, previous, self.bundle.with_name(".Projector Control.failed.app")):
+        # Hidden, so a broken version that was rolled back is never opened by mistake.
+        failed = self.bundle.with_name(".Projector Control.failed.app")
+        # (Earlier versions left it visible, as "Projector Control.failed.app".)
+        for leftover in (staging, previous, failed, self.bundle.with_name("Projector Control.failed.app")):
             shutil.rmtree(leftover, ignore_errors=True)
         shutil.move(str(new_bundle), str(staging))
         self.bundle.rename(previous)
@@ -326,7 +377,7 @@ class Updater:
         subprocess.Popen(  # noqa: S603
             ["/bin/bash", str(script), str(self.bundle), str(previous), str(self.latest),
              os.environ.get("DESKTOP_PORT", str(macservice.PORT)),
-             str(macservice.pid_file(self.folder)), str(self.result_path)],
+             str(macservice.pid_file(self.folder)), str(self.result_path), str(failed)],
             start_new_session=True, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )

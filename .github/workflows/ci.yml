@@ -89,17 +89,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Image starts and serves the UI and API
+        # The empty variables are what docker-compose.yml passes when .env leaves them unset.
         run: |
           docker run -d --name pc -p 8000:8000 \
             -e SECRET_KEY=ci-only-secret-key-at-least-32-characters \
             -e DATABASE_URL=sqlite+aiosqlite:////app/data/ci.db \
             -e BOOTSTRAP_ADMIN_PASSWORD=ci-admin-password \
+            -e ALERT_EMAIL_TO= -e SMTP_HOST= -e SCHEDULE_TIMEZONE= \
             projector-control:ci
           for i in $(seq 1 30); do
             curl -sf http://localhost:8000/api/health && break || sleep 1
           done
           curl -sf http://localhost:8000/api/health | grep -q '"status":"ok"'
           curl -sf http://localhost:8000/ | grep -q '<div id="root">'
+          # Files from frontend/public, not the page that unknown paths fall back to.
+          curl -sf http://localhost:8000/remote-manifest.json | grep -q '"start_url"'
+          curl -sf http://localhost:8000/media-sw.js | grep -q 'Media cache for players'
           TOKEN=$(curl -sf -X POST http://localhost:8000/api/auth/login \
             -H 'Content-Type: application/json' \
             -d '{"username":"admin","password":"ci-admin-password"}' \

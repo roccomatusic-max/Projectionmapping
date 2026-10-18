@@ -70,15 +70,40 @@ def ensure_secret_key(folder: Path) -> str:
     return value
 
 
+def probe_socket() -> socket.socket:
+    """A socket that binds wherever uvicorn's listening socket would.
+
+    Like uvicorn, set SO_REUSEADDR off Windows, so connections from the last
+    run still in TIME_WAIT do not count as the port being in use. (On Windows
+    it would let the bind succeed over another program's live listener.)
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if sys.platform != "win32":
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    return probe
+
+
+def port_free(host: str, port: int) -> bool:
+    # With SO_REUSEADDR, macOS lets a bind to one address share the port
+    # with a listener on another (0.0.0.0 beside 127.0.0.1), so also ask
+    # whether anything already answers there.
+    with contextlib.suppress(OSError), socket.create_connection(("127.0.0.1", port), timeout=0.5):
+        return False
+    with probe_socket() as probe:
+        try:
+            probe.bind((host, port))
+        except OSError:
+            return False
+        return True
+
+
 def pick_port(host: str, preferred: int) -> int:
     """Use the preferred port if free, otherwise let the OS choose one."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        try:
-            probe.bind((host, preferred))
-            return preferred
-        except OSError:
-            probe.bind((host, 0))
-            return probe.getsockname()[1]
+    if port_free(host, preferred):
+        return preferred
+    with probe_socket() as probe:
+        probe.bind((host, 0))
+        return probe.getsockname()[1]
 
 
 def configure_logging(folder: Path, verbose: bool) -> None:
@@ -255,6 +280,12 @@ def main(argv: list[str] | None = None) -> int:
     # The service keeps its port: the phone remote's link and QR code point at it.
     # If something else holds it, exit and let launchd try again shortly.
     port = args.port if managed else pick_port(host, args.port)
+    if managed and not port_free(host, port):
+        # Exit before start-up: no migrations on a database another copy may
+        # be using, and no polling of its projectors, every ten seconds.
+        log.error("port %d is in use, most often by a copy started from Terminal; "
+                  "trying again shortly", port)
+        return 1
 
     # Environment must be set before app.config is imported anywhere.
     os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")
@@ -304,7 +335,10 @@ def main(argv: list[str] | None = None) -> int:
             target=open_browser_when_ready, args=(url, f"{url}api/health"), daemon=True
         ).start()
 
-    config = uvicorn.Config(app, host=host, port=port, log_level="info", access_log=False)
+    # Bounded shutdown: a restart to install an update must not wait for a mini
+    # PC's long media download; the update watcher allows two minutes in all.
+    config = uvicorn.Config(app, host=host, port=port, log_level="info", access_log=False,
+                            timeout_graceful_shutdown=10)
     server = uvicorn.Server(config)
     with contextlib.suppress(KeyboardInterrupt):
         server.run()
