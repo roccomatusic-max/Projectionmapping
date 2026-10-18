@@ -44,7 +44,7 @@ export default function Settings({ session }: { session: Session }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (!info) return <Spinner />
+  if (!info) return error ? <ErrorBanner message={error} /> : <Spinner />
 
   return (
     <div className="space-y-5">

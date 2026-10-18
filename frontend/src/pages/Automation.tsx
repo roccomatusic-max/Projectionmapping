@@ -423,11 +423,11 @@ export default function Automation({ session }: { session: Session }) {
           setBusy(true)
           try {
             const result = await api.runAutomation(automation.id)
-            const failed = result.steps.filter((step) => !step.ok).length
+            const failed = (result.steps ?? []).filter((step) => !step.ok).length
             push(
               result.status === 'success' ? 'ok' : failed ? 'warn' : 'fault',
-              `${result.name}: ${result.status}`,
-              failed ? `${failed} step(s) failed` : undefined,
+              `${result.name ?? automation.name}: ${result.status}`,
+              failed ? `${failed} step(s) failed` : result.error,
             )
             setRuns((current) => {
               const next = { ...current }
@@ -475,9 +475,13 @@ export default function Automation({ session }: { session: Session }) {
           setBusy(true)
           try {
             const result = await api.activateScene(scene.id)
+            if (result.error || result.total == null) {
+              push('fault', `${scene.name}: failed`, result.error)
+              return
+            }
             push(
               result.failed === 0 ? 'ok' : 'warn',
-              `${result.name}: ${result.total - result.failed}/${result.total} succeeded`,
+              `${result.name ?? scene.name}: ${result.total - result.failed}/${result.total} succeeded`,
             )
           } catch (err) {
             push('fault', 'Scene failed', err instanceof ApiError ? err.message : undefined)
