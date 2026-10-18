@@ -451,3 +451,22 @@ def test_a_short_blip_leaves_the_window_alone(tmp_path, monkeypatch, clock):
     clock[0] += 3
     up[0] = True
     assert app.follow_server() is False
+
+
+def test_a_briefly_locked_file_is_still_replaced(tmp_path, monkeypatch):
+    """Windows refuses the replace while an antivirus scan has the file open."""
+    target = tmp_path / "config.json"
+    target.write_text("old")
+    real_replace = kiosk.os.replace
+    refusals = iter([PermissionError("in use"), PermissionError("in use")])
+
+    def replace(src, dst):
+        error = next(refusals, None)
+        if error:
+            raise error
+        real_replace(src, dst)
+
+    monkeypatch.setattr(kiosk.os, "replace", replace)
+    monkeypatch.setattr(kiosk.time, "sleep", lambda _s: None)
+    kiosk.write_atomically(target, "new")
+    assert target.read_text() == "new"

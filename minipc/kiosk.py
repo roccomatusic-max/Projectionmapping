@@ -133,7 +133,16 @@ def write_atomically(path: Path, text: str) -> None:
         file.write(text)
         file.flush()
         os.fsync(file.fileno())
-    os.replace(partial, path)
+    # On Windows the replace fails while another program (an antivirus
+    # scan, a second copy reading it) has the file open; that is brief.
+    for attempt in range(5):
+        try:
+            os.replace(partial, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 def mark_clean_exit(profile: Path) -> None:
