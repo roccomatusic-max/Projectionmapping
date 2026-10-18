@@ -91,10 +91,14 @@ export default function ControlCenter({ session, fullscreen = false }: { session
     setSceneBusy(true)
     try {
       const result = await api.activateScene(scene.id)
+      if (result.error || result.total == null) {
+        notify('fault', `Scene “${scene.name}” failed`, result.error)
+        return
+      }
       const accepted = result.total - result.failed
       notify(
         result.failed === 0 ? 'ok' : accepted === 0 ? 'fault' : 'warn',
-        `Scene “${result.name}”: ${accepted} of ${result.total} accepted`,
+        `Scene “${result.name ?? scene.name}”: ${accepted} of ${result.total} accepted`,
         'Each projector’s card shows its confirmed state once it reads back.',
       )
     } catch (err) {

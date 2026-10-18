@@ -475,9 +475,13 @@ export default function Automation({ session }: { session: Session }) {
           setBusy(true)
           try {
             const result = await api.activateScene(scene.id)
+            if (result.error || result.total == null) {
+              push('fault', `${scene.name}: failed`, result.error)
+              return
+            }
             push(
               result.failed === 0 ? 'ok' : 'warn',
-              `${result.name}: ${result.total - result.failed}/${result.total} succeeded`,
+              `${result.name ?? scene.name}: ${result.total - result.failed}/${result.total} succeeded`,
             )
           } catch (err) {
             push('fault', 'Scene failed', err instanceof ApiError ? err.message : undefined)

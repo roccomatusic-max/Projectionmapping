@@ -288,7 +288,8 @@ export const api = {
     request<Scene>('/scenes', { method: 'POST', body }),
   deleteScene: (id: number) => request<void>(`/scenes/${id}`, { method: 'DELETE' }),
   activateScene: (id: number) =>
-    request<{ name: string; total: number; failed: number; results: CommandResult[] }>(
+    // A scene deleted meanwhile comes back as just an error.
+    request<{ name?: string; total?: number; failed: number; results: CommandResult[]; error?: string }>(
       `/scenes/${id}/activate`,
       { method: 'POST', body: { capability: 'activate', confirm: true } },
     ),
