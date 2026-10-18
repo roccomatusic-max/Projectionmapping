@@ -6,6 +6,7 @@ its HTTP port; the address the answer comes from is the server's address.
 
 from __future__ import annotations
 
+import errno
 import json
 import socket
 import time
@@ -54,7 +55,14 @@ def find_server(port: int = DEFAULT_PORT, *, timeout: float = 2.0,
             sock.settimeout(left)
             try:
                 data, (host, _) = sock.recvfrom(2048)
-            except (TimeoutError, OSError):
+            except TimeoutError:
+                return None
+            except OSError as exc:
+                # Windows reports here an ICMP error that an earlier datagram
+                # drew, and a datagram too big for the buffer (it is dropped):
+                # neither is the server's answer, which may still come.
+                if isinstance(exc, ConnectionResetError) or exc.errno == errno.EMSGSIZE:
+                    continue
                 return None
             try:
                 reply = json.loads(data)
@@ -69,6 +77,8 @@ def answers(base: str, *, timeout: float = 3.0) -> bool:
     """Whether the server at ``base`` is up (a degraded database still is)."""
     try:
         response = requests.get(f"{base.rstrip('/')}/api/health", timeout=timeout)
-        return response.status_code == 200 and "status" in response.json()
+        body = response.json() if response.status_code == 200 else None
+        # Whatever else answers at that address may send any JSON at all.
+        return isinstance(body, dict) and "status" in body
     except (requests.RequestException, ValueError):
         return False

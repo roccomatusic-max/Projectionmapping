@@ -42,7 +42,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(1, str(HERE.parent / "camera-agent"))
 
 import discovery  # noqa: E402
-from kiosk import Kiosk, find_browser  # noqa: E402
+from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
 
 log = logging.getLogger("minipc")
 
@@ -86,13 +86,19 @@ class Config:
             self.data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             self.data = {}
+        if not isinstance(self.data, dict):
+            self.data = {}
+        stored = dict(self.data)
         if not (self.data.get("device_id") and self.data.get("secret")):
             self.data.update(device_id=f"mpc-{secrets.token_hex(12)}", secret=secrets.token_hex(32))
         self.data.setdefault("name", socket.gethostname() or "Mini PC")
         self.data.setdefault("server", "")
         self.data.setdefault("last_server", "")
         self.data.setdefault("camera", "auto")
-        self.save()
+        # Not rewritten at every start: the power often fails again within
+        # seconds of coming back, and this file is the computer's identity.
+        if self.data != stored:
+            self.save()
 
     def __getitem__(self, key: str):
         return self.data[key]
@@ -104,9 +110,9 @@ class Config:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
-        with contextlib.suppress(OSError):  # Windows: the per-user folder is already private
-            self.path.chmod(0o600)
+        # Whole or not at all: a half-written file would mean pairing again.
+        # (Windows: the per-user folder is private anyway.)
+        write_atomically(self.path, json.dumps(self.data, indent=2))
 
     def identity(self, kind: str = "player") -> dict:
         if kind == "camera":
@@ -181,8 +187,13 @@ class StatusPage:
             def log_message(self, *_args) -> None:
                 pass
 
+        class Server(ThreadingHTTPServer):
+            # Windows lets a socket with SO_REUSEADDR bind a port another
+            # socket is listening on, so a second copy would start too.
+            allow_reuse_address = sys.platform != "win32"
+
         # Raises OSError when another copy already holds the port.
-        self.server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        self.server = Server(("127.0.0.1", port), Handler)
         self.port = self.server.server_address[1]
         self.hosts = {f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
         self.url = f"http://127.0.0.1:{self.port}/"
@@ -367,17 +378,20 @@ class MiniPC:
             self.camera.start()
         try:
             while not self.stopping.is_set():
-                reopen = self.follow_server()
-                if kiosk:
-                    if self.server and kiosk.secure_origin != self.server:
-                        # Opened before the server was known: reopen it so the
-                        # player can keep the show's media on this computer.
-                        kiosk.secure_origin = self.server
-                        reopen = reopen or kiosk.process is not None
-                    if reopen or self.restart_requested.is_set():
-                        self.restart_requested.clear()
-                        kiosk.restart()
-                    kiosk.ensure()
+                try:
+                    reopen = self.follow_server()
+                    if kiosk:
+                        if self.server and kiosk.secure_origin != self.server:
+                            # Opened before the server was known: reopen it so the
+                            # player can keep the show's media on this computer.
+                            kiosk.secure_origin = self.server
+                            reopen = reopen or kiosk.process is not None
+                        if reopen or self.restart_requested.is_set():
+                            self.restart_requested.clear()
+                            kiosk.restart()
+                        kiosk.ensure()
+                except Exception:  # noqa: BLE001 - leaving the loop would close the output for good
+                    log.exception("unexpected error; carrying on")
                 self.stopping.wait(TICK_SECONDS)
         finally:
             if kiosk:
@@ -499,7 +513,13 @@ def main(argv: list[str] | None = None) -> int:
     folder = Path(args.data_dir).expanduser() if args.data_dir else data_dir()
     configure_logging(folder, args.verbose)
     if args.check:
-        return self_check()
+        # A failure goes to the log, which CI prints. Uncaught, the windowed
+        # program would show it only in a message box nobody is there to see.
+        try:
+            return self_check()
+        except Exception:  # noqa: BLE001
+            log.exception("self-check failed")
+            return 1
 
     config = Config(folder / "config.json")
     if args.server:
