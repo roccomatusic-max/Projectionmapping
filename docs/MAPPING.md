@@ -53,6 +53,20 @@ An output may be linked to a registered projector, so the editor can show its
 power and shutter state and the show can refuse to start into a projector
 that is off.
 
+**Saved map.** Lining a show up with a building is the slow part, so it can
+be kept by name and reused: Editor → **Saved maps** → **Save this show's map**.
+A map holds the canvas size, every output (slice, corner pin, mesh, masks,
+blends, colour, linked projector, camera calibration), where the canvas sits
+in the camera's view, and the traced house parts. **Use in this show** copies
+it into the open show (outputs, house parts, or both; outputs are updated in
+place by order, so mini PCs assigned to them stay assigned), and **New show →
+Start from** creates a show already mapped. Cues and media are never touched.
+The copy is independent of the map afterwards. **Download** saves a map as a
+`.map.json` file and **Load a map file** reads one on another server;
+projector, player and camera ids from another server are dropped when applied.
+Optionally the mini PCs that showed the map's outputs can be switched to the
+show in the same step (off by default: it changes what they project at once).
+
 ## 2. Rendering
 
 Each output is a browser window, full-screen on the display that feeds its
@@ -121,6 +135,11 @@ matching how projector configuration is gated.
 | GET/PATCH/DELETE | `/shows/{id}` | GET returns outputs and cues |
 | POST | `/shows/{id}/outputs` · PATCH/DELETE `/outputs/{id}` | |
 | POST | `/shows/{id}/cues` · PATCH/DELETE `/cues/{id}` · PUT `/shows/{id}/cue-order` | |
+| GET | `/maps` | Saved maps (summaries) |
+| POST | `/shows/{id}/save-map` | Save the show's mapping as a named map (`replace` overwrites one of the same name) |
+| POST | `/shows/{id}/apply-map` | Copy a map into the show: `outputs`, `surfaces`, `players` |
+| GET · PATCH · DELETE | `/maps/{id}` | GET is the downloadable map file; PATCH renames |
+| POST | `/maps` | Load a map file (a clashing name gets a number added) |
 | GET | `/transport` | Current transport state |
 | POST | `/transport` | `go`, `goto`, `pause`, `resume`, `stop`, `blackout` |
 | GET | `/clock` | Server time, for the clock-offset estimate |
@@ -143,7 +162,7 @@ matching how projector configuration is gated.
 Live changes go out on the existing WebSocket feed as `mapping_transport`,
 `mapping_output`, `mapping_show`, `mapping_player`, `mapping_identify`,
 `mapping_calibrate`, `mapping_calib_pattern`, `mapping_camera`,
-`mapping_camera_command` and `mapping_people` messages.
+`mapping_camera_command`, `mapping_people` and `mapping_map` messages.
 
 ## 5. Players: one small computer per projector
 

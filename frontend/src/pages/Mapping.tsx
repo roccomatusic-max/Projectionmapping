@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Session } from '@/api/client'
 import type { Projector } from '@/api/types'
-import { ConfirmDialog, EmptyState, ErrorBanner, Panel, Spinner } from '@/components/ui'
+import { ConfirmDialog, EmptyState, ErrorBanner, Panel, Spinner, ToastStack, useToasts } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
 import { CameraPanel } from '@/mapping/editor/CameraPanel'
@@ -10,11 +10,12 @@ import { CueList, MediaLibrary } from '@/mapping/editor/panels'
 import { NumberField } from '@/mapping/editor/controls'
 import { OutputInspector } from '@/mapping/editor/OutputInspector'
 import { PlayersPanel } from '@/mapping/editor/PlayersPanel'
+import { SavedMaps } from '@/mapping/editor/SavedMaps'
 import { ScenesPanel } from '@/mapping/editor/ScenesPanel'
 import { TransportBar } from '@/mapping/editor/TransportBar'
 import { sideBySide, withDefaults } from '@/mapping/geometry'
 import { useLocalChannel } from '@/mapping/live'
-import type { Cue, MediaAsset, Output, ShowSummary, TransportAction } from '@/mapping/types'
+import type { Cue, MediaAsset, Output, SavedMap, ShowSummary, TransportAction } from '@/mapping/types'
 import { useShowRuntime } from '@/mapping/useShowRuntime'
 
 const SHOW_KEY = 'pc.mapping.show'
@@ -41,11 +42,15 @@ export default function Mapping({ session }: { session: Session }) {
   const [busy, setBusy] = useState(false)
   const [creating, setCreating] = useState(false)
   const [playersKey, setPlayersKey] = useState(0)
+  const [mapsKey, setMapsKey] = useState(0)
+  const [savedMaps, setSavedMaps] = useState<SavedMap[]>([])
+  const toasts = useToasts()
   const [confirm, setConfirm] = useState<{ title: string; body: string; action: () => void } | null>(null)
 
   const cameraFeed = useRef(new EventTarget()).current
   const runtime = useShowRuntime(showId, (message) => {
     if (message.type === 'mapping_player') setPlayersKey((n) => n + 1)
+    if (message.type === 'mapping_map') setMapsKey((n) => n + 1)
     if (CAMERA_MESSAGES.has(message.type)) cameraFeed.dispatchEvent(new CustomEvent('message', { detail: message }))
   })
   const { show, setShow, media, reloadMedia, scenes, transport, clock, playback, link } = runtime
@@ -202,9 +207,15 @@ export default function Mapping({ session }: { session: Session }) {
     window.open(url, name, 'popup,width=1280,height=800')
   }
 
-  const createShow = (name: string, width: number, height: number) =>
+  const startCreating = () => {
+    setCreating(true)
+    mappingApi.listMaps().then(setSavedMaps).catch(() => setSavedMaps([]))
+  }
+
+  const createShow = (name: string, width: number, height: number, mapId: number | null) =>
     guard(async () => {
       const created = await mappingApi.createShow({ name, canvas_width: width, canvas_height: height })
+      if (mapId != null) await mappingApi.applyMap(created.id, mapId, { outputs: true, surfaces: true, players: false })
       setCreating(false)
       await loadShows()
       setShowId(created.id)
@@ -277,7 +288,7 @@ export default function Mapping({ session }: { session: Session }) {
           </select>
         )}
         {canEdit && (
-          <button className="btn-default text-xs" onClick={() => setCreating(true)}>
+          <button className="btn-default text-xs" onClick={startCreating}>
             New show
           </button>
         )}
@@ -304,7 +315,7 @@ export default function Mapping({ session }: { session: Session }) {
 
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
-      {creating && <NewShowForm onCreate={createShow} onCancel={() => setCreating(false)} busy={busy} />}
+      {creating && <NewShowForm maps={savedMaps} onCreate={createShow} onCancel={() => setCreating(false)} busy={busy} />}
 
       {shows.length === 0 && !creating && (
         <Panel>
@@ -312,7 +323,7 @@ export default function Mapping({ session }: { session: Session }) {
             title="No shows yet"
             action={
               canEdit ? (
-                <button className="btn-primary" onClick={() => setCreating(true)}>
+                <button className="btn-primary" onClick={startCreating}>
                   Create a show
                 </button>
               ) : undefined
@@ -411,6 +422,23 @@ export default function Mapping({ session }: { session: Session }) {
                   )}
                 </Panel>
 
+                <Panel title="Saved maps"
+                  description="Keep this show's lined-up projectors, calibration and traced house parts, and start other shows from them.">
+                  <SavedMaps
+                    show={show}
+                    canEdit={canEdit}
+                    refreshKey={mapsKey}
+                    onError={setError}
+                    onApplied={(message) => {
+                      toasts.push('ok', message)
+                      setOverrides(new Map())
+                      setSelectedOutput(null)
+                      setPlayersKey((n) => n + 1)
+                      void reloadShow()
+                    }}
+                  />
+                </Panel>
+
                 {output && (
                   <Panel title={output.name} description={`${output.width} × ${output.height} output`}>
                     <OutputInspector
@@ -470,6 +498,8 @@ export default function Mapping({ session }: { session: Session }) {
           )}
         </>
       )}
+
+      <ToastStack toasts={toasts.toasts} onDismiss={toasts.dismiss} />
 
       <ConfirmDialog
         open={confirm != null}
@@ -532,32 +562,47 @@ function ArrangeButton({ onArrange }: { onArrange: (overlap: number) => void }) 
 }
 
 function NewShowForm({
+  maps,
   onCreate,
   onCancel,
   busy,
 }: {
-  onCreate: (name: string, width: number, height: number) => void
+  maps: SavedMap[]
+  onCreate: (name: string, width: number, height: number, mapId: number | null) => void
   onCancel: () => void
   busy: boolean
 }) {
   const [name, setName] = useState('')
   const [width, setWidth] = useState(3840)
   const [height, setHeight] = useState(2160)
+  const [mapId, setMapId] = useState<number | null>(null)
+  const map = maps.find((m) => m.id === mapId) ?? null
   return (
     <Panel title="New show" description="The canvas is the flat image of the building that content is made for.">
       <form
-        className="grid gap-3 sm:grid-cols-[1fr_140px_140px_auto]"
+        className="grid gap-3 sm:grid-cols-[1fr_200px_140px_140px_auto]"
         onSubmit={(event) => {
           event.preventDefault()
-          if (name.trim()) onCreate(name.trim(), width, height)
+          if (name.trim()) onCreate(name.trim(), map?.canvas_width ?? width, map?.canvas_height ?? height, mapId)
         }}
       >
         <label className="block">
           <span className="label">Name</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Town Hall façade" autoFocus />
         </label>
-        <NumberField label="Canvas width" value={width} min={16} suffix="px" onChange={(v) => setWidth(Math.round(v))} />
-        <NumberField label="Canvas height" value={height} min={16} suffix="px" onChange={(v) => setHeight(Math.round(v))} />
+        <label className="block">
+          <span className="label">Start from</span>
+          <select className="input" value={mapId ?? ''} onChange={(e) => setMapId(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">Nothing (blank)</option>
+            {maps.map((m) => (
+              <option key={m.id} value={m.id}>Saved map: {m.name}</option>
+            ))}
+          </select>
+        </label>
+        <NumberField label="Canvas width" value={map?.canvas_width ?? width} min={16} suffix="px" disabled={map != null}
+          onChange={(v) => setWidth(Math.round(v))} />
+        <NumberField label="Canvas height" value={map?.canvas_height ?? height} min={16} suffix="px" disabled={map != null}
+          onChange={(v) => setHeight(Math.round(v))} />
         <div className="flex items-end gap-2">
           <button className="btn-primary" disabled={busy || !name.trim()}>Create</button>
           <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>

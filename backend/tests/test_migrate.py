@@ -19,8 +19,8 @@ from app.db.models import Base
 from app.paths import alembic_dir
 
 MAPPING_TABLES = {"media_assets", "mapping_shows", "mapping_outputs", "mapping_cues",
-                  "mapping_players", "mapping_scenes"}
-HEAD_REVISION = "c4e1d9a7b2f3"
+                  "mapping_players", "mapping_scenes", "mapping_maps"}
+HEAD_REVISION = "e2b7c5d1a9f4"
 
 
 def test_classification():

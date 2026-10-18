@@ -6,10 +6,13 @@ import type {
   CameraCommandName,
   CameraView,
   Cue,
+  MapApplied,
+  MapParts,
   MappingScene,
   MediaAsset,
   Output,
   Show,
+  SavedMap,
   ShowSummary,
   Surface,
   TransportAction,
@@ -29,6 +32,16 @@ export const mappingApi = {
   updateShow: (id: number, body: Partial<Omit<Show, 'outputs' | 'cues'>>) =>
     request<Show>(`/mapping/shows/${id}`, { method: 'PATCH', body }),
   deleteShow: (id: number) => request<void>(`/mapping/shows/${id}`, { method: 'DELETE' }),
+
+  listMaps: () => request<SavedMap[]>('/mapping/maps'),
+  saveMap: (showId: number, body: { name: string; replace?: boolean }) =>
+    request<SavedMap>(`/mapping/shows/${showId}/save-map`, { method: 'POST', body }),
+  applyMap: (showId: number, mapId: number, parts: MapParts) =>
+    request<MapApplied>(`/mapping/shows/${showId}/apply-map`, { method: 'POST', body: { map_id: mapId, ...parts } }),
+  /** The map as a file's contents, to download. */
+  exportMap: (id: number) => request<Record<string, unknown>>(`/mapping/maps/${id}`),
+  importMap: (file: unknown) => request<SavedMap>('/mapping/maps', { method: 'POST', body: file }),
+  deleteMap: (id: number) => request<void>(`/mapping/maps/${id}`, { method: 'DELETE' }),
 
   createOutput: (showId: number, body: Partial<Output>) =>
     request<Output>(`/mapping/shows/${showId}/outputs`, { method: 'POST', body }),

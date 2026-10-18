@@ -585,6 +585,33 @@ class MappingScene(Base):
     )
 
 
+class MappingMap(Base):
+    """A saved map: one physical setup's mapping, reusable by any show.
+
+    Everything lined up for a building: the canvas size, each output's
+    slice, warp, masks, blends, colour and calibration, where the canvas
+    sits in the camera's view, and the traced house parts. Applying it to a
+    show copies it in; the map and the show stay independent afterwards.
+    """
+
+    __tablename__ = "mapping_maps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    canvas_width: Mapped[int] = mapped_column(Integer, default=3840)
+    canvas_height: Mapped[int] = mapped_column(Integer, default=2160)
+    camera_view: Mapped[dict] = mapped_column(JSON, default=dict)
+    surfaces: Mapped[list] = mapped_column(JSON, default=list)
+    #: [{"name", "projector_id", "width", "height", "source", "warp", "masks",
+    #:   "blend", "color", "enabled", "calibration", "player_ids"}] in order.
+    outputs: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class MappingPlayer(Base):
     """A small computer beside a projector, running the output page.
 
