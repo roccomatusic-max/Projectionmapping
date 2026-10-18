@@ -67,7 +67,7 @@ build takes about five minutes.
 ```bash
 cd backend
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cd ../frontend && npm ci && npm run build && cp -r dist ../backend/static
+cd ../frontend && npm ci && npm run build && rm -rf ../backend/static && cp -r dist ../backend/static
 cd ../backend && .venv/bin/python -m app.desktop
 ```
 

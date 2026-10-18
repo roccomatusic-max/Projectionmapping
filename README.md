@@ -139,7 +139,7 @@ DATABASE_URL="sqlite+aiosqlite:///./data/dev.db" SECRET_KEY="dev-key-32-characte
 .venv/bin/python -m simulator.panasonic_sim --port 11024 --warmup 5 --cooldown 5
 
 # Frontend
-cd frontend && npm install && npm run dev      # proxies /api to :8000
+cd ../frontend && npm install && npm run dev   # proxies /api to :8000
 ```
 
 ### Tests

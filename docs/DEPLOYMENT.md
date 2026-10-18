@@ -204,10 +204,11 @@ real command works.
 
 ## 6. Backups
 
-Everything worth keeping is in PostgreSQL plus `SECRET_KEY`.
+Everything worth keeping is in PostgreSQL plus `SECRET_KEY`. Save this as
+`/etc/cron.daily/projector-backup` (the `#!/bin/sh` line must stay first) and
+make it runnable with `sudo chmod +x /etc/cron.daily/projector-backup`:
 
 ```bash
-# /etc/cron.daily/projector-backup
 #!/bin/sh
 set -eu
 BACKUP_DIR=/var/backups/projector

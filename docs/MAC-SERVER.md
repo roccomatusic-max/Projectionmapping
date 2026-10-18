@@ -111,8 +111,15 @@ the panel asks for a read-only GitHub key and links to the page that makes
 one: choose **Only select repositories** → Projectionmapping, leave
 **Contents** on **Read-only**, press **Generate token** and paste it in.)
 
-You can also update by downloading the newest zip and running step 2 again:
-opening a newer copy installs it over the old one.
+You can also update by hand. First clear the old download out of the way
+(otherwise step 2 opens the old copy again), by pasting this in Terminal:
+
+```bash
+find ~/Downloads -maxdepth 1 \( -name 'Projector Control*.app' -o -name 'ProjectorControl-Mac-*.zip' \) -exec rm -rf {} +
+```
+
+Then download the newest zip and run step 2 again: opening a newer copy
+installs it over the old one.
 
 ---
 
@@ -155,6 +162,13 @@ Opening the app again sets it up again.
   network:** press **Allow**, or it cannot reach the projectors.
 - **macOS asks about "App Management"** during an update or reinstall: allow
   it in System Settings → Privacy & Security → App Management.
+- **macOS says "Background Items Added"**: that is the start-at-boot service;
+  leave it on. If it is switched off under System Settings → General →
+  Login Items (Allow in the Background), Projector Control cannot start by
+  itself: switch ProjectorControl back on.
+- **The dashboard does not come back after an update:** install the newest
+  version by hand (end of **Updates** above). Opening it puts it in place and
+  restarts the service.
 
 ## How it works
 
