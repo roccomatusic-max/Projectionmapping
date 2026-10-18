@@ -7,16 +7,25 @@ $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
 Write-Host "==> python environment"
-if (-not (Test-Path minipc\.venv)) { python -m venv minipc\.venv }
+# A failing program does not stop the script by itself ($ErrorActionPreference
+# covers only PowerShell's own commands): each step checks its exit code, so
+# a package that did not install never ends up as an installer without it.
+if (-not (Test-Path minipc\.venv)) {
+  python -m venv minipc\.venv
+  if ($LASTEXITCODE -ne 0) { throw "could not make the python environment" }
+}
 minipc\.venv\Scripts\python -m pip install -q --upgrade pip
 minipc\.venv\Scripts\pip install -q -r minipc\requirements-build.txt
+if ($LASTEXITCODE -ne 0) { throw "pip could not install minipc\requirements-build.txt" }
 
 Write-Host "==> pyinstaller"
 if (Test-Path build) { Remove-Item -Recurse -Force build }
 if (Test-Path dist)  { Remove-Item -Recurse -Force dist }
 New-Item -ItemType Directory build | Out-Null
 minipc\.venv\Scripts\python minipc\minipc.py --write-icon build\minipc.ico
+if ($LASTEXITCODE -ne 0) { throw "could not write the icon" }
 minipc\.venv\Scripts\pyinstaller --noconfirm --clean minipc\minipc.spec
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
 Write-Host "==> installer"
 $iscc = @(
