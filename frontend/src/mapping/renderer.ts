@@ -19,7 +19,7 @@
 import { buildDenseMesh } from './geometry'
 import type { PersonSpot } from './people'
 import { type SceneItem, SceneEngine } from './scene/engine'
-import type { Fit, Interaction, Mask, Output, PatternSpec, Surface, TestPattern } from './types'
+import type { Fit, Interaction, Mask, Output, PatternSpec, Surface, TestPattern, Warp } from './types'
 
 /** A tracked person as the shader sees them, in canvas fractions. */
 export interface Spot {
@@ -43,6 +43,14 @@ export interface TextureSource {
 }
 
 const FIT_CODE: Record<Fit, number> = { fill: 0, fit: 1, stretch: 2 }
+
+/** Texture units of the output pass, in unit order. */
+const UNITS: Array<['a' | 'b' | 'mask' | 'overlay', string]> = [
+  ['a', 'uTexA'],
+  ['b', 'uTexB'],
+  ['mask', 'uMask'],
+  ['overlay', 'uOverlay'],
+]
 
 const PATTERN_CODE: Record<TestPattern, number> = {
   none: 0,
@@ -397,6 +405,11 @@ export class OutputRenderer {
   private canvasSize: [number, number] = [1920, 1080]
   private warpKey = ''
   private maskKeyValue = ''
+  /** The warp and masks last checked; setOutput runs every frame, so the
+   * JSON keys are only rebuilt when the editor hands over new objects. */
+  private warpChecked: Warp | null = null
+  private masksChecked: Mask[] | null = null
+  private spotData = new Float32Array(MAX_SPOTS * 4)
   private overlayKey = ''
   private maskCanvas = document.createElement('canvas')
   private overlayCanvas = document.createElement('canvas')
@@ -425,6 +438,8 @@ export class OutputRenderer {
     this.scenes = null
     this.warpKey = ''
     this.maskKeyValue = ''
+    this.warpChecked = null
+    this.masksChecked = null
     this.overlayKey = ''
     this.uploaded = { a: null, b: null }
     this.init()
@@ -434,8 +449,11 @@ export class OutputRenderer {
   private link(vertex: string, fragment: string, attributes: string[] = []) {
     const gl = this.gl
     const program = gl.createProgram()!
-    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex))
-    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment))
+    for (const shader of [compile(gl, gl.VERTEX_SHADER, vertex), compile(gl, gl.FRAGMENT_SHADER, fragment)]) {
+      gl.attachShader(program, shader)
+      // Freed with the program; otherwise each renderer left two behind.
+      gl.deleteShader(shader)
+    }
     attributes.forEach((name, index) => gl.bindAttribLocation(program, index, name))
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
@@ -489,7 +507,8 @@ export class OutputRenderer {
     if (this.lost) return
     const gl = this.gl
 
-    const warpKey = JSON.stringify(output.warp)
+    const warpKey = output.warp === this.warpChecked ? this.warpKey : JSON.stringify(output.warp)
+    this.warpChecked = output.warp
     if (warpKey !== this.warpKey) {
       const mesh = buildDenseMesh(output.warp)
       gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer)
@@ -507,7 +526,10 @@ export class OutputRenderer {
     const scale = Math.min(1, this.maxMaskSize / Math.max(output.width, output.height))
     const mw = Math.max(1, Math.round(output.width * scale))
     const mh = Math.max(1, Math.round(output.height * scale))
-    const key = maskKey(output.masks, mw, mh)
+    const key = output.masks === this.masksChecked && mw === this.maskCanvas.width && mh === this.maskCanvas.height
+      ? this.maskKeyValue
+      : maskKey(output.masks, mw, mh)
+    this.masksChecked = output.masks
     if (key !== this.maskKeyValue) {
       this.maskCanvas.width = mw
       this.maskCanvas.height = mh
@@ -539,7 +561,9 @@ export class OutputRenderer {
     const { element } = source
     const isVideo = element instanceof HTMLVideoElement
     if (isVideo && element.readyState < 2) return this.uploaded[slot] === element
-    if (!isVideo && !(element as HTMLImageElement).complete) return false
+    // A broken image is complete but has no pixels; texImage2D rejects it and
+    // the slot would keep showing the previous cue's last frame.
+    if (!isVideo && !((element as HTMLImageElement).complete && (element as HTMLImageElement).naturalWidth)) return false
     if (isVideo || this.uploaded[slot] !== element) {
       const gl = this.gl
       gl.bindTexture(gl.TEXTURE_2D, this.textures[slot])
@@ -650,13 +674,7 @@ export class OutputRenderer {
     gl.uniform4f(this.u('uSource'), s.x, s.y, s.w, s.h)
     gl.uniform2f(this.u('uCanvas'), cw, ch)
 
-    const units: Array<['a' | 'b' | 'mask' | 'overlay', string]> = [
-      ['a', 'uTexA'],
-      ['b', 'uTexB'],
-      ['mask', 'uMask'],
-      ['overlay', 'uOverlay'],
-    ]
-    units.forEach(([name, uniform], unit) => {
+    UNITS.forEach(([name, uniform], unit) => {
       gl.activeTexture(gl.TEXTURE0 + unit)
       gl.bindTexture(gl.TEXTURE_2D, this.textures[name])
       gl.uniform1i(this.u(uniform), unit)
@@ -685,11 +703,19 @@ export class OutputRenderer {
     // with the show stopped.
     gl.uniform1i(this.u('uBlack'), blackout && output.test_pattern === 'none' ? 1 : 0)
 
-    const shown = (spots ?? people).slice(0, MAX_SPOTS)
-    const packed = new Float32Array(MAX_SPOTS * 4)
-    shown.forEach((spot, i) => packed.set([spot.x, spot.y, spot.radius, spot.strength], i * 4))
+    const shown = spots ?? people
+    const count = Math.min(shown.length, MAX_SPOTS)
+    const packed = this.spotData
+    packed.fill(0)
+    for (let i = 0; i < count; i++) {
+      const spot = shown[i]
+      packed[i * 4] = spot.x
+      packed[i * 4 + 1] = spot.y
+      packed[i * 4 + 2] = spot.radius
+      packed[i * 4 + 3] = spot.strength
+    }
     gl.uniform1i(this.u('uInteract'), INTERACTION_CODE[interaction] ?? 0)
-    gl.uniform1i(this.u('uSpots'), shown.length)
+    gl.uniform1i(this.u('uSpots'), count)
     gl.uniform4fv(this.u('uSpot'), packed)
     gl.uniform1f(this.u('uTime'), time)
 

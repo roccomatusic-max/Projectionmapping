@@ -205,8 +205,12 @@ export function buildDenseMesh(warp: Warp): DenseMesh {
       const b = a + 1
       const c = a + sx + 1
       const d = c + 1
-      indices.set([a, c, b, b, c, d], n)
-      n += 6
+      indices[n++] = a
+      indices[n++] = c
+      indices[n++] = b
+      indices[n++] = b
+      indices[n++] = c
+      indices[n++] = d
     }
   }
   return { positions, uvs, indices }
