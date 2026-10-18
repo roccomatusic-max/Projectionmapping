@@ -80,6 +80,11 @@ separate TCP endpoint here, so the ID field is not needed for addressing.
 The digest is sent **only on the first command of a connection**. Subsequent
 commands on the same socket use the bare `00` form.
 
+Some Panasonic firmware closes the connection right after each reply. The
+driver handles both behaviours: when the projector has ended the session, the
+next command opens a new connection, reads the new greeting and (in protect
+mode) sends a digest computed from the new random value.
+
 ### 2.3 Responses
 
 | Response | Meaning |
@@ -209,8 +214,8 @@ acceptable risk to take on an inference, so:
 
 **Lens memory** — no lens-memory command could be confirmed for this model from
 the available sources. It is therefore **not implemented**. The capability
-manifest reports `lens_memory: unsupported`, and the UI says so rather than
-showing a dead control.
+manifest lists `lens.memory` as "NOT IMPLEMENTED", executing it returns
+`unsupported`, and the UI says so rather than showing a dead control.
 
 #### Image adjustments — `INFERRED_FAMILY`
 
@@ -218,8 +223,9 @@ Panasonic's sibling-model specs document picture controls (`OBR` brightness,
 `OCS` contrast, `OCO` colour, `OTN` tint, `OSP` sharpness, `VSE` aspect/picture
 mode, `OFZ` freeze, `OSD` on-screen display). Their presence in the DZ13K series
 document was not confirmable offline, so they ship **behind the unverified
-gate**, and each one re-reads its value after setting it so the UI reflects what
-the projector actually did rather than what was asked for.
+gate**. `VSE` is not implemented. No query for these values is confirmed
+either, so they are not read back after setting: the result is the
+projector's acknowledgement only.
 
 #### Remote-key emulation — `VERIFIED_DOC` (names), parameters `INFERRED_FAMILY`
 
@@ -230,9 +236,9 @@ does not report OSD cursor position".
 
 ### 2.6 Unverified command gating
 
-Each `Capability` carries `provenance` and `verified`. The driver's
-`execute()` refuses — without opening a socket — any capability whose
-provenance is `INFERRED_FAMILY` unless the device record has
+Each `Capability` carries a `provenance`. The driver's capability gate
+(`ProjectorDriver._gate()`, applied before any socket I/O) refuses any
+capability whose provenance is `INFERRED_FAMILY` unless the device record has
 `allow_unverified_commands = true`. The refusal is returned as
 `CommandOutcome.UNSUPPORTED`, which is a distinct outcome from a device-side
 rejection, so the logs and the UI never conflate "we chose not to send this"
@@ -316,7 +322,8 @@ resolution), `%2RLST ?` (recommended resolution), `%2FILT ?` (filter usage),
 The driver issues `%1CLSS ?` on connect and only enables the Class 2 group when
 the projector reports class 2. **The PT-DZ13K's PJLink class was not
 confirmable from the sources available** — this runtime probe is the correct
-way to resolve that regardless, and the resolved class is persisted per device.
+way to resolve that regardless. The class is probed again each time the
+device worker connects; it is not stored.
 
 ### 3.4 Error responses
 

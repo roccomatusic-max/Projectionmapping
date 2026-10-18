@@ -30,6 +30,7 @@ from .base import (
     Provenance,
     ShutterState,
     TelemetryValue,
+    enum_param,
 )
 from .panasonic_ntcontrol import PanasonicNTControlDriver
 
@@ -563,11 +564,17 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
             return gated
 
         if capability == "power.set":
-            return await self.set_power_state(str(params.get("state", "")).lower() == "on")
+            state = enum_param(capability, params, "state", ("on", "off"))
+            if isinstance(state, CommandResult):
+                return state
+            return await self.set_power_state(state == "on")
         if capability == "power.get":
             return await self.get_power_state()
         if capability == "shutter.set":
-            return await self.set_shutter(str(params.get("state", "")).lower() == "closed")
+            state = enum_param(capability, params, "state", ("open", "closed"))
+            if isinstance(state, CommandResult):
+                return state
+            return await self.set_shutter(state == "closed")
         if capability == "shutter.get":
             return await self.get_shutter_state()
         if capability == "input.set":
@@ -589,21 +596,33 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
                     error="Lens memory is not implemented: no command for it could be "
                           "confirmed for the PT-DZ13K series.",
                 )
-            return await self.lens_action(
-                capability,
-                direction=int(params.get("direction", 0) or 0),
-                step=int(params.get("step", 1) or 1),
-            )
+            try:
+                direction = int(params.get("direction", 0) or 0)
+                step = int(params.get("step", 1) or 1)
+            except (TypeError, ValueError):
+                return CommandResult(
+                    capability=capability, outcome=CommandOutcome.REJECTED,
+                    error="'direction' and 'step' must be whole numbers",
+                )
+            return await self.lens_action(capability, direction=direction, step=step)
         if capability.startswith("remote."):
             return await self.remote_key(capability.split(".", 1)[1])
         if capability in self._IMAGE_MNEMONICS:
-            return await self.set_image_value(capability, int(params.get("value", 0)))
-        if capability == "image.freeze":
-            on = str(params.get("state", "")).lower() == "on"
-            return await self.raw_command(capability, f"OFZ:{'1' if on else '0'}")
-        if capability == "osd.set":
-            on = str(params.get("state", "")).lower() == "on"
-            return await self.raw_command(capability, f"OSD:{'1' if on else '0'}")
+            # No default: a missing value used to send 0, the darkest setting.
+            try:
+                value = int(params["value"])
+            except (KeyError, TypeError, ValueError):
+                return CommandResult(
+                    capability=capability, outcome=CommandOutcome.REJECTED,
+                    error=f"'value' must be a whole number (got {params.get('value')!r})",
+                )
+            return await self.set_image_value(capability, value)
+        if capability in ("image.freeze", "osd.set"):
+            state = enum_param(capability, params, "state", ("on", "off"))
+            if isinstance(state, CommandResult):
+                return state
+            mnemonic = "OFZ" if capability == "image.freeze" else "OSD"
+            return await self.raw_command(capability, f"{mnemonic}:{'1' if state == 'on' else '0'}")
 
         return CommandResult(
             capability=capability, outcome=CommandOutcome.UNSUPPORTED,

@@ -52,11 +52,19 @@ class LineTransport:
 
     @property
     def connected(self) -> bool:
+        # A projector that ends the session sends a FIN, which leaves the
+        # writer open (half-closed) and only shows up as EOF on the reader.
         return (
             self._writer is not None
             and not self._writer.is_closing()
             and self._reader is not None
+            and not self._reader.at_eof()
         )
+
+    @property
+    def closed_by_peer(self) -> bool:
+        """The projector ended a session we opened and have not closed."""
+        return self._writer is not None and not self.connected
 
     async def open(self) -> None:
         if self.connected:
@@ -71,7 +79,9 @@ class LineTransport:
             raise TransportTimeout(
                 f"connect to {self.host}:{self.port} timed out after {self.connect_timeout}s"
             ) from exc
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
+            # ValueError (UnicodeError included): a host name the resolver
+            # cannot even encode, such as a label over 63 characters.
             raise TransportError(f"connect to {self.host}:{self.port} failed: {exc}") from exc
         log.debug("transport open %s:%s", self.host, self.port)
 
@@ -106,6 +116,13 @@ class LineTransport:
             if exc.partial:
                 return exc.partial.decode(self.encoding, errors="replace").strip()
             raise TransportError("connection closed by projector") from exc
+        except asyncio.LimitOverrunError as exc:
+            # Kilobytes with no terminator: not this protocol. The bytes stay
+            # in the buffer, so the caller has to drop the socket.
+            raise TransportError(
+                f"{self.host}:{self.port} sent a frame with no terminator; "
+                f"is this the projector's control port?"
+            ) from exc
         except (OSError, ConnectionError) as exc:
             raise TransportError(f"read failed: {exc}") from exc
         return raw.decode(self.encoding, errors="replace").strip()
@@ -142,6 +159,13 @@ class LineTransport:
                 )
             except (TimeoutError, asyncio.IncompleteReadError, OSError, ConnectionError):
                 return stale
+            except asyncio.LimitOverrunError:
+                # Unterminated junk that readuntil leaves in the buffer for
+                # ever. Close, so the command fails without being sent.
+                log.warning("closing %s:%s: unterminated data in the buffer",
+                            self.host, self.port)
+                await self.close()
+                return stale
             decoded = line.decode(self.encoding, errors="replace").strip()
             if decoded:
                 stale.append(decoded)
@@ -156,7 +180,7 @@ async def probe_tcp(host: str, port: int, timeout: float = 2.0) -> bool:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port), timeout=timeout
         )
-    except (TimeoutError, OSError):
+    except (TimeoutError, OSError, ValueError):  # ValueError: unencodable host name
         return False
     writer.close()
     with contextlib.suppress(TimeoutError, OSError):

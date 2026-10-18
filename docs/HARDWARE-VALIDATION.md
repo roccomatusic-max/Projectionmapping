@@ -55,17 +55,21 @@ Record results as you go. There is a table at the end to fill in.
 ## Stage 2 — Read-only queries
 
 These cannot change projector state. Run them first, with the projector in
-standby, and record the **exact raw response** for each — the Projector
-detail page shows it in the Recent commands table.
+standby, and record the **exact raw response** for each. Send each one as a
+command through the API, `POST /api/projectors/{id}/command` with the body
+shown (the interactive API page is at `/api/docs`): the raw reply comes back
+in `raw_response` and is kept on the projector's **Command log** tab. "Poll
+now" reads the same values into the status panel but does not log the raw
+replies.
 
-| Command | How to run | What to record |
+| Command | Body to send | What to record |
 |---|---|---|
-| `QPW` | "Poll now" | Expected `00000` in standby, `00001` on (the parser also accepts `00QPW:000`) |
-| `QSH` | "Poll now" | `000` open or `001` closed |
-| `QIN` | "Poll now" | The input code after the ID, e.g. `00DVI` |
-| `Q$L:1`…`Q$L:4` (DZ13K) / `Q$L:1`–`Q$L:2` (DZ770) | "Poll now" (deep poll) | **The exact format of the number** |
-| `Q$S` | "Poll now" (deep poll) | The raw value |
-| `QLS` | API: `POST /api/projectors/{id}/command` `{"capability":"lamp.on_off"}` | The raw value |
+| `QPW` | `{"capability":"power.get"}` (**Test connection** also shows this reply) | Expected `00000` in standby, `00001` on (the parser also accepts `00QPW:000`) |
+| `QSH` | `{"capability":"shutter.get"}` | `000` open or `001` closed |
+| `QIN` | `{"capability":"input.get"}` | The input code after the ID, e.g. `00DVI` |
+| `Q$L:1`…`Q$L:4` (DZ13K) / `Q$L:1`–`Q$L:2` (DZ770) | `{"capability":"lamp.hours"}`. The log keeps the last lamp's reply; each lamp's is under `value[].raw` in the response | **The exact format of the number** |
+| `Q$S` | `{"capability":"lamp.status"}` | The raw value |
+| `QLS` | `{"capability":"lamp.on_off"}` | The raw value |
 
 ### Two things to fix in the code from this stage
 

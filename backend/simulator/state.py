@@ -5,8 +5,8 @@ warm-up and cool-down are not instantaneous, commands are refused during
 transitions, lamp hours accumulate, and inputs that have no board fitted
 answer with an error.
 
-Everything produced here is clearly simulated. The API marks simulated
-devices so no operator can mistake this for a real reading.
+The API does not mark simulated devices: register them with names that
+make it obvious, so no operator mistakes a reading for a real one.
 """
 
 from __future__ import annotations
@@ -74,6 +74,10 @@ class SimulatedProjector:
     drop_reply_indices: set[int] = field(default_factory=set)
     #: Refuse everything with a busy error.
     busy: bool = False
+    #: End the TCP session right after each reply, as some Panasonic
+    #: firmware does: every command then needs a new connection, greeting
+    #: and (in protect mode) digest.
+    close_after_reply: bool = False
     #: Require authentication.
     password: str | None = None
     username: str = "admin1"

@@ -78,15 +78,19 @@ class NTControlTransport:
     def connected(self) -> bool:
         return self._line.connected
 
+    @property
+    def closed_by_peer(self) -> bool:
+        return self._line.closed_by_peer
+
     async def open(self) -> None:
         """Connect and complete the greeting exchange."""
         await self._line.open()
         try:
             greeting = await self._line.read_line()
+            self._parse_greeting(greeting)
         except TransportError:
-            await self._line.close()
+            await self.close()
             raise
-        self._parse_greeting(greeting)
 
     def _parse_greeting(self, greeting: str) -> None:
         text = greeting.strip()
@@ -119,8 +123,23 @@ class NTControlTransport:
 
         The digest is prepended only to the first command of a session, which
         is what the protocol specifies.
+
+        Some Panasonic firmware ends the session right after each reply, so
+        a session the projector has ended is opened again here, with its own
+        greeting and digest. Nothing of this command has been sent at that
+        point, so reopening is always safe.
         """
         await self._line.drain_pending()
+        if self._line.closed_by_peer:
+            try:
+                await self.open()
+            except TransportError as exc:
+                # Plain TransportError, never TransportTimeout: the command
+                # did not go out, so the projector's state is not in doubt.
+                raise TransportError(
+                    f"the projector closed the control session and reconnecting "
+                    f"failed: {exc}"
+                ) from exc
         prefix = ""
         if self._digest and not self._digest_consumed:
             prefix = self._digest
@@ -268,7 +287,10 @@ class PanasonicNTControlDriver(ProjectorDriver):
         """
         async with self._lock:
             await self._respect_command_gap()
-            if not self._nt.connected:
+            # A session the projector ended is reopened by send(); one this
+            # side closed (after a timeout, or never opened) is the worker's
+            # to reconnect.
+            if not self._nt.connected and not self._nt.closed_by_peer:
                 return CommandResult(
                     capability=capability, outcome=CommandOutcome.CONNECTION_ERROR,
                     raw_request=command, error="transport is not connected",

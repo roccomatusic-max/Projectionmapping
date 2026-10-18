@@ -7,7 +7,7 @@ import hashlib
 
 import pytest
 
-from app.drivers import CommandOutcome, PowerState, Provenance, ShutterState
+from app.drivers import CommandOutcome, ConnectionConfig, PowerState, Provenance, ShutterState
 from app.drivers.panasonic_ntcontrol import classify_response, panasonic_digest
 from app.drivers.panasonic_ptdz13k import PanasonicPTDZ13KDriver
 from tests.conftest import panasonic_config
@@ -130,6 +130,49 @@ async def test_errors_query_is_honestly_unsupported(panasonic_driver):
     result = await panasonic_driver.get_errors()
     assert result.outcome is CommandOutcome.UNSUPPORTED
     assert "PJLink" in (result.error or "")
+
+
+@pytest.mark.parametrize(("capability", "params"), [
+    ("power.set", {}),
+    ("power.set", {"state": "1"}),
+    ("power.set", {"power": "on"}),
+    ("shutter.set", {"state": "close"}),
+    ("shutter.set", {"state": True}),
+])
+async def test_missing_or_misspelled_state_is_refused_not_guessed(
+    panasonic_driver, sim_state, capability, params
+):
+    """``{}`` used to send POF and ``"close"`` used to send OSH:0 (open):
+    anything that was not exactly "on" / "closed" meant the other choice."""
+    sim_state.shutter_closed = True
+    result = await panasonic_driver.execute_supported_command(capability, params)
+    assert result.outcome is CommandOutcome.REJECTED
+    assert result.raw_response is None  # never sent
+    assert sim_state.shutter_closed is True
+
+
+@pytest.mark.parametrize(("capability", "params"), [
+    ("image.brightness", {}),  # used to send OBR:000, the darkest setting
+    ("image.brightness", {"value": "bright"}),  # used to raise out of the driver
+    ("lens.shift_h", {"direction": "left"}),
+])
+async def test_missing_or_non_numeric_value_is_refused(panasonic_sim, capability, params):
+    driver = PanasonicPTDZ13KDriver(
+        panasonic_config(panasonic_sim, allow_unverified_commands=True)
+    )
+    await driver.connect()
+    try:
+        result = await driver.execute_supported_command(capability, params)
+        assert result.outcome is CommandOutcome.REJECTED
+        assert result.raw_request is None  # never sent
+    finally:
+        await driver.disconnect()
+
+
+async def test_state_parameter_is_read_case_and_space_insensitively(panasonic_driver, sim_state):
+    result = await panasonic_driver.execute_supported_command("power.set", {"state": " ON "})
+    assert result.outcome is CommandOutcome.ACCEPTED
+    assert result.raw_request == "00PON"
 
 
 # -- capability gating ------------------------------------------------------
@@ -304,6 +347,64 @@ async def test_lost_auth_probe_reply_is_a_connection_failure(panasonic_sim, sim_
         assert (await driver.get_power_state()).value is PowerState.OFF
     finally:
         await driver.disconnect()
+
+
+async def test_firmware_that_disconnects_after_every_reply(panasonic_sim, sim_state):
+    """Some Panasonic firmware ends the session right after each reply.
+
+    Every query in a status read, and every control command, then needs its
+    own connection, greeting and (in protect mode) digest. Without that, all
+    but the first command of a session go into a dead socket.
+    """
+    sim_state.password = "panasonic"
+    sim_state.close_after_reply = True
+    driver = PanasonicPTDZ13KDriver(panasonic_config(panasonic_sim, password="panasonic"))
+    await driver.connect()
+    try:
+        await driver.authenticate()
+        status = await driver.get_status(deep=True)
+        assert status.online and status.power is PowerState.OFF
+        assert status.shutter is ShutterState.OPEN
+        assert status.active_input.value == {"code": "DVI", "label": "DVI-D"}
+        assert [lamp["hours"] for lamp in status.lamp_hours.value] == sim_state.lamp_hours
+        assert status.lamp_status.value["state"] == "standby"
+
+        assert (await driver.set_power_state(True)).outcome is CommandOutcome.ACCEPTED
+        assert sim_state.power.value in ("warming", "on")
+    finally:
+        await driver.disconnect()
+
+
+async def test_garbage_with_no_terminator_drops_the_socket(sim_state):
+    """Kilobytes without a CR (wrong port, serial gateway at the wrong baud
+    rate) must end as a connection error with the socket closed, not as an
+    exception that leaves the junk in the buffer for every later command."""
+    async def junk(reader, writer):
+        writer.write(b"NTCONTROL 0\r")
+        await writer.drain()
+        try:
+            await reader.readuntil(b"\r")
+            writer.write(b"\x00" * 70_000)
+            await writer.drain()
+            await reader.read()
+        except (asyncio.IncompleteReadError, ConnectionError):
+            pass
+        finally:
+            writer.close()
+
+    server = await asyncio.start_server(junk, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    driver = PanasonicPTDZ13KDriver(ConnectionConfig(host="127.0.0.1", port=port, timeout=2.0))
+    try:
+        await driver.connect()
+        result = await driver.get_power_state()
+        assert result.outcome is CommandOutcome.CONNECTION_ERROR
+        assert "terminator" in (result.error or "")
+        assert not driver.connected
+    finally:
+        await driver.disconnect()
+        server.close()
+        await server.wait_closed()
 
 
 async def test_timeout_drops_the_socket_so_a_late_reply_cannot_mislead(
