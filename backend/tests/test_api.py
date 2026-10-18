@@ -413,6 +413,25 @@ async def test_connectivity_test_endpoint(api):
     assert "authenticated" in body["detail"]
 
 
+async def test_connectivity_test_in_protect_mode_without_password_fails(api):
+    """A projector asking for a password must not pass the test without one,
+    and saving the password must make it pass straight away."""
+    api.sim.state.password = "panasonic"
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    body = (await api.post(f"/api/projectors/{pid}/test", headers=headers)).json()
+    assert body["reachable"] is True
+    assert body["authenticated"] is False
+    assert body["outcome"] == "auth_failed"
+    assert "Control password" in body["detail"]
+
+    response = await api.patch(f"/api/projectors/{pid}", headers=headers,
+                               json={"password": "panasonic"})
+    assert response.status_code == 200, response.text
+    body = (await api.post(f"/api/projectors/{pid}/test", headers=headers)).json()
+    assert body["authenticated"] is True, body
+
+
 async def test_connectivity_test_on_dead_host_explains_itself(api):
     headers = await login(api)
     pid = await add_projector(api, headers, name="Dead", port=1)
