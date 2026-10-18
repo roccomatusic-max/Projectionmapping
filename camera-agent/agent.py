@@ -172,8 +172,11 @@ class Agent:
         if self.people_count is not None:
             body["people"] = self.people_count
         recent = [s for s in self.sent if s[0] > time.monotonic() - REPORT_SECONDS]
-        if len(recent) > 1:
-            body["tracking_rate"] = round((len(recent) - 1) / (recent[-1][0] - recent[0][0]), 1)
+        # Windows' clock ticks every 15.6 ms on Python 3.12: two reports sent
+        # back to back can carry the same time.
+        span = recent[-1][0] - recent[0][0] if recent else 0.0
+        if len(recent) > 1 and span > 0:
+            body["tracking_rate"] = round((len(recent) - 1) / span, 1)
             ages = sorted(age for _, age in recent)
             body["tracking_ms"] = round(ages[len(ages) // 2] * 1000)
         self.server.call("POST", "/mapping/players/me", json=body)
@@ -181,11 +184,11 @@ class Agent:
     def heartbeat(self) -> None:
         synced = 0.0
         while not self.stopping.is_set():
-            if time.monotonic() - synced > CLOCK_SECONDS:
-                synced = time.monotonic()
-                with contextlib.suppress(Revoked):
-                    self.server.sync_clock()
             try:
+                if time.monotonic() - synced > CLOCK_SECONDS:
+                    synced = time.monotonic()
+                    with contextlib.suppress(Revoked):
+                        self.server.sync_clock()
                 self.report()
             except Revoked:
                 log.warning("this camera was removed on the server")
@@ -193,6 +196,8 @@ class Agent:
                 return
             except requests.RequestException as exc:
                 log.warning("heartbeat failed: %s", exc)
+            except Exception:  # noqa: BLE001 - without a heartbeat the camera shows offline for good
+                log.exception("heartbeat failed")
             self.stopping.wait(REPORT_SECONDS)
 
     def listen(self) -> None:
@@ -217,8 +222,15 @@ class Agent:
         def on_close(*_args) -> None:
             self.ws_people = False
 
+        def on_open(ws) -> None:
+            # Stopped while this socket was still connecting, too early for
+            # run() to close it.
+            if self.stopping.is_set():
+                ws.close(timeout=1)
+
         while not self.stopping.is_set() and not self.revoked.is_set():
-            app = websocket.WebSocketApp(self.server.ws_url, on_message=on_message, on_close=on_close)
+            app = websocket.WebSocketApp(self.server.ws_url, on_open=on_open, on_message=on_message,
+                                         on_close=on_close)
             self.ws = app
             app.run_forever(ping_interval=20, ping_timeout=10)
             self.ws_people = False
@@ -364,6 +376,12 @@ class Agent:
             self.loop()
         finally:
             self.stopping.set()
+            # The live feed stays open until closed: left alone, every camera
+            # restart or re-pairing would keep one more socket and thread.
+            ws = self.ws
+            if ws is not None:
+                with contextlib.suppress(Exception):  # noqa: BLE001 - already closed
+                    ws.close(timeout=1)
 
     def loop(self) -> None:
         try:
