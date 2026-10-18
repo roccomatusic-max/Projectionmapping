@@ -429,10 +429,6 @@ class DriverError(Exception):
     """Base for driver-layer failures that are not ordinary command outcomes."""
 
 
-class AuthenticationError(DriverError):
-    pass
-
-
 class PollPreempted(DriverError):
     """A status read stepped aside for an operator command.
 

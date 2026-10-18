@@ -36,7 +36,7 @@ from .base import (
     TelemetryValue,
     enum_param,
 )
-from .transport import LineTransport, TransportError, TransportTimeout
+from .transport import AuthenticationError, LineTransport, TransportError, TransportTimeout
 
 log = logging.getLogger(__name__)
 
@@ -152,8 +152,9 @@ class PJLinkDriver(ProjectorDriver):
             if len(parts) < 3:
                 raise TransportError("PJLink requested auth but sent no random seed")
             if not self.config.password:
-                raise TransportError(
-                    "projector requires a PJLink password but none is configured"
+                raise AuthenticationError(
+                    "The projector asks for a PJLink password, but none is saved for it. "
+                    "Press Edit, enter it as Control password, then Test connection."
                 )
             self._auth_digest = pjlink_digest(parts[2], self.config.password)
         else:
@@ -173,7 +174,10 @@ class PJLinkDriver(ProjectorDriver):
             return
         result = await self._command("info.class", "%1CLSS ?")
         if result.outcome is CommandOutcome.AUTH_FAILED:
-            raise TransportError("PJLink authentication rejected (PJLINK ERRA)")
+            raise AuthenticationError(
+                "PJLink authentication rejected (PJLINK ERRA). Press Edit and check "
+                "Control password."
+            )
         if result.outcome in (CommandOutcome.TIMEOUT, CommandOutcome.CONNECTION_ERROR):
             raise TransportError(
                 f"projector accepted the connection but did not answer %1CLSS "
@@ -192,9 +196,9 @@ class PJLinkDriver(ProjectorDriver):
         result = await self._command("info.class", "%1CLSS ?")
         if result.outcome is CommandOutcome.AUTH_FAILED:
             await self._transport.close()
-            raise TransportError(
-                "PJLink authentication rejected (PJLINK ERRA). Check the PJLink "
-                "password configured for this device."
+            raise AuthenticationError(
+                "PJLink authentication rejected (PJLINK ERRA). Press Edit and check "
+                "Control password."
             )
         if result.outcome in (CommandOutcome.TIMEOUT, CommandOutcome.CONNECTION_ERROR):
             await self._transport.close()

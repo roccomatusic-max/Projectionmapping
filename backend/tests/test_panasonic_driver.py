@@ -238,26 +238,43 @@ async def test_protect_mode_authenticates(panasonic_sim, sim_state):
         await driver.disconnect()
 
 
-async def test_wrong_password_reports_auth_failure(panasonic_sim, sim_state):
-    from app.drivers.transport import TransportError
+async def test_missing_password_in_protect_mode_is_explained(panasonic_sim, sim_state):
+    from app.drivers.transport import AuthenticationError
+
+    sim_state.password = "panasonic"
+    driver = PanasonicPTDZ13KDriver(panasonic_config(panasonic_sim, password=None))
+    with pytest.raises(AuthenticationError, match="protect mode.*Control password"):
+        await driver.connect()
+
+
+async def test_wrong_password_is_an_authentication_error(panasonic_sim, sim_state):
+    from app.drivers.transport import AuthenticationError
 
     sim_state.password = "panasonic"
     driver = PanasonicPTDZ13KDriver(panasonic_config(panasonic_sim, password="wrong"))
     await driver.connect()
     try:
-        with pytest.raises(TransportError, match="authentication rejected"):
+        with pytest.raises(AuthenticationError, match="ERRA"):
             await driver.authenticate()
     finally:
         await driver.disconnect()
 
 
-async def test_missing_password_in_protect_mode_is_explained(panasonic_sim, sim_state):
-    from app.drivers.transport import TransportError
+def test_digest_matches_panasonic_reference_example():
+    """Panasonic's manual: md5("admin1:panasonic:<random>"), lowercase hex."""
+    expected = hashlib.md5(b"admin1:panasonic:a1b2c3d4").hexdigest()
+    assert panasonic_digest("admin1", "panasonic", "a1b2c3d4") == expected
+    assert len(expected) == 32 and expected == expected.lower()
 
-    sim_state.password = "panasonic"
-    driver = PanasonicPTDZ13KDriver(panasonic_config(panasonic_sim, password=None))
-    with pytest.raises(TransportError, match="protect mode but no password"):
-        await driver.connect()
+
+def test_greeting_seed_is_hashed_as_received_even_if_not_hex():
+    from app.drivers.panasonic_ntcontrol import NTControlTransport
+
+    nt = NTControlTransport(ConnectionConfig(host="127.0.0.1", port=1024,
+                                             username="admin1", password="panasonic"))
+    nt._parse_greeting("NTCONTROL 1 zZ9yX8wV\r")
+    assert nt.protected is True
+    assert nt._digest == panasonic_digest("admin1", "panasonic", "zZ9yX8wV")
 
 
 # -- failure modes ----------------------------------------------------------

@@ -37,7 +37,7 @@ from app.drivers import (
 from app.drivers import (
     build as build_driver,
 )
-from app.drivers.transport import TransportError, probe_tcp
+from app.drivers.transport import AuthenticationError, TransportError, probe_tcp
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +126,8 @@ class DeviceWorker:
         self.last_success_at: float | None = None
         self.consecutive_failures = 0
         self.last_error: str | None = None
+        #: The last connect failed on the password, not the network.
+        self._auth_failed = False
         #: Exponential backoff so an unreachable projector is not hammered.
         self._reconnect_delay = 1.0
         self._max_reconnect_delay = 60.0
@@ -339,7 +341,9 @@ class DeviceWorker:
         connected = await self._ensure_connection()
         if not connected:
             return CommandResult(
-                capability=item.capability, outcome=CommandOutcome.CONNECTION_ERROR,
+                capability=item.capability,
+                outcome=(CommandOutcome.AUTH_FAILED if self._auth_failed
+                         else CommandOutcome.CONNECTION_ERROR),
                 error=self.last_error or "could not connect to the projector",
             )
 
@@ -502,11 +506,13 @@ class DeviceWorker:
                 await self._safe_disconnect()
             else:
                 return True
+        self._auth_failed = False
         try:
             await self.driver.connect()
             await self.driver.authenticate()
         except TransportError as exc:
             self.last_error = str(exc)
+            self._auth_failed = isinstance(exc, AuthenticationError)
             await self._safe_disconnect()
             return False
         except Exception as exc:  # noqa: BLE001
