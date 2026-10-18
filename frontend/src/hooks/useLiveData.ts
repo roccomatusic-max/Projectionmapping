@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, getToken } from '@/api/client'
 import type { BusMessage, Overview, Projector } from '@/api/types'
 import {
+  SILENT_MS,
   mergeLiveState,
   shareUnchanged,
   useFleetContext,
@@ -72,6 +73,14 @@ function useStandaloneFleet(pollMs: number, enabled: boolean) {
     let reconnectTimer: number | undefined
     let retries = 0
     let disposed = false
+    let lastHeard = 0
+
+    const scheduleReconnect = () => {
+      if (disposed) return
+      setWsStatus('closed')
+      retries = Math.min(retries + 1, 6)
+      reconnectTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retries, 30000))
+    }
 
     const connect = () => {
       const token = getToken()
@@ -81,9 +90,11 @@ function useStandaloneFleet(pollMs: number, enabled: boolean) {
       setWsStatus('connecting')
       socket.onopen = () => {
         retries = 0
+        lastHeard = Date.now()
         setWsStatus('open')
       }
       socket.onmessage = (event) => {
+        lastHeard = Date.now()
         let message: BusMessage
         try {
           message = JSON.parse(event.data as string)
@@ -105,18 +116,26 @@ function useStandaloneFleet(pollMs: number, enabled: boolean) {
           void api.overview().then(setOverview).catch(() => undefined)
         }
       }
-      socket.onclose = () => {
-        if (disposed) return
-        setWsStatus('closed')
-        retries = Math.min(retries + 1, 6)
-        reconnectTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retries, 30000))
-      }
+      socket.onclose = scheduleReconnect
       socket.onerror = () => socket?.close()
     }
+
+    // Same dead-link check as the shared feed: a phone that slept keeps a
+    // half-open socket that never closes on its own.
+    const watchdog = window.setInterval(() => {
+      if (socket?.readyState !== WebSocket.OPEN || Date.now() - lastHeard < SILENT_MS) return
+      const dead = socket
+      dead.onclose = null
+      dead.onerror = null
+      dead.onmessage = null
+      dead.close()
+      scheduleReconnect()
+    }, 10_000)
 
     connect()
     return () => {
       disposed = true
+      window.clearInterval(watchdog)
       if (reconnectTimer) window.clearTimeout(reconnectTimer)
       if (socket) {
         socket.onclose = null

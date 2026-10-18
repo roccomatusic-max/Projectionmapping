@@ -93,12 +93,17 @@ export default function Monitoring({ session }: { session: Session }) {
 
   useEffect(() => {
     if (selectedProjector === null) return
+    // A slower reply for the previously chosen projector must not land last.
+    let current = true
     void api
       .telemetry(selectedProjector, undefined, 30)
-      .then((result) =>
-        setLampSeries(result.points.filter((point) => point.metric.startsWith('lamp'))),
-      )
+      .then((result) => {
+        if (current) setLampSeries(result.points.filter((point) => point.metric.startsWith('lamp')))
+      })
       .catch(() => undefined)
+    return () => {
+      current = false
+    }
   }, [selectedProjector])
 
   if (loading) return <Spinner />

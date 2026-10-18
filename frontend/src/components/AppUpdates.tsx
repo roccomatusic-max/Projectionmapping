@@ -64,12 +64,15 @@ export default function AppUpdates() {
   useEffect(() => {
     if (!status?.installing || !status.latest) return
     const target = status.latest
+    let wentDown = false
     const timer = window.setInterval(async () => {
       try {
         const health = await fetch('/api/health').then((r) => r.json())
-        if (health.version === target) window.location.reload()
+        // Back on the new version, or back on the old one after the Mac
+        // rolled a failed update back (the page then says so).
+        if (health.version === target || wentDown) window.location.reload()
       } catch {
-        // restarting
+        wentDown = true // restarting
       }
     }, 3000)
     return () => window.clearInterval(timer)

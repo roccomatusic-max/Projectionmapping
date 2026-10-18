@@ -6,18 +6,20 @@ export function renderTelemetry<T>(
   field: Telemetry<T> | undefined,
   format?: (value: T) => string,
 ): { text: string; muted: boolean; title?: string } {
-  if (!field || field.availability === 'unavailable') {
-    return {
-      text: '—',
-      muted: true,
-      title: field?.note ?? 'No value from the projector on the last read',
-    }
-  }
-  if (field.availability === 'unsupported') {
+  if (field?.availability === 'unsupported') {
     return {
       text: 'n/a',
       muted: true,
       title: field.note ?? 'Not supported by this model',
+    }
+  }
+  // A projector that was never read (new or disabled) sends {} with no
+  // availability at all; treat that, like a null value, as unavailable.
+  if (!field || field.availability !== 'available' || field.value == null) {
+    return {
+      text: '—',
+      muted: true,
+      title: field?.note ?? 'No value from the projector on the last read',
     }
   }
   const value = field.value as T
@@ -106,9 +108,15 @@ export function availabilityTitle(availability: Availability, note: string | nul
   return note ?? (availability === 'unsupported' ? 'Not supported' : 'Unavailable')
 }
 
+/** The server stores UTC; on SQLite it comes back without an offset, which
+ *  browsers would read as local time. Treat an offset-less timestamp as UTC. */
+function parseServerTime(iso: string): Date {
+  return new Date(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(iso) ? `${iso}Z` : iso)
+}
+
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return 'never'
-  const then = new Date(iso).getTime()
+  const then = parseServerTime(iso).getTime()
   if (Number.isNaN(then)) return 'unknown'
   const seconds = Math.round((Date.now() - then) / 1000)
   if (seconds < 0) return 'just now'
@@ -123,14 +131,14 @@ export function relativeTime(iso: string | null | undefined): string {
 
 export function formatClock(iso: string | null | undefined): string {
   if (!iso) return '—'
-  const date = new Date(iso)
+  const date = parseServerTime(iso)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
-  const date = new Date(iso)
+  const date = parseServerTime(iso)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString([], {
     year: 'numeric', month: 'short', day: '2-digit',

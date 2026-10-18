@@ -423,11 +423,11 @@ export default function Automation({ session }: { session: Session }) {
           setBusy(true)
           try {
             const result = await api.runAutomation(automation.id)
-            const failed = result.steps.filter((step) => !step.ok).length
+            const failed = (result.steps ?? []).filter((step) => !step.ok).length
             push(
               result.status === 'success' ? 'ok' : failed ? 'warn' : 'fault',
-              `${result.name}: ${result.status}`,
-              failed ? `${failed} step(s) failed` : undefined,
+              `${result.name ?? automation.name}: ${result.status}`,
+              failed ? `${failed} step(s) failed` : result.error,
             )
             setRuns((current) => {
               const next = { ...current }

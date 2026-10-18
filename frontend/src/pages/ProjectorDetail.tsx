@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
 import type {
@@ -240,6 +240,10 @@ export default function ProjectorDetail({ session }: { session: Session }) {
   const [checking, setChecking] = useState<'poll' | 'test' | null>(null)
   const [tab, setTab] = useState<TabId>('picture')
   const [editing, setEditing] = useState(false)
+  // The page stays mounted when the link goes to another projector, so a
+  // reply that arrives after that is for the previous one and is dropped.
+  const shownId = useRef(projectorId)
+  shownId.current = projectorId
   useTicker(5000)
 
   const projector = projectors.find((p) => p.id === projectorId)
@@ -248,16 +252,20 @@ export default function ProjectorDetail({ session }: { session: Session }) {
 
   const loadManifest = useCallback(async () => {
     try {
-      setManifest(await api.capabilities(projectorId))
+      const loaded = await api.capabilities(projectorId)
+      if (shownId.current !== projectorId) return
+      setManifest(loaded)
       setManifestError(null)
     } catch (err) {
+      if (shownId.current !== projectorId) return
       setManifestError(err instanceof Error ? err.message : 'Could not load capabilities')
     }
   }, [projectorId])
 
   const loadHistory = useCallback(async () => {
     try {
-      setHistory((await api.commandHistory(projectorId, 60)).commands)
+      const { commands: rows } = await api.commandHistory(projectorId, 60)
+      if (shownId.current === projectorId) setHistory(rows)
     } catch {
       // The log is supplementary; the controls still work without it.
     }
@@ -352,7 +360,8 @@ export default function ProjectorDetail({ session }: { session: Session }) {
   const testConnection = async () => {
     setChecking('test')
     try {
-      setProbe(await api.testConnection(projectorId))
+      const result = await api.testConnection(projectorId)
+      if (shownId.current === projectorId) setProbe(result)
     } catch (err) {
       notify('fault', 'Connection test failed', err instanceof ApiError ? err.message : undefined)
     } finally {

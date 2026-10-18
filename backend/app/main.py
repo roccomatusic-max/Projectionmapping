@@ -194,14 +194,20 @@ for router in (
 # development the Vite dev server proxies /api instead and this block is a
 # no-op because ./static does not exist.
 
-STATIC_DIR = static_dir()
+# Resolved: in the Mac app this folder is a symlink (PyInstaller links
+# Contents/Frameworks/static to Contents/Resources/static), and the files
+# below are compared against it after resolving their own path.
+STATIC_DIR = static_dir().resolve()
+#: The page names the hashed bundles of one build. Revalidated on every load
+#: so the browser picks up a new build straight after an update.
+PAGE_HEADERS = {"Cache-Control": "no-cache"}
 
 if STATIC_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers=PAGE_HEADERS)
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa_fallback(path: str) -> FileResponse:
@@ -217,7 +223,7 @@ if STATIC_DIR.is_dir():
         # Only serve files inside the static root.
         if candidate.is_file() and candidate.is_relative_to(STATIC_DIR):
             return FileResponse(candidate)
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers=PAGE_HEADERS)
 
 else:
 

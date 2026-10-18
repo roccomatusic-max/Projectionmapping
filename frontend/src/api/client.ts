@@ -272,7 +272,8 @@ export const api = {
   deleteAutomation: (id: number) =>
     request<void>(`/automations/${id}`, { method: 'DELETE' }),
   runAutomation: (id: number) =>
-    request<{ status: string; steps: AutomationRun['step_results']; name: string }>(
+    // A run that never started ("already running") has only status and error.
+    request<{ status: string; steps?: AutomationRun['step_results']; name?: string; error?: string }>(
       `/automations/${id}/execute`,
       { method: 'POST', body: { capability: 'run', confirm: true } },
     ),
@@ -331,5 +332,6 @@ export async function downloadCsv(path: string, filename: string) {
   anchor.href = url
   anchor.download = filename
   anchor.click()
-  URL.revokeObjectURL(url)
+  // Revoked straight away, Safari can cancel the download it just started.
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }

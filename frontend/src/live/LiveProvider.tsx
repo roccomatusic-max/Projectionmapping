@@ -47,6 +47,9 @@ import { isLive, type Tone } from '@/lib/status'
 
 export type WsStatus = 'connecting' | 'open' | 'closed'
 
+/** Silence after which the live socket is treated as dead (the server pings every 25 s). */
+export const SILENT_MS = 70_000
+
 export type CommandPhase =
   | 'pending'
   | 'accepted'
@@ -336,8 +339,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     void refresh()
   }, [refresh])
 
+  const socketOpen = wsStatus === 'open'
   useEffect(() => {
-    const interval = wsStatus === 'open' ? 15000 : 8000
+    const interval = socketOpen ? 15000 : 8000
     const timer = window.setInterval(() => {
       if (!document.hidden) void refresh()
     }, interval)
@@ -349,7 +353,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [refresh, wsStatus])
+  }, [refresh, socketOpen])
 
   /* -- commands ---------------------------------------------------- */
 
@@ -535,6 +539,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     let reconnectTimer: number | undefined
     let retries = 0
     let disposed = false
+    let lastHeard = 0
+
+    const scheduleReconnect = () => {
+      if (disposed) return
+      setWsStatus('closed')
+      retries = Math.min(retries + 1, 6)
+      reconnectTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retries, 30000))
+    }
 
     const connect = () => {
       const token = getToken()
@@ -545,10 +557,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
       socket.onopen = () => {
         retries = 0
+        lastHeard = Date.now()
         setWsStatus('open')
       }
 
       socket.onmessage = (event) => {
+        lastHeard = Date.now()
         let message: BusMessage
         try {
           message = JSON.parse(event.data as string)
@@ -598,19 +612,26 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         for (const listener of listeners.current) listener(message)
       }
 
-      const scheduleReconnect = () => {
-        if (disposed) return
-        setWsStatus('closed')
-        retries = Math.min(retries + 1, 6)
-        reconnectTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retries, 30000))
-      }
       socket.onclose = scheduleReconnect
       socket.onerror = () => socket?.close()
     }
 
+    // The server pings every 25 s. A socket silent for longer is half-open
+    // (Wi-Fi dropped, the laptop slept) and would show "Live" forever.
+    const watchdog = window.setInterval(() => {
+      if (socket?.readyState !== WebSocket.OPEN || Date.now() - lastHeard < SILENT_MS) return
+      const dead = socket
+      dead.onclose = null
+      dead.onerror = null
+      dead.onmessage = null
+      dead.close()
+      scheduleReconnect()
+    }, 10_000)
+
     connect()
     return () => {
       disposed = true
+      window.clearInterval(watchdog)
       if (reconnectTimer) window.clearTimeout(reconnectTimer)
       if (socket) {
         socket.onclose = null

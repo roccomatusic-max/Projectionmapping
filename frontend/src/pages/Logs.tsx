@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '@/api/client'
 import type { EventRow, Projector } from '@/api/types'
 import { Chip, EmptyState, ErrorBanner, PageHeader, Panel, Spinner, StatusDot } from '@/components/ui'
@@ -22,7 +22,11 @@ export default function Logs() {
     40,
   )
 
+  // Only the newest request's reply is shown, so a slow reply for the
+  // previous filter cannot overwrite the current one.
+  const latest = useRef(0)
   const load = async () => {
+    const request = ++latest.current
     setLoading(true)
     try {
       const rows = await api.events({
@@ -30,12 +34,14 @@ export default function Logs() {
         severity: severity || undefined,
         projector_id: projectorId ? Number(projectorId) : undefined,
       })
+      if (request !== latest.current) return
       setEvents(rows)
       setError(null)
     } catch (err) {
+      if (request !== latest.current) return
       setError(err instanceof Error ? err.message : 'Failed to load events')
     } finally {
-      setLoading(false)
+      if (request === latest.current) setLoading(false)
     }
   }
 
