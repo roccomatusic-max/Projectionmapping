@@ -171,6 +171,7 @@ function Recording({
 
     const canvas = boxRef.current?.querySelector('canvas')
     if (!canvas) {
+      window.clearInterval(walk)
       onFailed('Could not start recording.')
       return
     }
@@ -185,6 +186,12 @@ function Recording({
     return () => {
       window.clearTimeout(stop)
       window.clearInterval(walk)
+      // Left early (another scene, another tab): drop what was recorded so
+      // far rather than save a cut-short video to the library.
+      recorder.ondataavailable = null
+      recorder.onstop = null
+      recorder.onerror = null
+      if (recorder.state !== 'inactive') recorder.stop()
       stream.getTracks().forEach((t) => t.stop())
       playback.dispose()
     }
