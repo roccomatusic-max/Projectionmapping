@@ -414,6 +414,20 @@ saved to the media library and starts a scene with it as a picture layer
 Keys are kept in files beside the media folder (`anthropic-api-key`,
 `openai-api-key`, mode 600) and never sent back to a browser.
 
+**Christmas countdown** is a layer type (`countdown`, in
+`frontend/src/mapping/scene/countdown.ts`) and a ready-made scene: days until
+Christmas as a big number with a ribbon, holly and a ticking hours/minutes/
+seconds clock, in four looks (gold and holly, frosted, candy cane, marquee
+lights). It is centred on its "Where" area (Size and Height place it; colour
+is the ribbon, second colour the glow). It counts by the wall clock: the
+server's time in each computer's own time zone, so a mini PC's time zone must
+be right. On Christmas Eve the number becomes hours, then minutes; on the
+25th it reads "Merry Christmas", and from the 26th it counts to next year.
+People make it sparkle more but never fade it. The artwork is painted with
+the 2D canvas only when the number changes (bundled OFL fonts, so every
+player draws the same letters offline); the clock strip is patched in once a
+second and the light sweep, glints and chasing bulbs are done in the shader.
+
 | Method | Path | |
 |---|---|---|
 | GET/POST | `/mapping/scenes` | The scene library |

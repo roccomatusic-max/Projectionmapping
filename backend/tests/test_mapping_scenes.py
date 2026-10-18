@@ -386,3 +386,26 @@ async def test_changing_a_scene_in_words_keeps_its_picture(api, monkeypatch):
     assert [layer["type"] for layer in changed.json()["layers"]] == ["picture", "falling"]
     assert changed.json()["layers"][0]["media_id"] == 7
     assert '"picture"' not in calls[-1]["messages"][0]["content"]
+
+
+async def test_christmas_countdown_is_a_scene_layer(api):
+    """The countdown saves with a scene like any layer, and Claude may use it."""
+    from app.services import scene_ai
+
+    headers = await login(api)
+    created = await api.post("/api/mapping/scenes", headers=headers, json={
+        "name": "Countdown",
+        "layers": [
+            {"type": "falling", "style": "snow"},
+            {"type": "countdown", "style": "marquee", "target": "building", "blend": "normal",
+             "color": "#b3122a", "color2": "#ffcf70", "size": 0.8, "fade": 0.5, "near": "grow"},
+        ],
+    })
+    assert created.status_code == 201, created.text
+    countdown = created.json()["layers"][1]
+    assert countdown["type"] == "countdown" and countdown["style"] == "marquee"
+    assert countdown["near"] == "grow"
+
+    assert "countdown" in scene_ai._catalog_text()
+    layers = scene_ai.to_layers([{"type": "countdown", "style": "sparkly", "size": 3, "near": "flee"}])
+    assert layers[0].style == "gold" and layers[0].size == 1.0 and layers[0].near == "none"

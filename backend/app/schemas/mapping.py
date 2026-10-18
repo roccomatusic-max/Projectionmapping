@@ -589,6 +589,8 @@ LayerType = Literal[
     "wash", "field", "texture", "outline", "lights", "falling", "shapes",
     # a picture from the media library, such as one painted by "Paint the house"
     "picture",
+    # days until Christmas as holiday graphics
+    "countdown",
 ]
 #: What makes a layer stronger: someone there, how fast people move, how many
 #: there are, how close they come, or nothing (always at full strength).

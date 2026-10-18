@@ -127,6 +127,17 @@ CATALOG: dict[str, dict] = {
         "changes": _AREA_CHANGES,
         "nears": _AREA_NEARS,
     },
+    "countdown": {
+        "about": "a big 'days until Christmas' countdown with a ribbon and a ticking "
+                 "clock, centred on the target area; it says Merry Christmas on the day",
+        "styles": ["gold", "frost", "candy", "marquee"],
+        "dials": "size: how much of the area it fills; fade: height (1 is the top); "
+                 "speed: how fast light sweeps across it; amount: how much it sparkles",
+        "nears": ["none", "light", "grow", "jump"],
+        "notes": "color is the ribbon, color2 the glow; use blend normal and reacts_to "
+                 "always so it stays readable; only add it when the person asks for a "
+                 "countdown",
+    },
     # -- backdrops: only when the person asks for a material or background ---------
     "texture": {
         "about": "BACKDROP: makes whole surfaces look like a material",
