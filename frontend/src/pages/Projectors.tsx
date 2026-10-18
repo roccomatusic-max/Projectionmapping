@@ -251,6 +251,13 @@ export function ProjectorForm({
                 const driver = drivers.find((d) => d.driver_id === e.target.value)
                 set('driver', e.target.value)
                 if (driver) set('port', driver.default_port)
+                // A new projector is labelled after its driver, not the
+                // first driver's PT-DZ13K. A generic driver has no one model.
+                if (driver && !editing) {
+                  const generic = driver.manufacturer.startsWith('Any')
+                  set('manufacturer', generic ? '' : driver.manufacturer)
+                  set('model', generic ? driver.display_name : driver.models[0] ?? '')
+                }
               }}
             >
               {drivers.map((driver) => (
