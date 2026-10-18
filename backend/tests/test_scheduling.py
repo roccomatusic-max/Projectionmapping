@@ -151,6 +151,17 @@ def test_once_is_not_used_up_by_a_manual_run_before_its_time():
     ) is True
 
 
+def test_once_run_by_hand_earlier_is_not_reported_missed():
+    """A one-shot tried by hand under the old rules never fired; it must not
+    raise a critical "missed" alert once its time is long past."""
+    target = datetime(2026, 10, 17, 20, 30, tzinfo=LONDON)
+    tried = (target - timedelta(hours=4)).astimezone(UTC)
+    assert AutomationEngine._is_due(
+        automation("once", {"run_at": target.isoformat()}, last_run_at=tried),
+        target + timedelta(days=3),
+    ) is False
+
+
 def test_once_moved_later_after_running_fires_again():
     ran = datetime(2026, 10, 17, 20, 30, tzinfo=LONDON).astimezone(UTC)
     moved = datetime(2026, 10, 24, 20, 30, tzinfo=LONDON)

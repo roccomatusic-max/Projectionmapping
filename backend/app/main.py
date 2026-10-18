@@ -8,7 +8,6 @@ and shuts them all down cleanly so no projector is left mid-command.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import secrets
 import sys
@@ -149,8 +148,8 @@ async def lifespan(_: FastAPI):
         log.info("shutting down")
         if auto_updates:
             auto_updates.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await auto_updates
+            # gather keeps the task's own cancellation, not one aimed at us.
+            await asyncio.gather(auto_updates, return_exceptions=True)
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
         await discovery.stop()

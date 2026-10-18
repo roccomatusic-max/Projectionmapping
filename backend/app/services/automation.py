@@ -228,7 +228,10 @@ class AutomationEngine:
                 return False
             if now <= target + grace:
                 return True
-            return "missed"
+            # Only a one-shot that never ran is "missed". One run by hand
+            # before an upgrade (which never fired it, and never warned)
+            # must not raise a critical alert for a show long past.
+            return "missed" if last is None else False
 
         if automation.trigger_type == "cron":
             expression = str(schedule.get("cron", "")).strip()
