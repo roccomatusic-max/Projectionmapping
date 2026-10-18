@@ -74,6 +74,25 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
     [loadMedia, playback],
   )
 
+  // A cue change that could not be applied (the media list failed to load)
+  // is retried quietly with a fresh transport, backing off, rather than
+  // replacing the projector's picture with an error message.
+  const retryTimer = useRef<number>()
+  const retryTransport = useCallback(
+    (attempt = 0) => {
+      window.clearTimeout(retryTimer.current)
+      retryTimer.current = window.setTimeout(async () => {
+        try {
+          await applyTransport(await mappingApi.transport(), true)
+        } catch {
+          retryTransport(attempt + 1)
+        }
+      }, Math.min(30_000, 2000 * 2 ** attempt))
+    },
+    [applyTransport],
+  )
+  useEffect(() => () => window.clearTimeout(retryTimer.current), [])
+
   const refresh = useCallback(async () => {
     try {
       await loadMedia()
@@ -102,11 +121,10 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
     const payload = message.payload as Record<string, unknown>
     switch (message.type) {
       case 'mapping_transport':
-        // If the media list could not be fetched, fetch everything again
-        // shortly rather than drop this cue change.
-        applyTransport(payload as unknown as TransportState).catch(() => {
-          window.setTimeout(() => void refresh(), 2000)
-        })
+        // If the media list could not be fetched, try again shortly rather
+        // than drop this cue change.
+        window.clearTimeout(retryTimer.current)
+        applyTransport(payload as unknown as TransportState).catch(() => retryTransport())
         break
       case 'mapping_output':
         if (payload.show_id === showId) {

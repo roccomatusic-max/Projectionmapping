@@ -10,6 +10,26 @@ import { useShowRuntime } from './useShowRuntime'
 const CALIBRATION_WATCHDOG_MS = 15000
 /** A lost graphics context not given back within this reloads the page. */
 const CONTEXT_RELOAD_MS = 10000
+/** At most one such reload this often, so a GPU that resets on every load cannot loop. */
+const CONTEXT_RELOAD_GAP_MS = 5 * 60_000
+const CONTEXT_RELOAD_KEY = 'pm.ctxReload'
+
+function lastContextReload(): number {
+  try {
+    return Number(sessionStorage.getItem(CONTEXT_RELOAD_KEY)) || 0
+  } catch {
+    return 0
+  }
+}
+
+function reloadForContext() {
+  try {
+    sessionStorage.setItem(CONTEXT_RELOAD_KEY, String(Date.now()))
+  } catch {
+    /* reload anyway; the gap is a nicety */
+  }
+  window.location.reload()
+}
 
 const STATUS_LABEL = {
   playing: 'Playing',
@@ -56,7 +76,8 @@ export function OutputScreen({
     let reload: number | undefined
     const onLost = () => {
       window.clearTimeout(reload)
-      reload = window.setTimeout(() => window.location.reload(), CONTEXT_RELOAD_MS)
+      const wait = Math.max(CONTEXT_RELOAD_MS, lastContextReload() + CONTEXT_RELOAD_GAP_MS - Date.now())
+      reload = window.setTimeout(reloadForContext, wait)
     }
     const onRestored = () => window.clearTimeout(reload)
     window.addEventListener('webglcontextlost', onLost, true)

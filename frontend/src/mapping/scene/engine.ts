@@ -143,6 +143,8 @@ export class SceneEngine {
   private surfacesRef: Surface[] | null = null
   /** Pictures for "picture" layers, by media id; drawn once loaded. */
   private pictures = new Map<number, { tex: WebGLTexture; ready: boolean }>()
+  /** Failed loads per picture, for backing off its retries. */
+  private pictureFailures = new Map<number, number>()
   private countdown: CountdownDrawer | null = null
   /** Index into SCENE_SCALES. */
   quality = 0
@@ -262,15 +264,18 @@ export class SceneEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
         entry!.ready = true
+        this.pictureFailures.delete(mediaId)
       }
       // Forget a failed load so a later frame asks again (the server may
       // have been restarting) instead of leaving the layer blank for good.
       img.onerror = () => {
+        const failures = this.pictureFailures.get(mediaId) ?? 0
+        this.pictureFailures.set(mediaId, failures + 1)
         window.setTimeout(() => {
           if (this.pictures.get(mediaId)?.tex !== tex) return
           this.pictures.delete(mediaId)
           if (!gl.isContextLost()) gl.deleteTexture(tex)
-        }, 2000)
+        }, Math.min(60_000, 2000 * 2 ** failures))
       }
       img.src = mediaUrl(mediaId)
     }
