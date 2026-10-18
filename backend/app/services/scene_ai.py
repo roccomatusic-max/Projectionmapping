@@ -223,13 +223,33 @@ def _client(key: str):
     return anthropic.AsyncAnthropic(api_key=key, timeout=180.0, max_retries=2)
 
 
+def _explain(exc) -> str:
+    """Anthropic's error in words the person can act on, with its own message."""
+    message = ""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        message = str(body["error"].get("message") or "").strip()
+    if "credit balance" in message.lower():
+        return ("The Anthropic account has no credit yet. Add some under Billing at "
+                "console.anthropic.com, then try again.")
+    if message:
+        return f"Anthropic answered with an error ({exc.status_code}): {message}"
+    return f"Anthropic answered with an error ({exc.status_code}). Try again."
+
+
 async def check_key(key: str) -> None:
-    """Refuse a key Anthropic does not accept, before it is saved."""
+    """Refuse a key Anthropic does not accept, before it is saved.
+
+    Only a refused key (401, 403) or no connection stops the save. Anything
+    else, such as an account without credit yet, is about the account, not
+    the key: the key is kept and the problem is shown, in Anthropic's own
+    words, when a scene is described.
+    """
     import anthropic
 
     try:
         async with _client(key) as client:
-            await client.models.retrieve(MODEL)
+            await client.models.list(limit=1)
     except anthropic.AuthenticationError:
         raise SceneAiError("Anthropic did not accept that key. Copy it again from "
                            "console.anthropic.com → API keys.") from None
@@ -240,7 +260,8 @@ async def check_key(key: str) -> None:
         raise SceneAiError("Could not reach Anthropic. Check this computer's internet "
                            "connection.") from None
     except anthropic.APIStatusError as exc:
-        raise SceneAiError(f"Anthropic answered with an error ({exc.status_code}).") from None
+        log.info("Anthropic answered the key check with %s; keeping the key: %s",
+                 exc.status_code, _explain(exc))
 
 
 # -- describing a scene ------------------------------------------------------------
@@ -365,8 +386,7 @@ async def describe(prompt: str, *, surfaces: list[dict], current: dict | None = 
                            "connection.") from None
     except anthropic.APIStatusError as exc:
         log.warning("Scene description failed: %s", exc)
-        raise SceneAiError(f"Anthropic answered with an error ({exc.status_code}). "
-                           "Try again.") from None
+        raise SceneAiError(_explain(exc)) from None
 
     if response.stop_reason == "refusal":
         raise SceneAiError("Claude declined that description. Try wording it differently.")
