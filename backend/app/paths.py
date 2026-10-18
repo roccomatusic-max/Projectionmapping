@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+#: The desktop app's note of the first administrator password, in its data folder.
+FIRST_RUN_PASSWORD = "FIRST-RUN-PASSWORD.txt"
 
 
 def resource_root() -> Path:
@@ -33,3 +37,9 @@ def app_version() -> str:
     except OSError:
         return "dev"
     return value or "dev"
+
+
+def first_run_password_file() -> Path | None:
+    """The first-run password note, when this server is the desktop app."""
+    folder = os.environ.get("DESKTOP_DATA_DIR")
+    return Path(folder).expanduser() / FIRST_RUN_PASSWORD if folder else None

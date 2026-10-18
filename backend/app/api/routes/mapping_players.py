@@ -16,6 +16,7 @@ server knows they are one machine: it is approved and removed with it.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import secrets
@@ -88,7 +89,7 @@ async def _companion(session, player: MappingPlayer) -> MappingPlayer | None:
 async def _approve(session, player: MappingPlayer, message: str) -> None:
     """Give the player its own viewer account; the caller commits."""
     user = User(username=f"player-{player.id}-{secrets.token_hex(3)}",
-                password_hash=hash_password(secrets.token_urlsafe(32)),
+                password_hash=await asyncio.to_thread(hash_password, secrets.token_urlsafe(32)),
                 role=Role.VIEWER.value)
     session.add(user)
     await session.flush()

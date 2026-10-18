@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import secrets
 import sys
 from contextlib import asynccontextmanager
@@ -61,6 +62,19 @@ logging.basicConfig(
 log = logging.getLogger("app")
 
 
+class HideTokens(logging.Filter):
+    """uvicorn logs each WebSocket's path with its query string, and a
+    browser can only send its sign-in token there; keep it out of logs."""
+
+    TOKEN = re.compile(r"(token=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(self.TOKEN.sub(r"\1hidden", a) if isinstance(a, str) else a
+                                for a in record.args)
+        return True
+
+
 async def prepare_database() -> None:
     """Bring the schema up to date.
 
@@ -110,6 +124,11 @@ async def bootstrap_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Here rather than at import: uvicorn sets up its loggers before it
+    # starts the app, and only once.
+    uvicorn_log = logging.getLogger("uvicorn.error")
+    if not any(isinstance(f, HideTokens) for f in uvicorn_log.filters):
+        uvicorn_log.addFilter(HideTokens())
     log.info("starting %s (%s)", settings.app_name, settings.environment)
     if settings.secret_key_generated:
         log.warning(

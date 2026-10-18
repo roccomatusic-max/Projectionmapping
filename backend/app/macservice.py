@@ -30,6 +30,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from app.paths import FIRST_RUN_PASSWORD
+
 LABEL = "com.projectorcontrol.server"
 APP_NAME = "Projector Control.app"
 EXECUTABLE = "ProjectorControl"
@@ -263,7 +265,7 @@ def server_version(expected: str, port: int = PORT, timeout: float = 90.0) -> st
 
 
 def first_run_credentials(folder: Path) -> str | None:
-    marker = folder / "FIRST-RUN-PASSWORD.txt"
+    marker = folder / FIRST_RUN_PASSWORD
     with contextlib.suppress(OSError):
         for line in marker.read_text(encoding="utf-8").splitlines():
             if line.strip().startswith("password:"):

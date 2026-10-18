@@ -34,6 +34,8 @@ import webbrowser
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from app.paths import FIRST_RUN_PASSWORD
+
 APP_FOLDER = "ProjectorControl"
 DEFAULT_PORT = 8765
 
@@ -139,7 +141,7 @@ def first_run_password(folder: Path, database: Path) -> str | None:
     app has no console for the operator to read it from. The sign-in screen
     tells them where it is; change it, then delete the file.
     """
-    marker = folder / "FIRST-RUN-PASSWORD.txt"
+    marker = folder / FIRST_RUN_PASSWORD
     if database.exists():
         if marker.exists():
             logging.getLogger("desktop").warning(
@@ -147,6 +149,11 @@ def first_run_password(folder: Path, database: Path) -> str | None:
             )
         return None
     password = secrets.token_urlsafe(12)
+    write_password_note(marker, password)
+    return password
+
+
+def write_password_note(marker: Path, password: str) -> None:
     marker.write_text(
         "Projector Control — first-run administrator account\n\n"
         f"  username: admin\n  password: {password}\n\n"
@@ -155,7 +162,6 @@ def first_run_password(folder: Path, database: Path) -> str | None:
     )
     with contextlib.suppress(OSError):
         marker.chmod(0o600)
-    return password
 
 
 def reset_admin_password(folder: Path) -> int:
@@ -194,6 +200,11 @@ def reset_admin_password(folder: Path) -> int:
     if not asyncio.run(apply()):
         print("There is no account called admin.")
         return 1
+    # Opening the app shows the password in this note; keep it truthful.
+    marker = folder / FIRST_RUN_PASSWORD
+    if marker.exists():
+        with contextlib.suppress(OSError):
+            write_password_note(marker, password)
     print(f"Sign in with username: admin   password: {password}")
     print("Change it under Settings after you sign in.")
     return 0
@@ -314,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info("data folder: %s", folder)
     log.info("serving on http://%s:%d — reachable from %s", "127.0.0.1" if host == "0.0.0.0" else host, port, reach)
     if password:
-        log.warning("First run: the administrator password is in %s", folder / "FIRST-RUN-PASSWORD.txt")
+        log.warning("First run: the administrator password is in %s", folder / FIRST_RUN_PASSWORD)
     if host == "0.0.0.0":
         log.warning("--lan exposes the control UI on every interface. Use it on a trusted "
                     "network only; never port-forward it.")

@@ -1181,8 +1181,14 @@ async def test_a_token_from_a_deleted_account_does_not_open_its_namesake(api, ro
     assert response.status_code == 401
     from app.api.routes import ws as ws_module
     assert await ws_module._authenticate(old) is None
+    # Media files take the token in the query string; same rule there.
+    media = await api.get("/api/mapping/media/999/file", params={"token": old})
+    assert media.status_code == 403
     fresh = await login(api, "reused", "a-long-test-password")
     assert (await api.get("/api/auth/users", headers=fresh)).status_code == 200
+    fresh_token = fresh["Authorization"].removeprefix("Bearer ")
+    media = await api.get("/api/mapping/media/999/file", params={"token": fresh_token})
+    assert media.status_code == 404
 
 
 async def test_a_duplicate_name_is_a_conflict_not_a_server_error(api):
@@ -1243,3 +1249,36 @@ async def test_live_feed_leaves_no_queue_when_the_client_drops_at_once(api):
     with contextlib.suppress(WebSocketDisconnect):
         await ws_module.websocket_endpoint(GoneAtOnce(), token=token)
     assert bus.subscriber_count == before
+
+
+async def test_changing_the_admin_password_removes_the_first_run_note(api, roles, tmp_path,
+                                                                      monkeypatch):
+    """Opening the desktop app shows the note's password; after a change it would be wrong."""
+    monkeypatch.setenv("DESKTOP_DATA_DIR", str(tmp_path))
+    note = tmp_path / "FIRST-RUN-PASSWORD.txt"
+    note.write_text("password: test-admin-password\n")
+    other = roles["operator"]
+    assert (await api.post("/api/auth/change-password", headers=other, json={
+        "current_password": "a-long-test-password", "new_password": "another-long-password",
+    })).status_code == 204
+    assert note.exists()  # someone else's password says nothing about admin's
+    headers = await login(api)
+    response = await api.post("/api/auth/change-password", headers=headers, json={
+        "current_password": "test-admin-password", "new_password": "a-new-admin-password",
+    })
+    assert response.status_code == 204
+    assert not note.exists()
+
+
+def test_websocket_log_lines_hide_the_token():
+    import logging
+
+    from app.main import HideTokens
+
+    record = logging.LogRecord("uvicorn.error", logging.INFO, __file__, 1,
+                               '%s - "WebSocket %s" [accepted]',
+                               (("127.0.0.1", 5000), "/api/ws?token=eyJabc.def.ghi&x=1"), None)
+    assert HideTokens().filter(record)
+    message = record.getMessage()
+    assert "eyJabc" not in message
+    assert "/api/ws?token=hidden&x=1" in message

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -12,6 +13,7 @@ from app.api.deps import CurrentUser, RequireAdmin, SessionDep, _FixedWindow, wr
 from app.config import settings
 from app.core.security import create_access_token, hash_password, needs_rehash, verify_password
 from app.db.models import Event, Role, Severity, User
+from app.paths import first_run_password_file
 from app.schemas import (
     LoginRequest,
     PasswordChange,
@@ -93,6 +95,12 @@ async def change_password(payload: PasswordChange, user: CurrentUser,
                       kind="password_changed",
                       message=f"{user.username} changed their password"))
     await session.commit()
+    # Opening the desktop app shows the password from this note; once the
+    # admin has chosen their own, it would only show a wrong one.
+    note = first_run_password_file()
+    if user.username == "admin" and note is not None:
+        with contextlib.suppress(OSError):
+            note.unlink(missing_ok=True)
 
 
 @router.post("/tokens", response_model=ServiceTokenResponse,
