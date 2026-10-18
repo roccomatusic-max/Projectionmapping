@@ -244,6 +244,7 @@ export function ScenePreview({
   placing,
   onPinsChange,
   onStats,
+  overlay,
 }: {
   show: Show
   scene: MappingScene | null
@@ -274,6 +275,8 @@ export function ScenePreview({
   /** Pins changed or one was picked; the scene saves itself shortly after. */
   onPinsChange?: (pins: ObjectPin[], selected: number | null) => void
   onStats?: (fps: number, sceneScale: number | null) => void
+  /** Drawn on top of everything, ignoring the pointer (the Editor's projector boxes). */
+  overlay?: React.ReactNode
 }) {
   const playback = useMemo(() => new Playback(), [])
   const aspect = show.canvas_width / show.canvas_height
@@ -645,6 +648,7 @@ export function ScenePreview({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       />
+      {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
     </div>
   )
 }
