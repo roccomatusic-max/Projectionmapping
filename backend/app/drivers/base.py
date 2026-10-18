@@ -97,6 +97,24 @@ class CommandResult:
         }
 
 
+def enum_param(capability: str, params: Mapping[str, Any], key: str,
+               allowed: Sequence[str]) -> str | CommandResult:
+    """An enumerated parameter's value, or a REJECTED result to return.
+
+    A missing or misspelled value is refused instead of being read as one
+    of the choices: ``{"state": "close"}`` from a hand-written scene must
+    not open a shutter, and ``{}`` must not power a projector off.
+    """
+    raw = params.get(key)
+    value = raw.strip().lower() if isinstance(raw, str) else None
+    if value in allowed:
+        return value
+    return CommandResult(
+        capability=capability, outcome=CommandOutcome.REJECTED,
+        error=f"{key!r} must be one of {', '.join(allowed)} (got {raw!r})",
+    )
+
+
 # --------------------------------------------------------------------------
 # Telemetry
 # --------------------------------------------------------------------------
@@ -353,7 +371,7 @@ class ProjectorStatus:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     read_at: float = field(default_factory=time.time)
-    #: True when this object was built from a failed poll.
+    #: Reserved; no driver or service sets it today, so it is always False.
     is_simulated: bool = False
 
     def as_dict(self) -> dict[str, Any]:

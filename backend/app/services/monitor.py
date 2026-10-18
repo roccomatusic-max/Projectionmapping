@@ -306,7 +306,11 @@ class MonitoringService:
                 message=f"{worker.name} is responding again",
                 created_at=now,
             ))
-        if previous_power == PowerState.ON.value and status.power is PowerState.OFF:
+        # From any powered state, cooling included: PJLink reports on ->
+        # cooling -> standby, so requiring on -> standby in one step meant a
+        # PJLink unit never logged this at all.
+        powered = (PowerState.ON.value, PowerState.WARMING.value, PowerState.COOLING.value)
+        if previous_power in powered and status.power is PowerState.OFF:
             session.add(Event(
                 projector_id=worker.projector_id, severity=Severity.WARNING.value,
                 kind="power_off_observed",

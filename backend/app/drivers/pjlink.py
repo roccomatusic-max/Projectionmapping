@@ -34,6 +34,7 @@ from .base import (
     Provenance,
     ShutterState,
     TelemetryValue,
+    enum_param,
 )
 from .transport import LineTransport, TransportError, TransportTimeout
 
@@ -216,6 +217,16 @@ class PJLinkDriver(ProjectorDriver):
             for name in self._CLASS2:
                 self._manifest.restore(name)
 
+    async def _reopen(self) -> None:
+        """New session for the next command: fresh greeting, fresh digest.
+
+        The class was probed when the worker connected and does not change,
+        so unlike :meth:`connect` this sends nothing of its own.
+        """
+        await self._transport.open()
+        greeting = await self._transport.read_line()
+        await self._handle_greeting(greeting)
+
     async def disconnect(self) -> None:
         await self._transport.close()
         self._authenticated = False
@@ -234,7 +245,7 @@ class PJLinkDriver(ProjectorDriver):
         """
         async with self._lock:
             await self._respect_command_gap()
-            if not self._transport.connected:
+            if not self._transport.connected and not self._transport.closed_by_peer:
                 return CommandResult(
                     capability=capability,
                     outcome=CommandOutcome.CONNECTION_ERROR,
@@ -243,6 +254,19 @@ class PJLinkDriver(ProjectorDriver):
             # Discard anything left over from a previous timed-out command so
             # we never attribute a stale frame to this request.
             await self._transport.drain_pending()
+            if self._transport.closed_by_peer:
+                # The projector ended the session (idle timeout, or firmware
+                # that closes after every reply). Nothing of this command has
+                # been sent, so a fresh session is always safe to open.
+                try:
+                    await self._reopen()
+                except TransportError as exc:
+                    await self._transport.close()
+                    return CommandResult(
+                        capability=capability, outcome=CommandOutcome.CONNECTION_ERROR,
+                        raw_request=body,
+                        error=f"the projector closed the session and reconnecting failed: {exc}",
+                    )
 
             prefix = self._auth_digest if (self._auth_digest and not self._authenticated) else ""
             payload = f"{prefix}{body}\r"
@@ -514,11 +538,17 @@ class PJLinkDriver(ProjectorDriver):
             return gated
         match capability:
             case "power.set":
-                return await self.set_power_state(str(params.get("state", "")).lower() == "on")
+                state = enum_param(capability, params, "state", ("on", "off"))
+                if isinstance(state, CommandResult):
+                    return state
+                return await self.set_power_state(state == "on")
             case "power.get":
                 return await self.get_power_state()
             case "shutter.set":
-                return await self.set_shutter(str(params.get("state", "")).lower() == "closed")
+                state = enum_param(capability, params, "state", ("open", "closed"))
+                if isinstance(state, CommandResult):
+                    return state
+                return await self.set_shutter(state == "closed")
             case "shutter.get":
                 return await self.get_shutter_state()
             case "input.set":

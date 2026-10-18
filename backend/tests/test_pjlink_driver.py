@@ -65,6 +65,21 @@ async def test_avmt_maps_to_shutter(pjlink_driver, sim_state):
     assert (await pjlink_driver.get_shutter_state()).value is ShutterState.OPEN
 
 
+@pytest.mark.parametrize(("capability", "params"), [
+    ("power.set", {}),
+    ("power.set", {"state": 1}),
+    ("shutter.set", {"state": "close"}),
+])
+async def test_missing_or_misspelled_state_is_refused_not_guessed(
+    pjlink_driver, sim_state, capability, params
+):
+    sim_state.shutter_closed = True
+    result = await pjlink_driver.execute_supported_command(capability, params)
+    assert result.outcome is CommandOutcome.REJECTED
+    assert result.raw_response is None
+    assert sim_state.shutter_closed is True
+
+
 async def test_input_code_validated_before_dispatch(pjlink_driver):
     result = await pjlink_driver.set_input("HDMI1")
     assert result.outcome is CommandOutcome.REJECTED
@@ -142,6 +157,33 @@ async def test_bad_password_raises_on_connect(sim_state):
     try:
         with pytest.raises(TransportError):
             await driver.connect()
+    finally:
+        await driver.disconnect()
+        await simulator.stop()
+
+
+async def test_session_closed_after_every_reply_is_reopened(sim_state):
+    """A projector that ends the session after each reply (or on its idle
+    timeout) gets a fresh session, greeting and digest for the next command
+    instead of having it written into a dead socket."""
+    sim_state.password = "pjlink-secret"
+    sim_state.close_after_reply = True
+    sim_state.erst = [0, 1, 0, 0, 0, 0]
+    simulator = PJLinkSimulator(sim_state, host="127.0.0.1", port=0)
+    await simulator.start()
+    driver = PJLinkDriver(ConnectionConfig(
+        host="127.0.0.1", port=simulator.actual_port,
+        password="pjlink-secret", command_gap=0.0, timeout=3.0,
+    ))
+    try:
+        await driver.connect()
+        assert driver.supports("info.serial"), "class 2 was probed on the first session"
+        status = await driver.get_status(deep=True)
+        assert status.online and status.power is PowerState.OFF
+        assert status.shutter is ShutterState.OPEN
+        assert status.active_input.value == "31"
+        assert status.warnings == ["lamp: warning"]
+        assert status.serial_number.value == sim_state.serial
     finally:
         await driver.disconnect()
         await simulator.stop()

@@ -104,6 +104,8 @@ class PanasonicSimulator:
                     continue
                 writer.write(f"{response}\r".encode())
                 await writer.drain()
+                if self.state.close_after_reply:
+                    break
         except (asyncio.IncompleteReadError, ConnectionError, asyncio.CancelledError):
             pass
         finally:
