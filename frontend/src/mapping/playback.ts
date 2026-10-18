@@ -16,7 +16,7 @@ import { mediaUrl } from './api'
 import type { PeopleTracker, PersonSpot } from './people'
 import type { TextureSource } from './renderer'
 import type { SceneItem } from './scene/engine'
-import type { MappingScene, MediaAsset, Surface, TransportCue, TransportState } from './types'
+import type { Cue, MappingScene, MediaAsset, Surface, TransportCue, TransportState } from './types'
 
 /** Drift beyond this is corrected by a seek rather than a rate change. */
 const SEEK_THRESHOLD = 0.15
@@ -54,6 +54,7 @@ export class Playback {
   private lastCorrection = 0
   private drift: number | null = null
   private scenes = new Map<number, MappingScene>()
+  private cues = new Map<number, Cue>()
   private surfaces: Surface[] = []
   private people: PeopleTracker | null = null
   private peopleAt = -1
@@ -65,6 +66,21 @@ export class Playback {
 
   setScenes(scenes: MappingScene[]) {
     this.scenes = new Map(scenes.map((scene) => [scene.id, scene]))
+  }
+
+  /** The show's cues as saved, so scene choices edited during a cue apply at once. */
+  setCues(cues: Cue[]) {
+    this.cues = new Map(cues.map((cue) => [cue.id, cue]))
+  }
+
+  /** The scene a cue plays on one output: its own choice there, else the cue's scene. */
+  private sceneFor(cue: TransportCue, outputId: number | null): MappingScene | undefined {
+    const saved = this.cues.get(cue.id)
+    const sceneId = saved ? saved.scene_id : cue.scene_id
+    const perOutput = (saved ? saved.output_scenes : cue.output_scenes) ?? {}
+    const key = outputId == null ? null : String(outputId)
+    const id = key != null && key in perOutput ? perOutput[key] : sceneId
+    return id != null ? this.scenes.get(id) : undefined
   }
 
   setSurfaces(surfaces: Surface[]) {
@@ -94,14 +110,14 @@ export class Playback {
     return this.peopleNow
   }
 
-  private sceneItems(state: TransportState | null, now: number, mix: number): SceneItem[] {
+  private sceneItems(state: TransportState | null, now: number, mix: number, outputId: number | null): SceneItem[] {
     if (this.preview) {
       return [{ scene: this.preview.scene, weight: 1, time: (performance.now() - this.preview.startedAt) / 1000, clock: now }]
     }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) return []
     const items: SceneItem[] = []
     const add = (cue: TransportCue | null, weight: number) => {
-      const scene = cue?.scene_id != null ? this.scenes.get(cue.scene_id) : undefined
+      const scene = cue ? this.sceneFor(cue, outputId) : undefined
       if (cue && scene && weight > 0) items.push({ scene, weight, time: Math.max(0, now - cue.started_at_ms) / 1000, clock: now })
     }
     // The outgoing scene first, so the incoming one draws on top of it.
@@ -213,16 +229,17 @@ export class Playback {
     if (video.paused) void video.play().catch(() => undefined)
   }
 
-  frame(now: number): Frame {
+  /** What one output draws now; outputId picks that projector's scenes. */
+  frame(now: number, outputId: number | null = null): Frame {
     const state = this.state
     const people = this.spots()
     const surfaces = this.surfaces
     if (this.preview) {
-      const scenes = this.sceneItems(state, now, 1)
+      const scenes = this.sceneItems(state, now, 1, outputId)
       return { a: this.backdrop, b: null, mix: 1, blackout: false, drift: null, scenes, people, surfaces }
     }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) {
-      const scenes = this.sceneItems(state, now, 1)
+      const scenes = this.sceneItems(state, now, 1, outputId)
       return { a: null, b: null, mix: 1, blackout: scenes.length === 0, drift: null, scenes, people, surfaces }
     }
     let mix = 1
@@ -246,7 +263,7 @@ export class Playback {
       mix,
       blackout: false,
       drift: this.drift,
-      scenes: this.sceneItems(state, now, mix),
+      scenes: this.sceneItems(state, now, mix, outputId),
       people,
       surfaces,
     }

@@ -191,6 +191,7 @@ def _cue_out(cue: MappingCue, position: int, started_at_ms: float) -> TransportC
         id=cue.id, position=position, name=cue.name, media_id=cue.media_id,
         fit=cue.fit, loop=cue.loop, fade_seconds=cue.fade_seconds,
         interaction=cue.interaction or "none", scene_id=cue.scene_id,
+        output_scenes=cue.output_scenes or {},
         started_at_ms=started_at_ms,
     )
 

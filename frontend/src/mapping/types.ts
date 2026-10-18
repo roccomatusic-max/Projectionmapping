@@ -106,6 +106,11 @@ export interface Cue {
   interaction: Interaction
   /** A scene from the scene library, drawn over the media (or alone). */
   scene_id: number | null
+  /**
+   * A different scene on some projectors: output id → scene id, or null for
+   * no scene there. Projectors not listed play scene_id.
+   */
+  output_scenes: Record<string, number | null>
 }
 
 /** How people tracked by a depth camera affect a cue. */
@@ -141,6 +146,7 @@ export interface TransportCue {
   fade_seconds: number
   interaction: Interaction
   scene_id?: number | null
+  output_scenes?: Record<string, number | null>
   started_at_ms: number
 }
 

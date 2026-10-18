@@ -154,6 +154,11 @@ export function CueList({
                   ))}
                 </select>
               )}
+              {Object.keys(cue.output_scenes ?? {}).length > 0 && (
+                <p className="col-span-2 text-[11px] text-sky-300/80" title="Set under Scenes → Scenes on each projector">
+                  Some projectors play a different scene
+                </p>
+              )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 pl-8">
               <label className="flex items-center gap-1.5 text-xs text-slate-400">

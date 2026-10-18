@@ -455,6 +455,22 @@ async def _check_scene(session, scene_id: int | None) -> None:
                             detail=f"Unknown scene id {scene_id}")
 
 
+async def _check_output_scenes(session, show_id: int, output_scenes: dict | None) -> dict:
+    """Per-projector scenes, keyed by this show's outputs and naming real scenes."""
+    if not output_scenes:
+        return {}
+    outputs = set((await session.execute(
+        select(MappingOutput.id).where(MappingOutput.show_id == show_id)
+    )).scalars().all())
+    for output_id, scene_id in output_scenes.items():
+        if output_id not in outputs:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Output {output_id} is not part of this show")
+        await _check_scene(session, scene_id)
+    # JSON object keys are strings; keep them that way so reads match writes.
+    return {str(output_id): scene_id for output_id, scene_id in output_scenes.items()}
+
+
 async def _renumber_cues(session, show_id: int, order: list[int] | None = None) -> None:
     cues = (await session.execute(
         select(MappingCue).where(MappingCue.show_id == show_id).order_by(MappingCue.position)
@@ -473,7 +489,9 @@ async def create_cue(show_id: int, payload: CueCreate, session: SessionDep,
     show = await _load_show(session, show_id)
     await _check_media(session, payload.media_id)
     await _check_scene(session, payload.scene_id)
-    cue = MappingCue(show_id=show.id, position=len(show.cues), **payload.model_dump())
+    fields = payload.model_dump()
+    fields["output_scenes"] = await _check_output_scenes(session, show.id, payload.output_scenes)
+    cue = MappingCue(show_id=show.id, position=len(show.cues), **fields)
     session.add(cue)
     await session.commit()
     await session.refresh(cue)
@@ -494,6 +512,9 @@ async def update_cue(cue_id: int, payload: CueUpdate, session: SessionDep,
         await _check_media(session, changes["media_id"])
     if "scene_id" in changes:
         await _check_scene(session, changes["scene_id"])
+    if "output_scenes" in changes:
+        changes["output_scenes"] = await _check_output_scenes(
+            session, cue.show_id, changes["output_scenes"])
     for field, value in changes.items():
         setattr(cue, field, value)
     await session.commit()

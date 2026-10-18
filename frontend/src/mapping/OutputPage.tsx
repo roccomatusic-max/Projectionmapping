@@ -81,7 +81,7 @@ export function OutputScreen({
   }
 
   const sceneMedia = useMemo(() => {
-    const used = new Set(show?.cues.map((c) => c.scene_id) ?? [])
+    const used = new Set(show?.cues.flatMap((c) => [c.scene_id, ...Object.values(c.output_scenes ?? {})]) ?? [])
     const ids = scenes
       .filter((s) => used.has(s.id))
       .flatMap((s) => s.layers.map((l) => l.media_id).filter((id): id is number => id != null))
