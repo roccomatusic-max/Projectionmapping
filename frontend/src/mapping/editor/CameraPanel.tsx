@@ -190,7 +190,9 @@ export function CameraPanel({
   }, [])
 
   const camera = cameras?.find((c) => c.id === cameraId) ?? null
-  const calibrated = outputs.filter((o) => o.calibration?.camera_id === cameraId)
+  // Projectors set to show a picture apart from the others stay out of the shared one.
+  const combined = outputs.filter((o) => o.blend.auto !== false)
+  const calibrated = combined.filter((o) => o.calibration?.camera_id === cameraId)
   const placed = show.camera_view?.camera_id === cameraId
   const calibrating = [...progress.values()].some((p) => p.status === 'running')
   const live = liveUntil > Date.now()
@@ -198,7 +200,7 @@ export function CameraPanel({
 
   const done: Record<StepKey, boolean> = {
     camera: !!camera?.online && hasPhoto,
-    patterns: outputs.length > 0 && calibrated.length === outputs.length,
+    patterns: combined.length > 0 && calibrated.length === combined.length,
     correct: placed && calibrated.length > 0,
     hand: !!show.camera_view?.mesh,
   }
@@ -433,8 +435,8 @@ export function CameraPanel({
             done, the picture is fitted to the light and the projectors corrected by themselves.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn-primary text-xs" disabled={!canAct || calibrating || outputs.length === 0}
-              onClick={() => void calibrate(outputs)}>
+            <button className="btn-primary text-xs" disabled={!canAct || calibrating || combined.length === 0}
+              onClick={() => void calibrate(combined)}>
               Calibrate all projectors
             </button>
             {outputs.length === 0 && <span className="text-xs text-amber-300">Add an output on the Show tab first.</span>}
@@ -448,9 +450,11 @@ export function CameraPanel({
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: outputColor(index) }} />
                   <span className="text-sm text-slate-200">{output.name}</span>
                   <span className="text-xs text-slate-500">
-                    {output.calibration?.camera_id === cameraId
-                      ? `calibrated ${new Date(output.calibration!.captured_at).toLocaleString()} · ${Math.round(output.calibration!.coverage * 100)}% of the photo`
-                      : 'not calibrated'}
+                    {output.blend.auto === false
+                      ? 'shows a picture apart from the others, so it is left out (Editor → Blend)'
+                      : output.calibration?.camera_id === cameraId
+                        ? `calibrated ${new Date(output.calibration!.captured_at).toLocaleString()} · ${Math.round(output.calibration!.coverage * 100)}% of the photo`
+                        : 'not calibrated'}
                   </span>
                   {state && (
                     <span className={classNames('text-xs', state.status === 'failed' ? 'text-red-300' : running ? 'text-sky-300' : 'text-emerald-300')}>
@@ -557,10 +561,16 @@ export function CameraPanel({
           {!placed && canEdit && (
             <p className="text-xs text-amber-300">The picture is not placed on this camera's photo yet: drag a point to place it.</p>
           )}
-          {calibrated.length < outputs.length && (
+          {calibrated.length < combined.length && (
             <p className="text-xs text-slate-500">
-              Projectors the camera has not calibrated ({outputs.filter((o) => !calibrated.includes(o)).map((o) => o.name).join(', ')})
+              Projectors the camera has not calibrated ({combined.filter((o) => !calibrated.includes(o)).map((o) => o.name).join(', ')})
               do not follow; run their patterns, or adjust them by hand on the Show tab.
+            </p>
+          )}
+          {combined.length < outputs.length && (
+            <p className="text-xs text-slate-500">
+              Left out because they show a picture apart from the others ({outputs.filter((o) => !combined.includes(o)).map((o) => o.name).join(', ')}):
+              line them up by hand on the Show tab.
             </p>
           )}
           <ResultList results={results} />

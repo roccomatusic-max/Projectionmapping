@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Projector } from '@/api/types'
+import { blendsByItself } from '../blendmap'
 import { defaultBlend, defaultColor, defaultWarp, emptyMesh, resampleMesh } from '../geometry'
 import type { ServerClock } from '../live'
 import type { Playback } from '../playback'
@@ -78,6 +79,7 @@ export function OutputInspector({
         </div>
         <WarpEditor
           output={output}
+          outputs={show.outputs}
           canvasWidth={show.canvas_width}
           canvasHeight={show.canvas_height}
           playback={playback}
@@ -178,6 +180,9 @@ export function OutputInspector({
 
         {tab === 'blend' && (
           <div className="space-y-4">
+            <AutoBlend output={output} disabled={!canEdit}
+              onChange={(auto) => onChange({ blend: { ...output.blend, auto } })} />
+            <p className="text-xs font-medium text-slate-300">Edges by hand</p>
             {(['left', 'right', 'top', 'bottom'] as const).map((edge) => (
               <BlendEdgeControls
                 key={edge}
@@ -187,12 +192,14 @@ export function OutputInspector({
                 onChange={(value) => onChange({ blend: { ...output.blend, [edge]: value } })}
               />
             ))}
-            <button className="btn-default text-xs" disabled={!canEdit} onClick={() => onChange({ blend: defaultBlend() })}>
-              Clear blends
+            <button className="btn-default text-xs" disabled={!canEdit}
+              onClick={() => onChange({ blend: { ...defaultBlend(), auto: output.blend.auto } })}>
+              Clear edges
             </button>
             <p className="text-xs text-slate-500">
-              Width is the share of this output that overlaps its neighbour. Check with the White pattern: the
-              overlap should be as bright as the rest, with no band.
+              Used only while this projector does not blend by itself. Width is the share of this output that
+              overlaps its neighbour. Check with the White pattern: the overlap should be as bright as the rest, with
+              no band.
             </p>
           </div>
         )}
@@ -225,6 +232,44 @@ export function OutputInspector({
           />
         )}
       </div>
+    </div>
+  )
+}
+
+const AUTO_CHOICES: Array<{ value: 'camera' | 'always' | 'never'; label: string }> = [
+  { value: 'camera', label: 'By itself, once calibrated with the camera' },
+  { value: 'always', label: 'By itself, always' },
+  { value: 'never', label: 'Never: it shows a picture apart from the others' },
+]
+
+/** Whether this output shares the light where it overlaps other projectors. */
+function AutoBlend({ output, disabled, onChange }: {
+  output: Output
+  disabled: boolean
+  onChange: (auto: boolean | null) => void
+}) {
+  const auto = output.blend.auto ?? null
+  const value = auto === true ? 'always' : auto === false ? 'never' : 'camera'
+  const on = blendsByItself(output)
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-medium text-slate-300" htmlFor={`auto-blend-${output.id}`}>
+        Where it overlaps other projectors, blend
+      </label>
+      <select id={`auto-blend-${output.id}`} className="input w-full py-1 text-sm" value={value} disabled={disabled}
+        onChange={(event) => {
+          const next = event.target.value
+          onChange(next === 'always' ? true : next === 'never' ? false : null)
+        }}>
+        {AUTO_CHOICES.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+      </select>
+      <p className="text-xs text-slate-500">
+        {on
+          ? 'Blending by itself: where pictures overlap, each projector gives part of the light so the overlap is as bright as the rest, whatever its shape.'
+          : auto === false
+            ? 'Left out of blending, and out of fitting the shared picture on the Camera tab.'
+            : 'Not blending by itself yet: calibrate it on the Camera tab, choose Always, or set the edges below.'}
+      </p>
     </div>
   )
 }

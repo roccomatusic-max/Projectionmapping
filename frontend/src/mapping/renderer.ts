@@ -16,6 +16,7 @@
  * what the camera decodes is which projector pixel lit which spot.
  */
 
+import { BLEND_MAP_SIZE, blendKey, blendsByItself, computeBlendMap } from './blendmap'
 import { buildDenseMesh } from './geometry'
 import type { PersonSpot } from './people'
 import { type SceneItem, SceneEngine } from './scene/engine'
@@ -40,6 +41,8 @@ export interface TextureSource {
   width: number
   height: number
   fit: Fit
+  /** Fitted to this output's own slice instead of the whole canvas: a picture of its own. */
+  own?: boolean
 }
 
 const FIT_CODE: Record<Fit, number> = { fill: 0, fit: 1, stretch: 2 }
@@ -82,12 +85,15 @@ out vec4 outColor;
 
 uniform vec4 uSource;      // x, y, w, h in canvas fractions
 uniform vec2 uCanvas;      // canvas size in pixels
+uniform vec2 uOutputSize;  // the projector's resolution
 uniform sampler2D uTexA;
 uniform sampler2D uTexB;
 uniform vec2 uSizeA;
 uniform vec2 uSizeB;
 uniform int uFitA;
 uniform int uFitB;
+uniform int uOwnA;
+uniform int uOwnB;
 uniform int uHasA;
 uniform int uHasB;
 uniform float uMix;        // weight of A; B is the outgoing cue
@@ -96,6 +102,8 @@ uniform vec4 uBlendG;
 uniform vec4 uBlendC;
 uniform sampler2D uMask;
 uniform int uHasMask;
+uniform sampler2D uWeight;  // automatic blend: this output's share of the light
+uniform int uHasWeight;
 uniform sampler2D uOverlay;
 uniform int uPattern;
 uniform float uBright;
@@ -112,16 +120,23 @@ uniform vec4 uDistort;     // style (0 ripple, 1 swirl, 2 bulge), size, amount, 
 uniform float uDistortOn;  // strength, 0 when no distort layer plays
 uniform float uSceneTime;
 
-vec2 mediaUv(vec2 c, vec2 size, int fit, out float inside) {
+vec2 mediaUv(vec2 c, vec2 size, int fit, int own, out float inside) {
+  // A picture of the output's own is laid over its slice, not the canvas,
+  // shaped like the projector's image so it is not stretched there.
+  vec2 area = uCanvas;
+  if (own == 1) {
+    c = (c - uSource.xy) / uSource.zw;
+    area = uOutputSize;
+  }
   vec2 m;
   if (fit == 2) {
     m = c;
   } else {
-    vec2 px = c * uCanvas;
-    float s = fit == 0 ? max(uCanvas.x / size.x, uCanvas.y / size.y)
-                       : min(uCanvas.x / size.x, uCanvas.y / size.y);
+    vec2 px = c * area;
+    float s = fit == 0 ? max(area.x / size.x, area.y / size.y)
+                       : min(area.x / size.x, area.y / size.y);
     vec2 shown = size * s;
-    m = (px - (uCanvas - shown) * 0.5) / shown;
+    m = (px - (area - shown) * 0.5) / shown;
   }
   inside = step(0.0, m.x) * step(m.x, 1.0) * step(0.0, m.y) * step(m.y, 1.0);
   return m;
@@ -226,11 +241,11 @@ void main() {
     vec3 a = vec3(0.0);
     vec3 b = vec3(0.0);
     if (uHasA == 1) {
-      vec2 m = mediaUv(c, uSizeA, uFitA, inA);
+      vec2 m = mediaUv(c, uSizeA, uFitA, uOwnA, inA);
       a = texture(uTexA, m).rgb * inA;
     }
     if (uHasB == 1) {
-      vec2 m = mediaUv(c, uSizeB, uFitB, inB);
+      vec2 m = mediaUv(c, uSizeB, uFitB, uOwnB, inB);
       b = texture(uTexB, m).rgb * inB;
     }
     col = a * uMix + b * (1.0 - uMix);
@@ -273,6 +288,10 @@ void main() {
   if (uBlendW.y > 0.0) f *= ramp((1.0 - vUv.x) / uBlendW.y, uBlendG.y, uBlendC.y);
   if (uBlendW.z > 0.0) f *= ramp(vUv.y / uBlendW.z, uBlendG.z, uBlendC.z);
   if (uBlendW.w > 0.0) f *= ramp((1.0 - vUv.y) / uBlendW.w, uBlendG.w, uBlendC.w);
+  if (uHasWeight == 1) {
+    float w = texture(uWeight, vUv).r;
+    f *= pow(clamp(w, 0.0, 1.0), 1.0 / 2.2);
+  }
   col *= f;
 
   if (uHasMask == 1) col *= texture(uMask, vOut).r;
@@ -397,7 +416,7 @@ export class OutputRenderer {
   private uvBuffer!: WebGLBuffer
   private indexBuffer!: WebGLBuffer
   private indexCount = 0
-  private textures: Record<'a' | 'b' | 'mask' | 'overlay', WebGLTexture> = {} as never
+  private textures: Record<'a' | 'b' | 'mask' | 'overlay' | 'weight', WebGLTexture> = {} as never
   private uniforms = new Map<string, WebGLUniformLocation | null>()
   private sources: Record<'a' | 'b', TextureSource | null> = { a: null, b: null }
   private uploaded: Record<'a' | 'b', HTMLVideoElement | HTMLImageElement | null> = { a: null, b: null }
@@ -410,6 +429,13 @@ export class OutputRenderer {
   private warpChecked: Warp | null = null
   private masksChecked: Mask[] | null = null
   private spotData = new Float32Array(MAX_SPOTS * 4)
+  /** The automatic blend: what it was built from, and whether this output has one. */
+  private blendChecked: [Output, Output[], string, number, number] | null = null
+  private blendKeyValue = ''
+  private hasWeight = false
+  /** Blending by itself, so the hand-set edge ramps stand aside. */
+  private autoBlend = false
+  private blendBuiltAt = -Infinity
   private overlayKey = ''
   private maskCanvas = document.createElement('canvas')
   private overlayCanvas = document.createElement('canvas')
@@ -441,9 +467,12 @@ export class OutputRenderer {
     this.warpChecked = null
     this.masksChecked = null
     this.overlayKey = ''
+    this.blendChecked = null
+    this.blendKeyValue = ''
+    this.hasWeight = false
     this.uploaded = { a: null, b: null }
     this.init()
-    if (this.output) this.setOutput(this.output, ...this.canvasSize)
+    if (this.output) this.setOutput(this.output, ...this.canvasSize, this.others, this.separate)
   }
 
   private link(vertex: string, fragment: string, attributes: string[] = []) {
@@ -483,7 +512,7 @@ export class OutputRenderer {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer)
     gl.bindVertexArray(null)
 
-    for (const name of ['a', 'b', 'mask', 'overlay'] as const) {
+    for (const name of ['a', 'b', 'mask', 'overlay', 'weight'] as const) {
       const texture = gl.createTexture()!
       gl.bindTexture(gl.TEXTURE_2D, texture)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -501,11 +530,20 @@ export class OutputRenderer {
     return this.uniforms.get(key)!
   }
 
-  setOutput(output: Output, canvasWidth: number, canvasHeight: number) {
+  /**
+   * ``outputs`` is every output of the show, for the automatic blend where
+   * this one overlaps others; ``separate`` the outputs playing a picture of
+   * their own just now, which take no part in it.
+   */
+  setOutput(output: Output, canvasWidth: number, canvasHeight: number, outputs: Output[] = [],
+    separate: number[] = []) {
     this.output = output
     this.canvasSize = [canvasWidth, canvasHeight]
+    this.others = outputs
+    this.separate = separate
     if (this.lost) return
     const gl = this.gl
+    this.updateBlend(output, outputs, separate, canvasWidth, canvasHeight)
 
     const warpKey = output.warp === this.warpChecked ? this.warpKey : JSON.stringify(output.warp)
     this.warpChecked = output.warp
@@ -548,6 +586,35 @@ export class OutputRenderer {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.overlayCanvas)
     }
     this.overlayKey = overlayKey
+  }
+
+  private others: Output[] = []
+  private separate: number[] = []
+
+  /** Rebuild the automatic blend weights when the geometry they depend on changes. */
+  private updateBlend(output: Output, outputs: Output[], separate: number[], cw: number, ch: number) {
+    const checked = this.blendChecked
+    const separateKey = separate.join(',')
+    if (checked && checked[0] === output && checked[1] === outputs && checked[2] === separateKey
+      && checked[3] === cw && checked[4] === ch) return
+    this.blendChecked = [output, outputs, separateKey, cw, ch]
+    this.autoBlend = blendsByItself(output) && !separate.includes(output.id)
+    const key = blendKey(output, outputs, cw, ch, separate)
+    if (key === this.blendKeyValue) return
+    // While a corner is being dragged the weights follow a few times a second, not every frame.
+    const now = performance.now()
+    if (now - this.blendBuiltAt < 200) {
+      this.blendChecked = null
+      return
+    }
+    this.blendBuiltAt = now
+    this.blendKeyValue = key
+    const map = key ? computeBlendMap(output, outputs, cw, ch, separate) : null
+    this.hasWeight = map != null
+    if (!map) return
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, this.textures.weight)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, BLEND_MAP_SIZE, BLEND_MAP_SIZE, 0, gl.RED, gl.FLOAT, map)
   }
 
   /** ``a`` is the live cue, ``b`` the one fading out. */
@@ -673,6 +740,7 @@ export class OutputRenderer {
     const s = output.source
     gl.uniform4f(this.u('uSource'), s.x, s.y, s.w, s.h)
     gl.uniform2f(this.u('uCanvas'), cw, ch)
+    gl.uniform2f(this.u('uOutputSize'), output.width, output.height)
 
     UNITS.forEach(([name, uniform], unit) => {
       gl.activeTexture(gl.TEXTURE0 + unit)
@@ -687,10 +755,13 @@ export class OutputRenderer {
     gl.uniform2f(this.u('uSizeB'), b?.width || cw, b?.height || ch)
     gl.uniform1i(this.u('uFitA'), FIT_CODE[a?.fit ?? 'fill'])
     gl.uniform1i(this.u('uFitB'), FIT_CODE[b?.fit ?? 'fill'])
+    gl.uniform1i(this.u('uOwnA'), a?.own ? 1 : 0)
+    gl.uniform1i(this.u('uOwnB'), b?.own ? 1 : 0)
     gl.uniform1f(this.u('uMix'), hasB ? mix : 1)
 
     const { left, right, top, bottom } = output.blend
-    gl.uniform4f(this.u('uBlendW'), left.width, right.width, top.width, bottom.width)
+    if (this.autoBlend) gl.uniform4f(this.u('uBlendW'), 0, 0, 0, 0)
+    else gl.uniform4f(this.u('uBlendW'), left.width, right.width, top.width, bottom.width)
     gl.uniform4f(this.u('uBlendG'), left.gamma, right.gamma, top.gamma, bottom.gamma)
     gl.uniform4f(this.u('uBlendC'), left.curve, right.curve, top.curve, bottom.curve)
     gl.uniform1i(this.u('uHasMask'), output.masks.some((m) => m.enabled) ? 1 : 0)
@@ -722,6 +793,10 @@ export class OutputRenderer {
     gl.activeTexture(gl.TEXTURE4)
     gl.bindTexture(gl.TEXTURE_2D, sceneTex ?? this.textures.mask)
     gl.uniform1i(this.u('uScene'), 4)
+    gl.activeTexture(gl.TEXTURE5)
+    gl.bindTexture(gl.TEXTURE_2D, this.textures.weight)
+    gl.uniform1i(this.u('uWeight'), 5)
+    gl.uniform1i(this.u('uHasWeight'), this.hasWeight ? 1 : 0)
     gl.activeTexture(gl.TEXTURE0)
     gl.uniform1i(this.u('uHasScene'), sceneTex ? 1 : 0)
     gl.uniform4f(this.u('uDistort'), distort?.style ?? 0, distort?.size ?? 0, distort?.amount ?? 0, distort?.speed ?? 0)

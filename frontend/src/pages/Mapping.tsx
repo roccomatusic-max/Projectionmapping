@@ -10,6 +10,7 @@ import { CueList, MediaLibrary } from '@/mapping/editor/panels'
 import { NumberField } from '@/mapping/editor/controls'
 import { OutputInspector } from '@/mapping/editor/OutputInspector'
 import { PlayersPanel } from '@/mapping/editor/PlayersPanel'
+import { ProjectorMedia } from '@/mapping/editor/ProjectorMedia'
 import { SavedMaps } from '@/mapping/editor/SavedMaps'
 import { ScenesPanel } from '@/mapping/editor/ScenesPanel'
 import { TransportBar } from '@/mapping/editor/TransportBar'
@@ -396,6 +397,13 @@ export default function Mapping({ session }: { session: Session }) {
                   <Panel title="Output previews" description="What each projector is showing right now. Click one to edit it.">
                     <OutputPreviews show={show} outputs={outputs} selectedId={output?.id ?? null}
                       playback={playback} clock={clock} transport={transport} onSelect={setSelectedOutput} />
+                  </Panel>
+                )}
+
+                {outputs.length > 1 && show.cues.length > 0 && (
+                  <Panel title="Pictures on each projector"
+                    description="Each projector shows its part of the cue's shared picture, or a picture or video of its own that stays apart from the others. Ones set apart are marked in blue.">
+                    <ProjectorMedia show={show} media={media} canEdit={canEdit} onChanged={() => reloadShow()} onError={setError} />
                   </Panel>
                 )}
 

@@ -178,6 +178,12 @@ export function OutputScreen({
 
   const output = show?.outputs.find((o) => o.id === outputId)
 
+  // This window plays one projector: load only the media it shows.
+  useEffect(() => {
+    playback.setOutputs([outputId])
+    return () => playback.setOutputs(null)
+  }, [playback, outputId])
+
   useEffect(() => {
     document.title = output ? `${output.name} · Output` : 'Output'
   }, [output])
@@ -207,6 +213,7 @@ export function OutputScreen({
         onStats={handleStats}
         calibration={calibration}
         interaction={transport?.current?.interaction ?? 'none'}
+        outputs={show.outputs}
       />
       {showHud && (
         <div className="pointer-events-none absolute left-4 top-4 space-y-1 rounded-lg bg-black/70 px-4 py-3 font-mono text-xs text-slate-200 ring-1 ring-white/10">

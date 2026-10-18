@@ -64,9 +64,9 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
   const applyTransport = useCallback(
     async (state: TransportState, authoritative = false) => {
       const known = new Set(mediaRef.current.map((m) => m.id))
-      const needed = [state.current?.media_id, state.previous?.media_id].filter(
-        (id): id is number => id != null,
-      )
+      const needed = [state.current, state.previous]
+        .flatMap((cue) => (cue ? [cue.media_id, ...Object.values(cue.output_media ?? {})] : []))
+        .filter((id): id is number => id != null)
       if (needed.some((id) => !known.has(id))) await loadMedia()
       playback.setState(state, authoritative)
       setTransport(state)

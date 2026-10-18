@@ -561,6 +561,9 @@ class MappingCue(Base):
     #: A different scene on some projectors: {output id: scene id, or None
     #: for no scene there}. Outputs not listed play ``scene_id``.
     output_scenes: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    #: A picture of their own on some projectors: {output id: media id, or
+    #: None for no media there}. Outputs not listed show their part of ``media_id``.
+    output_media: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
     show: Mapped[MappingShow] = relationship(back_populates="cues")
 

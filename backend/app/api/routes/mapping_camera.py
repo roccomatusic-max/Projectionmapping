@@ -189,6 +189,11 @@ async def clear_calibration(output_id: int, session: SessionDep, _: RequireAdmin
     _output_changed(output)
 
 
+def _apart(output: MappingOutput) -> bool:
+    """Set to show a picture apart from the others, so not part of the shared one."""
+    return (output.blend or {}).get("auto") is False
+
+
 @router.post("/shows/{show_id}/fit-canvas", response_model=FitResult,
              dependencies=[Depends(write_rate_limit)])
 async def fit_canvas_to_light(show_id: int, payload: FitCanvas, session: SessionDep,
@@ -197,11 +202,13 @@ async def fit_canvas_to_light(show_id: int, payload: FitCanvas, session: Session
 
     The largest rectangle of the canvas's shape that the calibrated
     projectors light, so nothing of the picture falls off the building.
-    Replaces any corners or grid placed by hand.
+    Replaces any corners or grid placed by hand. Outputs set to show a
+    picture apart from the others (blend ``auto`` False) are left out.
     """
     show = await _load_show(session, show_id)
     calibrated = [o for o in show.outputs
-                  if (o.calibration or {}).get("camera_id") == payload.camera_id]
+                  if (o.calibration or {}).get("camera_id") == payload.camera_id
+                  and not _apart(o)]
     try:
         corners = fit_canvas([o.calibration for o in calibrated],
                              show.canvas_width / show.canvas_height)
@@ -234,6 +241,8 @@ async def apply_calibration(show_id: int, payload: ApplyCalibration, session: Se
     """Set each calibrated output's corner pin and mesh from the camera.
 
     Replaces the outputs' current warp; masks, blend and colour are kept.
+    Outputs showing a picture apart from the others, and ones whose light
+    misses the shared picture altogether, keep the warp they have.
     """
     show = await _load_show(session, show_id)
     view = show.camera_view or {}
@@ -249,6 +258,14 @@ async def apply_calibration(show_id: int, payload: ApplyCalibration, session: Se
         if calibration.get("camera_id") != view.get("camera_id"):
             results.append(ApplyResult(output_id=output.id, name=output.name, applied=False,
                                        reason="Not calibrated with this show's camera"))
+            continue
+        if _apart(output):
+            results.append(ApplyResult(output_id=output.id, name=output.name, applied=False,
+                                       reason="Shows a picture apart from the others; line it up by hand"))
+            continue
+        if light_on_canvas(calibration, view["corners"]) is None:
+            results.append(ApplyResult(output_id=output.id, name=output.name, applied=False,
+                                       reason="Its light misses the picture; line it up by hand"))
             continue
         try:
             warp, stats = solve_warp(output.source or {}, view["corners"], calibration,
