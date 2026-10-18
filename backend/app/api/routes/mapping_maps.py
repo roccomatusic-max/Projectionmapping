@@ -27,6 +27,8 @@ from app.db.models import (
 )
 from app.schemas.mapping import OutputBase
 from app.schemas.mapping_maps import (
+    MAX_MAP_OUTPUTS,
+    MAX_OUTPUT_PLAYERS,
     ApplyMap,
     MapApplied,
     MapFile,
@@ -99,7 +101,7 @@ async def _snapshot(session, show: MappingShow) -> dict:
         outputs.append(geometry | {
             "calibration": output.calibration if (output.calibration or {}).get("camera_id")
             is not None else None,
-            "player_ids": [pid for pid, oid in players if oid == output.id],
+            "player_ids": [pid for pid, oid in players if oid == output.id][:MAX_OUTPUT_PLAYERS],
         })
     return {
         "canvas_width": show.canvas_width, "canvas_height": show.canvas_height,
@@ -122,6 +124,12 @@ async def save_map(show_id: int, payload: SaveMap, session: SessionDep,
     if not show.outputs and not show.surfaces:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"{show.name} has no outputs or traced house parts to save yet")
+    if len(show.outputs) > MAX_MAP_OUTPUTS:
+        # A map file holds at most this many; saving more would make a map
+        # that cannot be downloaded.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"A map holds at most {MAX_MAP_OUTPUTS} outputs; "
+                                   f"{show.name} has {len(show.outputs)}")
     saved = await _by_name(session, payload.name)
     if saved is not None and not payload.replace:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,

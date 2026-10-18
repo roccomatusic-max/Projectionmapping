@@ -441,3 +441,14 @@ async def test_identify_output(api):
     assert response.status_code == 204
     missing = await api.post("/api/mapping/outputs/999/identify", headers=headers)
     assert missing.status_code == 404
+
+
+async def test_player_name_cannot_be_cleared(api):
+    """Regression: {"name": null} passed validation and crashed the commit (500)."""
+    headers = await login(api)
+    player = (await api.post("/api/mapping/players/hello", json=DEVICE)).json()
+    response = await api.patch(f"/api/mapping/players/{player['player_id']}", headers=headers,
+                               json={"name": None, "approved": True})
+    assert response.status_code == 200, response.text
+    assert response.json()["name"] == "Left mini PC"
+    assert response.json()["approved"] is True

@@ -216,7 +216,7 @@ async def update_player(player_id: int, payload: PlayerUpdate, session: SessionD
             await session.get(MappingOutput, changes["output_id"]) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"Unknown output id {changes['output_id']}")
-    if "name" in changes:
+    if changes.get("name") is not None:
         player.name = changes["name"]
     if "output_id" in changes:
         player.output_id = changes["output_id"]
