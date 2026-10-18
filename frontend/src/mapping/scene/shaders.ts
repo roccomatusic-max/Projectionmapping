@@ -9,7 +9,27 @@
  * layer's strength. Particles and falling things are points whose
  * positions are worked out on the GPU from their number and the time, so
  * they cost no CPU and come out the same on every output.
+ *
+ * Objects (the "shapes" type) are quads, six vertices each, placed on a
+ * grid over the whole canvas; each one works out on the GPU how it moves,
+ * changes, and reacts to the nearest person.
  */
+
+import { CHANGES, KIND, MOTIONS, NEARS } from './catalog'
+
+function defines(prefix: string, ids: string[]) {
+  return ids.map((id, i) => `#define ${prefix}_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')} ${i}`).join('\n')
+}
+
+/** Motion, change and near choices by number, in catalog order. */
+const CHOICES = [
+  defines('M', MOTIONS.map((m) => m.id)),
+  defines('C', CHANGES.map((c) => c.id)),
+  defines('N', NEARS.map((n) => n.id)),
+].join('\n')
+
+/** Object styles by number, in catalog order. */
+const OBJECT_STYLES = defines('S', KIND.shapes.styles.map((s) => s.id))
 
 export const LAYER_VERTEX = `#version 300 es
 uniform vec4 uRect;
@@ -23,6 +43,7 @@ void main() {
 }`
 
 const COMMON = `
+${CHOICES}
 uniform vec4 uRect;
 uniform vec2 uCanvas;
 uniform vec2 uViewport;
@@ -39,6 +60,9 @@ uniform vec4 uMove[16];
 uniform sampler2D uMask;
 uniform int uMaskOn;
 uniform sampler2D uPrev;
+uniform int uChange;
+uniform int uNear;
+uniform float uReach;
 
 vec2 toH(vec2 c) { return vec2(c.x * uCanvas.x / uCanvas.y, c.y); }
 float hash1(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
@@ -94,6 +118,29 @@ float sdSegment(vec2 p, vec2 a, vec2 b) {
   float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
   return length(pa - ba * h);
 }
+// How strongly the nearest person is felt at p (height units): 1 close
+// by, 0 beyond the layer's reach; also the direction away from them and
+// how far they are.
+float nearAt(vec2 p, out vec2 away, out float dist) {
+  float k = 0.0;
+  away = vec2(0.0, -1.0);
+  dist = 1e9;
+  float reach = mix(0.05, 0.6, uReach);
+  for (int i = 0; i < 16; i++) {
+    if (i >= uSpots) break;
+    vec4 s = uSpot[i];
+    vec2 d = p - toH(s.xy);
+    float dd = length(d);
+    float R = s.z * 0.6 + reach;
+    float w = s.w * (1.0 - smoothstep(R * 0.3, R, dd));
+    if (w > k) {
+      k = w;
+      away = dd > 1e-4 ? d / dd : vec2(0.0, -1.0);
+      dist = dd;
+    }
+  }
+  return k;
+}
 `
 
 const HEADER = `#version 300 es
@@ -103,12 +150,34 @@ in vec2 vC;
 out vec4 outColor;
 ${COMMON}`
 
+// Every area or line layer can change by itself and answer people where
+// they stand: lit up, recoloured, shown or hidden around them.
 const FOOTER = `
 void main() {
   vec4 l = layer();
   float m = uMaskOn == 1 ? texture(uMask, vUv).r : 1.0;
   float a = clamp(l.a, 0.0, 1.0) * uStrength * m;
-  outColor = vec4(max(l.rgb, vec3(0.0)) * a, a);
+  vec3 c = max(l.rgb, vec3(0.0));
+  if (uChange != C_NONE || uNear != N_NONE) {
+    vec2 p = toH(vC);
+    float rate = mix(0.4, 4.0, uDial.y);
+    float ph = hash(floor(p * 6.0)) * 6.2832;
+    float top = max(max(c.r, c.g), c.b);
+    if (uChange == C_PULSE) c *= 0.55 + 0.45 * sin(uTime * rate * 1.5);
+    else if (uChange == C_TWINKLE) c *= 0.35 + 0.65 * pow(0.5 + 0.5 * sin(uTime * rate * 2.5 + ph), 2.0);
+    else if (uChange == C_COLOUR) c = mix(c, uColor2 * (0.4 + 0.8 * top), 0.5 + 0.5 * sin(uTime * rate * 0.6 + p.x * 2.0));
+    else if (uChange == C_FLICKER) c *= 0.7 + 0.3 * noise(vec2(uTime * rate * 6.0, ph));
+    if (uNear != N_NONE) {
+      vec2 away;
+      float dist;
+      float k = nearAt(p, away, dist);
+      if (uNear == N_LIGHT) c *= 1.0 + 1.6 * k;
+      else if (uNear == N_COLOUR) c = mix(c, uColor2 * (0.5 + 0.7 * top), k);
+      else if (uNear == N_APPEAR) a *= k;
+      else if (uNear == N_HIDE) a *= 1.0 - k;
+    }
+  }
+  outColor = vec4(c * a, a);
 }`
 
 const BODIES: Record<string, string> = {
@@ -413,95 +482,7 @@ vec4 layer() {
   return vec4(c, 1.0);
 }`,
 
-  shapes: `
-float sdStar5(vec2 p, float r, float rf) {
-  const vec2 k1 = vec2(0.809016994375, -0.587785252292);
-  const vec2 k2 = vec2(-k1.x, k1.y);
-  p.x = abs(p.x);
-  p -= 2.0 * max(dot(k1, p), 0.0) * k1;
-  p -= 2.0 * max(dot(k2, p), 0.0) * k2;
-  p.x = abs(p.x);
-  p.y -= r;
-  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
-  float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
-  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
-}
-float dot2(vec2 v) { return dot(v, v); }
-float sdHeart(vec2 p) {
-  p.x = abs(p.x);
-  if (p.y + p.x > 1.0) return sqrt(dot2(p - vec2(0.25, 0.75))) - 0.35355;
-  return sqrt(min(dot2(p - vec2(0.0, 1.0)), dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
-}
-vec3 candy(float h) {
-  float k = floor(h * 5.0);
-  if (k < 1.0) return uColor;
-  if (k < 2.0) return uColor2;
-  if (k < 3.0) return vec3(1.0, 0.85, 0.15);
-  if (k < 4.0) return vec3(0.55, 0.3, 0.95);
-  return vec3(1.0, 0.45, 0.7);
-}
-vec4 layer() {
-  vec2 p = toH(vC);
-  float cs = mix(0.05, 0.3, uDial.x);
-  vec2 g = p / cs;
-  vec2 cell = floor(g);
-  float h = hash(cell + 0.37);
-  if (h > mix(0.08, 0.95, uDial.z)) return vec4(0.0);
-  vec2 j = hash2(cell + 3.1) - 0.5;
-  float bob = sin(uTime * mix(0.3, 3.0, uDial.y) + h * 20.0) * 0.05;
-  vec2 q = (fract(g) - 0.5 - j * 0.3 - vec2(0.0, bob)) / 0.3;
-  float spin = uTime * uDial.y * (hash(cell + 9.0) - 0.5) * 2.0 + h * 6.28;
-  float aa = 2.0 / max(uPx * cs * 0.3, 1.0);
-  float sd;
-  vec3 c = candy(hash(cell + 5.5));
-  if (uStyle == 0) {
-    sd = max(length(q * vec2(1.0, 1.15)) - 0.9, q.y - 0.45);
-    c *= 0.72 + 0.4 * (0.5 - q.y * 0.5);
-    c += 0.5 * exp(-dot2(q - vec2(-0.35, -0.35)) * 12.0);
-    c += 0.25 * step(0.85, hash(floor(q * 9.0) + cell));
-  } else if (uStyle == 1) {
-    float r = length(q);
-    sd = r - 0.9;
-    float a = atan(q.y, q.x) + spin;
-    float stripes = step(0.5, fract(a / 6.2832 * 6.0 + r * 0.35));
-    c = mix(vec3(1.0), uColor, stripes * step(0.12, r));
-    c *= 1.0 - 0.25 * smoothstep(0.7, 0.9, r);
-  } else if (uStyle == 2) {
-    float cs2 = cos(spin * 0.3);
-    float sn = sin(spin * 0.3);
-    vec2 r = mat2(cs2, -sn, sn, cs2) * vec2(q.x, -q.y);
-    sd = sdStar5(r, 0.9, 0.45);
-    c = uColor * (1.0 + 0.4 * exp(-dot2(q) * 4.0));
-  } else if (uStyle == 3) {
-    float a = atan(q.y, q.x) + spin;
-    float r = length(q);
-    a = mod(a, 1.0472) - 0.5236;
-    vec2 f = vec2(cos(a), abs(sin(a))) * r;
-    float arm = sdSegment(f, vec2(0.0), vec2(0.9, 0.0)) - 0.07;
-    float b1 = sdSegment(f, vec2(0.45, 0.0), vec2(0.65, 0.2)) - 0.05;
-    float b2 = sdSegment(f, vec2(0.65, 0.0), vec2(0.8, 0.13)) - 0.04;
-    sd = min(arm, min(b1, b2));
-    c = uColor;
-  } else if (uStyle == 4) {
-    float ball = length(q - vec2(0.0, 0.12)) - 0.78;
-    float cap = max(abs(q.x) - 0.2, abs(q.y + 0.75) - 0.12);
-    sd = min(ball, cap);
-    c = cap < ball ? vec3(0.85, 0.75, 0.4) : c * (0.75 + 0.35 * (0.5 - q.y * 0.5));
-    c += 0.6 * exp(-dot2(q - vec2(-0.3, -0.2)) * 18.0);
-  } else if (uStyle == 5) {
-    sd = sdHeart(vec2(q.x, -q.y + 0.55) * 1.1) / 1.1;
-    c = uColor * (0.85 + 0.3 * (0.5 - q.y * 0.5));
-  } else {
-    float a = atan(q.y, q.x);
-    float rib = 0.07 * abs(sin(a * 4.0));
-    float body = length(q * vec2(0.82, 1.08)) - 0.82 + rib;
-    float stem = max(abs(q.x - 0.05) - 0.1, abs(q.y + 0.85) - 0.2);
-    sd = min(body, stem);
-    c = stem < body ? uColor2 : uColor * (0.7 + 0.5 * (1.0 - rib * 8.0));
-  }
-  float a = 1.0 - smoothstep(-aa, aa, sd);
-  return vec4(c, a);
-}`,
+
 }
 
 export function layerFragment(type: string): string {
@@ -599,17 +580,29 @@ void main() {
     float swayAmp = uDial.w * (uStyle == 2 ? 0.1 : 0.03);
     float x = fract(a + swayAmp * sin(uTime * mix(0.4, 1.6, d) + a * 6.28) / aspect);
     pH = vec2(x * aspect, y);
-    for (int k = 0; k < 16; k++) {
-      if (k >= uSpots) break;
-      vec4 s = uSpot[k];
-      vec2 dv = pH - toH(s.xy);
-      float dd = max(length(dv), 1e-4);
-      float R = s.z * 1.8;
-      pH += dv / dd * max(0.0, R - dd) * s.w;
-    }
     if (uStyle == 3) {
       float k = floor(d * 5.0);
       col = k < 1.0 ? uColor : k < 2.0 ? uColor2 : k < 3.0 ? vec3(1.0, 0.85, 0.2) : k < 4.0 ? vec3(0.3, 0.9, 0.5) : vec3(0.95, 0.4, 0.9);
+    }
+    if (uNear == N_FLEE) {
+      // Pushed out of a circle around each person.
+      for (int k = 0; k < 16; k++) {
+        if (k >= uSpots) break;
+        vec4 s = uSpot[k];
+        vec2 dv = pH - toH(s.xy);
+        float dd = max(length(dv), 1e-4);
+        float R = s.z * 1.8 * (0.4 + 1.2 * uReach);
+        pH += dv / dd * max(0.0, R - dd) * s.w;
+      }
+    } else if (uNear != N_NONE) {
+      vec2 away;
+      float dist;
+      float k = nearAt(pH, away, dist);
+      if (uNear == N_FOLLOW) pH -= away * k * dist * 0.8;
+      else if (uNear == N_LIGHT) { alpha *= 1.0 + 2.0 * k; size *= 1.0 + 0.8 * k; }
+      else if (uNear == N_COLOUR) col = mix(col, uColor2, k);
+      else if (uNear == N_APPEAR) alpha *= k;
+      else if (uNear == N_HIDE) alpha *= 1.0 - k;
     }
     rot = uTime * (d - 0.5) * 5.0 + a * 6.28;
   } else if (uStyle == 0) {
@@ -705,4 +698,537 @@ void main() {
   }
   a = clamp(a * vCol.a, 0.0, 1.0);
   outColor = vec4(vCol.rgb * a, a);
+}`
+
+/**
+ * Objects: one quad (six vertices) per grid cell over the whole canvas.
+ * The vertex shader decides whether the cell has an object (how many,
+ * and whether its centre is on the layer's target in uPlace), then how it
+ * moves and changes by itself and what it does near the nearest person.
+ */
+export const OBJECTS_VERTEX = `#version 300 es
+precision highp float;
+${COMMON}
+${OBJECT_STYLES}
+uniform ivec2 uGrid;
+uniform sampler2D uPlace;
+uniform int uPlaceOn;
+uniform int uMotion;
+out vec2 vQ;
+out float vAA;
+flat out float vSeed;
+flat out float vTint;
+flat out float vBright;
+flat out float vAlpha;
+flat out float vGlow;
+flat out float vPhase;
+flat out float vBlink;
+flat out float vFlip;
+flat out vec2 vLook;
+void main() {
+  int id = gl_VertexID / 6;
+  int v = gl_VertexID - id * 6;
+  vec2 corner = v == 0 ? vec2(-1.0, -1.0) : (v == 1 || v == 4) ? vec2(1.0, -1.0) : (v == 2 || v == 3) ? vec2(-1.0, 1.0) : vec2(1.0, 1.0);
+  vec2 cell = vec2(float(id % uGrid.x), float(id / uGrid.x));
+  float aspect = uCanvas.x / uCanvas.y;
+  float cs = mix(0.05, 0.3, uDial.x);
+  float h = hash(cell + 0.37);
+  float h2 = hash(cell + 9.0);
+  vec2 c = (cell + 0.5 + (hash2(cell + 3.1) - 0.5) * 0.5) * cs;
+  bool hidden = h > mix(0.08, 0.95, uDial.z) || c.x > aspect || c.y > 1.0;
+  // Floating objects rise over everything; the rest sit on their target.
+  if (!hidden && uPlaceOn == 1 && uMotion != M_RISE) {
+    hidden = textureLod(uPlace, vec2(c.x / aspect, c.y), 0.0).r < 0.5;
+  }
+  if (hidden) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
+  float R = cs * 0.3 * mix(0.8, 1.2, h2);
+  float t = uTime;
+  float sp = mix(0.2, 2.5, uDial.y);
+  float ph = h * 6.2832;
+  vec2 off = vec2(0.0);
+  float rot = 0.0;
+  float scale = 1.0;
+  float bright = 1.0;
+  float alpha = 1.0;
+  float tint = 0.0;
+  float glow = 0.0;
+  float blink = 1.0;
+
+  // -- moving by itself
+  if (uMotion == M_BOB) off.y += sin(t * sp * 2.0 + ph) * R * 0.3;
+  else if (uMotion == M_SWAY) { float sw = sin(t * sp * 1.6 + ph); rot += sw * 0.35; off.x += sw * R * 0.15; }
+  else if (uMotion == M_SPIN) rot += t * sp * (h2 < 0.5 ? -1.5 : 1.5) + ph;
+  else if (uMotion == M_DRIFT) off += (vec2(noise(vec2(t * sp * 0.25, ph * 3.0)), noise(vec2(ph * 5.0, t * sp * 0.25 + 7.0))) - 0.5) * cs * 1.6;
+  else if (uMotion == M_BOUNCE) off.y -= abs(sin(t * sp * 2.5 + ph)) * R * 0.9;
+  else if (uMotion == M_ORBIT) off += vec2(cos(t * sp + ph), sin(t * sp + ph)) * cs * 0.3;
+  else if (uMotion == M_RISE) {
+    float span = 1.0 + 6.0 * R;
+    c.y = mod(c.y - t * sp * 0.05 * mix(0.6, 1.4, h2) + 3.0 * R, span) - 3.0 * R;
+    off.x += sin(t * sp * 1.2 + ph) * R * 0.4;
+  } else if (uMotion == M_FLUTTER) {
+    off += vec2(sin(t * sp * 1.3 + ph) * cs * 0.35, sin(t * sp * 2.1 + ph * 2.0) * cs * 0.25);
+    rot += sin(t * sp * 3.0 + ph) * 0.25;
+  }
+
+  // -- changing by itself
+  if (uChange == C_PULSE) scale *= 1.0 + 0.18 * sin(t * sp * 2.0 + ph);
+  else if (uChange == C_TWINKLE) {
+    // Fade rather than darken, so a dim object is not a grey patch.
+    float tw = pow(0.5 + 0.5 * sin(t * sp * 3.0 + ph * 7.0), 2.0);
+    alpha *= 0.25 + 0.75 * tw;
+    bright *= 0.85 + 0.35 * tw;
+  }
+  else if (uChange == C_COLOUR) tint = 0.5 + 0.5 * sin(t * sp * 0.8 + ph);
+  else if (uChange == C_FLICKER) bright *= 0.75 + 0.35 * noise(vec2(t * sp * 8.0, ph * 13.0));
+  else if (uChange == C_BLINK) {
+    float b = fract(t * sp * 0.25 + h2);
+    blink = 1.0 - (smoothstep(0.0, 0.03, b) - smoothstep(0.03, 0.06, b));
+  }
+
+  // -- near people
+  vec2 pc = c + off;
+  vec2 away;
+  float dist;
+  float k = uNear == N_NONE ? 0.0 : nearAt(pc, away, dist);
+  if (uNear == N_LIGHT) { bright *= 1.0 + 0.8 * k; glow = k; }
+  else if (uNear == N_GROW) scale *= 1.0 + 1.2 * k;
+  else if (uNear == N_SHRINK) scale *= 1.0 - 0.8 * k;
+  else if (uNear == N_COLOUR) tint = mix(tint, 1.0, k);
+  else if (uNear == N_SPIN) rot += k * 6.2832 + sin(t * 9.0 + ph) * 0.2 * k;
+  else if (uNear == N_FLEE) off += away * k * (mix(0.05, 0.6, uReach) + R) * 0.9;
+  else if (uNear == N_FOLLOW) off -= away * k * max(0.0, dist - R * 1.5) * 0.85;
+  else if (uNear == N_JUMP) off.y -= k * abs(sin(t * 9.0 + ph)) * R * 1.6;
+  else if (uNear == N_DANCE) {
+    rot += sin(t * 10.0 + ph) * 0.5 * k;
+    off.y -= abs(sin(t * 10.0 + ph)) * R * 0.6 * k;
+    scale *= 1.0 + 0.15 * k;
+  }
+  else if (uNear == N_APPEAR) { alpha *= smoothstep(0.05, 0.6, k); scale *= mix(0.4, 1.0, k); }
+  else if (uNear == N_HIDE) { alpha *= 1.0 - smoothstep(0.25, 0.85, k); scale *= mix(1.0, 0.7, k); }
+  else if (uNear == N_BURST) {
+    scale *= 1.0 + 1.5 * smoothstep(0.1, 0.8, k);
+    alpha *= 1.0 - smoothstep(0.45, 0.9, k);
+    glow = k;
+  }
+  pc = c + off;
+
+  // Eyes watch the nearest person, wherever they are; with nobody about
+  // they look around.
+  vec2 look = vec2(sin(t * 0.7 + ph), cos(t * 0.5 + ph * 2.0)) * 0.6;
+  if (uStyle == S_EYES) {
+    float best = 1e9;
+    for (int i = 0; i < 16; i++) {
+      if (i >= uSpots) break;
+      vec2 d = toH(uSpot[i].xy) - pc;
+      float dd = length(d);
+      if (dd < best && uSpot[i].w > 0.2) { best = dd; look = d / max(dd, 1e-4) * min(1.0, dd / (R * 3.0)); }
+    }
+    look = vec2(cos(-rot) * look.x - sin(-rot) * look.y, sin(-rot) * look.x + cos(-rot) * look.y);
+  }
+
+  scale = max(scale, 0.0);
+  float size = R * scale * 1.4;
+  float cr = cos(rot);
+  float sr = sin(rot);
+  vec2 pH = pc + vec2(cr * corner.x - sr * corner.y, sr * corner.x + cr * corner.y) * size;
+  vec2 uv = (vec2(pH.x / aspect, pH.y) - uRect.xy) / uRect.zw;
+  gl_Position = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0);
+  vQ = corner * 1.4;
+  vAA = 1.5 / max(R * max(scale, 0.05) * uPx, 1.0);
+  vSeed = hash(cell + 5.5);
+  vTint = tint;
+  vBright = bright;
+  vAlpha = alpha * uStrength;
+  vGlow = glow;
+  vPhase = t * sp + ph;
+  vBlink = blink;
+  vFlip = h2 < 0.5 ? -1.0 : 1.0;
+  vLook = look;
+}`
+
+/** Each object's look, in its own square: y points down, radius about 0.9. */
+export const OBJECTS_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+${OBJECT_STYLES}
+in vec2 vQ;
+in float vAA;
+flat in float vSeed;
+flat in float vTint;
+flat in float vBright;
+flat in float vAlpha;
+flat in float vGlow;
+flat in float vPhase;
+flat in float vBlink;
+flat in float vFlip;
+flat in vec2 vLook;
+uniform int uStyle;
+uniform vec3 uColor;
+uniform vec3 uColor2;
+out vec4 outColor;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float dot2(vec2 v) { return dot(v, v); }
+mat2 rot2(float a) { float c = cos(a); float s = sin(a); return mat2(c, -s, s, c); }
+float sdSegment(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+float sdBox(vec2 p, vec2 b) {
+  vec2 d = abs(p) - b;
+  return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+// Approximate distance to an ellipse with radii r.
+float sdEl(vec2 p, vec2 r) {
+  float k0 = length(p / r);
+  float k1 = length(p / (r * r));
+  return k0 * (k0 - 1.0) / max(k1, 1e-4);
+}
+float sdStar5(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+  const vec2 k2 = vec2(-k1.x, k1.y);
+  p.x = abs(p.x);
+  p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+  p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+  p.x = abs(p.x);
+  p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+  float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+// y up, point at the bottom (0, 0), lobes up to y = 1.
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot2(p - vec2(0.25, 0.75))) - 0.35355;
+  return sqrt(min(dot2(p - vec2(0.0, 1.0)), dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
+}
+// y up, apex up, side 2r.
+float sdEqTri(vec2 p, float r) {
+  const float k = 1.7320508;
+  p.x = abs(p.x) - r;
+  p.y = p.y + r / k;
+  if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
+  p.x -= clamp(p.x, -2.0 * r, 0.0);
+  return -length(p) * sign(p.y);
+}
+vec3 candy(float h) {
+  float k = floor(h * 5.0);
+  if (k < 1.0) return uColor;
+  if (k < 2.0) return uColor2;
+  if (k < 3.0) return vec3(1.0, 0.85, 0.15);
+  if (k < 4.0) return vec3(0.55, 0.3, 0.95);
+  return vec3(1.0, 0.45, 0.7);
+}
+vec3 flameColour(float r, float size) {
+  return mix(vec3(1.0, 0.95, 0.7), vec3(1.0, 0.5, 0.1), smoothstep(0.0, size, r)) * 1.5;
+}
+
+void main() {
+  vec2 q = vQ;
+  float sd = 1.0;
+  vec3 c = uColor;
+  // Light given off around the object (flames, lanterns, fireworks).
+  vec3 ec = vec3(0.0);
+  float ea = 0.0;
+  float own = 1.0;
+  float pick = step(0.5, vSeed);
+
+  if (uStyle == S_GUMDROPS) {
+    sd = max(length(q * vec2(1.0, 1.15)) - 0.9, q.y - 0.45);
+    c = candy(vSeed) * (0.72 + 0.4 * (0.5 - q.y * 0.5));
+    c += 0.5 * exp(-dot2(q - vec2(-0.35, -0.35)) * 12.0);
+    c += 0.25 * step(0.85, hash(floor(q * 9.0) + vSeed * 31.0));
+  } else if (uStyle == S_PEPPERMINTS) {
+    float r = length(q);
+    sd = r - 0.9;
+    float stripes = step(0.5, fract(atan(q.y, q.x) / 6.2832 * 6.0 + r * 0.35));
+    c = mix(vec3(1.0), uColor, stripes * step(0.12, r)) * (1.0 - 0.25 * smoothstep(0.7, 0.9, r));
+  } else if (uStyle == S_STARS) {
+    sd = sdStar5(vec2(q.x, -q.y), 0.9, 0.45);
+    c = mix(uColor, uColor2, pick) * (1.0 + 0.4 * exp(-dot2(q) * 4.0));
+  } else if (uStyle == S_SNOWFLAKES) {
+    float a = atan(q.y, q.x);
+    float r = length(q);
+    a = mod(a, 1.0472) - 0.5236;
+    vec2 f = vec2(cos(a), abs(sin(a))) * r;
+    float arm = sdSegment(f, vec2(0.0), vec2(0.9, 0.0)) - 0.07;
+    float b1 = sdSegment(f, vec2(0.45, 0.0), vec2(0.65, 0.2)) - 0.05;
+    float b2 = sdSegment(f, vec2(0.65, 0.0), vec2(0.8, 0.13)) - 0.04;
+    sd = min(arm, min(b1, b2));
+  } else if (uStyle == S_ORNAMENTS) {
+    float ball = length(q - vec2(0.0, 0.12)) - 0.78;
+    float cap = sdBox(q - vec2(0.0, -0.75), vec2(0.2, 0.12));
+    sd = min(ball, cap);
+    c = cap < ball ? vec3(0.85, 0.75, 0.4) : candy(vSeed) * (0.75 + 0.35 * (0.5 - q.y * 0.5));
+    c += 0.6 * exp(-dot2(q - vec2(-0.3, -0.2)) * 18.0);
+  } else if (uStyle == S_HEARTS) {
+    sd = sdHeart(vec2(q.x, -q.y + 0.55) * 1.1) / 1.1;
+    c = mix(uColor, uColor2, pick) * (0.85 + 0.3 * (0.5 - q.y * 0.5));
+    c += 0.35 * exp(-dot2(q - vec2(-0.3, -0.25)) * 20.0);
+  } else if (uStyle == S_PUMPKINS) {
+    float rib = 0.07 * abs(sin(atan(q.y, q.x) * 4.0));
+    float body = length(q * vec2(0.82, 1.08)) - 0.82 + rib;
+    float stem = sdBox(q - vec2(0.05, -0.85), vec2(0.1, 0.2));
+    sd = min(body, stem);
+    c = stem < body ? uColor2 : uColor * (0.7 + 0.5 * (1.0 - rib * 8.0));
+    // A carved face, lit from inside.
+    float eyes = min(sdEqTri(vec2(q.x - 0.3, -(q.y + 0.12)), 0.14), sdEqTri(vec2(q.x + 0.3, -(q.y + 0.12)), 0.14));
+    float mouth = max(sdEl(q - vec2(0.0, 0.28), vec2(0.45, 0.17)), -sdEl(q - vec2(0.0, 0.16), vec2(0.5, 0.14)));
+    if (min(eyes, mouth) < 0.0 && body < 0.0) c = vec3(1.0, 0.85, 0.35) * 1.4;
+  } else if (uStyle == S_GHOSTS) {
+    float wave = 0.08 * sin(q.x * 11.0 + vPhase * 3.0);
+    float head = length(q - vec2(0.0, -0.2)) - 0.6;
+    float body = max(abs(q.x) - 0.6, max(-0.2 - q.y, q.y - (0.75 + wave)));
+    sd = min(head, body);
+    c = uColor * (0.85 + 0.15 * (0.5 - q.y));
+    float face = min(min(sdEl(q - vec2(-0.22, -0.25), vec2(0.1, 0.15)), sdEl(q - vec2(0.22, -0.25), vec2(0.1, 0.15))),
+                     sdEl(q - vec2(0.0, 0.1), vec2(0.12, 0.16)));
+    if (face < 0.0) c = uColor2;
+    own = 0.9;
+  } else if (uStyle == S_BATS) {
+    float flap = sin(vPhase * 7.0);
+    vec2 p = q;
+    p.y -= abs(p.x) * 0.45 * flap;
+    float wing = sdEl(p, vec2(0.95, 0.38));
+    wing = max(wing, -(length(vec2(abs(p.x), p.y) - vec2(0.3, 0.42)) - 0.2));
+    wing = max(wing, -(length(vec2(abs(p.x), p.y) - vec2(0.68, 0.32)) - 0.18));
+    float body = sdEl(q - vec2(0.0, 0.05), vec2(0.2, 0.32));
+    float ears = sdSegment(vec2(abs(q.x), q.y), vec2(0.1, -0.2), vec2(0.17, -0.45)) - 0.05;
+    sd = min(min(wing, body), ears);
+    c = uColor * (0.8 + 0.3 * (0.5 - p.y));
+    if (length(vec2(abs(q.x) - 0.08, q.y + 0.08)) < 0.05) c = uColor2 * 1.5;
+  } else if (uStyle == S_SPIDERS) {
+    float body = length(q - vec2(0.0, 0.2)) - 0.33;
+    float head = length(q - vec2(0.0, -0.18)) - 0.18;
+    vec2 pm = vec2(abs(q.x), q.y);
+    float legs = 1e9;
+    for (int i = 0; i < 4; i++) {
+      float fi = float(i);
+      float y0 = -0.1 + fi * 0.15;
+      vec2 knee = vec2(0.55, y0 - 0.25 + sin(vPhase * 6.0 + fi) * 0.06);
+      vec2 foot = vec2(0.8, y0 + 0.25 + fi * 0.05);
+      legs = min(legs, min(sdSegment(pm, vec2(0.15, y0 + 0.1), knee), sdSegment(pm, knee, foot)));
+    }
+    legs -= 0.04;
+    float thread = sdSegment(q, vec2(0.0, -0.3), vec2(0.0, -1.5)) - 0.015;
+    sd = min(min(body, head), min(legs, thread));
+    if (thread < min(min(body, head), legs)) c = vec3(0.6);
+    if (length(vec2(abs(q.x) - 0.07, q.y + 0.2)) < 0.045) c = uColor2 * 1.5;
+  } else if (uStyle == S_EYES) {
+    vec2 p = vec2(abs(q.x) - 0.42, q.y);
+    sd = sdEl(p, vec2(0.36, 0.26 * max(vBlink, 0.06)));
+    vec2 look = vLook * vec2(0.15, 0.08);
+    // Mirror the look for the left eye, which p flipped.
+    look.x *= q.x < 0.0 ? -1.0 : 1.0;
+    float iris = length(p - look) - 0.18;
+    float pupil = sdEl(p - look, vec2(0.05, 0.15));
+    c = iris < 0.0 ? uColor * (1.0 + 0.6 * exp(-dot2(p - look) * 20.0)) : uColor2 * 0.55;
+    if (pupil < 0.0) c = vec3(0.0);
+    ec = uColor;
+    ea = exp(-max(sd, 0.0) * 10.0) * 0.3 * vBlink;
+  } else if (uStyle == S_CANDY_CANES) {
+    float stick = sdSegment(q, vec2(0.25, -0.3), vec2(0.25, 0.9)) - 0.13;
+    float hook = max(abs(length(q - vec2(-0.05, -0.3)) - 0.3) - 0.13, q.y + 0.3);
+    sd = min(stick, hook);
+    c = mix(vec3(1.0), uColor, step(0.5, fract((q.x + q.y) * 2.6)));
+  } else if (uStyle == S_PRESENTS) {
+    float box = sdBox(q - vec2(0.0, 0.2), vec2(0.65, 0.55));
+    float lid = sdBox(q - vec2(0.0, -0.42), vec2(0.75, 0.13));
+    float bowL = sdEl(rot2(0.5) * (q - vec2(-0.2, -0.66)), vec2(0.22, 0.12));
+    float bowR = sdEl(rot2(-0.5) * (q - vec2(0.2, -0.66)), vec2(0.22, 0.12));
+    sd = min(min(box, lid), min(bowL, bowR));
+    c = candy(vSeed);
+    if (lid < 0.0) c *= 0.85;
+    if (abs(q.x) < 0.1 || min(bowL, bowR) < 0.0 || (abs(q.y - 0.2) < 0.08 && box < 0.0)) c = uColor2;
+  } else if (uStyle == S_TREES) {
+    sd = 1e9;
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i);
+      float hw = 0.35 + fi * 0.18;
+      vec2 p = vec2(abs(q.x), q.y - (-0.85 + fi * 0.38));
+      sd = min(sd, max(dot(p, normalize(vec2(0.55, -hw))), p.y - 0.55));
+    }
+    c = uColor * (0.75 + 0.3 * hash(floor(q * 6.0) + vSeed));
+    vec2 g = q * 4.0;
+    vec2 cell = floor(g);
+    float bh = hash(cell + vSeed * 13.0);
+    if (length(fract(g) - 0.5) < 0.2 && bh > 0.6 && sd < -0.05) c = candy(hash(cell + 2.0)) * (1.0 + 0.4 * sin(vPhase * 3.0 + bh * 20.0));
+    float trunk = sdBox(q - vec2(0.0, 0.85), vec2(0.1, 0.12));
+    float star = sdStar5(vec2(q.x, -(q.y + 0.9)), 0.2, 0.45);
+    if (trunk < sd) c = vec3(0.45, 0.25, 0.1);
+    if (star < min(sd, trunk)) c = uColor2 * 1.4;
+    sd = min(sd, min(trunk, star));
+  } else if (uStyle == S_BELLS) {
+    float w = mix(0.22, 0.7, smoothstep(-0.75, 0.55, q.y));
+    float body = min(max(abs(q.x) - w, abs(q.y + 0.1) - 0.65), length(q - vec2(0.0, -0.72)) - 0.22);
+    float lip = sdEl(q - vec2(0.0, 0.58), vec2(0.75, 0.1));
+    float clapper = length(q - vec2(sin(vPhase * 3.0) * 0.15, 0.75)) - 0.13;
+    float loop = abs(length(q - vec2(0.0, -0.95)) - 0.08) - 0.03;
+    sd = min(min(body, lip), min(clapper, loop));
+    c = uColor * (0.75 + 0.45 * (0.5 + 0.5 * sin(q.x * 3.0 + 1.0)));
+    if (clapper < min(body, lip)) c = uColor2;
+  } else if (uStyle == S_CANDLES || uStyle == S_DIYAS) {
+    float flick = 0.85 + 0.15 * sin(vPhase * 9.0);
+    float base;
+    vec2 fp;
+    if (uStyle == S_CANDLES) {
+      base = sdBox(q - vec2(0.0, 0.35), vec2(0.2, 0.55));
+      fp = q - vec2(sin(vPhase * 5.0) * 0.03, -0.5);
+      c = uColor * (0.8 + 0.25 * (0.5 - q.x));
+    } else {
+      vec2 p = q - vec2(0.0, 0.3);
+      base = max(sdEl(p, vec2(0.75, 0.38)), -p.y - 0.02);
+      fp = q - vec2(sin(vPhase * 5.0) * 0.03, -0.12);
+      c = uColor * (0.7 + 0.4 * p.y);
+      if (base < 0.0 && abs(p.y - 0.12) < 0.04) c = uColor2;
+    }
+    fp.y /= fp.y < 0.0 ? 1.7 * flick : 0.9;
+    float flame = length(fp) - 0.18;
+    sd = min(base, flame);
+    if (flame < base) c = flameColour(length(fp), 0.18);
+    ec = mix(vec3(1.0, 0.7, 0.3), uColor2, 0.3);
+    ea = exp(-max(flame, 0.0) * 7.0) * 0.45 * flick;
+  } else if (uStyle == S_SHAMROCKS) {
+    sd = 1e9;
+    for (int i = 0; i < 3; i++) {
+      vec2 p = rot2(float(i) * 2.0944) * vec2(q.x, -q.y);
+      sd = min(sd, sdHeart(p / 0.5) * 0.5);
+    }
+    sd = min(sd, sdSegment(q, vec2(0.0, 0.1), vec2(0.15, 0.9)) - 0.06);
+    c = uColor * (0.85 + 0.3 * (0.5 - q.y * 0.5));
+  } else if (uStyle == S_EGGS) {
+    sd = sdEl(vec2(q.x, q.y * (q.y < 0.0 ? 0.9 : 1.1)), vec2(0.62, 0.82));
+    c = mix(uColor, uColor2, pick);
+    if (abs(q.y - 0.05 - 0.08 * sin(q.x * 16.0)) < 0.06) c = mix(uColor2, uColor, pick) * 1.15;
+    if (length(vec2(fract(q.x * 4.0) - 0.5, (q.y + 0.35) * 4.0)) < 0.25) c = vec3(1.0);
+  } else if (uStyle == S_FLOWERS) {
+    float r = length(q);
+    sd = r - (0.42 + 0.45 * pow(abs(cos(2.5 * atan(q.y, q.x))), 0.6));
+    c = r < 0.22 ? uColor2 * 1.1 : uColor * (0.75 + 0.35 * (1.0 - r));
+  } else if (uStyle == S_BUTTERFLIES) {
+    float f = 0.25 + 0.75 * abs(cos(vPhase * 6.0));
+    vec2 p = vec2(abs(q.x) / f, q.y);
+    float wings = min(sdEl(p - vec2(0.45, -0.22), vec2(0.42, 0.38)), sdEl(p - vec2(0.33, 0.3), vec2(0.3, 0.26))) * f;
+    float body = sdEl(q, vec2(0.07, 0.45));
+    float feelers = sdSegment(vec2(abs(q.x), q.y), vec2(0.02, -0.4), vec2(0.18, -0.7)) - 0.02;
+    sd = min(min(wings, body), feelers);
+    if (length(p - vec2(0.5, -0.25)) < 0.15) c = uColor2;
+    if (min(body, feelers) < wings) c = vec3(0.15);
+  } else if (uStyle == S_BUNNIES) {
+    float head = sdEl(q - vec2(0.0, 0.35), vec2(0.42, 0.38));
+    vec2 pe = vec2(abs(q.x), q.y);
+    vec2 ep = rot2(-0.15) * (pe - vec2(0.18, -0.35));
+    float ear = sdEl(ep, vec2(0.12, 0.4));
+    sd = min(head, ear);
+    if (sdEl(ep, vec2(0.05, 0.28)) < 0.0) c = uColor2;
+    if (length(pe - vec2(0.16, 0.28)) < 0.05) c = vec3(0.1);
+    if (length(q - vec2(0.0, 0.45)) < 0.05) c = uColor2;
+  } else if (uStyle == S_BALLOONS) {
+    float body = sdEl(q - vec2(0.0, -0.2), vec2(0.55, 0.66));
+    float knot = sdBox(q - vec2(0.0, 0.5), vec2(0.06, 0.05));
+    float str = sdSegment(q, vec2(0.0, 0.5), vec2(0.05 * sin(vPhase * 2.0), 1.35)) - 0.015;
+    sd = min(min(body, knot), str);
+    c = candy(vSeed) + 0.6 * exp(-dot2(q - vec2(-0.2, -0.45)) * 25.0);
+    if (str < min(body, knot)) c = vec3(0.85);
+  } else if (uStyle == S_LANTERNS) {
+    float body = sdEl(q - vec2(0.0, 0.05), vec2(0.72, 0.55));
+    float caps = min(sdBox(q - vec2(0.0, -0.55), vec2(0.32, 0.08)), sdBox(q - vec2(0.0, 0.62), vec2(0.32, 0.08)));
+    float tassel = sdSegment(q, vec2(0.0, 0.7), vec2(0.0, 1.25)) - 0.04;
+    float hang = sdSegment(q, vec2(0.0, -0.62), vec2(0.0, -1.3)) - 0.015;
+    sd = min(min(body, caps), min(tassel, hang));
+    float rib = abs(sin(asin(clamp(q.x / 0.72, -1.0, 1.0)) * 5.0));
+    c = uColor * (0.7 + 0.7 * (1.0 - length((q - vec2(0.0, 0.05)) / vec2(0.72, 0.55)))) * mix(0.75, 1.0, smoothstep(0.0, 0.2, rib));
+    if (min(caps, tassel) < body) c = uColor2;
+    ec = uColor * 1.2;
+    ea = exp(-max(body, 0.0) * 5.0) * 0.35;
+  } else if (uStyle == S_STAR_OF_DAVID) {
+    float star = min(sdEqTri(vec2(q.x, -q.y), 0.72), sdEqTri(q, 0.72));
+    sd = abs(star + 0.08) - 0.08;
+    c = mix(uColor, uColor2, 0.5 + 0.5 * q.y);
+  } else if (uStyle == S_FIREWORKS) {
+    // A burst that grows, fades and starts again; light only.
+    float cyc = fract(vPhase * 0.12 + vSeed);
+    float r = length(q);
+    float sector = atan(q.y, q.x) / 6.2832 * 14.0 + vSeed * 7.0;
+    float ray = abs(fract(sector) - 0.5) * 6.2832 / 14.0 * r;
+    float outer = cyc * 1.15;
+    float inner = max(0.0, cyc - 0.35) * 1.15;
+    float along = smoothstep(inner, inner + 0.08, r) * (1.0 - smoothstep(outer - 0.02, outer + 0.04, r));
+    float line = exp(-ray * ray / (0.0012 + 0.003 * cyc)) * along;
+    float tip = exp(-(ray * ray + (r - outer) * (r - outer)) / 0.004);
+    float lum = (line * 0.8 + tip * 1.3) * (1.0 - smoothstep(0.55, 1.0, cyc));
+    ec = mix(uColor, uColor2, step(0.5, fract(floor(sector) * 0.37 + vSeed))) * 1.4;
+    ea = clamp(lum, 0.0, 1.0);
+  } else if (uStyle == S_FISH) {
+    vec2 p = vec2(q.x * vFlip, q.y);
+    float wag = sin(vPhase * 6.0) * 0.12;
+    float body = sdEl(p - vec2(0.1, 0.0), vec2(0.58, 0.34));
+    vec2 tp = p - vec2(-0.5, wag);
+    float tail = max(max(tp.x - 0.05, -tp.x - 0.4), abs(tp.y) + tp.x - 0.02);
+    sd = min(body, tail);
+    c = uColor * (0.75 + 0.4 * (0.5 - p.y));
+    if (tail < body || (body < 0.0 && abs(fract(p.x * 3.0) - 0.5) < 0.12)) c = uColor2;
+    if (length(p - vec2(0.45, -0.08)) < 0.06) c = vec3(0.05);
+  } else if (uStyle == S_BUBBLES) {
+    float r = length(q);
+    sd = abs(r - 0.78) - 0.05;
+    c = uColor + exp(-dot2(q - vec2(-0.35, -0.4)) * 30.0);
+    ec = uColor;
+    ea = r < 0.78 ? 0.12 : 0.0;
+  } else if (uStyle == S_LEAVES) {
+    vec2 p = rot2(0.6) * q;
+    float leaf = max(length(p - vec2(0.55, 0.0)) - 0.85, length(p + vec2(0.55, 0.0)) - 0.85);
+    float stem = sdSegment(p, vec2(0.0, 0.55), vec2(0.0, 0.95)) - 0.04;
+    sd = min(leaf, stem);
+    c = mix(uColor, uColor2, vSeed) * (0.8 + 0.3 * (0.5 - p.y * 0.4));
+    if (abs(p.x) < 0.025 && leaf < 0.0) c *= 0.7;
+  } else if (uStyle == S_MOONS) {
+    sd = max(length(q) - 0.8, -(length(q - vec2(0.38, -0.18)) - 0.68));
+    c = uColor * (0.85 + 0.2 * hash(floor(q * 5.0) + vSeed));
+    ec = uColor;
+    ea = exp(-max(sd, 0.0) * 6.0) * 0.25;
+  } else if (uStyle == S_NOTES) {
+    float head = sdEl(rot2(-0.4) * (q - vec2(-0.2, 0.52)), vec2(0.28, 0.19));
+    float stem = sdSegment(q, vec2(0.05, 0.48), vec2(0.05, -0.75)) - 0.05;
+    float flag = sdSegment(q, vec2(0.05, -0.75), vec2(0.38, -0.35)) - 0.06;
+    sd = min(head, min(stem, flag));
+    c = mix(uColor, uColor2, pick);
+  } else if (uStyle == S_SNOWMEN) {
+    float balls = min(min(length(q - vec2(0.0, 0.52)) - 0.4, length(q - vec2(0.0, -0.02)) - 0.3), length(q - vec2(0.0, -0.45)) - 0.22);
+    float hat = min(sdBox(q - vec2(0.0, -0.75), vec2(0.17, 0.14)), sdBox(q - vec2(0.0, -0.62), vec2(0.28, 0.04)));
+    float nose = sdSegment(q, vec2(0.0, -0.43), vec2(0.18, -0.4)) - 0.035;
+    sd = min(balls, min(hat, nose));
+    c = uColor * (0.85 + 0.15 * (0.5 - q.y * 0.5));
+    if (length(vec2(abs(q.x) - 0.08, q.y + 0.5)) < 0.035 || length(vec2(q.x, q.y + 0.05)) < 0.04 || length(vec2(q.x, q.y - 0.1)) < 0.04) c = vec3(0.05);
+    if (hat < balls) c = uColor2;
+    if (nose < min(balls, hat)) c = vec3(1.0, 0.5, 0.1);
+  } else if (uStyle == S_COINS) {
+    float r = length(q);
+    sd = r - 0.8;
+    c = uColor * (0.8 + 0.4 * (0.5 - q.y * 0.5));
+    if (r > 0.66) c *= 0.8;
+    if (abs(r - 0.5) < 0.03) c *= 1.25;
+    c += 0.5 * smoothstep(0.1, 0.0, abs(q.x + q.y - 0.6 * sin(vPhase))) * step(r, 0.8);
+  }
+
+  c = mix(c, uColor2, vTint * 0.85) * vBright;
+  float a = (1.0 - smoothstep(-vAA, vAA, sd)) * own;
+  if (uStyle != S_EYES) a *= vBlink;
+  // Lit up near people: a soft halo around the object.
+  float edge = 1.0 - smoothstep(1.05, 1.4, max(abs(q.x), abs(q.y)));
+  float halo = vGlow * exp(-max(sd, 0.0) * 6.0) * 0.6 * edge;
+  vec3 haloColour = mix(uColor, vec3(1.0), 0.35);
+  ea = clamp(ea * vBright, 0.0, 1.0) * edge;
+  vec3 col = c * a + (ec * ea + haloColour * halo) * (1.0 - a);
+  float alpha = clamp(a + (ea + halo) * (1.0 - a), 0.0, 1.0);
+  outColor = vec4(col, alpha) * vAlpha;
 }`

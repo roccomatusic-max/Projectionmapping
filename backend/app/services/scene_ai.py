@@ -23,8 +23,18 @@ log = logging.getLogger(__name__)
 MODEL = "claude-opus-5-5"
 KEY_FILE = "anthropic-api-key"
 
-#: Every layer type, its styles (first is the default) and what the dials mean.
-#: The renderer in frontend/src/mapping/scene/catalog.ts has the same list.
+MOTIONS = ["none", "bob", "sway", "spin", "drift", "bounce", "orbit", "rise", "flutter"]
+CHANGES = ["none", "pulse", "twinkle", "colour", "flicker", "blink"]
+NEARS = ["none", "light", "grow", "shrink", "colour", "spin", "flee", "follow", "jump",
+         "dance", "appear", "hide", "burst"]
+_AREA_CHANGES = ["none", "pulse", "twinkle", "colour", "flicker"]
+_AREA_NEARS = ["none", "light", "colour", "appear", "hide"]
+
+#: Every layer type, its styles (first is the default), what the dials mean
+#: and, for objects, what they can do by themselves and near people. The
+#: renderer in frontend/src/mapping/scene/catalog.ts has the same list.
+#: "backdrop" types cover whole areas; scenes are built without them unless
+#: the person asks for a material or background.
 CATALOG: dict[str, dict] = {
     # -- follow people ---------------------------------------------------------
     "glow": {
@@ -68,49 +78,73 @@ CATALOG: dict[str, dict] = {
         "styles": ["ripple", "swirl", "bulge"],
         "dials": "size: reach; amount: strength; speed: wave speed",
     },
-    # -- the look ----------------------------------------------------------------
-    "wash": {
-        "about": "colour over the whole target area",
-        "styles": ["solid", "gradient", "aurora", "pulse"],
-        "dials": "size: pattern scale; amount: brightness; speed: movement",
+    # -- reactive objects ----------------------------------------------------------
+    "shapes": {
+        "about": "objects scattered over the target, each moving, changing and "
+                 "reacting to the nearest person on its own",
+        "styles": ["gumdrops", "peppermints", "stars", "snowflakes", "ornaments", "hearts",
+                   "pumpkins", "ghosts", "bats", "spiders", "eyes", "candy-canes",
+                   "presents", "trees", "bells", "candles", "shamrocks", "eggs", "flowers",
+                   "butterflies", "bunnies", "balloons", "lanterns", "diyas",
+                   "star-of-david", "fireworks", "fish", "bubbles", "leaves", "moons",
+                   "notes", "snowmen", "coins"],
+        "dials": "size: object size (bigger means fewer fit); amount: how many; speed: "
+                 "how fast they move and change",
+        "notes": "pumpkins are carved jack-o'-lanterns; eyes always watch the nearest "
+                 "person; fireworks keep bursting by themselves; colours: most use color, "
+                 "with color2 for details (stems, ribbons, spots, flames); stars, hearts, "
+                 "eggs and notes alternate color and color2; gumdrops, ornaments, "
+                 "presents and balloons are multicoloured; use blend normal",
+        "motions": MOTIONS,
+        "changes": CHANGES,
+        "nears": NEARS,
     },
-    "field": {
-        "about": "a grid of dots or lines that bends away from people",
-        "styles": ["dots", "lines", "grid"],
-        "dials": "size: spacing; amount: how far people push it; speed: shimmer",
-    },
-    "texture": {
-        "about": "makes surfaces look like a material",
-        "styles": ["gingerbread", "brick", "wood", "stone", "snow", "ice", "candy",
-                   "window-glow", "starry", "plain"],
-        "dials": "size: pattern scale; amount: detail and contrast; speed: animation "
-                 "(window flicker, star twinkle)",
-        "notes": "color is the main colour, color2 the accent (mortar, grain, stripes); "
-                 "window-glow is warm candle light for windows; use blend normal for "
-                 "solid materials",
+    "lights": {
+        "about": "string lights (bulbs) along the edges of the target surfaces",
+        "styles": ["twinkle", "chase", "steady", "multicolor"],
+        "dials": "size: bulb size; amount: how close together; speed: animation",
+        "changes": _AREA_CHANGES,
+        "nears": _AREA_NEARS,
     },
     "outline": {
         "about": "trim along the edges of the target surfaces",
         "styles": ["icing", "neon", "solid", "candy"],
         "dials": "size: line width; amount: brightness; speed: shimmer; fade: glow",
         "notes": "icing is white frosting with drips, ideal for roofs and windows",
-    },
-    "lights": {
-        "about": "string lights (bulbs) along the edges of the target surfaces",
-        "styles": ["twinkle", "chase", "steady", "multicolor"],
-        "dials": "size: bulb size; amount: how close together; speed: animation",
+        "changes": _AREA_CHANGES,
+        "nears": _AREA_NEARS,
     },
     "falling": {
         "about": "things falling from the sky",
         "styles": ["snow", "rain", "leaves", "confetti", "sparkles"],
         "dials": "size: flake size; amount: how many; speed: fall speed; fade: sway",
-        "notes": "people push falling things aside",
+        "nears": ["none", "flee", "follow", "light", "colour", "appear", "hide"],
     },
-    "shapes": {
-        "about": "decorations scattered over the target surfaces",
-        "styles": ["gumdrops", "peppermints", "stars", "snowflakes", "ornaments",
-                   "hearts", "pumpkins"],
-        "dials": "size: shape size; amount: how many; speed: bob and spin",
+    "field": {
+        "about": "a grid of dots or lines that bends away from people",
+        "styles": ["dots", "lines", "grid"],
+        "dials": "size: spacing; amount: how far people push it; speed: shimmer",
+        "changes": _AREA_CHANGES,
+        "nears": _AREA_NEARS,
+    },
+    # -- backdrops: only when the person asks for a material or background ---------
+    "texture": {
+        "about": "BACKDROP: makes whole surfaces look like a material",
+        "styles": ["gingerbread", "brick", "wood", "stone", "snow", "ice", "candy",
+                   "window-glow", "starry", "plain"],
+        "dials": "size: pattern scale; amount: detail and contrast; speed: animation "
+                 "(window flicker, star twinkle)",
+        "notes": "color is the main colour, color2 the accent (mortar, grain, stripes); "
+                 "use blend normal",
+        "changes": _AREA_CHANGES,
+        "nears": _AREA_NEARS,
+    },
+    "wash": {
+        "about": "BACKDROP: colour over the whole target area",
+        "styles": ["solid", "gradient", "aurora", "pulse"],
+        "dials": "size: pattern scale; amount: brightness; speed: movement",
+        "changes": _AREA_CHANGES,
+        "nears": _AREA_NEARS,
     },
 }
 
@@ -130,18 +164,27 @@ reveal);
 - color and color2 as #rrggbb;
 - target: where it is drawn: "everywhere", "building" (all traced parts), \
 "walls", "roof", "windows", "doors", or "outside" (around the building);
-- reacts_to: what makes it stronger: "presence" (someone is there), \
-"movement" (people moving), "count" (more people), "closeness" (people near), \
-or "always"; reaction 0-1 is how much that matters (0 = ignore it).
+- reacts_to: what makes the whole layer stronger: "presence" (someone is \
+there), "movement" (people moving), "count" (more people), "closeness" \
+(people near), or "always"; reaction 0-1 is how much that matters (0 = \
+ignore it).
+- motion, change and near: what each object does by itself and when a \
+person comes near it, from the lists given for its type ("none" for types \
+without a list). Motion: {motions}. Change: {changes}. Near: {nears} ("burst" \
+pops it, "hide" makes it vanish, "follow" draws it toward the person). \
+reach 0-1 is how far away people are noticed (0.5 is about an arm's \
+length beyond the person).
 
 Guidance:
-- Build a complete, good-looking design: usually 4 to 8 layers. Materials and \
-decorations first, then trim and lights, then weather, then the people \
-effects on top.
-- When the person describes a themed look (a gingerbread house, a haunted \
-house, an underwater scene), dress the building's parts with matching \
-materials, trim, lights and decorations, and add one or two people effects \
-that fit the theme.
+- Build scenes from objects that react to people, not backdrops: do not use \
+the BACKDROP types (texture, wash) unless the person asks for a material, \
+a background or a colour over the walls. Nothing should cover the whole \
+building.
+- Make every object layer react to people with near (anything but "none"), \
+and give objects some motion or change so the scene lives between visitors.
+- Usually 4 to 8 layers: objects on the walls, roof, windows, doors and \
+around the building; lights or trim along the edges; weather; then one or \
+two people effects on top that fit the theme.
 - Ambient layers that should always show use reacts_to "always".
 - Keep it readable from the street: strong shapes, limited palette.
 - Give the scene a short name (2 to 4 words) and a one-sentence description."""
@@ -176,9 +219,14 @@ _LAYER_SCHEMA = {
         "reacts_to": {"type": "string",
                       "enum": ["presence", "movement", "count", "closeness", "always"]},
         "reaction": {"type": "number"},
+        "motion": {"type": "string", "enum": MOTIONS},
+        "change": {"type": "string", "enum": CHANGES},
+        "near": {"type": "string", "enum": NEARS},
+        "reach": {"type": "number"},
     },
     "required": ["type", "name", "style", "opacity", "blend", "color", "color2", "size",
-                 "speed", "amount", "fade", "target", "reacts_to", "reaction"],
+                 "speed", "amount", "fade", "target", "reacts_to", "reaction", "motion",
+                 "change", "near", "reach"],
     "additionalProperties": False,
 }
 
@@ -274,6 +322,10 @@ def _catalog_text() -> str:
                 f"Dials: {entry['dials']}.")
         if entry.get("notes"):
             line += f" Note: {entry['notes']}."
+        can = [f"{field}: {', '.join(entry[field])}" for field in ("motions", "changes", "nears")
+               if entry.get(field)]
+        if can:
+            line += f" Can do: {'; '.join(can)}."
         lines.append(line)
     return "\n".join(lines)
 
@@ -311,6 +363,15 @@ def _colour(value, default: str) -> str:
     return default
 
 
+def _choice(entry: dict, field: str, value) -> str | None:
+    """A motion, change or near the type can do; None for types without them."""
+    allowed = entry.get(field)
+    if not allowed:
+        return None
+    value = str(value or "").strip().lower()
+    return value if value in allowed else "none"
+
+
 def to_layers(raw: list) -> list[SceneLayer]:
     """Claude's layers, made valid: unknown styles get the default, dials clamped."""
     layers: list[SceneLayer] = []
@@ -339,6 +400,10 @@ def to_layers(raw: list) -> list[SceneLayer]:
                 "presence", "movement", "count", "closeness", "always"
             ) else "always",
             reaction=_clamp(item.get("reaction"), default=0.5),
+            motion=_choice(CATALOG[kind], "motions", item.get("motion")),
+            change=_choice(CATALOG[kind], "changes", item.get("change")),
+            near=_choice(CATALOG[kind], "nears", item.get("near")),
+            reach=_clamp(item.get("reach"), default=0.5),
         ))
     return layers
 
@@ -372,7 +437,8 @@ async def describe(prompt: str, *, surfaces: list[dict], current: dict | None = 
                     "effort": "medium",
                     "format": {"type": "json_schema", "schema": SCENE_SCHEMA},
                 },
-                system=SYSTEM.format(catalog=_catalog_text()),
+                system=SYSTEM.format(catalog=_catalog_text(), motions=", ".join(MOTIONS),
+                                     changes=", ".join(CHANGES), nears=", ".join(NEARS)),
                 messages=[{"role": "user", "content": content}],
             )
     except anthropic.AuthenticationError:

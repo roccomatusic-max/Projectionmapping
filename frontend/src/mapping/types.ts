@@ -260,6 +260,14 @@ export type LayerType =
 export type ReactsTo = 'presence' | 'movement' | 'count' | 'closeness' | 'always'
 export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside'
 export type LayerBlend = 'normal' | 'add' | 'screen'
+/** How an object moves by itself. */
+export type Motion = 'none' | 'bob' | 'sway' | 'spin' | 'drift' | 'bounce' | 'orbit' | 'rise' | 'flutter'
+/** How an object changes by itself. */
+export type Change = 'none' | 'pulse' | 'twinkle' | 'colour' | 'flicker' | 'blink'
+/** What an object does when a person comes near it. */
+export type NearAction =
+  | 'none' | 'light' | 'grow' | 'shrink' | 'colour' | 'spin' | 'flee' | 'follow'
+  | 'jump' | 'dance' | 'appear' | 'hide' | 'burst'
 
 /** One layer of a scene; see scene/catalog.ts for what the dials mean per type. */
 export interface SceneLayer {
@@ -279,6 +287,12 @@ export interface SceneLayer {
   target: LayerTarget
   reacts_to: ReactsTo
   reaction: number
+  /** Null (older scenes) means the type's usual; see scene/catalog.ts. */
+  motion?: Motion | null
+  change?: Change | null
+  near?: NearAction | null
+  /** How far from a person objects notice them, 0..1. */
+  reach?: number
   /** The image a "picture" layer shows, stretched over the whole canvas. */
   media_id?: number | null
 }
