@@ -66,6 +66,13 @@ def kiosk_command(browser: str, url: str, profile: Path, extra: list[str] | None
         "--disable-infobars",
         "--disable-session-crashed-bubble",
         "--disable-features=Translate,TranslateUI",
+        # Nothing of the browser's own over the output: no search engine
+        # choice screen (shown to new profiles in Europe), and no "Restore
+        # pages?" after this program had to stop the browser (current
+        # browsers ignore --disable-session-crashed-bubble; see also
+        # mark_clean_exit). Browsers that do not know a switch ignore it.
+        "--disable-search-engine-choice-screen",
+        "--hide-crash-restore-bubble",
         "--disable-pinch",
         "--overscroll-history-navigation=0",
         "--check-for-update-interval=31536000",
@@ -115,16 +122,41 @@ def close_leftovers(profile: Path) -> int:
     return closed
 
 
+def write_atomically(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` in one step, readable by this user only.
+
+    A power cut leaves the old file or the new one, never half of one.
+    """
+    partial = path.with_name(f".{path.name}.part")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0)
+    with os.fdopen(os.open(partial, flags, 0o600), "w", encoding="utf-8") as file:
+        file.write(text)
+        file.flush()
+        os.fsync(file.fileno())
+    # On Windows the replace fails while another program (an antivirus
+    # scan, a second copy reading it) has the file open; that is brief.
+    for attempt in range(5):
+        try:
+            os.replace(partial, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.1 * (attempt + 1))
+
+
 def mark_clean_exit(profile: Path) -> None:
     """Stop the browser offering to restore pages after a power cut."""
     preferences = profile / "Default" / "Preferences"
     try:
         data = json.loads(preferences.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        data.setdefault("profile", {}).update(exit_type="Normal", exited_cleanly=True)
+    except (OSError, ValueError, AttributeError):  # none yet, or not the usual layout
         return
-    data.setdefault("profile", {}).update(exit_type="Normal", exited_cleanly=True)
+    # Whole or not at all: the browser warns on screen about a settings file
+    # it cannot read, and this runs before every start of the window.
     with contextlib.suppress(OSError):
-        preferences.write_text(json.dumps(data), encoding="utf-8")
+        write_atomically(preferences, json.dumps(data))
 
 
 class Kiosk:

@@ -300,11 +300,16 @@ class OrbbecSource(Source):
         raise RuntimeError("the Orbbec camera stopped sending pictures")
 
     def read(self) -> Frame:
-        while True:
+        # A frame that will not decode is skipped; a camera sending only
+        # those (a format this program does not read) is an error, not a
+        # wait forever.
+        for _ in range(30):
             color_frame, depth_frame = self._frames()
             color = _orbbec_bgr(color_frame, self._ob)
             if color is not None:
                 break
+        else:
+            raise RuntimeError("the Orbbec camera sends colour in a format this program cannot read")
         depth = None
         if depth_frame is not None:
             raw = np.frombuffer(depth_frame.get_data(), dtype=np.uint16).reshape(

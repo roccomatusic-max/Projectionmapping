@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -92,6 +93,25 @@ def test_orbbec_colour_formats_become_bgr():
                             get_data=lambda: rgb.reshape(-1))
     bgr = sources._orbbec_bgr(frame, ob)
     assert bgr.shape == (2, 3, 3) and bgr[0, 0, 2] == 200 and bgr[0, 0, 0] == 0
+
+
+def test_an_orbbec_colour_format_it_cannot_read_is_an_error_not_a_hang():
+    F = SimpleNamespace(RGB=1, BGR=2, MJPG=3, YUYV=4, UYVY=5, NV12=6, NV21=7, I420=8)
+    unreadable = SimpleNamespace(get_width=lambda: 3, get_height=lambda: 2, get_format=lambda: 99,
+                                 get_data=lambda: np.zeros(24, np.uint8))
+    asked = []
+
+    def frames():
+        asked.append(1)
+        if len(asked) > 100:
+            raise AssertionError("read() kept waiting for a frame it can read")
+        return unreadable, None
+
+    source = sources.OrbbecSource.__new__(sources.OrbbecSource)
+    source._ob = SimpleNamespace(OBFormat=F)
+    source._frames = frames
+    with pytest.raises(RuntimeError, match="cannot read"):
+        source.read()
 
 
 class FakeServer:
@@ -201,6 +221,76 @@ def test_people_fall_back_to_a_request_and_move_to_the_colour_picture():
     assert (method, path) == ("POST", "/mapping/cameras/me/people")
     assert kwargs["json"]["people"][0]["x"] == 0.6 and kwargs["json"]["people"][0]["y"] == 0.4
     assert "captured_at" not in kwargs["json"]
+
+
+def test_reports_sent_in_one_clock_tick_still_make_a_heartbeat():
+    # Python 3.12's clock on Windows moves in 15.6 ms steps.
+    server = FakeServer()
+    worker = tracking_agent(server)
+    now = time.monotonic()
+    worker.sent = [(now, 0.03), (now, 0.04)]
+    worker.report()
+    method, path, kwargs = server.calls[-1]
+    assert (method, path) == ("POST", "/mapping/players/me")
+    assert "tracking_rate" not in kwargs["json"]
+
+
+def test_the_heartbeat_keeps_beating_after_an_unexpected_error(monkeypatch):
+    monkeypatch.setattr(agent, "REPORT_SECONDS", 0.01)
+    server = FakeServer()
+    server.sync_clock = lambda: None
+    worker = tracking_agent(server)
+    beats = []
+
+    def report() -> None:
+        beats.append(time.monotonic())
+        if len(beats) == 1:
+            raise ZeroDivisionError("float division by zero")
+        worker.stopping.set()
+
+    worker.report = report
+    worker.heartbeat()
+    assert len(beats) == 2 and not worker.revoked.is_set()
+
+
+def test_a_stopped_agent_closes_its_live_feed(monkeypatch):
+    """A camera unplugged (or re-paired) must not leave its live feed socket open."""
+    import websocket
+
+    opened: list = []
+
+    class FeedApp:
+        def __init__(self, url: str, **callbacks) -> None:
+            self.callbacks = callbacks
+            self.closed = threading.Event()
+            opened.append(self)
+
+        def run_forever(self, **_options) -> None:
+            self.callbacks.get("on_open", lambda _app: None)(self)
+            self.closed.wait(10)  # a real socket stays open until closed
+
+        def close(self, **_options) -> None:
+            self.closed.set()
+
+    class Unplugged(Fake):
+        def read(self) -> Frame:
+            deadline = time.monotonic() + 5
+            while not opened and time.monotonic() < deadline:
+                time.sleep(0.01)
+            raise RuntimeError("Frame didn't arrive within 5000")
+
+    monkeypatch.setattr(websocket, "WebSocketApp", FeedApp)
+    server = FakeServer()
+    server.ws_url, server.sync_clock = "ws://x/api/ws?token=t", lambda: None
+    args = agent.build_parser().parse_args(["--server", "http://x"])
+    before = set(threading.enumerate())
+    with pytest.raises(RuntimeError):
+        agent.Agent(server, Unplugged("Depth camera", depth=True), 1, args).run()
+
+    assert opened and opened[0].closed.wait(2), "the live feed was left open"
+    for thread in set(threading.enumerate()) - before:
+        thread.join(timeout=5)
+        assert not thread.is_alive(), "the agent's threads outlived it"
 
 
 def test_server_time_of_a_moment():
