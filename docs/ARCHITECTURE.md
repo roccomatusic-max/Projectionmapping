@@ -183,13 +183,13 @@ POST   /api/projectors/{id}/shutter      {state: open|closed}       (operator)
 POST   /api/projectors/{id}/input        {input: "RG1"|...}         (operator)
 POST   /api/projectors/{id}/command      {capability, params}       (operator)
 POST   /api/projectors/{id}/test         connectivity probe
-GET    /api/projectors/{id}/telemetry    ?metric=&from=&to=
+GET    /api/projectors/{id}/telemetry    ?metric=&days=&limit=
 GET    /api/projectors/{id}/commands     command history
 
 GET    /api/groups                       POST/PATCH/DELETE (admin)
 POST   /api/groups/{id}/commands         {capability, params} → per-device results
 
-GET    /api/events                       ?severity=&projector_id=&since=
+GET    /api/events                       ?severity=&projector_id=&kind=&hours=&limit=
 GET    /api/alerts                       POST /api/alerts/{id}/acknowledge
 GET    /api/automations                  POST /api/automations/{id}/execute
 GET    /api/automations/{id}/runs        POST /api/automations/validate (pre-flight: problems + next runs)
@@ -199,7 +199,7 @@ GET    /api/integration/homeassistant/discovery
 WS     /api/ws                           live state + command results
 ```
 
-Every mutating endpoint writes an audit row. Commands flagged `disruptive` in
+Every command writes an audit row, and so do most configuration changes. Commands flagged `disruptive` in
 the capability manifest require `confirm: true` in the body; the UI supplies it
 from a confirmation dialog, and an API client that omits it gets a 428 naming
 what it was about to do.
@@ -265,10 +265,17 @@ only right when nothing else writes power samples.
 ## 7. Security model
 
 - Roles: `admin` (everything), `operator` (commands, no config), `viewer`
-  (read-only). Enforced by a FastAPI dependency, not by hiding UI.
-- Passwords: Argon2id. JWT access tokens, short-lived, with a rotating secret.
+  (read-only), `ingest` (post enclosure readings, nothing else). Enforced by
+  a FastAPI dependency, not by hiding UI.
+- Passwords: Argon2id; repeated wrong passwords pause sign-in for that
+  account from that address. JWT (HS256) access tokens signed with
+  `SECRET_KEY`: 12 hours for a sign-in, 90 days for a remembered one (the
+  phone remote), up to 10 years for a service token. Revocation is by
+  deleting the user. `SECRET_KEY` is not rotated: it also keys the
+  device-credential encryption.
 - Device credentials: Fernet-encrypted at rest, never serialized outward.
-- Rate limiting per principal and per device.
+- Rate limiting per principal; each device's command queue paces what
+  reaches the projector.
 - Audit log on every command and every config change.
 - **No internet exposure.** Deployment docs specify VPN (Tailscale/WireGuard)
   and an isolated projector VLAN; the compose file binds the API to the LAN
