@@ -8,6 +8,8 @@ RUN npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
 COPY frontend/tsconfig.json frontend/vite.config.ts frontend/tailwind.config.js \
      frontend/postcss.config.js frontend/index.html ./
 COPY frontend/src ./src
+# Served as-is: the players' media cache worker and the phone remote's icons.
+COPY frontend/public ./public
 RUN npm run build
 
 

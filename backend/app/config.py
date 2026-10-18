@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import datetime, tzinfo
 from functools import lru_cache
+from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+#: A list read from one comma-separated variable. NoDecode hands the raw text
+#: to the validator below; otherwise it must be JSON, and the empty value
+#: docker-compose passes for an unset variable stops the server starting.
+CsvList = Annotated[list[str], NoDecode]
 
 
 class Settings(BaseSettings):
@@ -40,7 +47,7 @@ class Settings(BaseSettings):
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str | None = None
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    cors_origins: CsvList = Field(default_factory=lambda: ["http://localhost:5173"])
 
     # -- scheduling -------------------------------------------------------
     #: IANA zone the automation scheduler interprets "20:30" in. Unset means
@@ -84,7 +91,7 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from: str | None = None
     smtp_tls: bool = True
-    alert_email_to: list[str] = Field(default_factory=list)
+    alert_email_to: CsvList = Field(default_factory=list)
 
     # -- integrations ------------------------------------------------------
     mqtt_enabled: bool = False
@@ -127,6 +134,8 @@ class Settings(BaseSettings):
     @classmethod
     def _split_csv(cls, value):
         if isinstance(value, str):
+            if value.strip().startswith("["):  # the JSON form, which worked before
+                return json.loads(value)
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
