@@ -11,8 +11,10 @@
  * twinkling glints, chasing bulbs, the boost when someone walks up) happens
  * in the shader, so a mini PC pays almost nothing per frame.
  *
- * The artwork sits in canvas space, centred on the layer's "Where" area, so
- * a countdown spanning two projectors lines up across both. It counts with
+ * The artwork sits in canvas space, so a countdown spanning two projectors
+ * lines up across both: placed by hand like an object (each pin is one
+ * countdown, moved, sized and turned on the preview), or centred on the
+ * layer's "Where" area for scenes saved before it could be placed. It counts with
  * the server's clock in the computer's own time zone, and turns into
  * "Merry Christmas" on the 25th.
  */
@@ -801,6 +803,45 @@ export function countdownBox(layer: SceneLayer, surfaces: Surface[], canvasWidth
   return { x: x / canvasWidth, y: y / canvasHeight, w: w / canvasWidth, h: h / canvasHeight }
 }
 
+/** Height in canvas heights of a countdown placed by hand at pin size 1; it is DESIGN_W/DESIGN_H wide. */
+export function countdownPinHeight(layerSize: number) {
+  return 0.15 + 0.5 * layerSize
+}
+
+/** One countdown on the canvas: centre in canvas fractions, half size in canvas heights, angle in radians. */
+interface Placement {
+  cx: number
+  cy: number
+  hw: number
+  hh: number
+  angle: number
+}
+
+function placements(layer: SceneLayer, surfaces: Surface[], canvasWidth: number, canvasHeight: number): Placement[] {
+  const aspect = canvasWidth / Math.max(1, canvasHeight)
+  if (layer.pins) {
+    const h = countdownPinHeight(layer.size)
+    return layer.pins.map((pin) => ({
+      cx: pin.x,
+      cy: pin.y,
+      hh: (h * pin.size) / 2,
+      hw: (h * pin.size * DESIGN_W) / DESIGN_H / 2,
+      angle: ((pin.rotation ?? 0) * Math.PI) / 180,
+    }))
+  }
+  const box = countdownBox(layer, surfaces, canvasWidth, canvasHeight)
+  return [{ cx: box.x + box.w / 2, cy: box.y + box.h / 2, hw: (box.w * aspect) / 2, hh: box.h / 2, angle: 0 }]
+}
+
+/** The rectangle around a placement, turned, in canvas fractions. */
+function bounds(p: Placement, aspect: number): SourceRect {
+  const c = Math.abs(Math.cos(p.angle))
+  const s = Math.abs(Math.sin(p.angle))
+  const hx = (p.hw * c + p.hh * s) / aspect
+  const hy = p.hw * s + p.hh * c
+  return { x: p.cx - hx, y: p.cy - hy, w: hx * 2, h: hy * 2 }
+}
+
 // -- drawing -------------------------------------------------------------------------------
 
 const FRAGMENT = `#version 300 es
@@ -810,7 +851,10 @@ in vec2 vC;
 out vec4 outColor;
 uniform sampler2D uArt;
 uniform sampler2D uFx;
-uniform vec4 uBox;
+uniform vec2 uCenter;
+uniform vec2 uHalf;
+uniform float uAngle;
+uniform float uAspect;
 uniform float uTime;
 uniform vec4 uDial;
 uniform float uStrength;
@@ -825,7 +869,11 @@ float hash(vec2 p) {
 }
 
 void main() {
-  vec2 uv = (vC - uBox.xy) / uBox.zw;
+  // Into the artwork's own frame: centred, turned back, scaled to 0..1.
+  vec2 off = vec2((vC.x - uCenter.x) * uAspect, vC.y - uCenter.y);
+  float ca = cos(uAngle);
+  float sa = sin(uAngle);
+  vec2 uv = vec2(ca * off.x + sa * off.y, -sa * off.x + ca * off.y) / (2.0 * uHalf) + 0.5;
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) { outColor = vec4(0.0); return; }
   vec4 art = texture(uArt, uv);          // premultiplied
   vec3 fx = texture(uFx, uv).rgb;
@@ -977,35 +1025,41 @@ export class CountdownDrawer {
   draw(key: string, d: CountdownDraw) {
     const gl = this.gl
     const { layer } = d
-    const box = countdownBox(layer, d.surfaces, d.canvasWidth, d.canvasHeight)
-    let art = this.arts.get(key)
     const aspect = d.canvasWidth / Math.max(1, d.canvasHeight)
-    const nearNow = nearness(box, d.people, layer.reach ?? 0.5, aspect)
+    const places = placements(layer, d.surfaces, d.canvasWidth, d.canvasHeight)
+    if (!places.length) return
+    let art = this.arts.get(key)
+    const nearNow = Math.max(...places.map((p) => nearness(bounds(p, aspect), d.people, layer.reach ?? 0.5, aspect)))
     const near = art ? art.near + (nearNow - art.near) * (1 - Math.exp(-d.dt / 0.35)) : nearNow
     if (art) art.near = near
     const action = nearOf(layer)
     let react = 0
     if (action === 'light') react = near
     else if (action === 'grow') {
-      const k = 1 + 0.18 * near
-      box.x -= (box.w * (k - 1)) / 2
-      box.y -= (box.h * (k - 1)) / 2
-      box.w *= k
-      box.h *= k
+      for (const p of places) {
+        p.hw *= 1 + 0.18 * near
+        p.hh *= 1 + 0.18 * near
+      }
       react = near * 0.5
     } else if (action === 'jump') {
-      box.y -= Math.abs(Math.sin(d.time * 6)) * 0.08 * box.h * near
+      for (const p of places) p.cy -= Math.abs(Math.sin(d.time * 6)) * 0.16 * p.hh * near
       react = near * 0.5
     }
-    // Nothing of it on this output.
-    if (box.x > d.rect.x + d.rect.w || box.x + box.w < d.rect.x || box.y > d.rect.y + d.rect.h || box.y + box.h < d.rect.y) return
+    // Only the ones on this output.
+    const r = d.rect
+    const shown = places.filter((p) => {
+      const b = bounds(p, aspect)
+      return !(b.x > r.x + r.w || b.x + b.w < r.x || b.y > r.y + r.h || b.y + b.h < r.y)
+    })
+    if (!shown.length) return
 
     const count = untilChristmas(d.clockMs)
     const style: CountdownStyle = (COUNTDOWN_STYLES as readonly string[]).includes(layer.style)
       ? (layer.style as CountdownStyle)
       : 'gold'
     // Paint at about the pixels it covers, in steps so small changes do not repaint.
-    const covers = (box.w / d.rect.w) * d.w * d.detail
+    const widest = Math.max(...shown.map((p) => (2 * p.hw) / aspect))
+    const covers = (widest / d.rect.w) * d.w * d.detail
     const scale = Math.min(1.4, Math.max(0.25, Math.ceil((covers / DESIGN_W) * 8) / 8))
     const words = countdownWords(count)
     const fonts = countdownFontsReady()
@@ -1044,9 +1098,8 @@ export class CountdownDrawer {
     }
 
     gl.useProgram(this.program)
-    const r = d.rect
     gl.uniform4f(this.u('uRect'), r.x, r.y, r.w, r.h)
-    gl.uniform4f(this.u('uBox'), box.x, box.y, box.w, box.h)
+    gl.uniform1f(this.u('uAspect'), aspect)
     gl.uniform1f(this.u('uTime'), d.time)
     gl.uniform4f(this.u('uDial'), layer.size, layer.speed, layer.amount, layer.fade)
     gl.uniform1f(this.u('uStrength'), Math.min(1, d.strength))
@@ -1062,7 +1115,12 @@ export class CountdownDrawer {
     gl.uniform1i(this.u('uFx'), 1)
     gl.activeTexture(gl.TEXTURE0)
     d.blend(layer.blend)
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    for (const p of shown) {
+      gl.uniform2f(this.u('uCenter'), p.cx, p.cy)
+      gl.uniform2f(this.u('uHalf'), p.hw, p.hh)
+      gl.uniform1f(this.u('uAngle'), p.angle)
+      gl.drawArrays(gl.TRIANGLES, 0, 3)
+    }
   }
 
   /** Give back the artwork of countdowns not drawn for a while. */

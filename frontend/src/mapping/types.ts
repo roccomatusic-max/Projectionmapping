@@ -277,6 +277,8 @@ export interface ObjectPin {
   x: number
   y: number
   size: number
+  /** Degrees clockwise; missing on pins placed before objects could turn. */
+  rotation?: number
 }
 
 /** One layer of a scene; see scene/catalog.ts for what the dials mean per type. */

@@ -618,11 +618,14 @@ MAX_PINS = 64
 
 
 class ObjectPin(BaseModel):
-    """An object placed by hand: where on the canvas (0..1 across and down)
-    and how big compared with the layer's size."""
+    """An object (or a countdown) placed by hand: where on the canvas (0..1
+    across and down), how big compared with the layer's size, and how far
+    it is turned."""
     x: float = Field(ge=0, le=1)
     y: float = Field(ge=0, le=1)
     size: float = Field(default=1.0, ge=0.3, le=3)
+    #: Degrees clockwise.
+    rotation: float = Field(default=0.0, ge=-180, le=180)
 
 
 class SceneLayer(BaseModel):
