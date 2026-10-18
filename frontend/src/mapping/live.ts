@@ -67,6 +67,9 @@ export class ServerClock {
 export type LinkStatus = 'connecting' | 'open' | 'closed'
 
 /** Subscribe to the server's WebSocket feed, keeping only mapping messages. */
+/** Silence after which the feed is treated as dead (the server pings every 25 s). */
+const SILENT_MS = 70_000
+
 export function useMappingFeed(onMessage: (message: BusMessage) => void): LinkStatus {
   const [status, setStatus] = useState<LinkStatus>('connecting')
   const handler = useRef(onMessage)
@@ -77,6 +80,7 @@ export function useMappingFeed(onMessage: (message: BusMessage) => void): LinkSt
     let retry = 0
     let timer: number | undefined
     let disposed = false
+    let lastHeard = Date.now()
 
     const connect = () => {
       const token = getToken()
@@ -86,11 +90,13 @@ export function useMappingFeed(onMessage: (message: BusMessage) => void): LinkSt
       setStatus('connecting')
       socket.onopen = () => {
         retry = 0
+        lastHeard = Date.now()
         setStatus('open')
         // Anything may have changed while we were away.
         handler.current({ type: 'mapping_reconnected', payload: {}, at: new Date().toISOString() })
       }
       socket.onmessage = (event) => {
+        lastHeard = Date.now()
         try {
           const message = JSON.parse(event.data as string) as BusMessage
           if (message.type.startsWith('mapping_')) handler.current(message)
@@ -115,9 +121,23 @@ export function useMappingFeed(onMessage: (message: BusMessage) => void): LinkSt
       connect()
     }
     document.addEventListener('visibilitychange', onVisible)
+    // A socket silent past the server's pings is half-open (the Mac slept,
+    // a cable or Wi-Fi dropped without a close): a mini PC would otherwise
+    // miss every cue until it is restarted. Drop it and connect again.
+    const watchdog = window.setInterval(() => {
+      if (disposed || socket?.readyState !== WebSocket.OPEN || Date.now() - lastHeard < SILENT_MS) return
+      const dead = socket
+      dead.onclose = null
+      dead.onmessage = null
+      dead.close()
+      setStatus('closed')
+      retry = 0
+      connect()
+    }, 10_000)
     connect()
     return () => {
       disposed = true
+      window.clearInterval(watchdog)
       document.removeEventListener('visibilitychange', onVisible)
       window.clearTimeout(timer)
       socket?.close()
