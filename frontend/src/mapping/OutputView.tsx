@@ -91,7 +91,7 @@ export function OutputView({
       }
       const { output: current, canvasWidth: cw, canvasHeight: ch, calibration: calib } = latest.current
       renderer.setOutput(current, cw, ch)
-      const frame = playback.frame(clock.now())
+      const frame = playback.frame(clock.now(), current.id)
       lastFrame = frame
       if (calib) {
         renderer.renderPattern(calib.pattern)

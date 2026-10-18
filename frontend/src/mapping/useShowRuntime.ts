@@ -39,6 +39,10 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
     playback.setSurfaces(show?.surfaces ?? [])
   }, [playback, show?.surfaces])
 
+  useEffect(() => {
+    playback.setCues(show?.cues ?? [])
+  }, [playback, show?.cues])
+
   const loadScenes = useCallback(async () => {
     try {
       const list = await mappingApi.listScenes()

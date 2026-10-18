@@ -480,3 +480,48 @@ async def test_changing_a_scene_keeps_objects_placed_by_hand(api, monkeypatch):
     assert bats["pins"] is None
     # Claude is not sent the positions.
     assert '"pins"' not in calls[-1]["messages"][0]["content"]
+
+
+async def test_a_cue_plays_different_scenes_on_different_projectors(api):
+    headers = await login(api)
+    show = await make_show(api, headers)
+    outputs = []
+    for name in ("Garage", "House"):
+        made = await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                              json={"name": name})
+        assert made.status_code == 201, made.text
+        outputs.append(made.json()["id"])
+    garage, house = outputs
+    ghosts = (await api.post("/api/mapping/scenes", headers=headers, json={
+        "name": "Ghosts", "layers": [{"type": "shapes", "style": "ghosts"}]})).json()
+    pumpkins = (await api.post("/api/mapping/scenes", headers=headers, json={
+        "name": "Pumpkins", "layers": [{"type": "shapes", "style": "pumpkins"}]})).json()
+
+    cue = await make_cue(api, headers, show["id"], scene_id=ghosts["id"],
+                         output_scenes={str(house): pumpkins["id"]})
+    assert cue["output_scenes"] == {str(house): pumpkins["id"]}
+    changed = await api.patch(f"/api/mapping/cues/{cue['id']}", headers=headers,
+                              json={"output_scenes": {str(garage): None, str(house): pumpkins["id"]}})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["output_scenes"] == {str(garage): None, str(house): pumpkins["id"]}
+
+    # The players are told which scene goes where.
+    state = await api.post("/api/mapping/transport", headers=headers,
+                           json={"action": "goto", "show_id": show["id"], "cue": 0})
+    assert state.json()["current"]["output_scenes"] == {str(garage): None, str(house): pumpkins["id"]}
+    await api.post("/api/mapping/transport", headers=headers, json={"action": "stop"})
+
+    # Another show's projector or an unknown scene is refused.
+    other = await make_show(api, headers, name="Other")
+    elsewhere = (await api.post(f"/api/mapping/shows/{other['id']}/outputs", headers=headers,
+                                json={"name": "Barn"})).json()["id"]
+    for bad in ({str(elsewhere): ghosts["id"]}, {str(house): 999}):
+        refused = await api.patch(f"/api/mapping/cues/{cue['id']}", headers=headers,
+                                  json={"output_scenes": bad})
+        assert refused.status_code == 400, bad
+
+    # Deleting a scene leaves its projectors with no scene, like the cue itself.
+    await api.delete(f"/api/mapping/scenes/{pumpkins['id']}", headers=headers)
+    reloaded = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert reloaded["cues"][0]["output_scenes"] == {str(garage): None, str(house): None}
+    assert reloaded["cues"][0]["scene_id"] == ghosts["id"]

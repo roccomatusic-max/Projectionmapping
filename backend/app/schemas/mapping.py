@@ -202,6 +202,9 @@ class CueBase(BaseModel):
     follow_seconds: float | None = Field(default=None, gt=0, le=86400)
     #: A scene from the scene library, drawn over the media (or on its own).
     scene_id: int | None = None
+    #: A different scene on some projectors: {output id: scene id, or None for
+    #: no scene there}. Projectors not listed play ``scene_id``.
+    output_scenes: dict[int, int | None] = Field(default_factory=dict)
 
 
 class CueCreate(CueBase):
@@ -217,6 +220,7 @@ class CueUpdate(BaseModel):
     follow_seconds: float | None = Field(default=None, gt=0, le=86400)
     interaction: Interaction | None = None
     scene_id: int | None = None
+    output_scenes: dict[int, int | None] | None = None
 
 
 class CueOut(CueBase):
@@ -376,6 +380,7 @@ class TransportCue(BaseModel):
     fade_seconds: float
     interaction: Interaction = "none"
     scene_id: int | None = None
+    output_scenes: dict[int, int | None] = Field(default_factory=dict)
     #: Server epoch milliseconds at which media time zero was (or will be).
     started_at_ms: float
 

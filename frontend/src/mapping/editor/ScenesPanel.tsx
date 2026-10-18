@@ -27,6 +27,7 @@ import { objectRadius } from '../scene/engine'
 import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
 import { PaintHouse } from './PaintHouse'
+import { ProjectorScenes, sceneOn } from './ProjectorScenes'
 import { type Backdrop, type Drawing, type PeopleSource, ScenePreview, SURFACE_KINDS } from './ScenePreview'
 import { SceneRecorder } from './SceneRecorder'
 
@@ -267,7 +268,9 @@ export function ScenesPanel({
                     <span className="block truncate text-sm text-slate-100">{s.name}</span>
                     <span className="block truncate text-xs text-slate-500">
                       {s.layers.length} layer{s.layers.length === 1 ? '' : 's'}
-                      {show.cues.some((c) => c.scene_id === s.id) ? ' · in this show' : ''}
+                      {show.cues.some((c) => show.outputs.some((o) => sceneOn(c, o.id) === s.id) || c.scene_id === s.id)
+                        ? ' · in this show'
+                        : ''}
                     </span>
                   </button>
                 </li>
@@ -519,6 +522,8 @@ export function ScenesPanel({
             </label>
           </div>
         </Panel>
+
+        <ProjectorScenes show={show} scenes={list} canEdit={canEdit} onChanged={onShowChanged} onError={onError} />
 
         {!scene ? (
           <Panel>

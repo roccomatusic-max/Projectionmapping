@@ -558,6 +558,9 @@ class MappingCue(Base):
     scene_id: Mapped[int | None] = mapped_column(
         ForeignKey("mapping_scenes.id", ondelete="SET NULL")
     )
+    #: A different scene on some projectors: {output id: scene id, or None
+    #: for no scene there}. Outputs not listed play ``scene_id``.
+    output_scenes: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
     show: Mapped[MappingShow] = relationship(back_populates="cues")
 
