@@ -40,9 +40,17 @@ const PLACEMENT_WIDTH = 1024
 const FULL_CANVAS: SourceRect = { x: 0, y: 0, w: 1, h: 1 }
 
 /** Objects sit one per cell of a grid over the canvas; the shader uses the same cell size. */
+/** Most objects one layer can have placed by hand (the shader's uPins size). */
+export const MAX_PINS = 64
+
 export function objectGrid(size: number, aspect: number) {
   const cell = 0.05 + 0.25 * size
   return { cols: Math.ceil(aspect / cell), rows: Math.ceil(1 / cell) }
+}
+
+/** Roughly how far an object reaches from its centre, in canvas heights (as the shader draws it). */
+export function objectRadius(size: number) {
+  return (0.05 + 0.25 * size) * 0.3 * 1.3
 }
 
 /** Layers that are drawn around each person, rather than over an area. */
@@ -129,6 +137,7 @@ export class SceneEngine {
   private levels: Levels = { presence: 0, movement: 0, count: 0, closeness: 0 }
   private lastTime = 0
   private spotData = new Float32Array(MAX_PEOPLE * 4)
+  private pinData = new Float32Array(MAX_PINS * 4)
   private moveData = new Float32Array(MAX_PEOPLE * 4)
   private surfacesKey = ''
   private surfacesRef: Surface[] | null = null
@@ -543,9 +552,21 @@ export class SceneEngine {
       gl.uniform1i(this.u(p, 'uPlaceOn'), state.maskUsed ? 1 : 0)
       gl.activeTexture(gl.TEXTURE0)
       gl.uniform1i(this.u(p, 'uMotion'), Math.max(0, MOTIONS.findIndex((m) => m.id === motionOf(layer))))
+      // Placed by hand (a list, even an empty one) or spread over an area.
+      const pins = layer.pins ? layer.pins.slice(0, MAX_PINS) : null
+      if (pins && !pins.length) return
+      gl.uniform1i(this.u(p, 'uPinCount'), pins?.length ?? 0)
+      this.blend(layer.blend)
+      if (pins) {
+        this.pinData.fill(0)
+        pins.forEach((pin, i) => this.pinData.set([pin.x, pin.y, pin.size, 0], i * 4))
+        gl.uniform4fv(this.u(p, 'uPins'), this.pinData)
+        gl.uniform2i(this.u(p, 'uGrid'), pins.length, 1)
+        gl.drawArrays(gl.TRIANGLES, 0, pins.length * 6)
+        return
+      }
       const { cols, rows } = objectGrid(layer.size, frame.canvasWidth / Math.max(1, frame.canvasHeight))
       gl.uniform2i(this.u(p, 'uGrid'), cols, rows)
-      this.blend(layer.blend)
       gl.drawArrays(gl.TRIANGLES, 0, cols * rows * 6)
       return
     }

@@ -613,6 +613,18 @@ def _layer_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+#: Most objects one layer can have placed by hand (the renderer's limit).
+MAX_PINS = 64
+
+
+class ObjectPin(BaseModel):
+    """An object placed by hand: where on the canvas (0..1 across and down)
+    and how big compared with the layer's size."""
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    size: float = Field(default=1.0, ge=0.3, le=3)
+
+
 class SceneLayer(BaseModel):
     """One layer of a scene. Every type reads the same few dials; what each
     dial means for a type (brush size, how many particles...) is the
@@ -642,6 +654,9 @@ class SceneLayer(BaseModel):
     near: NearAction | None = None
     #: How far from a person objects notice them.
     reach: float = Field(default=0.5, ge=0, le=1)
+    #: Objects placed by hand. None spreads them over the layer's area; a
+    #: list, even an empty one, shows only the placed ones.
+    pins: list[ObjectPin] | None = Field(default=None, max_length=MAX_PINS)
     #: The image a "picture" layer shows (stretched over the whole canvas).
     media_id: int | None = None
 

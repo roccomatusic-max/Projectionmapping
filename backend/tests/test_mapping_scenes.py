@@ -93,6 +93,28 @@ async def test_scene_library_and_cues(api):
     assert reloaded["cues"][0]["scene_id"] is None
 
 
+async def test_objects_placed_by_hand_are_kept(api):
+    headers = await login(api)
+    pins = [{"x": 0.2, "y": 0.7, "size": 1.5}, {"x": 0.8, "y": 0.75}]
+    created = await api.post("/api/mapping/scenes", headers=headers, json={
+        "name": "Porch", "layers": [
+            {"type": "shapes", "style": "pumpkins", "near": "light", "pins": pins},
+            {"type": "shapes", "style": "ghosts"},
+        ]})
+    assert created.status_code == 201, created.text
+    placed, spread = created.json()["layers"]
+    assert placed["pins"] == [{"x": 0.2, "y": 0.7, "size": 1.5}, {"x": 0.8, "y": 0.75, "size": 1.0}]
+    # Not placed by hand: spread over the area as before.
+    assert spread["pins"] is None
+
+    # Off the canvas, a silly size or too many are refused.
+    for bad in ([{"x": 1.2, "y": 0.5}], [{"x": 0.5, "y": 0.5, "size": 9}],
+                [{"x": 0.5, "y": 0.5}] * 65):
+        refused = await api.patch(f"/api/mapping/scenes/{created.json()['id']}", headers=headers,
+                                  json={"layers": [{"type": "shapes", "pins": bad}]})
+        assert refused.status_code == 422
+
+
 async def test_surfaces_are_traced_per_show(api):
     headers = await login(api)
     show = await make_show(api, headers)
@@ -409,3 +431,36 @@ async def test_christmas_countdown_is_a_scene_layer(api):
     assert "countdown" in scene_ai._catalog_text()
     layers = scene_ai.to_layers([{"type": "countdown", "style": "sparkly", "size": 3, "near": "flee"}])
     assert layers[0].style == "gold" and layers[0].size == 1.0 and layers[0].near == "none"
+
+
+async def test_changing_a_scene_keeps_objects_placed_by_hand(api, monkeypatch):
+    from app.services import scene_ai
+
+    headers = await login(api)
+    pins = [{"x": 0.3, "y": 0.8, "size": 1.0}, {"x": 0.6, "y": 0.8, "size": 2.0}]
+    scene = (await api.post("/api/mapping/scenes", headers=headers, json={
+        "name": "Porch pumpkins", "layers": [
+            {"type": "shapes", "style": "pumpkins", "pins": pins}]})).json()
+
+    calls: list = []
+    answer = {"name": "Porch", "description": "Brighter.", "layers": [
+        {"type": "shapes", "name": "Bats", "style": "bats", "opacity": 1, "blend": "add",
+         "color": "#222222", "color2": "#ff8800", "size": 0.3, "speed": 0.5, "amount": 0.5,
+         "fade": 0.5, "target": "everywhere", "reacts_to": "always", "reaction": 0.5,
+         "motion": "flutter", "change": "none", "near": "flee", "reach": 0.5},
+        {"type": "shapes", "name": "Pumpkins", "style": "pumpkins", "opacity": 1, "blend": "add",
+         "color": "#ff8800", "color2": "#ffdd00", "size": 0.4, "speed": 0.5, "amount": 0.5,
+         "fade": 0.5, "target": "everywhere", "reacts_to": "always", "reaction": 0.5,
+         "motion": "none", "change": "flicker", "near": "light", "reach": 0.5},
+    ]}
+    monkeypatch.setattr(scene_ai, "_client", lambda key: FakeClient(answer, calls))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "x" * 40)
+    changed = await api.post("/api/mapping/scenes/describe", headers=headers,
+                             json={"prompt": "add bats", "scene_id": scene["id"]})
+    assert changed.status_code == 200, changed.text
+    bats, pumpkins = changed.json()["layers"]
+    # The pumpkins stay where they were put; the new bats spread out.
+    assert pumpkins["pins"] == pins
+    assert bats["pins"] is None
+    # Claude is not sent the positions.
+    assert '"pins"' not in calls[-1]["messages"][0]["content"]

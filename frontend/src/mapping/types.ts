@@ -272,6 +272,13 @@ export type NearAction =
   | 'none' | 'light' | 'grow' | 'shrink' | 'colour' | 'spin' | 'flee' | 'follow'
   | 'jump' | 'dance' | 'appear' | 'hide' | 'burst'
 
+/** An object placed by hand on the canvas. */
+export interface ObjectPin {
+  x: number
+  y: number
+  size: number
+}
+
 /** One layer of a scene; see scene/catalog.ts for what the dials mean per type. */
 export interface SceneLayer {
   id: string
@@ -296,6 +303,13 @@ export interface SceneLayer {
   near?: NearAction | null
   /** How far from a person objects notice them, 0..1. */
   reach?: number
+  /**
+   * Objects placed by hand: each pin is a spot on the canvas (0..1 across
+   * and down) with its own size (1 = normal). Missing means the objects are
+   * spread over the layer's area by themselves; a list, even an empty one,
+   * means only the placed ones are shown.
+   */
+  pins?: ObjectPin[] | null
   /** The image a "picture" layer shows, stretched over the whole canvas. */
   media_id?: number | null
 }

@@ -7,8 +7,9 @@ import { OutputView } from '../OutputView'
 import { PeopleTracker } from '../people'
 import { Playback } from '../playback'
 import type { TextureSource } from '../renderer'
+import { MAX_PINS } from '../scene/engine'
 import { SimulatedCrowd } from '../scene/simulate'
-import type { MappingScene, MediaAsset, Output, Point, Show, Surface, SurfaceKind } from '../types'
+import type { MappingScene, MediaAsset, ObjectPin, Output, Point, Show, Surface, SurfaceKind } from '../types'
 
 /** Reports a camera would send, per second; the trackers expect about this. */
 const REPORT_MS = 66
@@ -171,6 +172,8 @@ export function ScenePreview({
   onDrawingDone,
   onSurfacesChange,
   onSurfacesDone,
+  placing,
+  onPinsChange,
   onStats,
 }: {
   show: Show
@@ -193,6 +196,14 @@ export function ScenePreview({
   onSurfacesChange: (surfaces: Surface[]) => void
   /** A drag of a traced point ended; time to save. */
   onSurfacesDone: () => void
+  /**
+   * Objects of one layer being placed by hand: clicks add one, drags move
+   * one, and a click on one picks it. radius is an object's size in
+   * canvas heights.
+   */
+  placing?: { pins: ObjectPin[]; radius: number; selected: number | null } | null
+  /** Pins changed or one was picked; the scene saves itself shortly after. */
+  onPinsChange?: (pins: ObjectPin[], selected: number | null) => void
   onStats?: (fps: number, sceneScale: number | null) => void
 }) {
   const playback = useMemo(() => new Playback(), [])
@@ -202,9 +213,11 @@ export function ScenePreview({
   const source = useBackdrop(show, backdrop, media)
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ kind: 'person'; id: number } | { kind: 'point'; surface: number; point: number } | null>(null)
-  const latest = useRef({ surfaces, showSurfaces, drawing, peopleSource, sendToProjectors })
-  latest.current = { surfaces, showSurfaces, drawing, peopleSource, sendToProjectors }
+  const drag = useRef<
+    { kind: 'person'; id: number } | { kind: 'point'; surface: number; point: number } | { kind: 'pin'; index: number } | null
+  >(null)
+  const latest = useRef({ surfaces, showSurfaces, drawing, peopleSource, sendToProjectors, placing })
+  latest.current = { surfaces, showSurfaces, drawing, peopleSource, sendToProjectors, placing }
 
   const output = useMemo(
     () => wholeCanvasOutput(show.id, -1, 'Scene preview', show.canvas_width, show.canvas_height),
@@ -264,7 +277,7 @@ export function ScenePreview({
       }
       const ctx = canvas.getContext('2d')!
       ctx.clearRect(0, 0, w, h)
-      const { surfaces: parts, showSurfaces: outline, drawing: draft, peopleSource: from } = latest.current
+      const { surfaces: parts, showSurfaces: outline, drawing: draft, peopleSource: from, placing: place } = latest.current
       const unit = Math.max(1, h / 300)
       if (outline || draft) {
         parts.forEach((s) => {
@@ -297,6 +310,19 @@ export function ScenePreview({
           ctx.beginPath()
           ctx.arc(x * w, y * h, (i === 0 ? 4.5 : 3) * unit, 0, Math.PI * 2)
           ctx.fill()
+        })
+      }
+      if (place) {
+        // A dashed ring around each placed object; the picked one is solid.
+        place.pins.forEach((pin, i) => {
+          const r = Math.max(6 * unit, place.radius * pin.size * h)
+          ctx.beginPath()
+          ctx.arc(pin.x * w, pin.y * h, r, 0, Math.PI * 2)
+          ctx.lineWidth = (i === place.selected ? 2 : 1) * unit
+          ctx.strokeStyle = i === place.selected ? '#38bdf8' : 'rgba(56,189,248,0.7)'
+          ctx.setLineDash(i === place.selected ? [] : [3 * unit, 3 * unit])
+          ctx.stroke()
+          ctx.setLineDash([])
         })
       }
       if (from === 'simulated') {
@@ -342,8 +368,47 @@ export function ScenePreview({
     return best as { surface: number; point: number } | null
   }
 
+  /** The placed object under the pointer, the nearest if several. */
+  const pickPin = (p: Point) => {
+    if (!placing) return null
+    const rect = boxRef.current!.getBoundingClientRect()
+    let best: number | null = null
+    let bestD = Infinity
+    placing.pins.forEach((pin, i) => {
+      const d = Math.hypot((pin.x - p[0]) * rect.width, (pin.y - p[1]) * rect.height)
+      const r = Math.max(12, placing.radius * pin.size * rect.height)
+      if (d < r && d < bestD) {
+        bestD = d
+        best = i
+      }
+    })
+    return best as number | null
+  }
+
   const onPointerDown = (event: React.PointerEvent) => {
     const p = toCanvas(event)
+    if (placing && onPinsChange) {
+      const hit = pickPin(p)
+      if (hit != null) {
+        onPinsChange(placing.pins, hit)
+        drag.current = { kind: 'pin', index: hit }
+        ;(event.target as Element).setPointerCapture(event.pointerId)
+        return
+      }
+      if (peopleSource === 'simulated') {
+        const id = crowd.pick(p[0], p[1])
+        if (id != null) {
+          drag.current = { kind: 'person', id }
+          crowd.hold(id, p[0], p[1])
+          ;(event.target as Element).setPointerCapture(event.pointerId)
+          return
+        }
+      }
+      if (placing.pins.length >= MAX_PINS) return
+      const size = placing.selected != null ? placing.pins[placing.selected]?.size ?? 1 : 1
+      onPinsChange([...placing.pins, { x: p[0], y: p[1], size }], placing.pins.length)
+      return
+    }
     if (drawing) {
       const first = drawing.points[0]
       const rect = boxRef.current!.getBoundingClientRect()
@@ -378,7 +443,11 @@ export function ScenePreview({
     if (!d) return
     const p = toCanvas(event)
     if (d.kind === 'person') crowd.hold(d.id, p[0], p[1])
-    else {
+    else if (d.kind === 'pin') {
+      if (placing && onPinsChange) {
+        onPinsChange(placing.pins.map((pin, i) => (i === d.index ? { ...pin, x: p[0], y: p[1] } : pin)), d.index)
+      }
+    } else {
       onSurfacesChange(
         surfaces.map((s, si) =>
           si === d.surface ? { ...s, points: s.points.map((q, pi) => (pi === d.point ? p : q)) } : s,
@@ -399,7 +468,7 @@ export function ScenePreview({
       ref={boxRef}
       className={classNames(
         'relative w-full overflow-hidden rounded-md bg-black ring-1 ring-white/10',
-        drawing ? 'cursor-crosshair' : peopleSource === 'simulated' || showSurfaces ? 'cursor-pointer' : '',
+        drawing || placing ? 'cursor-crosshair' : peopleSource === 'simulated' || showSurfaces ? 'cursor-pointer' : '',
       )}
       style={{ aspectRatio: `${show.canvas_width} / ${show.canvas_height}` }}
     >

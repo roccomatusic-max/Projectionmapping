@@ -22,6 +22,7 @@ import {
   TARGETS,
 } from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
+import { objectRadius } from '../scene/engine'
 import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
 import { PaintHouse } from './PaintHouse'
@@ -67,6 +68,8 @@ export function ScenesPanel({
   const [confirmDelete, setConfirmDelete] = useState<MappingScene | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [openLayer, setOpenLayer] = useState<string | null>(null)
+  const [selectedPin, setSelectedPin] = useState<number | null>(null)
+  useEffect(() => setSelectedPin(null), [openLayer, selectedId])
   const saveTimers = useRef(new Map<number, number>())
   const serials = useRef(new Map<number, number>())
 
@@ -223,6 +226,11 @@ export function ScenesPanel({
   }
 
   const hasHouse = surfaces.length > 0
+  // An open objects layer that is placed by hand turns clicks on the preview into placing.
+  const placingLayer = canEdit ? scene?.layers.find((l) => l.id === openLayer && l.type === 'shapes' && l.pins) : undefined
+  const placing = placingLayer
+    ? { pins: placingLayer.pins!, radius: objectRadius(placingLayer.size), selected: selectedPin }
+    : null
 
   return (
     <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -412,7 +420,9 @@ export function ScenesPanel({
         <Panel
           title={scene ? scene.name : 'Preview'}
           description={
-            peopleSource === 'simulated'
+            placingLayer
+              ? `Click to put ${layerLabel(placingLayer).toLowerCase()} there. Drag one to move it; click one to pick it and change its size below.`
+              : peopleSource === 'simulated'
               ? 'Live. The white rings are made-up people walking past; drag one to move it.'
               : 'Live, with the people the camera sees.'
           }
@@ -441,6 +451,12 @@ export function ScenesPanel({
             onDrawingDone={finishDrawing}
             onSurfacesChange={setSurfaces}
             onSurfacesDone={() => void saveSurfaces(surfaces)}
+            placing={tracing || drawing ? null : placing}
+            onPinsChange={(pins, selected) => {
+              if (!scene || !placingLayer) return
+              updateLayer(scene, placingLayer.id, { pins })
+              setSelectedPin(selected)
+            }}
             onStats={(f, scale) => setFps({ fps: f, scale })}
           />
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400">
@@ -572,6 +588,8 @@ export function ScenesPanel({
                     layer={layer}
                     media={media}
                     open={openLayer === layer.id}
+                    selectedPin={openLayer === layer.id ? selectedPin : null}
+                    onSelectPin={setSelectedPin}
                     hasHouse={hasHouse}
                     canEdit={canEdit}
                     isTop={shownIndex === 0}
@@ -678,6 +696,8 @@ function LayerCard({
   layer,
   media,
   open,
+  selectedPin,
+  onSelectPin,
   hasHouse,
   canEdit,
   isTop,
@@ -691,6 +711,8 @@ function LayerCard({
   layer: SceneLayer
   media: MediaAsset[]
   open: boolean
+  selectedPin: number | null
+  onSelectPin: (index: number | null) => void
   hasHouse: boolean
   canEdit: boolean
   isTop: boolean
@@ -704,8 +726,10 @@ function LayerCard({
   const kind = KIND[layer.type]
   if (!kind) return null
   const usesColors = layer.type !== 'distort' && layer.type !== 'picture'
-  const usesTarget = kind.group !== 'people' || layer.type === 'particles'
+  const placed = layer.type === 'shapes' && layer.pins != null
+  const usesTarget = (kind.group !== 'people' || layer.type === 'particles') && !placed
   const near = nearOf(layer)
+  const pin = placed && selectedPin != null ? layer.pins![selectedPin] : undefined
   return (
     <li className={classNames('rounded-md ring-1', layer.enabled ? 'bg-panel-850 ring-white/5' : 'bg-panel-900 ring-white/5 opacity-70')}>
       <div className="flex items-center gap-2 px-3 py-2">
@@ -722,6 +746,7 @@ function LayerCard({
           <span className="block truncate text-xs text-slate-500">
             {kind.label}
             {usesTarget && layer.target !== 'everywhere' ? ` · ${TARGETS.find((t) => t.id === layer.target)?.label}` : ''}
+            {placed ? ` · ${layer.pins!.length} placed by hand` : ''}
             {near !== 'none' ? ` · near people: ${NEARS.find((n) => n.id === near)?.label.toLowerCase()}` : ''}
             {layer.reacts_to !== 'always' ? ` · reacts to ${REACTIONS.find((r) => r.id === layer.reacts_to)?.label.toLowerCase()}` : ''}
           </span>
@@ -775,6 +800,19 @@ function LayerCard({
                     disabled={!canEdit} onChange={(e) => onChange({ color2: e.target.value })} />
                 </label>
               </div>
+            )}
+            {layer.type === 'shapes' && (
+              <label className="block">
+                <span className="label">Placement</span>
+                <select className="input py-1 text-sm" value={placed ? 'hand' : 'spread'} disabled={!canEdit}
+                  onChange={(e) => {
+                    onSelectPin(null)
+                    onChange({ pins: e.target.value === 'hand' ? [] : null })
+                  }}>
+                  <option value="spread">Spread over an area</option>
+                  <option value="hand">Where I put them</option>
+                </select>
+              </label>
             )}
             {usesTarget && (
               <label className="block">
@@ -833,6 +871,48 @@ function LayerCard({
               </label>
             )}
           </div>
+          {placed && (
+            <div className="rounded-md bg-panel-900 px-3 py-2.5 text-xs ring-1 ring-sky-500/30">
+              <p className="text-slate-300">
+                {layer.pins!.length === 0
+                  ? 'Click on the preview to put the first one where you want it.'
+                  : `${layer.pins!.length} placed. Click the preview to add more, drag one to move it, click one to pick it.`}
+              </p>
+              {canEdit && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {pin ? (
+                    <>
+                      <span className="text-slate-400">Picked one:</span>
+                      <label className="flex items-center gap-1.5 text-slate-400">
+                        Size
+                        <input type="range" min={0.3} max={3} step={0.05} value={pin.size} className="w-28 accent-sky-500"
+                          onChange={(e) => onChange({
+                            pins: layer.pins!.map((p, i) => (i === selectedPin ? { ...p, size: Number(e.target.value) } : p)),
+                          })} />
+                        <span className="tnum w-9 text-slate-200">{Math.round(pin.size * 100)}%</span>
+                      </label>
+                      <button className="btn-ghost px-2 py-0.5 text-xs text-red-300" onClick={() => {
+                        onSelectPin(null)
+                        onChange({ pins: layer.pins!.filter((_, i) => i !== selectedPin) })
+                      }}>
+                        Remove it
+                      </button>
+                    </>
+                  ) : (
+                    layer.pins!.length > 0 && <span className="text-slate-500">Click one on the preview to resize or remove it.</span>
+                  )}
+                  {layer.pins!.length > 0 && (
+                    <button className="btn-ghost ml-auto px-2 py-0.5 text-xs" onClick={() => {
+                      onSelectPin(null)
+                      onChange({ pins: [] })
+                    }}>
+                      Remove all
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
             <Slider label="Strength" value={layer.opacity} min={0} max={1} step={0.01} disabled={!canEdit}
               format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ opacity: v })} />
@@ -844,7 +924,7 @@ function LayerCard({
               <Slider label="How much it reacts" value={layer.reaction} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ reaction: v })} />
             )}
-            {DIALS.filter((d) => kind.dials[d]).map((d) => (
+            {DIALS.filter((d) => kind.dials[d] && !(placed && d === 'amount')).map((d) => (
               <Slider key={d} label={kind.dials[d]!} value={layer[d]} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}`} onChange={(v) => onChange({ [d]: v })} />
             ))}

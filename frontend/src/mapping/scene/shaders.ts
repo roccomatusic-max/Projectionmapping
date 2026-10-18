@@ -714,6 +714,8 @@ uniform ivec2 uGrid;
 uniform sampler2D uPlace;
 uniform int uPlaceOn;
 uniform int uMotion;
+uniform int uPinCount;
+uniform vec4 uPins[64];
 out vec2 vQ;
 out float vAA;
 flat out float vSeed;
@@ -735,16 +737,27 @@ void main() {
   float h = hash(cell + 0.37);
   float h2 = hash(cell + 9.0);
   vec2 c = (cell + 0.5 + (hash2(cell + 3.1) - 0.5) * 0.5) * cs;
-  bool hidden = h > mix(0.08, 0.95, uDial.z) || c.x > aspect || c.y > 1.0;
-  // Floating objects rise over everything; the rest sit on their target.
-  if (!hidden && uPlaceOn == 1 && uMotion != M_RISE) {
-    hidden = textureLod(uPlace, vec2(c.x / aspect, c.y), 0.0).r < 0.5;
+  float own = mix(0.8, 1.2, h2);
+  if (uPinCount > 0) {
+    // Placed by hand: one object on each pin, at the size it was given.
+    vec4 pin = uPins[min(id, 63)];
+    cell = vec2(float(id), 41.0);
+    h = hash(cell + 0.37);
+    h2 = hash(cell + 9.0);
+    c = vec2(pin.x * aspect, pin.y);
+    own = pin.z;
+  } else {
+    bool hidden = h > mix(0.08, 0.95, uDial.z) || c.x > aspect || c.y > 1.0;
+    // Floating objects rise over everything; the rest sit on their target.
+    if (!hidden && uPlaceOn == 1 && uMotion != M_RISE) {
+      hidden = textureLod(uPlace, vec2(c.x / aspect, c.y), 0.0).r < 0.5;
+    }
+    if (hidden) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
   }
-  if (hidden) {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    return;
-  }
-  float R = cs * 0.3 * mix(0.8, 1.2, h2);
+  float R = cs * 0.3 * own;
   float t = uTime;
   float sp = mix(0.2, 2.5, uDial.y);
   float ph = h * 6.2832;
@@ -764,7 +777,13 @@ void main() {
   else if (uMotion == M_DRIFT) off += (vec2(noise(vec2(t * sp * 0.25, ph * 3.0)), noise(vec2(ph * 5.0, t * sp * 0.25 + 7.0))) - 0.5) * cs * 1.6;
   else if (uMotion == M_BOUNCE) off.y -= abs(sin(t * sp * 2.5 + ph)) * R * 0.9;
   else if (uMotion == M_ORBIT) off += vec2(cos(t * sp + ph), sin(t * sp + ph)) * cs * 0.3;
-  else if (uMotion == M_RISE) {
+  else if (uMotion == M_RISE && uPinCount > 0) {
+    // A placed object floats up from its spot, fades and starts again.
+    float f = fract(t * sp * 0.12 + h);
+    off.y -= f * R * 5.0;
+    off.x += sin(t * sp * 1.2 + ph) * R * 0.3;
+    alpha *= smoothstep(0.0, 0.15, f) * (1.0 - smoothstep(0.7, 1.0, f));
+  } else if (uMotion == M_RISE) {
     float span = 1.0 + 6.0 * R;
     c.y = mod(c.y - t * sp * 0.05 * mix(0.6, 1.4, h2) + 3.0 * R, span) - 3.0 * R;
     off.x += sin(t * sp * 1.2 + ph) * R * 0.4;
