@@ -189,8 +189,11 @@ export class SceneEngine {
     if (!entry) {
       const gl = this.gl
       const program = gl.createProgram()!
-      gl.attachShader(program, this.compile(gl.VERTEX_SHADER, vertex))
-      gl.attachShader(program, this.compile(gl.FRAGMENT_SHADER, fragment()))
+      for (const shader of [this.compile(gl.VERTEX_SHADER, vertex), this.compile(gl.FRAGMENT_SHADER, fragment())]) {
+        gl.attachShader(program, shader)
+        // Freed with the program.
+        gl.deleteShader(shader)
+      }
       gl.linkProgram(program)
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         throw new Error(`Scene shader failed to link: ${gl.getProgramInfoLog(program)}`)
@@ -260,6 +263,15 @@ export class SceneEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
         entry!.ready = true
       }
+      // Forget a failed load so a later frame asks again (the server may
+      // have been restarting) instead of leaving the layer blank for good.
+      img.onerror = () => {
+        window.setTimeout(() => {
+          if (this.pictures.get(mediaId)?.tex !== tex) return
+          this.pictures.delete(mediaId)
+          if (!gl.isContextLost()) gl.deleteTexture(tex)
+        }, 2000)
+      }
       img.src = mediaUrl(mediaId)
     }
     return entry.ready ? entry.tex : null
@@ -310,8 +322,16 @@ export class SceneEngine {
     for (let i = 0; i < n; i++) {
       const p = people[i]
       const energy = follows && (reacts === 'movement' || reacts === 'closeness') ? personEnergy(reacts, p, aspect) : 1
-      this.spotData.set([p.x, p.y, p.radius, p.strength * (1 - r + r * energy)], i * 4)
-      this.moveData.set([p.vx * aspect, p.vy, energy, p.seed], i * 4)
+      // By index: this runs per person, per layer, per frame.
+      const o = i * 4
+      this.spotData[o] = p.x
+      this.spotData[o + 1] = p.y
+      this.spotData[o + 2] = p.radius
+      this.spotData[o + 3] = p.strength * (1 - r + r * energy)
+      this.moveData[o] = p.vx * aspect
+      this.moveData[o + 1] = p.vy
+      this.moveData[o + 2] = energy
+      this.moveData[o + 3] = p.seed
     }
     return { strength, count: n }
   }

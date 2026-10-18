@@ -102,7 +102,11 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
     const payload = message.payload as Record<string, unknown>
     switch (message.type) {
       case 'mapping_transport':
-        void applyTransport(payload as unknown as TransportState)
+        // If the media list could not be fetched, fetch everything again
+        // shortly rather than drop this cue change.
+        applyTransport(payload as unknown as TransportState).catch(() => {
+          window.setTimeout(() => void refresh(), 2000)
+        })
         break
       case 'mapping_output':
         if (payload.show_id === showId) {
