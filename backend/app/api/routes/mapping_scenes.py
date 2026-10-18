@@ -26,6 +26,7 @@ from app.schemas.mapping import (
     AiStatus,
     DescribeScene,
     MediaOut,
+    ObjectPin,
     PaintHouse,
     SceneCreate,
     SceneOut,
@@ -174,6 +175,20 @@ async def delete_ai_key(admin: RequireAdmin, session: SessionDep) -> AiStatus:
     return await ai_status(admin)
 
 
+def _keep_placed(layers: list, placed: list[tuple[str, list]]) -> None:
+    """Give objects placed by hand back to the changed scene: first to an
+    objects layer of the same style, then to the remaining objects layers in
+    order."""
+    shapes = [layer for layer in layers if layer.type == "shapes"]
+    for match_style in (True, False):
+        for style, pins in list(placed):
+            target = next((layer for layer in shapes if layer.pins is None
+                           and (layer.style == style or not match_style)), None)
+            if target is not None:
+                target.pins = [ObjectPin.model_validate(pin) for pin in pins]
+                placed.remove((style, pins))
+
+
 @router.post("/scenes/describe", response_model=SceneOut,
              dependencies=[Depends(write_rate_limit)])
 async def describe_scene(payload: DescribeScene, session: SessionDep,
@@ -185,6 +200,7 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
     current = None
     scene = None
     pictures: list[dict] = []
+    placed: list[tuple[str, list]] = []
     if payload.scene_id is not None:
         scene = await _load_scene(session, payload.scene_id)
         current = SceneOut.model_validate(scene).model_dump(
@@ -192,10 +208,17 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
         # Claude cannot make pictures; they stay at the bottom, untouched.
         pictures = [layer for layer in current["layers"] if layer["type"] == "picture"]
         current["layers"] = [layer for layer in current["layers"] if layer["type"] != "picture"]
+        # Claude does not see where objects were placed by hand; they are
+        # put back on the new layers afterwards.
+        for layer in current["layers"]:
+            pins = layer.pop("pins", None)
+            if pins is not None:
+                placed.append((layer["style"], pins))
     try:
         result = await scene_ai.describe(payload.prompt, surfaces=surfaces, current=current)
     except scene_ai.SceneAiError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+    _keep_placed(result["layers"], placed)
     layers = pictures + [layer.model_dump(mode="json") for layer in result["layers"]]
     layers = layers[:MAX_LAYERS]
     if scene is not None:
