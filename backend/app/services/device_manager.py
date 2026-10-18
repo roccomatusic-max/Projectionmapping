@@ -110,6 +110,9 @@ class DeviceWorker:
         self._urgent_waiting = 0
         self._task: asyncio.Task | None = None
         self._running = False
+        #: Set once by stop(). Work submitted after that is answered at once
+        #: instead of waiting in a queue nothing will ever read.
+        self._stopped = False
         #: Background state-verification tasks, cancelled on stop so a worker
         #: teardown never leaves a poll running against a closed transport.
         self._verifications: set[asyncio.Task] = set()
@@ -157,6 +160,7 @@ class DeviceWorker:
 
     async def stop(self) -> None:
         self._running = False
+        self._stopped = True
         for task in list(self._verifications):
             task.cancel()
         if self._verifications:
@@ -169,6 +173,22 @@ class DeviceWorker:
                 await self._task
             self._task = None
         await self._safe_disconnect()
+        # Whatever is still queued was never sent. Its callers (an operator's
+        # request, a group dispatch, a monitor tier) get that answer now
+        # rather than at the end of their timeout.
+        while not self._queue.empty():
+            item = self._queue.get_nowait()
+            self._queue.task_done()
+            self._answer_stopped(item, "the projector was removed or reconfigured "
+                                       "before this command was sent")
+
+    @staticmethod
+    def _answer_stopped(item: _QueueItem, why: str) -> None:
+        if item.future is not None and not item.future.done():
+            item.future.set_result(CommandResult(
+                capability=item.capability, outcome=CommandOutcome.CONNECTION_ERROR,
+                error=why,
+            ))
 
     async def _safe_disconnect(self) -> None:
         try:
@@ -189,11 +209,18 @@ class DeviceWorker:
         """Enqueue work. Returns a future resolving to a CommandResult."""
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
-        self._enqueue(_QueueItem(
+        item = _QueueItem(
             priority=int(priority), sequence=0,
             capability=capability, params=dict(params or {}),
             future=future, job=job,
-        ))
+        )
+        if self._stopped:
+            # A caller holding on to a replaced worker (a monitor tier that
+            # listed workers a moment ago) must not wait out its timeout.
+            self._answer_stopped(item, "the projector was removed or reconfigured; "
+                                       "this command was not sent")
+            return future
+        self._enqueue(item)
         return future
 
     def _enqueue(self, item: _QueueItem) -> None:
@@ -238,11 +265,21 @@ class DeviceWorker:
                 return
             if item.priority <= Priority.AUTOMATION:
                 self._urgent_waiting -= 1
+            if item.future is not None and item.future.done():
+                # The caller stopped waiting (its timeout fired) while this
+                # sat in the queue, and was told the command did not reach
+                # the device. Sending it now, minutes later, would make that
+                # untrue: a power-off nobody is waiting for any more.
+                self._queue.task_done()
+                continue
             try:
                 result = await self._handle(item)
             except asyncio.CancelledError:
-                if item.future and not item.future.done():
-                    item.future.cancel()
+                # stop() cancelled the worker mid-command. Answer the caller
+                # rather than cancel its future: a cancelled future surfaces
+                # as CancelledError inside an HTTP handler.
+                self._answer_stopped(item, "the projector was removed or reconfigured while "
+                                           "this command was in progress; its state is unknown")
                 raise
             except Exception as exc:  # noqa: BLE001 - a bad command must not kill the worker
                 log.exception("worker error on %s", self.name)
@@ -433,14 +470,16 @@ class DeviceWorker:
 
     @staticmethod
     def _expected_state(capability: str, params: Mapping[str, Any]) -> Any:
+        # Read the parameters exactly as the drivers do (enum_param strips
+        # and lower-cases), or " on" would be sent as on and verified as off.
+        state = str(params.get("state", "")).strip().lower()
         match capability:
             case "power.set":
-                return PowerState.ON if str(params.get("state")).lower() == "on" else PowerState.OFF
+                return PowerState.ON if state == "on" else PowerState.OFF
             case "shutter.set":
-                return (ShutterState.CLOSED if str(params.get("state")).lower() == "closed"
-                        else ShutterState.OPEN)
+                return ShutterState.CLOSED if state == "closed" else ShutterState.OPEN
             case "input.set":
-                return str(params.get("input", "")).upper()
+                return str(params.get("input", "")).strip().upper()
         return None
 
     @staticmethod
@@ -517,7 +556,11 @@ class DeviceWorker:
             self.last_error = f"status read failed: {exc}"
             await self._safe_disconnect()
             self._deep_status = None
-            self.status = ProjectorStatus(online=False, errors=[self.last_error])
+            previous, self.status = self.status, ProjectorStatus(
+                online=False, errors=[self.last_error])
+            # Same transition events as any other way of going offline, or
+            # the offline alert never opens for this outage.
+            self._detect_transitions(previous, self.status)
             return self.status
         finally:
             self.driver.yield_to = None

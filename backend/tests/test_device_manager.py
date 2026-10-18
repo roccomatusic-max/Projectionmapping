@@ -156,6 +156,64 @@ async def test_power_change_is_verified_by_polling(panasonic_sim, sim_state):
         await w.stop()
 
 
+async def test_projector_that_disconnects_after_every_reply_is_controllable(
+    panasonic_sim, sim_state
+):
+    """Firmware that ends the session after each reply: the worker's auth
+    probe uses up the first session, so the operator's command needs a new
+    one. It used to go into the dead socket, every time."""
+    sim_state.close_after_reply = True
+    w = DeviceWorker(make_record(72, panasonic_sim.actual_port))
+    await w.start()
+    try:
+        result = await w.execute("power.set", {"state": "on"}, timeout=20)
+        assert result.outcome is CommandOutcome.ACCEPTED, result.error
+        assert sim_state.power.value in ("warming", "on")
+        poll = w.submit("status", {"deep": False}, priority=Priority.MONITOR, job="status")
+        status = (await asyncio.wait_for(poll, timeout=20)).value
+        assert status.online and status.shutter is ShutterState.OPEN
+    finally:
+        await w.stop()
+
+
+async def test_a_command_whose_caller_gave_up_is_never_sent(panasonic_sim, sim_state):
+    """A caller whose wait timed out was told the command did not reach the
+    device. It must then never be sent: a shutter closing minutes after the
+    operator was told it had not is worse than the timeout itself."""
+    sim_state.drop_reply_indices = {2}  # probe(1) ok, PON(2) unanswered for 2 s
+    w = DeviceWorker(make_record(70, panasonic_sim.actual_port, command_timeout=2.0))
+    await w.start()
+    try:
+        busy = w.submit("power.set", {"state": "on"})
+        await asyncio.sleep(0.1)
+        late = await w.execute("shutter.set", {"state": "closed"}, timeout=0.5)
+        assert late.outcome is CommandOutcome.TIMEOUT
+        assert (await asyncio.wait_for(busy, timeout=10)).outcome is CommandOutcome.TIMEOUT
+        # Queued behind the abandoned shutter command, so it runs after it.
+        assert (await w.execute("shutter.get", timeout=10)).value is ShutterState.OPEN
+        assert sim_state.shutter_closed is False
+    finally:
+        await w.stop()
+
+
+async def test_stopping_a_worker_answers_every_caller(panasonic_sim, sim_state):
+    """Editing or removing a projector stops its worker. The command in
+    flight, one still queued and one submitted just after each get a result:
+    not a cancelled future (CancelledError inside an HTTP handler) and not a
+    wait for the whole timeout."""
+    sim_state.drop_reply_indices = {2}  # PON's reply never comes
+    w = DeviceWorker(make_record(71, panasonic_sim.actual_port, command_timeout=5.0))
+    await w.start()
+    in_flight = w.submit("power.set", {"state": "on"})
+    await asyncio.sleep(1.0)  # connected, PON sent, waiting on its reply
+    queued = w.submit("shutter.get")
+    await w.stop()
+    for future in (in_flight, queued, w.submit("power.get")):
+        result = await asyncio.wait_for(future, timeout=1)
+        assert result.outcome is CommandOutcome.CONNECTION_ERROR
+        assert "removed or reconfigured" in (result.error or "")
+
+
 async def test_unreachable_device_reports_connection_error():
     w = DeviceWorker(make_record(6, 1, name="Nowhere"))
     w.config.connect_timeout = 0.3
@@ -163,6 +221,21 @@ async def test_unreachable_device_reports_connection_error():
     try:
         result = await w.execute("power.get", timeout=15)
         assert result.outcome is CommandOutcome.CONNECTION_ERROR
+    finally:
+        await w.stop()
+
+
+@pytest.mark.parametrize("host", ["a" * 64 + ".example", "pj\x00one"])
+async def test_a_host_name_the_resolver_cannot_encode_is_unreachable(host):
+    """The schema only bounds the length. "Test connection" used to answer
+    a 63+ character label, or a NUL, with a 500."""
+    assert await DeviceManager().probe(host, 1024) is False
+    w = DeviceWorker(make_record(73, 1024, host=host))
+    await w.start()
+    try:
+        result = await w.execute("power.get", timeout=10)
+        assert result.outcome is CommandOutcome.CONNECTION_ERROR
+        assert f"connect to {host}" in (result.error or "")
     finally:
         await w.stop()
 

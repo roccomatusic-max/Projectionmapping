@@ -93,6 +93,27 @@ async def test_going_offline_forgets_the_deep_findings(pjlink_worker, sim_state,
     assert (await _poll(pjlink_worker, deep=True)).health is HealthSeverity.ERROR
 
 
+async def test_a_status_read_that_raises_still_reports_the_outage(pjlink_worker, monkeypatch):
+    """Every way of going offline publishes projector_offline; the alerting
+    service opens the offline alert from that event and nothing else."""
+    from app.core.events import bus
+
+    assert (await _poll(pjlink_worker, deep=False)).online
+    queue = await bus.subscribe()
+
+    async def dead(*, deep=False):
+        raise OSError("connection reset by peer")
+
+    monkeypatch.setattr(pjlink_worker.driver, "get_status", dead)
+    try:
+        assert (await _poll(pjlink_worker, deep=False)).online is False
+        published = [queue.get_nowait() for _ in range(queue.qsize())]
+        offline = [m for m in published if m.type == "projector_offline"]
+        assert offline and offline[0].payload["projector_id"] == pjlink_worker.projector_id
+    finally:
+        await bus.unsubscribe(queue)
+
+
 # -- a poll in progress steps aside for an operator command -----------------
 
 
@@ -234,3 +255,22 @@ async def test_only_the_operational_tier_writes_power_history(api):  # noqa: F81
     # Every tier still updates the live state the dashboard reads.
     shown = (await api.get(f"/api/projectors/{pid}", headers=headers)).json()
     assert shown["state"]["online"] is True
+
+
+async def test_standby_is_logged_once_after_a_cooling_step(api):  # noqa: F811
+    """PJLink goes on -> cooling -> standby. The "now in standby" event used
+    to need on -> standby in one step, so it never appeared for PJLink."""
+    import app.services.monitor as monitor_module
+    from app.drivers import ProjectorStatus
+    from app.services.device_manager import manager
+
+    await monitor_module.monitor.stop()  # no scheduled poll in between
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    worker = manager.get(pid)
+    for power in (PowerState.ON, PowerState.COOLING, PowerState.OFF, PowerState.OFF):
+        await monitor_module.monitor.persist_status(
+            worker, ProjectorStatus(online=True, power=power), Tier.OPERATIONAL)
+    events = (await api.get(f"/api/events?projector_id={pid}&kind=power_off_observed",
+                            headers=headers)).json()
+    assert len(events) == 1
