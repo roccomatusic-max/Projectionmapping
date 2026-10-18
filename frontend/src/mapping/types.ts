@@ -312,3 +312,31 @@ export interface AiStatus {
   key_hint: string | null
   source: 'settings' | 'environment' | null
 }
+
+/** A saved map: one building's lined-up outputs and traced parts, kept by name. */
+export interface SavedMap {
+  id: number
+  name: string
+  description: string
+  canvas_width: number
+  canvas_height: number
+  output_count: number
+  surface_count: number
+  calibrated_count: number
+  player_count: number
+  output_names: string[]
+  updated_at: string
+}
+
+/** What applying a saved map to a show returns. */
+export interface MapApplied {
+  show: Show
+  players_moved: number
+}
+
+/** Which parts of a saved map to copy into a show. */
+export interface MapParts {
+  outputs: boolean
+  surfaces: boolean
+  players: boolean
+}
