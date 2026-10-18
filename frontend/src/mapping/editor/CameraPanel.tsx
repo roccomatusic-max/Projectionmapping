@@ -3,7 +3,7 @@ import { request } from '@/api/client'
 import type { BusMessage } from '@/api/types'
 import { classNames } from '@/lib/format'
 import { mappingApi, snapshotUrl } from '../api'
-import { applyHomography, squareToQuad } from '../geometry'
+import { type Grid, gridCorners, gridFromView, gridPoint } from '../cameraView'
 import type {
   ApplyResult,
   CalibrationGrid,
@@ -18,12 +18,6 @@ import type {
 import { MINIPC_DOWNLOAD, type Player } from './PlayersPanel'
 import { outputColor } from './panels'
 
-const DEFAULT_CORNERS: Point[] = [
-  [0.15, 0.15],
-  [0.85, 0.15],
-  [0.85, 0.85],
-  [0.15, 0.85],
-]
 const CORNER_LABELS = ['TL', 'TR', 'BR', 'BL']
 /** How long one Live view request keeps the photos coming. */
 const LIVE_SECONDS = 120
@@ -41,11 +35,6 @@ const STEPS: Array<{ key: StepKey; title: string; hint: string }> = [
 ]
 
 /** A hand grid: the canvas points at even steps, as placed on the photo. */
-interface Grid {
-  cols: number
-  rows: number
-  points: Point[]
-}
 
 /** Where one projector's light falls on the photo. */
 interface Footprint {
@@ -597,45 +586,6 @@ function ResultList({ results }: { results: ApplyResult[] | null }) {
 }
 
 // -- the hand grid ------------------------------------------------------------------
-
-function gridFromView(view: CameraView | null | undefined): Grid {
-  if (view?.mesh) return { cols: view.mesh.cols, rows: view.mesh.rows, points: view.mesh.points }
-  const [tl, tr, br, bl] = view?.corners ?? DEFAULT_CORNERS
-  return { cols: 2, rows: 2, points: [tl, tr, bl, br] }
-}
-
-function gridCorners(grid: Grid): Point[] {
-  const { cols, rows, points } = grid
-  return [points[0], points[cols - 1], points[cols * rows - 1], points[cols * (rows - 1)]]
-}
-
-/** Where canvas point (u, v) is on the photo: the corners' homography plus the hand offsets. */
-function gridPoint(grid: Grid, u: number, v: number): Point {
-  const flat = squareToQuad(gridCorners(grid))
-  const [x, y] = applyHomography(flat, u, v)
-  if (grid.cols === 2 && grid.rows === 2) return [x, y]
-  const gx = Math.min(Math.max(u, 0), 1) * (grid.cols - 1)
-  const gy = Math.min(Math.max(v, 0), 1) * (grid.rows - 1)
-  const c = Math.min(Math.floor(gx), grid.cols - 2)
-  const r = Math.min(Math.floor(gy), grid.rows - 2)
-  const tx = gx - c
-  const ty = gy - r
-  let ox = 0
-  let oy = 0
-  for (const [dc, dr, w] of [
-    [0, 0, (1 - tx) * (1 - ty)],
-    [1, 0, tx * (1 - ty)],
-    [0, 1, (1 - tx) * ty],
-    [1, 1, tx * ty],
-  ]) {
-    const index = (r + dr) * grid.cols + c + dc
-    const [px, py] = grid.points[index]
-    const [fx, fy] = applyHomography(flat, (c + dc) / (grid.cols - 1), (r + dr) / (grid.rows - 1))
-    ox += w * (px - fx)
-    oy += w * (py - fy)
-  }
-  return [x + ox, y + oy]
-}
 
 /** The same placement with more or fewer points. */
 function resampleGrid(grid: Grid, cols: number, rows: number): Grid {

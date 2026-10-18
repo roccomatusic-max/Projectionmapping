@@ -5,7 +5,18 @@ import type { ServerClock } from '../live'
 import { OutputView } from '../OutputView'
 import type { Playback } from '../playback'
 import type { Output, Show, SourceRect, TransportState } from '../types'
+import { useCanvasMap } from './canvasMap'
 import { outputColor } from './panels'
+
+const MAP_KEY = 'pm.canvasMap'
+
+function mapWanted(): boolean {
+  try {
+    return localStorage.getItem(MAP_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
 
 const HANDLES: { key: RectHandle; at: [number, number]; cursor: string }[] = [
   { key: 'nw', at: [0, 0], cursor: 'nwse-resize' },
@@ -36,6 +47,10 @@ interface Drag {
  * selected box can be dragged to move it and pulled by its edges or corners
  * to resize it; edges snap to the canvas border and to neighbouring boxes.
  * The selected box is drawn last, so it stays grabbable where boxes overlap.
+ *
+ * Once the canvas has been placed on a camera's photo, the photo of the
+ * building is drawn behind the boxes with each projector's light on it
+ * (the canvas map), so the boxes sit where the projectors really land.
  */
 export function CanvasOverview({
   show,
@@ -54,6 +69,17 @@ export function CanvasOverview({
   const H = show.canvas_height
   const svgRef = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
+  const map = useCanvasMap(show, outputs)
+  const [mapOn, setMapOn] = useState(mapWanted)
+  const showMap = map != null && mapOn
+  const toggleMap = (on: boolean) => {
+    setMapOn(on)
+    try {
+      localStorage.setItem(MAP_KEY, on ? 'on' : 'off')
+    } catch {
+      /* remembered for this page only */
+    }
+  }
 
   const toCanvas = (event: { clientX: number; clientY: number }): [number, number] => {
     const svg = svgRef.current!
@@ -101,85 +127,94 @@ export function CanvasOverview({
   const strokeFor = (active: boolean) => (active ? 3 : 1.5)
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={`${-W * 0.02} ${-H * 0.02} ${W * 1.04} ${H * 1.04}`}
-      className="w-full touch-none select-none rounded-md bg-panel-950"
-      onPointerMove={move}
-      onPointerUp={end}
-      onPointerCancel={end}
-    >
-      <rect x={0} y={0} width={W} height={H} fill="#141820" stroke="rgba(255,255,255,0.15)" strokeWidth={2}
-        vectorEffect="non-scaling-stroke" />
-      {order.map(({ o, i }) => {
-        const color = outputColor(i)
-        const active = o.id === selectedId
-        const x = o.source.x * W
-        const y = o.source.y * H
-        const w = o.source.w * W
-        const h = o.source.h * H
-        const label = `${i + 1}  ${o.name}`
-        // Fit the label inside the box, whatever its size.
-        const font = Math.max(Math.min(H / 16, (w * 0.9) / (label.length * 0.6), h / 4), Math.min(W, H) / 60)
-        const pad = font * 0.5
-        const editable = active && onChange != null
-        return (
-          <g key={o.id} data-output={o.id}>
-            <rect
-              x={x}
-              y={y}
-              width={w}
-              height={h}
-              fill={color}
-              fillOpacity={active ? 0.28 : 0.14}
-              stroke={color}
-              strokeWidth={strokeFor(active)}
-              vectorEffect="non-scaling-stroke"
-              className={editable ? 'cursor-move' : 'cursor-pointer'}
-              onPointerDown={begin(o, 'move')}
-            />
-            <text
-              x={x + pad}
-              y={y + pad + font * 0.85}
-              fill="#e2e8f0"
-              fontSize={font}
-              fontWeight={600}
-              style={{ pointerEvents: 'none' }}
-            >
-              {label}
-            </text>
-            {h > font * 3.2 && (
+    <div className="space-y-2">
+      <svg
+        ref={svgRef}
+        viewBox={`${-W * 0.02} ${-H * 0.02} ${W * 1.04} ${H * 1.04}`}
+        className="w-full touch-none select-none rounded-md bg-panel-950"
+        onPointerMove={move}
+        onPointerUp={end}
+        onPointerCancel={end}
+      >
+        <rect x={0} y={0} width={W} height={H} fill="#141820" stroke="rgba(255,255,255,0.15)" strokeWidth={2}
+          vectorEffect="non-scaling-stroke" />
+        {showMap && <image href={map} x={0} y={0} width={W} height={H} preserveAspectRatio="none" />}
+        {order.map(({ o, i }) => {
+          const color = outputColor(i)
+          const active = o.id === selectedId
+          const x = o.source.x * W
+          const y = o.source.y * H
+          const w = o.source.w * W
+          const h = o.source.h * H
+          const label = `${i + 1}  ${o.name}`
+          // Fit the label inside the box, whatever its size.
+          const font = Math.max(Math.min(H / 16, (w * 0.9) / (label.length * 0.6), h / 4), Math.min(W, H) / 60)
+          const pad = font * 0.5
+          const editable = active && onChange != null
+          return (
+            <g key={o.id} data-output={o.id}>
+              <rect
+                x={x}
+                y={y}
+                width={w}
+                height={h}
+                fill={color}
+                fillOpacity={showMap ? (active ? 0.12 : 0.04) : active ? 0.28 : 0.14}
+                stroke={color}
+                strokeWidth={strokeFor(active)}
+                vectorEffect="non-scaling-stroke"
+                className={editable ? 'cursor-move' : 'cursor-pointer'}
+                onPointerDown={begin(o, 'move')}
+              />
               <text
                 x={x + pad}
-                y={y + pad + font * 2.1}
-                fill="#94a3b8"
-                fontSize={font * 0.7}
+                y={y + pad + font * 0.85}
+                fill="#e2e8f0"
+                fontSize={font}
+                fontWeight={600}
                 style={{ pointerEvents: 'none' }}
               >
-                {Math.round(w)} × {Math.round(h)} of the canvas
+                {label}
               </text>
-            )}
-            {editable &&
-              HANDLES.map((handle) => (
-                <rect
-                  key={handle.key}
-                  x={x + handle.at[0] * w - handleSize / 2}
-                  y={y + handle.at[1] * h - handleSize / 2}
-                  width={handleSize}
-                  height={handleSize}
-                  rx={handleSize * 0.2}
-                  fill="#0b0e14"
-                  stroke={color}
-                  strokeWidth={2}
-                  vectorEffect="non-scaling-stroke"
-                  style={{ cursor: handle.cursor }}
-                  onPointerDown={begin(o, handle.key)}
-                />
-              ))}
-          </g>
-        )
-      })}
-    </svg>
+              {h > font * 3.2 && (
+                <text
+                  x={x + pad}
+                  y={y + pad + font * 2.1}
+                  fill="#94a3b8"
+                  fontSize={font * 0.7}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {Math.round(w)} × {Math.round(h)} of the canvas
+                </text>
+              )}
+              {editable &&
+                HANDLES.map((handle) => (
+                  <rect
+                    key={handle.key}
+                    x={x + handle.at[0] * w - handleSize / 2}
+                    y={y + handle.at[1] * h - handleSize / 2}
+                    width={handleSize}
+                    height={handleSize}
+                    rx={handleSize * 0.2}
+                    fill="#0b0e14"
+                    stroke={color}
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                    style={{ cursor: handle.cursor }}
+                    onPointerDown={begin(o, handle.key)}
+                  />
+                ))}
+            </g>
+          )
+        })}
+      </svg>
+      {map != null && (
+        <label className="flex items-center gap-2 text-xs text-slate-400">
+          <input type="checkbox" className="accent-sky-500" checked={mapOn} onChange={(e) => toggleMap(e.target.checked)} />
+          The building from the camera, with each projector's light (from the last calibration)
+        </label>
+      )}
+    </div>
   )
 }
 
