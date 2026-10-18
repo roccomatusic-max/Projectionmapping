@@ -96,13 +96,13 @@ export class Playback {
 
   private sceneItems(state: TransportState | null, now: number, mix: number): SceneItem[] {
     if (this.preview) {
-      return [{ scene: this.preview.scene, weight: 1, time: (performance.now() - this.preview.startedAt) / 1000 }]
+      return [{ scene: this.preview.scene, weight: 1, time: (performance.now() - this.preview.startedAt) / 1000, clock: now }]
     }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) return []
     const items: SceneItem[] = []
     const add = (cue: TransportCue | null, weight: number) => {
       const scene = cue?.scene_id != null ? this.scenes.get(cue.scene_id) : undefined
-      if (cue && scene && weight > 0) items.push({ scene, weight, time: Math.max(0, now - cue.started_at_ms) / 1000 })
+      if (cue && scene && weight > 0) items.push({ scene, weight, time: Math.max(0, now - cue.started_at_ms) / 1000, clock: now })
     }
     // The outgoing scene first, so the incoming one draws on top of it.
     if (mix < 1) add(state.previous, 1 - mix)

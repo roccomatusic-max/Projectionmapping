@@ -351,6 +351,24 @@ export const LAYER_KINDS: LayerKind[] = [
     nears: AREA_NEARS,
     defaults: { blend: 'normal', target: 'building', reacts_to: 'always', amount: 0.5, speed: 0.3 },
   },
+  {
+    type: 'countdown',
+    label: 'Christmas countdown',
+    about: 'Days until Christmas with a ribbon and a ticking clock; colour is the ribbon, second colour the glow',
+    group: 'objects',
+    styles: [
+      { id: 'gold', label: 'Gold and holly' },
+      { id: 'frost', label: 'Frosted' },
+      { id: 'candy', label: 'Candy cane' },
+      { id: 'marquee', label: 'Marquee lights' },
+    ],
+    dials: { size: 'Size', fade: 'Height', speed: 'Shine speed', amount: 'Sparkle' },
+    nears: ['none', 'light', 'grow', 'jump'],
+    defaults: {
+      blend: 'normal', color: '#b3122a', color2: '#ffcf70', size: 0.75, fade: 0.5, speed: 0.4, amount: 0.6,
+      target: 'building', reacts_to: 'always', near: 'light', reach: 0.5,
+    },
+  },
 ]
 
 export const KIND = Object.fromEntries(LAYER_KINDS.map((k) => [k.type, k])) as Record<LayerType, LayerKind>
@@ -499,6 +517,16 @@ export const STARTERS: Starter[] = [
       objects('presents', { name: 'Presents', target: 'outside', color: '#dc2626', color2: '#fde047', size: 0.35, amount: 0.15, near: 'jump' }),
       objects('trees', { name: 'Trees', target: 'outside', color: '#15803d', color2: '#fde047', size: 0.55, amount: 0.1, change: 'twinkle', near: 'light' }),
       { type: 'falling', name: 'Snow', style: 'snow', amount: 0.35, speed: 0.25, near: 'flee' },
+    ],
+  },
+  {
+    name: 'Christmas countdown',
+    occasion: 'Winter holidays',
+    description: 'Days until Christmas in gold with a ribbon, holly and a ticking clock. The gold lights up and sparkles as people walk up, and snow parts around them.',
+    layers: [
+      { type: 'falling', name: 'Snow', style: 'snow', amount: 0.4, speed: 0.22, size: 0.3, near: 'flee' },
+      { type: 'countdown', name: 'Countdown', style: 'gold', target: 'building', size: 0.8, near: 'light' },
+      sparks('#fff7c2', '#ffd166'),
     ],
   },
   {

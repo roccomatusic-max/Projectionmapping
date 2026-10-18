@@ -258,6 +258,7 @@ export type LayerType =
   | 'glow' | 'ripples' | 'trails' | 'particles' | 'shadows' | 'reveal' | 'distort'
   | 'wash' | 'field' | 'texture' | 'outline' | 'lights' | 'falling' | 'shapes'
   | 'picture'
+  | 'countdown'
 
 export type ReactsTo = 'presence' | 'movement' | 'count' | 'closeness' | 'always'
 export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside'

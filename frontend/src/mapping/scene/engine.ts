@@ -16,6 +16,7 @@ import { mediaUrl } from '../api'
 import type { PersonSpot } from '../people'
 import type { LayerBlend, MappingScene, ReactsTo, SceneLayer, SourceRect, Surface } from '../types'
 import { CHANGES, changeOf, KIND, MOTIONS, motionOf, NEARS, nearOf } from './catalog'
+import { CountdownDrawer } from './countdown'
 import { maskKey, rasteriseLayerMask } from './masks'
 import {
   LAYER_VERTEX,
@@ -54,6 +55,8 @@ export interface SceneItem {
   /** Seconds since the scene's cue started, on the server's clock, so
    *  every output draws the same moment. */
   time: number
+  /** Now on the server's clock, epoch milliseconds (the Christmas countdown). */
+  clock?: number
 }
 
 export interface DistortParams {
@@ -131,6 +134,7 @@ export class SceneEngine {
   private surfacesRef: Surface[] | null = null
   /** Pictures for "picture" layers, by media id; drawn once loaded. */
   private pictures = new Map<number, { tex: WebGLTexture; ready: boolean }>()
+  private countdown: CountdownDrawer | null = null
   /** Index into SCENE_SCALES. */
   quality = 0
   /** The distortion the output shader should apply to the media, if any. */
@@ -369,6 +373,15 @@ export class SceneEngine {
         if (strength <= 0.001) continue
         const key = `${item.scene.id}:${layer.id}`
         used.add(key)
+        if (layer.type === 'countdown') {
+          this.countdown ??= new CountdownDrawer(gl)
+          this.countdown.draw(key, {
+            layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, w, surfaces: frame.surfaces,
+            people: frame.people, strength, time: item.time, clockMs: item.clock ?? Date.now(), detail: this.scale, dt,
+            blend: (mode) => this.blend(mode),
+          })
+          continue
+        }
         const state = this.state(key)
         if (layer.type === 'shapes') {
           // Objects check where they may sit against the whole canvas, so
@@ -401,6 +414,7 @@ export class SceneEngine {
 
   /** Layers not drawn for a while (scene changed, layer deleted) give their memory back. */
   private forgetUnused(used: Set<string>) {
+    this.countdown?.forget(used)
     const now = performance.now()
     for (const [key, state] of this.states) {
       if (!used.has(key) && now - state.seenAt > 5000) {
@@ -586,6 +600,8 @@ export class SceneEngine {
     this.target = null
     for (const { tex } of this.pictures.values()) gl.deleteTexture(tex)
     this.pictures.clear()
+    this.countdown?.dispose()
+    this.countdown = null
     for (const { program } of this.programs.values()) gl.deleteProgram(program)
     this.programs.clear()
     gl.deleteVertexArray(this.vao)
