@@ -45,9 +45,17 @@ an ordered cue list driven by GO.
 | Corner pin | Four corners dragged onto the building. A homography, so straight lines stay straight. **(phase 1)** |
 | Mesh warp | A grid of control points on top of the corner pin, for curved or uneven surfaces. Interpolated with Catmull-Rom so the surface stays smooth between points. **(phase 1)** |
 | Masks | Polygons in output space that black out windows, trees, a neighbour's wall. Feathered edges, optional invert. **(phase 1)** |
-| Edge blend | Per-edge ramp width, curve and gamma, so two overlapping projectors add up to one even brightness. **(phase 1)** |
+| Edge blend | Automatic where outputs overlap: each output window works out, for every point of its slice, its share of the light among the outputs showing that point, in proportion to the square of how far the point is inside each one's picture (the nearer of its slice edge and its projector's image edge, through the warp). The shares add up to one whatever the overlap's shape: slanted by keystone, bent by a curved wall, three deep. An output blends by itself once it is calibrated with a camera (its warp then puts each canvas point on the same spot of the building as every other calibrated output's), or always, or never (Blend tab); hand-placed outputs with overlapping slices may be the same picture on two walls, so they only blend when asked. While an output blends by itself its per-edge ramps (width, curve, gamma) stand aside; they remain for hand setups. |
 | Colour | Brightness, gamma and per-channel gain, to match a warm projector to a cool one. **(phase 1)** |
 | Test pattern | Canvas grid, output ID and crosshair, solid colours. The canvas grid is drawn in canvas space, so it lines up across projectors: aligning is making the grids meet. **(phase 1)** |
+
+**A picture of its own.** A cue can give some projectors their own picture
+or video instead of their part of the shared one (Editor → **Pictures on
+each projector**; the cue's `output_media`), or nothing. It fills that
+output's slice, shaped like the projector's image, and takes no part in
+blending. An output set to never blend is also left out of fit-canvas and
+apply-calibration on the Camera tab (and out of **Calibrate all**), so it
+keeps the place it was lined up in by hand.
 
 An output may be linked to a registered projector, so the editor can show its
 power and shutter state and the show can refuse to start into a projector

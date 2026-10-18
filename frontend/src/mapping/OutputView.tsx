@@ -17,6 +17,8 @@ export interface FrameStats {
   sceneScale: number | null
 }
 
+const NO_OUTPUTS: Output[] = []
+
 /** Seconds of dropped frames before scenes are drawn with less detail. */
 const SLOW_SECONDS = 3
 
@@ -42,6 +44,7 @@ export function OutputView({
   onStats,
   calibration = null,
   interaction = 'none',
+  outputs,
 }: {
   output: Output
   canvasWidth: number
@@ -53,11 +56,13 @@ export function OutputView({
   onStats?: (stats: FrameStats) => void
   calibration?: CalibrationFrame | null
   interaction?: Interaction
+  /** Every output of the show, so overlaps with them blend by themselves. */
+  outputs?: Output[]
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OutputRenderer | null>(null)
-  const latest = useRef({ output, canvasWidth, canvasHeight, onStats, calibration, interaction })
-  latest.current = { output, canvasWidth, canvasHeight, onStats, calibration, interaction }
+  const latest = useRef({ output, canvasWidth, canvasHeight, onStats, calibration, interaction, outputs })
+  latest.current = { output, canvasWidth, canvasHeight, onStats, calibration, interaction, outputs }
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -89,9 +94,9 @@ export function OutputView({
           canvas.height = h
         }
       }
-      const { output: current, canvasWidth: cw, canvasHeight: ch, calibration: calib } = latest.current
-      renderer.setOutput(current, cw, ch)
+      const { output: current, canvasWidth: cw, canvasHeight: ch, calibration: calib, outputs: all } = latest.current
       const frame = playback.frame(clock.now(), current.id)
+      renderer.setOutput(current, cw, ch, all ?? NO_OUTPUTS, frame.separate)
       lastFrame = frame
       if (calib) {
         renderer.renderPattern(calib.pattern)

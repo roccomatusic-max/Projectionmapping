@@ -478,3 +478,42 @@ async def test_non_finite_numbers_are_kept_out_of_the_database(api):
     assert listed.status_code == 200, listed.text
     assert listed.json()[0]["report"]["cache"] == "on"
     assert listed.json()[0]["report"].get("fps") is None
+
+
+# -- a picture of its own on one projector ----------------------------------------
+
+
+async def test_a_projector_can_show_a_picture_of_its_own(api):
+    headers = await login(api)
+    show = await make_show(api, headers)
+    house, garage = [(await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                                     json={"name": name})).json()["id"] for name in ("House", "Garage")]
+    shared = (await upload(api, headers, name="house.png")).json()
+    own = (await upload(api, headers, name="pumpkin.png")).json()
+    cue = await make_cue(api, headers, show["id"], media_id=shared["id"],
+                         output_media={str(garage): own["id"]})
+    assert cue["output_media"] == {str(garage): own["id"]}
+
+    started = await api.post("/api/mapping/transport", headers=headers,
+                             json={"action": "go", "show_id": show["id"]})
+    assert started.status_code == 200, started.text
+    assert started.json()["current"]["output_media"] == {str(garage): own["id"]}
+    # On air as a projector's own picture: not deleted under the show.
+    busy = await api.delete(f"/api/mapping/media/{own['id']}", headers=headers)
+    assert busy.status_code == 409
+    await api.post("/api/mapping/transport", headers=headers, json={"action": "stop"})
+
+    for bad in ({"999": own["id"]}, {str(garage): 999}):
+        refused = await api.patch(f"/api/mapping/cues/{cue['id']}", headers=headers,
+                                  json={"output_media": bad})
+        assert refused.status_code == 400, bad
+    nothing = await api.patch(f"/api/mapping/cues/{cue['id']}", headers=headers,
+                              json={"output_media": {str(house): None, str(garage): own["id"]}})
+    assert nothing.json()["output_media"] == {str(house): None, str(garage): own["id"]}
+
+    # A deleted picture leaves its projector showing nothing; a deleted
+    # projector leaves no choice behind.
+    assert (await api.delete(f"/api/mapping/media/{own['id']}", headers=headers)).status_code == 204
+    assert (await api.delete(f"/api/mapping/outputs/{house}", headers=headers)).status_code == 204
+    again = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert again["cues"][0]["output_media"] == {str(garage): None}

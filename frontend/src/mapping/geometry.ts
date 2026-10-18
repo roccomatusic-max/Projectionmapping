@@ -238,6 +238,7 @@ export function withDefaults<T extends { warp?: Partial<Warp>; blend?: Partial<B
   for (const edge of ['left', 'right', 'top', 'bottom'] as const) {
     blend[edge] = { ...blend[edge], ...(output.blend?.[edge] ?? {}) }
   }
+  blend.auto = output.blend?.auto ?? null
   return {
     ...output,
     warp: {

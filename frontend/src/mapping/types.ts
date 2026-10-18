@@ -53,6 +53,12 @@ export interface Blend {
   right: BlendEdge
   top: BlendEdge
   bottom: BlendEdge
+  /**
+   * Blend by itself where this output overlaps others: true always, false
+   * never (it shows a picture apart from the others), null when it has
+   * been calibrated with a camera.
+   */
+  auto?: boolean | null
 }
 
 export interface ColorAdjust {
@@ -111,6 +117,11 @@ export interface Cue {
    * no scene there. Projectors not listed play scene_id.
    */
   output_scenes: Record<string, number | null>
+  /**
+   * A picture of their own on some projectors: output id → media id, or
+   * null for no media there. Projectors not listed show their part of media_id.
+   */
+  output_media: Record<string, number | null>
 }
 
 /** How people tracked by a depth camera affect a cue. */
@@ -147,6 +158,7 @@ export interface TransportCue {
   interaction: Interaction
   scene_id?: number | null
   output_scenes?: Record<string, number | null>
+  output_media?: Record<string, number | null>
   started_at_ms: number
 }
 

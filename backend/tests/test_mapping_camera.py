@@ -455,6 +455,44 @@ async def test_fit_canvas_places_the_canvas_and_slices_the_outputs(api):
     assert all(r["applied"] for r in applied.json()), applied.text
 
 
+async def test_a_projector_showing_its_own_picture_stays_out_of_the_shared_one(api):
+    headers = await login(api)
+    camera_id, camera = await pair(api, headers, CAMERA)
+    show = await make_show(api, headers)
+    sources = [{"x": 0.0, "y": 0.0, "w": 0.55, "h": 1.0}, {"x": 0.45, "y": 0.0, "w": 0.55, "h": 1.0}]
+    target = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    outputs = []
+    for name, source in zip(("Left", "Right"), sources, strict=True):
+        output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                                 json={"name": name})).json()
+        await api.put(f"/api/mapping/outputs/{output['id']}/calibration", headers=camera,
+                      json=decoded_grid(source, target))
+        outputs.append(output)
+    garage = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Garage"})).json()
+    await api.put(f"/api/mapping/outputs/{garage['id']}/calibration", headers=camera,
+                  json=decoded_grid(sources[1], target))
+    pin = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]
+    apart = await api.patch(f"/api/mapping/outputs/{garage['id']}", headers=headers,
+                            json={"blend": {"auto": False}, "source": {"x": 0, "y": 0, "w": 0.3, "h": 0.3},
+                                  "warp": {"corners": pin, "mesh": None}})
+    assert apart.status_code == 200, apart.text
+    assert apart.json()["blend"]["auto"] is False
+
+    fitted = (await api.post(f"/api/mapping/shows/{show['id']}/fit-canvas", headers=headers,
+                             json={"camera_id": camera_id})).json()
+    assert sorted(fitted["sliced"]) == sorted(o["id"] for o in outputs)
+    applied = {r["name"]: r for r in (await api.post(
+        f"/api/mapping/shows/{show['id']}/apply-calibration", headers=headers, json={})).json()}
+    assert applied["Left"]["applied"] and applied["Right"]["applied"]
+    assert applied["Garage"]["applied"] is False
+    assert "apart" in applied["Garage"]["reason"]
+    again = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    kept = next(o for o in again["outputs"] if o["id"] == garage["id"])
+    assert kept["source"] == {"x": 0, "y": 0, "w": 0.3, "h": 0.3}
+    assert kept["warp"]["corners"] == pin
+
+
 async def test_a_hand_grid_is_kept_with_the_show(api):
     headers = await login(api)
     camera_id, _ = await pair(api, headers, CAMERA)

@@ -239,10 +239,16 @@ async def delete_media(media_id: int, session: SessionDep, admin: RequireAdmin) 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     live = transport.snapshot()
     if live.status in ("playing", "paused") and any(
-        cue is not None and cue.media_id == media_id for cue in (live.current, live.previous)
+        cue is not None and media_id in (cue.media_id, *cue.output_media.values())
+        for cue in (live.current, live.previous)
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail=f"{asset.name!r} is on air; stop the show first")
+    # Projectors that showed it as a picture of their own show nothing there now.
+    for cue in (await session.execute(select(MappingCue))).scalars():
+        if media_id in (cue.output_media or {}).values():
+            cue.output_media = {output: (None if used == media_id else used)
+                                for output, used in cue.output_media.items()}
     stored = asset.stored_name
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="media_deleted",
                       message=f"{admin.username} deleted {asset.name}"))
@@ -432,6 +438,15 @@ async def update_output(output_id: int, payload: OutputUpdate, session: SessionD
 async def delete_output(output_id: int, session: SessionDep, _: RequireAdmin) -> None:
     output = await _load_output(session, output_id)
     show_id = output.show_id
+    # Its own scene and picture choices go with it, so the cues stay valid to edit.
+    key = str(output_id)
+    for cue in (await session.execute(
+        select(MappingCue).where(MappingCue.show_id == show_id)
+    )).scalars():
+        for field in ("output_scenes", "output_media"):
+            choices = getattr(cue, field) or {}
+            if key in choices:
+                setattr(cue, field, {k: v for k, v in choices.items() if k != key})
     await session.delete(output)
     await session.flush()
     remaining = (await session.execute(
@@ -483,6 +498,21 @@ async def _check_output_scenes(session, show_id: int, output_scenes: dict | None
     return {str(output_id): scene_id for output_id, scene_id in output_scenes.items()}
 
 
+async def _check_output_media(session, show_id: int, output_media: dict | None) -> dict:
+    """Pictures of their own, keyed by this show's outputs and naming real media."""
+    if not output_media:
+        return {}
+    outputs = set((await session.execute(
+        select(MappingOutput.id).where(MappingOutput.show_id == show_id)
+    )).scalars().all())
+    for output_id, media_id in output_media.items():
+        if output_id not in outputs:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Output {output_id} is not part of this show")
+        await _check_media(session, media_id)
+    return {str(output_id): media_id for output_id, media_id in output_media.items()}
+
+
 async def _renumber_cues(session, show_id: int, order: list[int] | None = None) -> None:
     cues = (await session.execute(
         select(MappingCue).where(MappingCue.show_id == show_id).order_by(MappingCue.position)
@@ -503,6 +533,7 @@ async def create_cue(show_id: int, payload: CueCreate, session: SessionDep,
     await _check_scene(session, payload.scene_id)
     fields = payload.model_dump()
     fields["output_scenes"] = await _check_output_scenes(session, show.id, payload.output_scenes)
+    fields["output_media"] = await _check_output_media(session, show.id, payload.output_media)
     cue = MappingCue(show_id=show.id, position=len(show.cues), **fields)
     session.add(cue)
     await session.commit()
@@ -527,6 +558,9 @@ async def update_cue(cue_id: int, payload: CueUpdate, session: SessionDep,
     if "output_scenes" in changes:
         changes["output_scenes"] = await _check_output_scenes(
             session, cue.show_id, changes["output_scenes"])
+    if "output_media" in changes:
+        changes["output_media"] = await _check_output_media(
+            session, cue.show_id, changes["output_media"])
     for field, value in changes.items():
         setattr(cue, field, value)
     await session.commit()

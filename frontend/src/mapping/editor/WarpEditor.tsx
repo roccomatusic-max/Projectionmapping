@@ -41,6 +41,7 @@ export function WarpEditor({
   readOnly,
   onChange,
   onSelectMask,
+  outputs,
 }: {
   output: Output
   canvasWidth: number
@@ -52,6 +53,8 @@ export function WarpEditor({
   readOnly: boolean
   onChange: (patch: Partial<Output>) => void
   onSelectMask: (index: number | null) => void
+  /** The show's outputs, so the preview blends overlaps like the projector will. */
+  outputs?: Output[]
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -191,6 +194,7 @@ export function WarpEditor({
       >
         <OutputView
           output={output}
+          outputs={outputs}
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
           playback={playback}

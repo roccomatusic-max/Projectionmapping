@@ -128,6 +128,12 @@ class Blend(BaseModel):
     right: BlendEdge = Field(default_factory=BlendEdge)
     top: BlendEdge = Field(default_factory=BlendEdge)
     bottom: BlendEdge = Field(default_factory=BlendEdge)
+    #: Blend by itself where this output overlaps others (the output windows
+    #: work out each one's share of the light; the edges above then stand
+    #: aside): True always, False never (it shows a picture apart from the
+    #: others, and fit-canvas and apply-calibration leave it out), None once
+    #: it has been calibrated with a camera.
+    auto: bool | None = None
 
 
 class ColorAdjust(BaseModel):
@@ -208,6 +214,11 @@ class CueBase(BaseModel):
     #: A different scene on some projectors: {output id: scene id, or None for
     #: no scene there}. Projectors not listed play ``scene_id``.
     output_scenes: dict[int, int | None] = Field(default_factory=dict)
+    #: A picture of their own on some projectors: {output id: media id, or
+    #: None for no media there}, fitted to that output's slice and not
+    #: blended with the others. Outputs not listed show their part of
+    #: ``media_id``.
+    output_media: dict[int, int | None] = Field(default_factory=dict)
 
 
 class CueCreate(CueBase):
@@ -224,6 +235,7 @@ class CueUpdate(BaseModel):
     interaction: Interaction | None = None
     scene_id: int | None = None
     output_scenes: dict[int, int | None] | None = None
+    output_media: dict[int, int | None] | None = None
 
 
 class CueOut(CueBase):
@@ -384,6 +396,7 @@ class TransportCue(BaseModel):
     interaction: Interaction = "none"
     scene_id: int | None = None
     output_scenes: dict[int, int | None] = Field(default_factory=dict)
+    output_media: dict[int, int | None] = Field(default_factory=dict)
     #: Server epoch milliseconds at which media time zero was (or will be).
     started_at_ms: float
 

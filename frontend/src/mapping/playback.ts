@@ -10,6 +10,10 @@
  * It also says which scenes play (a cue's scene, crossfading with the
  * previous cue's) and passes on the people and the show's traced surfaces
  * the scenes react to and are shaped by.
+ *
+ * A cue can give some projectors a picture of their own instead of their
+ * part of the shared one (``output_media``); those are drawn over the
+ * projector's own slice and take no part in blending with the others.
  */
 
 import { mediaUrl } from './api'
@@ -30,6 +34,12 @@ interface Slot {
   asset: MediaAsset
 }
 
+/** The media one output plays for a cue: its own picture, or the shared one. */
+interface Pick {
+  mediaId: number | null
+  own: boolean
+}
+
 export interface Frame {
   a: TextureSource | null
   b: TextureSource | null
@@ -41,10 +51,14 @@ export interface Frame {
   scenes: SceneItem[]
   people: PersonSpot[]
   surfaces: Surface[]
+  /** Outputs showing a picture of their own (or none) in the live cue. */
+  separate: number[]
 }
 
-function cueKey(cue: TransportCue) {
-  return `${cue.id}:${cue.started_at_ms}:${cue.media_id}`
+const NONE: number[] = []
+
+function slotKey(cue: TransportCue, mediaId: number) {
+  return `${cue.id}:${cue.started_at_ms}:${mediaId}`
 }
 
 export class Playback {
@@ -63,6 +77,10 @@ export class Playback {
   private preview: { scene: MappingScene; startedAt: number } | null = null
   /** What the preview scene is drawn over, such as a photo of the building. */
   private backdrop: TextureSource | null = null
+  /** The outputs this window draws; null for all of them (the editor). */
+  private only: number[] | null = null
+  private separateKey = ''
+  private separateIds: number[] = NONE
 
   setScenes(scenes: MappingScene[]) {
     this.scenes = new Map(scenes.map((scene) => [scene.id, scene]))
@@ -71,6 +89,8 @@ export class Playback {
   /** The show's cues as saved, so scene choices edited during a cue apply at once. */
   setCues(cues: Cue[]) {
     this.cues = new Map(cues.map((cue) => [cue.id, cue]))
+    // A projector given a picture of its own during the cue starts loading it now.
+    if (this.state) this.setState(this.state, true)
   }
 
   /** The scene a cue plays on one output: its own choice there, else the cue's scene. */
@@ -81,6 +101,38 @@ export class Playback {
     const key = outputId == null ? null : String(outputId)
     const id = key != null && key in perOutput ? perOutput[key] : sceneId
     return id != null ? this.scenes.get(id) : undefined
+  }
+
+  /** The media a cue plays on one output; output_media edited during the cue applies at once. */
+  private mediaFor(cue: TransportCue, outputId: number | null): Pick {
+    const perOutput = this.outputMedia(cue)
+    const key = outputId == null ? null : String(outputId)
+    if (key != null && key in perOutput) return { mediaId: perOutput[key], own: true }
+    return { mediaId: cue.media_id, own: false }
+  }
+
+  private outputMedia(cue: TransportCue): Record<string, number | null> {
+    const saved = this.cues.get(cue.id)
+    return (saved ? saved.output_media : cue.output_media) ?? {}
+  }
+
+  /** Every media file ``cue`` plays on the outputs this window draws. */
+  private mediaIds(cue: TransportCue): number[] {
+    const perOutput = this.outputMedia(cue)
+    const ids = new Set<number>()
+    const outputs = this.only
+    const sharedUsed = !outputs || outputs.some((id) => !(String(id) in perOutput))
+    if (sharedUsed && cue.media_id != null) ids.add(cue.media_id)
+    for (const [output, id] of Object.entries(perOutput)) {
+      if (id != null && (!outputs || outputs.includes(Number(output)))) ids.add(id)
+    }
+    return [...ids]
+  }
+
+  /** Load only what these outputs play (an output window); null loads everything. */
+  setOutputs(ids: number[] | null) {
+    this.only = ids
+    if (this.state) this.setState(this.state, true)
   }
 
   setSurfaces(surfaces: Surface[]) {
@@ -137,9 +189,10 @@ export class Playback {
     this.state = state
     const wanted = new Set<string>()
     for (const cue of [state.current, state.previous]) {
-      if (cue && cue.media_id != null && state.status !== 'stopped' && state.status !== 'blackout') {
-        wanted.add(cueKey(cue))
-        this.ensure(cue)
+      if (!cue || state.status === 'stopped' || state.status === 'blackout') continue
+      for (const mediaId of this.mediaIds(cue)) {
+        wanted.add(slotKey(cue, mediaId))
+        this.ensure(cue, mediaId)
       }
     }
     for (const [key, slot] of this.slots) {
@@ -147,13 +200,13 @@ export class Playback {
     }
   }
 
-  private ensure(cue: TransportCue) {
-    const key = cueKey(cue)
+  private ensure(cue: TransportCue, mediaId: number) {
+    const key = slotKey(cue, mediaId)
     if (this.slots.has(key)) {
       this.slots.get(key)!.cue = cue
       return
     }
-    const asset = this.media.get(cue.media_id!)
+    const asset = this.media.get(mediaId)
     if (!asset) return
     let element: HTMLVideoElement | HTMLImageElement
     if (asset.kind === 'video') {
@@ -201,14 +254,27 @@ export class Playback {
     }
   }
 
-  private source(cue: TransportCue | null): TextureSource | null {
+  private source(cue: TransportCue | null, outputId: number | null): TextureSource | null {
     if (!cue) return null
-    const slot = this.slots.get(cueKey(cue))
+    const pick = this.mediaFor(cue, outputId)
+    if (pick.mediaId == null) return null
+    const slot = this.slots.get(slotKey(cue, pick.mediaId))
     if (!slot) return null
     const el = slot.element
     const width = slot.asset.width || (el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth)
     const height = slot.asset.height || (el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight)
-    return { element: el, width, height, fit: cue.fit }
+    return { element: el, width, height, fit: cue.fit, own: pick.own }
+  }
+
+  /** Outputs given a picture of their own in ``cue``; the same array while it does not change. */
+  private separate(cue: TransportCue | null): number[] {
+    const ids = cue ? Object.keys(this.outputMedia(cue)) : []
+    const key = ids.join(',')
+    if (key !== this.separateKey) {
+      this.separateKey = key
+      this.separateIds = ids.length ? ids.map(Number) : NONE
+    }
+    return this.separateIds
   }
 
   /** Where the media of ``cue`` should be now, seconds. */
@@ -255,11 +321,14 @@ export class Playback {
     const surfaces = this.surfaces
     if (this.preview) {
       const scenes = this.sceneItems(state, now, 1, outputId)
-      return { a: this.backdrop, b: null, mix: 1, blackout: false, drift: null, scenes, people, surfaces }
+      return { a: this.backdrop, b: null, mix: 1, blackout: false, drift: null, scenes, people, surfaces, separate: NONE }
     }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) {
       const scenes = this.sceneItems(state, now, 1, outputId)
-      return { a: null, b: null, mix: 1, blackout: scenes.length === 0, drift: null, scenes, people, surfaces }
+      return {
+        a: null, b: null, mix: 1, blackout: scenes.length === 0, drift: null, scenes, people, surfaces,
+        separate: this.separate(state?.current ?? null),
+      }
     }
     let mix = 1
     if (state.previous && state.fade_started_at_ms != null) {
@@ -269,22 +338,28 @@ export class Playback {
     if (now - this.lastCorrection > CORRECT_EVERY_MS) {
       this.lastCorrection = now
       const playing = state.status === 'playing'
-      const current = this.slots.get(cueKey(state.current))
-      if (current) this.correct(current, now, playing, true)
-      if (state.previous && mix < 1) {
-        const previous = this.slots.get(cueKey(state.previous))
-        if (previous) this.correct(previous, now, playing, false)
+      const current = state.current
+      const previous = state.previous && mix < 1 ? state.previous : null
+      let measured = false
+      for (const slot of this.slots.values()) {
+        if (slot.cue.id === current.id && slot.cue.started_at_ms === current.started_at_ms) {
+          this.correct(slot, now, playing, !measured)
+          measured = true
+        } else if (previous && slot.cue.id === previous.id && slot.cue.started_at_ms === previous.started_at_ms) {
+          this.correct(slot, now, playing, false)
+        }
       }
     }
     return {
-      a: this.source(state.current),
-      b: mix < 1 ? this.source(state.previous) : null,
+      a: this.source(state.current, outputId),
+      b: mix < 1 ? this.source(state.previous, outputId) : null,
       mix,
       blackout: false,
       drift: this.drift,
       scenes: this.sceneItems(state, now, mix, outputId),
       people,
       surfaces,
+      separate: this.separate(state.current),
     }
   }
 

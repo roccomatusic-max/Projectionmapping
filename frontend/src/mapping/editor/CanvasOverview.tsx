@@ -236,6 +236,7 @@ export function OutputPreviews({
             >
               <OutputView
                 output={o}
+                outputs={show.outputs}
                 canvasWidth={show.canvas_width}
                 canvasHeight={show.canvas_height}
                 playback={playback}
