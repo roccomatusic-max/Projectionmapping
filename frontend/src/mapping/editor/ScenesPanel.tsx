@@ -37,10 +37,10 @@ const SCENE_KEY = 'pc.mapping.scene'
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
 
 /** Layers whose things can be placed by hand on the preview. */
-const PLACEABLE = new Set<LayerType>(['shapes', 'countdown'])
+export const PLACEABLE = new Set<LayerType>(['shapes', 'countdown'])
 
 /** What the preview needs to place, pick, size and turn a layer's things. */
-function placingFor(layer: SceneLayer, selected: number | null) {
+export function placingFor(layer: SceneLayer, selected: number | null) {
   if (layer.type === 'countdown') {
     // One countdown, a rectangle the shape of its artwork.
     const h = countdownPinHeight(layer.size)

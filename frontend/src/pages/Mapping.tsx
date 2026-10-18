@@ -5,6 +5,7 @@ import { ConfirmDialog, EmptyState, ErrorBanner, Panel, Spinner, ToastStack, use
 import { classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
 import { CameraPanel } from '@/mapping/editor/CameraPanel'
+import { CanvasElements } from '@/mapping/editor/CanvasElements'
 import { CanvasOverview, OutputPreviews } from '@/mapping/editor/CanvasOverview'
 import { CueList, MediaLibrary } from '@/mapping/editor/panels'
 import { NumberField } from '@/mapping/editor/controls'
@@ -399,6 +400,13 @@ export default function Mapping({ session }: { session: Session }) {
                       playback={playback} clock={clock} transport={transport} onSelect={setSelectedOutput} />
                   </Panel>
                 )}
+
+                <Panel title="Media and elements"
+                  description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects or the countdown here and drag them into place.">
+                  <CanvasElements show={show} outputs={outputs} scenes={scenes} media={media} clock={clock}
+                    transport={transport} canEdit={canEdit} reloadScenes={runtime.reloadScenes}
+                    onShowChanged={() => runtime.refresh()} onError={setError} />
+                </Panel>
 
                 {outputs.length > 1 && show.cues.length > 0 && (
                   <Panel title="Pictures on each projector"
