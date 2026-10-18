@@ -586,6 +586,12 @@ ReactsTo = Literal["presence", "movement", "count", "closeness", "always"]
 #: Which traced surfaces a layer is drawn on; "everywhere" ignores them.
 LayerTarget = Literal["everywhere", "building", "walls", "roof", "windows", "doors", "outside"]
 LayerBlend = Literal["normal", "add", "screen"]
+#: How an object moves by itself, changes by itself, and what it does when a
+#: person comes near (see frontend/src/mapping/scene/catalog.ts).
+Motion = Literal["none", "bob", "sway", "spin", "drift", "bounce", "orbit", "rise", "flutter"]
+Change = Literal["none", "pulse", "twinkle", "colour", "flicker", "blink"]
+NearAction = Literal["none", "light", "grow", "shrink", "colour", "spin", "flee", "follow",
+                     "jump", "dance", "appear", "hide", "burst"]
 
 MAX_LAYERS = 12
 _HEX = r"^#[0-9a-fA-F]{6}$"
@@ -618,6 +624,12 @@ class SceneLayer(BaseModel):
     reacts_to: ReactsTo = "presence"
     #: How much the reaction matters: 0 ignores it, 1 is off without it.
     reaction: float = Field(default=0.7, ge=0, le=1)
+    #: None (scenes saved before these existed) means the type's usual.
+    motion: Motion | None = None
+    change: Change | None = None
+    near: NearAction | None = None
+    #: How far from a person objects notice them.
+    reach: float = Field(default=0.5, ge=0, le=1)
     #: The image a "picture" layer shows (stretched over the whole canvas).
     media_id: int | None = None
 

@@ -4,7 +4,23 @@ import { classNames } from '@/lib/format'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
 import type { PeopleTracker } from '../people'
-import { BLENDS, KIND, LAYER_KINDS, layerLabel, newLayer, normaliseLayer, REACTIONS, STARTERS, TARGETS } from '../scene/catalog'
+import {
+  BLENDS,
+  CHANGES,
+  changeOf,
+  KIND,
+  LAYER_KINDS,
+  layerLabel,
+  MOTIONS,
+  motionOf,
+  NEARS,
+  nearOf,
+  newLayer,
+  normaliseLayer,
+  REACTIONS,
+  STARTERS,
+  TARGETS,
+} from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
 import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
@@ -238,26 +254,31 @@ export function ScenesPanel({
           {canEdit && (
             <div className="mt-4 space-y-2">
               <p className="label">Start a new scene from</p>
-              <div className="grid grid-cols-2 gap-2">
-                {STARTERS.map((starter) => (
-                  <button
-                    key={starter.name}
-                    className="btn-default justify-start px-2 py-1.5 text-left text-xs"
-                    title={starter.description}
-                    disabled={busy != null}
-                    onClick={() => void create(starter.name, starter.description, starter.layers.map(normaliseLayer))}
-                  >
-                    {starter.name}
-                  </button>
-                ))}
-                <button
-                  className="btn-ghost justify-start px-2 py-1.5 text-xs"
-                  disabled={busy != null}
-                  onClick={() => void create('New scene', '', [])}
-                >
-                  Blank scene
-                </button>
-              </div>
+              {[...new Set(STARTERS.map((s) => s.occasion))].map((occasion) => (
+                <div key={occasion}>
+                  <p className="mb-1 mt-2 text-[11px] uppercase tracking-wide text-slate-500">{occasion}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {STARTERS.filter((s) => s.occasion === occasion).map((starter) => (
+                      <button
+                        key={starter.name}
+                        className="btn-default justify-start px-2 py-1.5 text-left text-xs"
+                        title={starter.description}
+                        disabled={busy != null}
+                        onClick={() => void create(starter.name, starter.description, starter.layers.map(normaliseLayer))}
+                      >
+                        {starter.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button
+                className="btn-ghost justify-start px-2 py-1.5 text-xs"
+                disabled={busy != null}
+                onClick={() => void create('New scene', '', [])}
+              >
+                Blank scene
+              </button>
             </div>
           )}
         </Panel>
@@ -532,8 +553,8 @@ export function ScenesPanel({
                       <option key={k.type} value={k.type}>{k.label}: {k.about}</option>
                     ))}
                   </optgroup>
-                  <optgroup label="Looks and decorations">
-                    {LAYER_KINDS.filter((k) => k.group === 'look').map((k) => (
+                  <optgroup label="Objects that react to people">
+                    {LAYER_KINDS.filter((k) => k.group === 'objects').map((k) => (
                       <option key={k.type} value={k.type}>{k.label}: {k.about}</option>
                     ))}
                   </optgroup>
@@ -683,7 +704,8 @@ function LayerCard({
   const kind = KIND[layer.type]
   if (!kind) return null
   const usesColors = layer.type !== 'distort' && layer.type !== 'picture'
-  const usesTarget = kind.group === 'look' || layer.type === 'particles'
+  const usesTarget = kind.group !== 'people' || layer.type === 'particles'
+  const near = nearOf(layer)
   return (
     <li className={classNames('rounded-md ring-1', layer.enabled ? 'bg-panel-850 ring-white/5' : 'bg-panel-900 ring-white/5 opacity-70')}>
       <div className="flex items-center gap-2 px-3 py-2">
@@ -700,6 +722,7 @@ function LayerCard({
           <span className="block truncate text-xs text-slate-500">
             {kind.label}
             {usesTarget && layer.target !== 'everywhere' ? ` · ${TARGETS.find((t) => t.id === layer.target)?.label}` : ''}
+            {near !== 'none' ? ` · near people: ${NEARS.find((n) => n.id === near)?.label.toLowerCase()}` : ''}
             {layer.reacts_to !== 'always' ? ` · reacts to ${REACTIONS.find((r) => r.id === layer.reacts_to)?.label.toLowerCase()}` : ''}
           </span>
         </button>
@@ -765,8 +788,35 @@ function LayerCard({
                 )}
               </label>
             )}
+            {kind.nears && (
+              <label className="block">
+                <span className="label">When someone comes near</span>
+                <select className="input py-1 text-sm" value={near} disabled={!canEdit}
+                  onChange={(e) => onChange({ near: e.target.value as SceneLayer['near'] })}>
+                  {NEARS.filter((n) => kind.nears!.includes(n.id)).map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
+                </select>
+              </label>
+            )}
+            {kind.motions && (
+              <label className="block">
+                <span className="label">Moves</span>
+                <select className="input py-1 text-sm" value={motionOf(layer)} disabled={!canEdit}
+                  onChange={(e) => onChange({ motion: e.target.value as SceneLayer['motion'] })}>
+                  {MOTIONS.filter((m) => kind.motions!.includes(m.id)).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </label>
+            )}
+            {kind.changes && (
+              <label className="block">
+                <span className="label">Changes</span>
+                <select className="input py-1 text-sm" value={changeOf(layer)} disabled={!canEdit}
+                  onChange={(e) => onChange({ change: e.target.value as SceneLayer['change'] })}>
+                  {CHANGES.filter((c) => kind.changes!.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+              </label>
+            )}
             <label className="block">
-              <span className="label">Reacts to</span>
+              <span className="label">{kind.nears ? 'Whole layer reacts to' : 'Reacts to'}</span>
               <select className="input py-1 text-sm" value={layer.reacts_to} disabled={!canEdit}
                 title={REACTIONS.find((r) => r.id === layer.reacts_to)?.hint}
                 onChange={(e) => onChange({ reacts_to: e.target.value as SceneLayer['reacts_to'] })}>
@@ -786,6 +836,10 @@ function LayerCard({
           <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
             <Slider label="Strength" value={layer.opacity} min={0} max={1} step={0.01} disabled={!canEdit}
               format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ opacity: v })} />
+            {near !== 'none' && (
+              <Slider label="How near counts as near" value={layer.reach ?? 0.5} min={0} max={1} step={0.01} disabled={!canEdit}
+                format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ reach: v })} />
+            )}
             {layer.reacts_to !== 'always' && (
               <Slider label="How much it reacts" value={layer.reaction} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ reaction: v })} />

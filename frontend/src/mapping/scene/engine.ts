@@ -15,11 +15,13 @@
 import { mediaUrl } from '../api'
 import type { PersonSpot } from '../people'
 import type { LayerBlend, MappingScene, ReactsTo, SceneLayer, SourceRect, Surface } from '../types'
-import { KIND } from './catalog'
+import { CHANGES, changeOf, KIND, MOTIONS, motionOf, NEARS, nearOf } from './catalog'
 import { maskKey, rasteriseLayerMask } from './masks'
 import {
   LAYER_VERTEX,
   layerFragment,
+  OBJECTS_FRAGMENT,
+  OBJECTS_VERTEX,
   POINTS_FRAGMENT,
   POINTS_VERTEX,
   REVEAL_UPDATE,
@@ -31,6 +33,16 @@ export const MAX_PEOPLE = 16
 const MAX_SIDE = 1920
 /** Scene detail steps, tried in turn when frames are dropped. */
 export const SCENE_SCALES = [1, 0.75, 0.5, 0.35]
+
+/** Width of the image saying where a layer's objects may sit (whole canvas). */
+const PLACEMENT_WIDTH = 1024
+const FULL_CANVAS: SourceRect = { x: 0, y: 0, w: 1, h: 1 }
+
+/** Objects sit one per cell of a grid over the canvas; the shader uses the same cell size. */
+export function objectGrid(size: number, aspect: number) {
+  const cell = 0.05 + 0.25 * size
+  return { cols: Math.ceil(aspect / cell), rows: Math.ceil(1 / cell) }
+}
 
 /** Layers that are drawn around each person, rather than over an area. */
 const FOLLOWS_PEOPLE = new Set(['glow', 'ripples', 'trails', 'shadows', 'reveal', 'distort'])
@@ -355,7 +367,14 @@ export class SceneEngine {
         const key = `${item.scene.id}:${layer.id}`
         used.add(key)
         const state = this.state(key)
-        this.updateMask(state, layer, frame, w, h)
+        if (layer.type === 'shapes') {
+          // Objects check where they may sit against the whole canvas, so
+          // an object across two outputs is shown or left out on both.
+          const ph = Math.max(64, Math.round(PLACEMENT_WIDTH / aspect))
+          this.updateMask(state, layer, frame, FULL_CANVAS, PLACEMENT_WIDTH, ph)
+        } else {
+          this.updateMask(state, layer, frame, frame.rect, w, h)
+        }
         this.drawLayer(layer, state, { strength, count, frame, w, h, dt, pxPerHeight, time: item.time })
       }
     }
@@ -388,12 +407,12 @@ export class SceneEngine {
     }
   }
 
-  private updateMask(state: LayerState, layer: SceneLayer, frame: SceneFrame, w: number, h: number) {
-    const key = maskKey(layer, this.surfacesKey, frame.rect, w, h)
+  private updateMask(state: LayerState, layer: SceneLayer, frame: SceneFrame, rect: SourceRect, w: number, h: number) {
+    const key = maskKey(layer, this.surfacesKey, rect, w, h)
     if (key === state.maskKey) return
     state.maskKey = key
     const gl = this.gl
-    const { canvas, used } = rasteriseLayerMask(layer, frame.surfaces, frame.rect, w, h, state.maskCanvas ?? undefined)
+    const { canvas, used } = rasteriseLayerMask(layer, frame.surfaces, rect, w, h, state.maskCanvas ?? undefined)
     state.maskCanvas = canvas
     state.maskUsed = used
     if (!used) return
@@ -431,6 +450,9 @@ export class SceneEngine {
     gl.uniform1i(this.u(p, 'uSpots'), count)
     gl.uniform4fv(this.u(p, 'uSpot'), this.spotData)
     gl.uniform4fv(this.u(p, 'uMove'), this.moveData)
+    gl.uniform1i(this.u(p, 'uChange'), Math.max(0, CHANGES.findIndex((c) => c.id === changeOf(layer))))
+    gl.uniform1i(this.u(p, 'uNear'), Math.max(0, NEARS.findIndex((n) => n.id === nearOf(layer))))
+    gl.uniform1f(this.u(p, 'uReach'), layer.reach ?? 0.5)
   }
 
   private bindTextures(p: Program, mask: WebGLTexture | null, maskOn: boolean, prev: WebGLTexture | null) {
@@ -490,6 +512,24 @@ export class SceneEngine {
       this.bindTextures(p, mask, maskOn, write.tex)
       this.blend(layer.type === 'reveal' ? 'normal' : layer.blend)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
+      return
+    }
+
+    if (layer.type === 'shapes') {
+      const p = this.program('objects', OBJECTS_VERTEX, () => OBJECTS_FRAGMENT)
+      gl.useProgram(p.program)
+      this.setCommon(p, layer, frame, ctx)
+      this.bindTextures(p, null, false, null)
+      gl.activeTexture(gl.TEXTURE3)
+      gl.bindTexture(gl.TEXTURE_2D, state.maskUsed ? state.maskTex : this.empty)
+      gl.uniform1i(this.u(p, 'uPlace'), 3)
+      gl.uniform1i(this.u(p, 'uPlaceOn'), state.maskUsed ? 1 : 0)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.uniform1i(this.u(p, 'uMotion'), Math.max(0, MOTIONS.findIndex((m) => m.id === motionOf(layer))))
+      const { cols, rows } = objectGrid(layer.size, frame.canvasWidth / Math.max(1, frame.canvasHeight))
+      gl.uniform2i(this.u(p, 'uGrid'), cols, rows)
+      this.blend(layer.blend)
+      gl.drawArrays(gl.TRIANGLES, 0, cols * rows * 6)
       return
     }
 
