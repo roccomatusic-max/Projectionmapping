@@ -9,6 +9,7 @@ EITHER does.
 from __future__ import annotations
 
 from datetime import datetime
+from functools import lru_cache
 
 MONTHS = {name: i + 1 for i, name in enumerate(
     ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
@@ -68,7 +69,8 @@ def _field(expr: str, low: int, high: int, names: dict[str, int]) -> set[int]:
     return values
 
 
-def parse(expression: str) -> tuple[set[int], ...]:
+@lru_cache(maxsize=128)
+def parse(expression: str) -> tuple[frozenset[int], ...]:
     fields = expression.split()
     if len(fields) != 5:
         raise CronError(
@@ -81,19 +83,28 @@ def parse(expression: str) -> tuple[set[int], ...]:
     minute, hour, dom, month, dow = parsed
     if 7 in dow:
         dow = (dow - {7}) | {0}
-    return minute, hour, dom, month, dow
+    # Frozen: the result is cached and shared between callers.
+    return tuple(frozenset(field) for field in (minute, hour, dom, month, dow))
 
 
 def matches(expression: str, when: datetime) -> bool:
     """True if ``when`` (to the minute) satisfies ``expression``."""
-    minute, hour, dom, month, dow = parse(expression)
+    minute, hour, _dom, _month, _dow = parse(expression)
+    if when.minute not in minute or when.hour not in hour:
+        return False
+    return matches_day(expression, when)
+
+
+def matches_day(expression: str, when: datetime) -> bool:
+    """True if ``expression`` fires at some time on ``when``'s date."""
+    _minute, _hour, dom, month, dow = parse(expression)
     fields = expression.split()
     # As in Vixie cron, a field beginning with '*' (including '*/2') counts
     # as unrestricted for the day-of-month OR day-of-week rule.
     dom_restricted = not fields[2].startswith("*")
     dow_restricted = not fields[4].startswith("*")
     cron_dow = (when.weekday() + 1) % 7  # Python Mon=0 -> cron Sun=0
-    if when.minute not in minute or when.hour not in hour or when.month not in month:
+    if when.month not in month:
         return False
     dom_ok = when.day in dom
     dow_ok = cron_dow in dow

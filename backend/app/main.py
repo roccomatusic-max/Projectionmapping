@@ -7,6 +7,8 @@ and shuts them all down cleanly so no projector is left mid-command.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import secrets
 import sys
@@ -17,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.routes import (
     auth,
@@ -91,7 +94,8 @@ async def bootstrap_admin() -> None:
             password_hash=hash_password(password),
             role=Role.ADMIN.value,
         ))
-        generated = settings.bootstrap_admin_password is None
+        # Blank counts as unset: docker-compose and .env.example pass it empty.
+        generated = not settings.bootstrap_admin_password
     banner = "=" * 72
     log.warning(
         "\n%s\nCreated the initial administrator account.\n"
@@ -115,6 +119,14 @@ async def lifespan(_: FastAPI):
             "Set SECRET_KEY in .env before registering projectors.\n%s",
             "=" * 72, "=" * 72,
         )
+    elif len(settings.secret_key) < 32:
+        # HS256 with a short key: anyone holding one sign-in token (a phone's,
+        # a URL in a proxy log) can guess the key offline and forge an admin's.
+        log.warning(
+            "SECRET_KEY is only %d characters long; use at least 32 random characters "
+            "(python -c \"import secrets; print(secrets.token_urlsafe(48))\").",
+            len(settings.secret_key),
+        )
     await prepare_database()
     await bootstrap_admin()
     await load_projectors()
@@ -132,6 +144,8 @@ async def lifespan(_: FastAPI):
         log.info("shutting down")
         if auto_updates:
             auto_updates.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await auto_updates
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
         await discovery.stop()
@@ -174,6 +188,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Check the server logs for details."},
+    )
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
+    """A duplicate name or a reference to a missing record is the client's
+    mistake, not a server fault: answer 409 rather than a bare 500."""
+    log.warning("refused %s %s: %s", request.method, request.url.path, exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "That conflicts with what is already saved: the name may "
+                           "already be in use, or it refers to something that no "
+                           "longer exists."},
     )
 
 

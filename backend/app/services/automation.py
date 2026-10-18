@@ -26,7 +26,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import settings
 from app.core.events import bus
@@ -84,12 +84,16 @@ class AutomationEngine:
         self._stop = asyncio.Event()
         #: Guards against a long run overlapping its own next schedule.
         self._in_flight: set[int] = set()
+        #: Scheduled runs in progress. Held so they are not garbage-collected
+        #: mid-run and so shutdown can stop them.
+        self._runs: set[asyncio.Task] = set()
 
     async def start(self) -> None:
         if self._running:
             return
         self._running = True
         self._stop = asyncio.Event()
+        await self._close_orphaned_runs()
         self._task = asyncio.create_task(self._scheduler_loop(), name="automation-scheduler")
         log.info("automation scheduler started")
 
@@ -98,6 +102,25 @@ class AutomationEngine:
         self._stop.set()
         await stop_task(self._task, name="automation scheduler")
         self._task = None
+        # A run left going would outlive the device workers it drives and be
+        # destroyed mid-step when the loop closes, its record still "running".
+        for task in list(self._runs):
+            task.cancel()
+        await asyncio.gather(*self._runs, return_exceptions=True)
+
+    @staticmethod
+    async def _close_orphaned_runs() -> None:
+        """Runs still "running" at start-up were cut off by a crash or power cut."""
+        async with session_scope() as session:
+            closed = (await session.execute(
+                update(AutomationRun)
+                .where(AutomationRun.status == RunStatus.RUNNING.value)
+                .values(status=RunStatus.ABORTED.value, finished_at=datetime.now(UTC),
+                        error="the server stopped during this run")
+            )).rowcount
+        if closed:
+            log.warning("marked %d automation run(s) interrupted by a restart as aborted",
+                        closed)
 
     # -- scheduling --------------------------------------------------------
 
@@ -158,10 +181,14 @@ class AutomationEngine:
             if automation.id in self._in_flight:
                 log.warning("skipping %s: previous run still in flight", automation.name)
                 continue
-            asyncio.create_task(
-                self.run(automation.id, trigger="schedule"),
-                name=f"automation-{automation.id}",
-            )
+            self._spawn_run(automation.id, trigger="schedule")
+
+    def _spawn_run(self, automation_id: int, *, trigger: str) -> asyncio.Task:
+        task = asyncio.create_task(self.run(automation_id, trigger=trigger),
+                                   name=f"automation-{automation_id}")
+        self._runs.add(task)
+        task.add_done_callback(self._runs.discard)
+        return task
 
     @staticmethod
     def _is_due(automation: Automation, now: datetime) -> bool | str:
@@ -181,7 +208,7 @@ class AutomationEngine:
 
         if automation.trigger_type == "once":
             run_at = schedule.get("run_at")
-            if not run_at or last is not None:
+            if not run_at:
                 return False
             try:
                 target = datetime.fromisoformat(str(run_at))
@@ -191,6 +218,11 @@ class AutomationEngine:
             if target.tzinfo is None:
                 # A naive time means "in the schedule zone", not the host's.
                 target = target.replace(tzinfo=now.tzinfo)
+            # Used up only by a run at or after its time: an operator trying
+            # it out by hand beforehand must not cancel the show, and moving
+            # the time on after it ran arms it again.
+            if last is not None and as_utc(last) >= target:
+                return False
             grace = timedelta(minutes=settings.once_grace_minutes)
             if now < target:
                 return False
@@ -250,18 +282,33 @@ class AutomationEngine:
             status = RunStatus.SUCCESS
             error: str | None = None
 
-            for index, step in enumerate(steps):
-                result = await self._run_step(index, step, user=user)
-                step_results.append(result)
-                bus.publish("automation_step", {
-                    "automation_id": automation_id, "run_id": run_id,
-                    "name": name, "step": index, **result,
-                })
-                if not result["ok"]:
-                    status = RunStatus.FAILED if abort_on_failure else RunStatus.PARTIAL
-                    error = result.get("error")
-                    if abort_on_failure:
-                        break
+            try:
+                for index, step in enumerate(steps):
+                    result = await self._run_step(index, step, user=user)
+                    step_results.append(result)
+                    bus.publish("automation_step", {
+                        "automation_id": automation_id, "run_id": run_id,
+                        "name": name, "step": index, **result,
+                    })
+                    if not result["ok"]:
+                        status = RunStatus.FAILED if abort_on_failure else RunStatus.PARTIAL
+                        error = result.get("error")
+                        if abort_on_failure:
+                            break
+            except asyncio.CancelledError:
+                # Stopped part-way (the server shutting down): record that,
+                # with the steps that did run, instead of leaving "running".
+                async with session_scope() as session:
+                    run = await session.get(AutomationRun, run_id)
+                    if run:
+                        run.status = RunStatus.ABORTED.value
+                        run.finished_at = datetime.now(UTC)
+                        run.step_results = step_results
+                        run.error = "stopped part-way: the server shut down"
+                    automation = await session.get(Automation, automation_id)
+                    if automation:
+                        automation.last_status = RunStatus.ABORTED.value
+                raise
             if status is RunStatus.PARTIAL and all(r["ok"] for r in step_results):
                 status = RunStatus.SUCCESS
 
@@ -383,7 +430,9 @@ class AutomationEngine:
         capability = step.get("capability", "power.get")
         expect = str(step.get("expect", "on")).lower()
         timeout = float(step.get("timeout", 180))
-        interval = float(step.get("interval", 5))
+        # Floored: a cleared interval field saves 0, and against a disabled
+        # projector (answered at once) that would spin until the timeout.
+        interval = max(0.5, float(step.get("interval", 5)))
         deadline = asyncio.get_running_loop().time() + timeout
         pending = set(ids)
         last: list[dict[str, Any]] = []
@@ -464,6 +513,19 @@ class AutomationEngine:
                 .order_by(EnclosureReading.recorded_at.desc())
                 .limit(40)
             )).scalars().all()
+            # The newest readings of any kind decide freshness, but a sensor
+            # that reports often pushes a rarer one out of that window: a leak
+            # switch or fan monitor that reports only when it changes. The
+            # readings this step judges by are each looked up on their own.
+            judged: dict[str, EnclosureReading | None] = {}
+            for metric in ("internal_temp_c", "leak", "fan_ok"):
+                judged[metric] = (await session.execute(
+                    select(EnclosureReading)
+                    .where(EnclosureReading.enclosure_id == enclosure.id,
+                           EnclosureReading.metric == metric)
+                    .order_by(EnclosureReading.recorded_at.desc())
+                    .limit(1)
+                )).scalars().first()
             temp_crit = enclosure.temp_critical_c
             blocks = enclosure.block_startup_on_fault
             name = enclosure.name
@@ -486,13 +548,13 @@ class AutomationEngine:
             )
 
         problems = []
-        temp = latest.get("internal_temp_c")
+        temp = judged["internal_temp_c"]
         if temp and temp.value_num is not None and temp.value_num >= temp_crit:
             problems.append(f"internal temperature {temp.value_num}°C ≥ {temp_crit}°C")
-        leak = latest.get("leak")
+        leak = judged["leak"]
         if leak and (leak.value_num or 0) > 0:
             problems.append("water leak detected")
-        fan = latest.get("fan_ok")
+        fan = judged["fan_ok"]
         if fan and fan.value_num is not None and fan.value_num < 1:
             problems.append("ventilation fan failure reported")
 

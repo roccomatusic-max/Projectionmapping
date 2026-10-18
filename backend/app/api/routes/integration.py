@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
-from app.api.deps import RequireOperator, RequireViewer, SessionDep
+from app.api.deps import RequireOperator, RequireViewer, SessionDep, command_rate_limit
 from app.config import settings
 from app.db.models import (
     Alert,
@@ -117,7 +117,7 @@ async def homeassistant_discovery(session: SessionDep, _: RequireViewer) -> dict
     }
 
 
-@router.post("/scenes/{scene_name}/activate")
+@router.post("/scenes/{scene_name}/activate", dependencies=[Depends(command_rate_limit)])
 async def activate_scene_by_name(scene_name: str, session: SessionDep,
                                  user: RequireOperator) -> dict:
     """Activate a scene by name.

@@ -94,7 +94,8 @@ class MQTTPublisher:
         if self._running:
             return
         self._running = True
-        self._queue = await bus.subscribe()
+        self._queue = await bus.subscribe(
+            ("projector_state", "alert", "alert_resolved", "command_result"))
         await self._load_slugs()
         self._task = asyncio.create_task(self._run(), name="mqtt-publisher")
         log.info("MQTT publisher started (%s:%s, commands %s)", settings.mqtt_host,
@@ -114,6 +115,7 @@ class MQTTPublisher:
         self._running = False
         for task in list(self._commands):
             task.cancel()
+        await asyncio.gather(*self._commands, return_exceptions=True)
         await stop_task(self._task, name="mqtt", grace=2.0)
         if self._queue:
             await bus.unsubscribe(self._queue)
@@ -131,10 +133,16 @@ class MQTTPublisher:
             try:
                 async with aiomqtt.Client(
                     hostname=settings.mqtt_host, port=settings.mqtt_port,
-                    username=settings.mqtt_username, password=settings.mqtt_password,
+                    # Blank means none: docker-compose passes unset ones as "",
+                    # which would otherwise go to the broker as an empty login.
+                    username=settings.mqtt_username or None,
+                    password=settings.mqtt_password or None,
                 ) as client:
                     self._client = client
                     backoff = 1.0
+                    # A restarted broker without persistence has lost the
+                    # retained discovery configs: announce again.
+                    self._announced.clear()
                     log.info("MQTT connected")
                     if settings.mqtt_allow_commands:
                         await client.subscribe(f"{settings.mqtt_prefix}/+/+/set")
@@ -284,13 +292,15 @@ class MQTTPublisher:
                 "state_topic": f"{base}/shutter",
             }))
         for component, key, config in entities:
-            config.update({
-                "unique_id": f"projector_{pid}_{key}",
-                "availability_topic": f"{base}/available",
-                "payload_available": "online",
-                "payload_not_available": "offline",
-                "device": device,
-            })
+            config.update({"unique_id": f"projector_{pid}_{key}", "device": device})
+            if key != "online":
+                # Not on the connectivity sensor itself: it reads the same
+                # topic, and would show "unavailable" instead of ever "off".
+                config.update({
+                    "availability_topic": f"{base}/available",
+                    "payload_available": "online",
+                    "payload_not_available": "offline",
+                })
             await client.publish(
                 f"{dprefix}/{component}/projector_{pid}/{key}/config",
                 json.dumps(config), retain=True,

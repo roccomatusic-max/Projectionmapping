@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from app.api.routes.mapping_camera import PeopleFeed
 from app.core.events import bus
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, token_predates
 from app.db.models import Role, User
 from app.db.session import SessionLocal
 
@@ -39,7 +39,7 @@ async def _authenticate(token: str | None) -> User | None:
         user = (await session.execute(
             select(User).where(User.username == payload["sub"])
         )).scalars().first()
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or token_predates(payload, user.created_at):
         return None
     # The live feed is read access to the whole fleet. An ingest-only
     # account (a sensor's token) may post readings and nothing else.
@@ -61,7 +61,6 @@ async def websocket_endpoint(websocket: WebSocket,
         return
 
     await websocket.accept()
-    queue = await bus.subscribe()
     log.info("websocket connected: %s", user.username)
 
     async def pump() -> None:
@@ -101,16 +100,22 @@ async def websocket_endpoint(websocket: WebSocket,
                 except Exception:  # noqa: BLE001 - a bad report must not drop the feed
                     log.debug("people report failed", exc_info=True)
 
-    await websocket.send_text(json.dumps({
-        "type": "connected",
-        "payload": {"username": user.username, "role": user.role,
-                    # What this server accepts on the socket, for cameras.
-                    "accepts": ["mapping_people_report"]},
-        "at": datetime.now(UTC).isoformat(),
-    }))
-
-    tasks = [asyncio.create_task(coro()) for coro in (pump, heartbeat, receive)]
+    # Subscribed inside the try: a client that drops before the greeting
+    # is sent would otherwise leave its queue on the bus for good, filling
+    # with every message published from then on.
+    queue: asyncio.Queue | None = None
+    tasks: list[asyncio.Task] = []
     try:
+        queue = await bus.subscribe()
+        await websocket.send_text(json.dumps({
+            "type": "connected",
+            "payload": {"username": user.username, "role": user.role,
+                        # What this server accepts on the socket, for cameras.
+                        "accepts": ["mapping_people_report"]},
+            "at": datetime.now(UTC).isoformat(),
+        }))
+
+        tasks = [asyncio.create_task(coro()) for coro in (pump, heartbeat, receive)]
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
         for task in pending:
             task.cancel()
@@ -124,5 +129,6 @@ async def websocket_endpoint(websocket: WebSocket,
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await bus.unsubscribe(queue)
+        if queue is not None:
+            await bus.unsubscribe(queue)
         log.info("websocket disconnected: %s", user.username)

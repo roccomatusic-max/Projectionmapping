@@ -140,3 +140,34 @@ def test_once_naive_time_across_a_dst_boundary():
     assert AutomationEngine._is_due(
         automation("once", {"run_at": "2026-11-05T20:00"}), now - timedelta(hours=1)
     ) is False
+
+
+def test_once_is_not_used_up_by_a_manual_run_before_its_time():
+    """Trying a one-shot out by hand in the afternoon must not cancel the show."""
+    target = datetime(2026, 10, 17, 20, 30, tzinfo=LONDON)
+    tried = (target - timedelta(hours=4)).astimezone(UTC)
+    assert AutomationEngine._is_due(
+        automation("once", {"run_at": target.isoformat()}, last_run_at=tried), target
+    ) is True
+
+
+def test_once_moved_later_after_running_fires_again():
+    ran = datetime(2026, 10, 17, 20, 30, tzinfo=LONDON).astimezone(UTC)
+    moved = datetime(2026, 10, 24, 20, 30, tzinfo=LONDON)
+    assert AutomationEngine._is_due(
+        automation("once", {"run_at": moved.isoformat()}, last_run_at=ran), moved
+    ) is True
+
+
+def test_previewing_a_rare_cron_schedule_is_quick():
+    """A yearly or impossible cron must not hold the event loop for seconds."""
+    import time
+
+    from app.services.automation_validation import next_runs
+
+    now = datetime(2026, 10, 18, 12, 0, tzinfo=LONDON)
+    started = time.perf_counter()
+    assert next_runs("cron", {"cron": "0 0 31 2 *"}, now=now) == []
+    christmas = next_runs("cron", {"cron": "0 20 24 12 *"}, now=now)
+    assert time.perf_counter() - started < 0.5
+    assert [r.strftime("%Y-%m-%d %H:%M") for r in christmas] == ["2026-12-24 20:00"]

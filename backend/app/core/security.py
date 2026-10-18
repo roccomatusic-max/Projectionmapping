@@ -79,3 +79,18 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
     except jwt.PyJWTError:
         return None
+
+
+def token_predates(payload: dict[str, Any], created_at: datetime | None) -> bool:
+    """True if the token was issued before this account existed.
+
+    Deleting a user revokes its tokens only while the name stays unused: a
+    token from a deleted account must not open a new account of the same
+    name. ``iat`` is whole seconds, hence the one-second allowance.
+    """
+    issued = payload.get("iat")
+    if not isinstance(issued, int | float) or created_at is None:
+        return False
+    if created_at.tzinfo is None:  # SQLite hands datetimes back naive
+        created_at = created_at.replace(tzinfo=UTC)
+    return issued < created_at.timestamp() - 1
