@@ -170,16 +170,35 @@ export class Playback {
       img.src = mediaUrl(asset.id)
       element = img
     }
+    // A load that fails (the server restarting, a network blip as the cue
+    // starts) is tried again while the cue still wants it, rather than
+    // leaving the projector black until the next cue. Backs off to once a
+    // minute for a file that keeps failing (deleted, or a codec this
+    // computer cannot play).
+    let attempts = 0
+    element.onerror = () => {
+      const wait = Math.min(60_000, 2000 * 2 ** attempts++)
+      window.setTimeout(() => {
+        if (this.slots.get(key)?.element !== element) return
+        element.src = mediaUrl(asset.id)
+        if (element instanceof HTMLVideoElement) element.load()
+      }, wait)
+    }
     this.slots.set(key, { key, cue, element, asset })
   }
 
   private release(slot: Slot) {
+    // Delete first so a pending retry above sees the slot is gone.
+    this.slots.delete(slot.key)
+    slot.element.onerror = null
     if (slot.element instanceof HTMLVideoElement) {
       slot.element.pause()
       slot.element.removeAttribute('src')
       slot.element.load()
+    } else {
+      // Lets the browser free a large decoded picture.
+      slot.element.removeAttribute('src')
     }
-    this.slots.delete(slot.key)
   }
 
   private source(cue: TransportCue | null): TextureSource | null {

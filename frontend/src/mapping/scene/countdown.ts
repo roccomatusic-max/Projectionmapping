@@ -990,8 +990,11 @@ export class CountdownDrawer {
       return s
     }
     this.program = gl.createProgram()!
-    gl.attachShader(this.program, compile(gl.VERTEX_SHADER, LAYER_VERTEX))
-    gl.attachShader(this.program, compile(gl.FRAGMENT_SHADER, FRAGMENT))
+    for (const shader of [compile(gl.VERTEX_SHADER, LAYER_VERTEX), compile(gl.FRAGMENT_SHADER, FRAGMENT)]) {
+      gl.attachShader(this.program, shader)
+      // Freed with the program.
+      gl.deleteShader(shader)
+    }
     gl.linkProgram(this.program)
     if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
       throw new Error(`Countdown shader failed to link: ${gl.getProgramInfoLog(this.program)}`)

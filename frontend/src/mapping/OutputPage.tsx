@@ -8,6 +8,28 @@ import { useShowRuntime } from './useShowRuntime'
 
 /** A calibration that stops sending frames (camera gone) ends after this. */
 const CALIBRATION_WATCHDOG_MS = 15000
+/** A lost graphics context not given back within this reloads the page. */
+const CONTEXT_RELOAD_MS = 10000
+/** At most one such reload this often, so a GPU that resets on every load cannot loop. */
+const CONTEXT_RELOAD_GAP_MS = 5 * 60_000
+const CONTEXT_RELOAD_KEY = 'pm.ctxReload'
+
+function lastContextReload(): number {
+  try {
+    return Number(sessionStorage.getItem(CONTEXT_RELOAD_KEY)) || 0
+  } catch {
+    return 0
+  }
+}
+
+function reloadForContext() {
+  try {
+    sessionStorage.setItem(CONTEXT_RELOAD_KEY, String(Date.now()))
+  } catch {
+    /* reload anyway; the gap is a nicety */
+  }
+  window.location.reload()
+}
 
 const STATUS_LABEL = {
   playing: 'Playing',
@@ -46,6 +68,26 @@ export function OutputScreen({
 }) {
   const [calibration, setCalibration] = useState<CalibrationFrame | null>(null)
   const watchdog = useRef<number>()
+
+  // If the graphics card resets and Chrome never hands the drawing context
+  // back, the projector would stay black until someone reloaded the page.
+  // The events do not bubble, so listen in the capture phase.
+  useEffect(() => {
+    let reload: number | undefined
+    const onLost = () => {
+      window.clearTimeout(reload)
+      const wait = Math.max(CONTEXT_RELOAD_MS, lastContextReload() + CONTEXT_RELOAD_GAP_MS - Date.now())
+      reload = window.setTimeout(reloadForContext, wait)
+    }
+    const onRestored = () => window.clearTimeout(reload)
+    window.addEventListener('webglcontextlost', onLost, true)
+    window.addEventListener('webglcontextrestored', onRestored, true)
+    return () => {
+      window.clearTimeout(reload)
+      window.removeEventListener('webglcontextlost', onLost, true)
+      window.removeEventListener('webglcontextrestored', onRestored, true)
+    }
+  }, [])
 
   const onCalibrationStep = (step: CalibrationStepMessage) => {
     if (step.show_id !== showId) return
@@ -208,6 +250,6 @@ function pixelSize(): [number, number] {
 
 function Message({ text }: { text: string }) {
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black text-sm text-slate-400">{text}</div>
+    <div className="fixed inset-0 flex cursor-none items-center justify-center bg-black text-sm text-slate-400">{text}</div>
   )
 }
