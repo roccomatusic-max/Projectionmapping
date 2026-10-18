@@ -31,7 +31,7 @@ from app.schemas import (
     AutomationIn,
     AutomationOut,
     AutomationRunOut,
-    GenericCommand,
+    ConfirmableCommand,
     MaintenanceIn,
     MaintenanceOut,
     SceneIn,
@@ -125,12 +125,13 @@ async def delete_automation(automation_id: int, session: SessionDep,
 
 @router.post("/automations/{automation_id}/execute",
              dependencies=[Depends(command_rate_limit)])
-async def execute_automation(automation_id: int, payload: GenericCommand | None = None,
+async def execute_automation(automation_id: int, payload: ConfirmableCommand | None = None,
                              *, session: SessionDep, user: RequireOperator) -> dict:
     """Run an automation now.
 
     Automations drive real hardware, so this requires explicit confirmation
-    exactly like a direct power command does.
+    exactly like a direct power command does. The body is ``{"confirm":
+    true}``; a ``capability`` alongside it, as older clients send, is ignored.
     """
     automation = await session.get(Automation, automation_id)
     if automation is None:
@@ -196,7 +197,7 @@ async def delete_scene(scene_id: int, session: SessionDep, _: RequireAdmin) -> N
 
 
 @router.post("/scenes/{scene_id}/activate", dependencies=[Depends(command_rate_limit)])
-async def activate(scene_id: int, payload: GenericCommand | None = None, *,
+async def activate(scene_id: int, payload: ConfirmableCommand | None = None, *,
                    session: SessionDep, user: RequireOperator) -> dict:
     """Activate a scene.
 

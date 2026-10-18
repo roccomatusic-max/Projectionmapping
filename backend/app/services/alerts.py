@@ -27,6 +27,12 @@ from app.db.session import session_scope
 
 log = logging.getLogger(__name__)
 
+#: The bus messages _handle acts on; the only ones the service subscribes to.
+HANDLED = ("projector_offline", "projector_online", "projector_state", "command_unverified",
+           "command_verified", "power_changed", "automation_failed", "enclosure_reading")
+
+_RANK = {Severity.INFO.value: 0, Severity.WARNING.value: 1, Severity.CRITICAL.value: 2}
+
 
 class AlertingService:
     def __init__(self) -> None:
@@ -42,7 +48,7 @@ class AlertingService:
         if self._running:
             return
         self._running = True
-        self._queue = await bus.subscribe()
+        self._queue = await bus.subscribe(HANDLED)
         await self._load_open_keys()
         self._task = asyncio.create_task(self._run(), name="alerting")
         log.info("alerting service started (%d open)", len(self._open_keys))
@@ -282,6 +288,9 @@ class AlertingService:
                 severity=Severity.CRITICAL,
                 message=f"{name}: water leak detected", details=payload,
             )
+        elif metric == "leak" and isinstance(value, int | float):
+            # A boolean arrives stored as 0.0: the sensor reports dry again.
+            await self.resolve_alert(key, f"{name}: leak sensor reports dry")
         elif metric == "humidity_pct" and isinstance(value, int | float):
             if value >= humidity_warn:
                 await self.raise_alert(
@@ -293,12 +302,16 @@ class AlertingService:
                 )
             else:
                 await self.resolve_alert(key, f"{name}: humidity back to {value}%")
-        elif metric == "fan_ok" and value is False:
-            await self.raise_alert(
-                dedupe_key=key, projector_id=None, kind="enclosure_fan_failure",
-                severity=Severity.CRITICAL,
-                message=f"{name}: ventilation fan reports a failure", details=payload,
-            )
+        elif metric == "fan_ok" and isinstance(value, int | float):
+            # Stored as 1.0 / 0.0, never False: compare the number.
+            if value < 1:
+                await self.raise_alert(
+                    dedupe_key=key, projector_id=None, kind="enclosure_fan_failure",
+                    severity=Severity.CRITICAL,
+                    message=f"{name}: ventilation fan reports a failure", details=payload,
+                )
+            else:
+                await self.resolve_alert(key, f"{name}: ventilation fan running again")
 
     # -- alert lifecycle ---------------------------------------------------
 
@@ -308,11 +321,14 @@ class AlertingService:
     ) -> None:
         """Open an alert, or update the one already open for this condition.
 
-        Notification is sent on the first occurrence and then at most once per
+        Notification is sent on the first occurrence, when the condition gets
+        worse (a warning becoming critical), and otherwise at most once per
         ``renotify_minutes`` while the condition remains unresolved.
         """
         now = datetime.now(UTC)
         notify = False
+        changed = False
+        state = AlertState.OPEN.value
         async with session_scope() as session:
             existing = (await session.execute(
                 select(Alert).where(
@@ -344,23 +360,38 @@ class AlertingService:
                     projector_id=projector_id, severity=severity.value,
                     kind=f"alert_opened:{kind}", message=message, details=details or {},
                 ))
-                notify = True
+                notify = changed = True
             else:
+                # The same condition at a new level (a lamp past its
+                # replacement threshold, an enclosure past critical) stays one
+                # alert, but must say how bad it is now.
+                escalated = _RANK[severity.value] > _RANK.get(existing.severity, 0)
+                changed = (existing.severity != severity.value or existing.kind != kind
+                           or existing.message != message)
+                if existing.severity != severity.value or existing.kind != kind:
+                    existing.severity = severity.value
+                    existing.kind = kind
+                    existing.rule_id = rule.id if rule else None
                 existing.message = message
                 existing.details = details or existing.details
                 last_notified = as_utc(existing.last_notified_at)  # SQLite returns naive
                 stale = last_notified is None or last_notified < now - timedelta(minutes=renotify)
                 # An acknowledged alert stays quiet until it resolves and recurs.
-                if stale and existing.state == AlertState.OPEN.value:
+                if (stale or escalated) and existing.state == AlertState.OPEN.value:
                     existing.last_notified_at = now
                     existing.notify_count += 1
                     notify = True
+                state = existing.state
 
         self._open_keys.add(dedupe_key)
-        bus.publish("alert", {
-            "dedupe_key": dedupe_key, "kind": kind, "severity": severity.value,
-            "message": message, "projector_id": projector_id, "state": "open",
-        })
+        # Conditions are re-evaluated on every poll. Announce only a change:
+        # each announcement makes every browser refetch its alert list and
+        # every MQTT subscriber hear the alert again.
+        if changed:
+            bus.publish("alert", {
+                "dedupe_key": dedupe_key, "kind": kind, "severity": severity.value,
+                "message": message, "projector_id": projector_id, "state": state,
+            })
         if notify:
             await self._notify(channels, webhook, severity, message, details or {})
 

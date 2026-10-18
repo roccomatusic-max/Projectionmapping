@@ -49,6 +49,7 @@ when the Mac turns on.
 **4. Sign in.** A message shows that it is running, and on the very first
 install it shows the administrator username and password. The dashboard then
 opens in your browser. Sign in, and change the password under **Settings**.
+Once you have, opening the app no longer shows the first password.
 
 The app now lives in **Applications** and you can delete the download. Opening
 **Projector Control** again any time just opens the dashboard.

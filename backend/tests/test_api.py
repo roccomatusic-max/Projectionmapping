@@ -896,3 +896,389 @@ async def test_nothing_running_counts_as_quiet(api):
 async def test_health_reports_the_version(api):
     response = await api.get("/api/health")
     assert response.json()["version"] == "dev"
+
+
+# -- review regressions -------------------------------------------------------
+
+
+def test_list_settings_take_blank_and_comma_separated_values(monkeypatch):
+    """docker-compose passes ALERT_EMAIL_TO="" when unset; .env.example writes
+    CORS_ORIGINS as a plain URL. Neither may stop the server from starting."""
+    from app.config import Settings
+
+    monkeypatch.setenv("ALERT_EMAIL_TO", "")
+    monkeypatch.setenv("CORS_ORIGINS", "http://a.local:5173, http://b.local")
+    settings = Settings(_env_file=None)
+    assert settings.alert_email_to == []
+    assert settings.cors_origins == ["http://a.local:5173", "http://b.local"]
+    monkeypatch.setenv("ALERT_EMAIL_TO", '["ops@example.com"]')
+    assert Settings(_env_file=None).alert_email_to == ["ops@example.com"]
+
+
+async def test_bootstrap_says_a_blank_password_was_generated(api, monkeypatch, caplog):
+    import logging
+
+    from sqlalchemy import delete
+
+    import app.main as main_module
+    from app.db.models import User
+    from app.db.session import session_scope
+
+    async with session_scope() as session:
+        await session.execute(delete(User))
+    monkeypatch.setattr(main_module.settings, "bootstrap_admin_password", "")
+    with caplog.at_level(logging.WARNING):
+        await main_module.bootstrap_admin()
+    assert "generated randomly" in caplog.text
+    assert "Set from BOOTSTRAP_ADMIN_PASSWORD" not in caplog.text
+
+
+async def test_reevaluating_an_open_alert_announces_it_once(api):
+    """Every poll re-evaluates open conditions; only a change is published."""
+    from app.core.events import bus
+    from app.db.models import Severity
+    from app.services.alerts import alerting
+
+    queue = await bus.subscribe()
+    try:
+        for _ in range(3):
+            await alerting.raise_alert(
+                dedupe_key="lamp_hours:1:1", projector_id=None, kind="lamp_hours_warning",
+                severity=Severity.WARNING, message="lamp 1 at 2100h", details={})
+        announced = []
+        while not queue.empty():
+            message = queue.get_nowait()
+            if message.type == "alert":
+                announced.append(message.payload)
+        assert len(announced) == 1
+    finally:
+        await bus.unsubscribe(queue)
+
+
+async def test_an_escalating_alert_takes_the_new_severity_and_notifies(api, monkeypatch):
+    from app.db.models import Severity
+    from app.services.alerts import alerting
+
+    headers = await login(api)
+    sent = []
+
+    async def notify(channels, webhook, severity, message, details):
+        sent.append(severity)
+
+    monkeypatch.setattr(alerting, "_notify", notify)
+    common = {"dedupe_key": "enclosure:1:internal_temp_c", "projector_id": None}
+    await alerting.raise_alert(**common, kind="enclosure_temperature_warning",
+                               severity=Severity.WARNING, message="42°C")
+    await alerting.raise_alert(**common, kind="enclosure_overtemperature",
+                               severity=Severity.CRITICAL, message="55°C")
+    alerts = [a for a in (await api.get("/api/alerts", headers=headers)).json()
+              if a["message"] == "55°C"]
+    assert len(alerts) == 1
+    assert alerts[0]["severity"] == "critical"
+    assert alerts[0]["kind"] == "enclosure_overtemperature"
+    assert sent == [Severity.WARNING, Severity.CRITICAL]
+    overview = (await api.get("/api/overview", headers=headers)).json()
+    assert overview["critical_alerts"] == 1
+
+
+async def test_fan_and_leak_alerts_follow_the_sensor(api):
+    """Booleans are stored as 1.0/0.0: a fan reporting false must alert, and
+    a dry leak sensor or a running fan must close the alert again."""
+    from app.services.alerts import alerting
+
+    headers = await login(api)
+    enclosure_id = (await api.post("/api/enclosures", headers=headers,
+                                   json={"name": "Wet Box"})).json()["id"]
+
+    async def post(metric, value):
+        response = await api.post(f"/api/enclosures/{enclosure_id}/readings", headers=headers,
+                                  json={"metric": metric, "value": value})
+        assert response.status_code == 202
+        await alerting._handle("enclosure_reading", {
+            "enclosure_id": enclosure_id, "metric": metric, "value": 1.0 if value else 0.0})
+
+    async def kinds():
+        return {a["kind"] for a in (await api.get("/api/alerts", headers=headers)).json()}
+
+    await post("fan_ok", False)
+    await post("leak", True)
+    assert {"enclosure_fan_failure", "enclosure_leak"} <= await kinds()
+    await post("fan_ok", True)
+    await post("leak", False)
+    assert not {"enclosure_fan_failure", "enclosure_leak"} & await kinds()
+
+
+async def test_camera_reports_cannot_crowd_an_alert_out_of_the_queue(monkeypatch):
+    """While alerting is busy (a slow webhook), a burst of camera reports must
+    not push a projector going offline out of its queue."""
+    import asyncio
+
+    import app.services.alerts as alerts_module
+    from app.core.events import EventBus
+
+    bus = EventBus()
+    monkeypatch.setattr(alerts_module, "bus", bus)
+    service = alerts_module.AlertingService()
+    seen: list[tuple] = []
+    gate = asyncio.Event()
+
+    async def no_keys():
+        return None
+
+    async def slow_handle(kind, payload):
+        seen.append((kind, payload.get("projector_id")))
+        await gate.wait()
+
+    monkeypatch.setattr(service, "_load_open_keys", no_keys)
+    monkeypatch.setattr(service, "_handle", slow_handle)
+    await service.start()
+    try:
+        bus.publish("projector_offline", {"projector_id": 1})
+        await asyncio.sleep(0.05)  # taken, and now stuck on the webhook
+        bus.publish("projector_offline", {"projector_id": 2})
+        for _ in range(600):
+            bus.publish("mapping_people", {"people": []})
+        gate.set()
+        await asyncio.sleep(0.2)
+    finally:
+        await service.stop()
+    assert ("projector_offline", 2) in seen
+
+
+async def _insert_readings(enclosure_id, rows):
+    from datetime import datetime, timedelta
+
+    from app.db.models import EnclosureReading
+    from app.db.session import session_scope
+
+    now = datetime.now(UTC)
+    async with session_scope() as session:
+        session.add_all([
+            EnclosureReading(enclosure_id=enclosure_id, metric=metric, value_num=value,
+                             recorded_at=now - timedelta(seconds=age))
+            for metric, value, age in rows
+        ])
+
+
+async def test_enclosure_check_sees_a_leak_reported_before_many_other_readings(api):
+    """A leak switch reports on change; the thermometer every 30 s. The leak
+    must still block startup once 40 temperature readings have come in."""
+    headers = await login(api)
+    enclosure_id = (await api.post("/api/enclosures", headers=headers, json={
+        "name": "Leaky", "block_startup_on_fault": True})).json()["id"]
+    await _insert_readings(enclosure_id, [("leak", 1.0, 400)]
+                           + [("internal_temp_c", 25.0, i) for i in range(45)])
+    automation_id = (await api.post("/api/automations", headers=headers, json={
+        "name": "Guarded", "steps": [{"type": "check_enclosure",
+                                      "enclosure_id": enclosure_id}],
+    })).json()["id"]
+    body = (await api.post(f"/api/automations/{automation_id}/execute", headers=headers,
+                           json={"confirm": True})).json()
+    assert body["status"] == "failed", body
+    assert "leak" in body["steps"][0]["error"]
+
+
+async def test_enclosure_latest_lists_every_metric(api):
+    headers = await login(api)
+    enclosure_id = (await api.post("/api/enclosures", headers=headers,
+                                   json={"name": "Busy"})).json()["id"]
+    await _insert_readings(enclosure_id, [("leak", 0.0, 900)]
+                           + [("internal_temp_c", 25.0, i) for i in range(210)])
+    latest = (await api.get("/api/enclosures", headers=headers)).json()[0]["latest"]
+    assert latest["leak"]["value"] == 0.0
+    assert latest["internal_temp_c"]["age_seconds"] == 0
+
+
+async def test_stopping_the_engine_aborts_a_scheduled_run_and_records_it(api):
+    import asyncio
+
+    from app.services.automation import engine
+
+    headers = await login(api)
+    automation_id = (await api.post("/api/automations", headers=headers, json={
+        "name": "Long", "steps": [{"type": "delay", "seconds": 60}],
+    })).json()["id"]
+    task = engine._spawn_run(automation_id, trigger="schedule")
+    for _ in range(100):
+        if (await api.get(f"/api/automations/{automation_id}/runs", headers=headers)).json():
+            break
+        await asyncio.sleep(0.02)
+    await engine.stop()
+    assert task.done()
+    runs = (await api.get(f"/api/automations/{automation_id}/runs", headers=headers)).json()
+    assert runs[0]["status"] == "aborted"
+    assert runs[0]["finished_at"] is not None
+
+
+async def test_a_run_cut_off_by_a_crash_is_closed_at_start(api):
+    from app.db.models import AutomationRun
+    from app.db.session import session_scope
+    from app.services.automation import engine
+
+    headers = await login(api)
+    automation_id = (await api.post("/api/automations", headers=headers, json={
+        "name": "Crashed", "steps": []})).json()["id"]
+    async with session_scope() as session:
+        session.add(AutomationRun(automation_id=automation_id, status="running"))
+    await engine.stop()
+    await engine.start()
+    runs = (await api.get(f"/api/automations/{automation_id}/runs", headers=headers)).json()
+    assert runs[0]["status"] == "aborted"
+
+
+async def test_wait_state_with_a_cleared_interval_does_not_spin(api, monkeypatch):
+    import app.services.automation as automation_module
+
+    calls = 0
+    real = automation_module.manager.dispatch_many
+
+    async def counting(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(automation_module.manager, "dispatch_many", counting)
+    result = await automation_module.engine._run_step(0, {
+        "type": "wait_state", "target": {"type": "projector", "id": 999},
+        "capability": "power.get", "expect": "on", "timeout": 1, "interval": 0,
+    })
+    assert result["ok"] is False
+    assert calls <= 4, calls
+
+
+async def test_sign_in_pauses_after_repeated_wrong_passwords(api):
+    for _ in range(10):
+        response = await api.post("/api/auth/login",
+                                  json={"username": "admin", "password": "guess-guess"})
+        assert response.status_code == 401
+    blocked = await api.post("/api/auth/login",
+                             json={"username": "admin", "password": "test-admin-password"})
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    # Another account from the same address is not affected.
+    other = await api.post("/api/auth/login",
+                           json={"username": "someone", "password": "guess-guess"})
+    assert other.status_code == 401
+
+
+async def test_a_token_from_a_deleted_account_does_not_open_its_namesake(api, roles):
+    """Deleting a user revokes its tokens; recreating the name must not revive them."""
+    from datetime import datetime, timedelta
+
+    import jwt
+
+    from app.config import settings
+
+    admin = roles["admin"]
+    assert (await api.post("/api/auth/users", headers=admin, json={
+        "username": "reused", "password": "a-long-test-password", "role": "admin",
+    })).status_code == 201
+    issued = datetime.now(UTC) - timedelta(hours=1)  # by the account deleted since
+    old = jwt.encode({"sub": "reused", "role": "viewer", "iat": issued,
+                      "exp": issued + timedelta(days=365)}, settings.secret_key,
+                     algorithm="HS256")
+    response = await api.get("/api/auth/users", headers={"Authorization": f"Bearer {old}"})
+    assert response.status_code == 401
+    from app.api.routes import ws as ws_module
+    assert await ws_module._authenticate(old) is None
+    # Media files take the token in the query string; same rule there.
+    media = await api.get("/api/mapping/media/999/file", params={"token": old})
+    assert media.status_code == 403
+    fresh = await login(api, "reused", "a-long-test-password")
+    assert (await api.get("/api/auth/users", headers=fresh)).status_code == 200
+    fresh_token = fresh["Authorization"].removeprefix("Bearer ")
+    media = await api.get("/api/mapping/media/999/file", params={"token": fresh_token})
+    assert media.status_code == 404
+
+
+async def test_a_duplicate_name_is_a_conflict_not_a_server_error(api):
+    headers = await login(api)
+    await api.post("/api/groups", headers=headers, json={"name": "Front"})
+    second = (await api.post("/api/groups", headers=headers, json={"name": "Back"})).json()
+    response = await api.patch(f"/api/groups/{second['id']}", headers=headers,
+                               json={"name": "Front"})
+    assert response.status_code == 409
+    assert "already be in use" in response.json()["detail"]
+
+
+async def test_scenes_and_automations_accept_the_body_discovery_advertises(api):
+    """Discovery tells integrations to send {"confirm": true}; that must work."""
+    headers = await login(api)
+    scene_id = (await api.post("/api/scenes", headers=headers,
+                               json={"name": "Nothing", "actions": []})).json()["id"]
+    discovery = (await api.get("/api/integration/homeassistant/discovery",
+                               headers=headers)).json()
+    body = next(s for s in discovery["scenes"] if s["id"] == scene_id)["activate"]["body"]
+    assert (await api.post(f"/api/scenes/{scene_id}/activate", headers=headers,
+                           json=body)).status_code == 200
+    automation_id = (await api.post("/api/automations", headers=headers,
+                                    json={"name": "Empty", "steps": []})).json()["id"]
+    assert (await api.post(f"/api/automations/{automation_id}/execute", headers=headers,
+                           json={"confirm": True})).status_code == 200
+
+
+async def test_activating_a_scene_by_name_is_rate_limited(api, monkeypatch):
+    import app.api.deps as deps
+
+    headers = await login(api)
+    await api.post("/api/scenes", headers=headers, json={"name": "Pre-Show", "actions": []})
+    monkeypatch.setattr(deps.command_rate_limit.counter, "limit", 1)
+    first = await api.post("/api/integration/scenes/Pre-Show/activate", headers=headers)
+    second = await api.post("/api/integration/scenes/Pre-Show/activate", headers=headers)
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+
+async def test_live_feed_leaves_no_queue_when_the_client_drops_at_once(api):
+    from fastapi import WebSocketDisconnect
+
+    from app.api.routes import ws as ws_module
+    from app.core.events import bus
+
+    token = (await api.post("/api/auth/login", json={
+        "username": "admin", "password": "test-admin-password"})).json()["access_token"]
+
+    class GoneAtOnce:
+        async def accept(self):
+            return None
+
+        async def send_text(self, _text):
+            raise WebSocketDisconnect(code=1006)
+
+    before = bus.subscriber_count
+    with contextlib.suppress(WebSocketDisconnect):
+        await ws_module.websocket_endpoint(GoneAtOnce(), token=token)
+    assert bus.subscriber_count == before
+
+
+async def test_changing_the_admin_password_removes_the_first_run_note(api, roles, tmp_path,
+                                                                      monkeypatch):
+    """Opening the desktop app shows the note's password; after a change it would be wrong."""
+    monkeypatch.setenv("DESKTOP_DATA_DIR", str(tmp_path))
+    note = tmp_path / "FIRST-RUN-PASSWORD.txt"
+    note.write_text("password: test-admin-password\n")
+    other = roles["operator"]
+    assert (await api.post("/api/auth/change-password", headers=other, json={
+        "current_password": "a-long-test-password", "new_password": "another-long-password",
+    })).status_code == 204
+    assert note.exists()  # someone else's password says nothing about admin's
+    headers = await login(api)
+    response = await api.post("/api/auth/change-password", headers=headers, json={
+        "current_password": "test-admin-password", "new_password": "a-new-admin-password",
+    })
+    assert response.status_code == 204
+    assert not note.exists()
+
+
+def test_websocket_log_lines_hide_the_token():
+    import logging
+
+    from app.core.security import HideTokens
+
+    record = logging.LogRecord("uvicorn.error", logging.INFO, __file__, 1,
+                               '%s - "WebSocket %s" [accepted]',
+                               (("127.0.0.1", 5000), "/api/ws?token=eyJabc.def.ghi&x=1"), None)
+    assert HideTokens().filter(record)
+    message = record.getMessage()
+    assert "eyJabc" not in message
+    assert "/api/ws?token=hidden&x=1" in message

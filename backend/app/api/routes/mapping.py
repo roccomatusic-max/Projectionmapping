@@ -25,7 +25,7 @@ from app.api.deps import (
 )
 from app.config import settings
 from app.core.events import bus
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, token_predates
 from app.db.models import (
     Event,
     MappingCue,
@@ -180,7 +180,9 @@ async def _media_user(session, token: str | None, request: Request) -> User:
         select(User).where(User.username == payload["sub"])
     )).scalars().first()
     try:
-        allowed = user is not None and user.is_active and Role(user.role).at_least(Role.VIEWER)
+        allowed = (user is not None and user.is_active
+                   and not token_predates(payload, user.created_at)
+                   and Role(user.role).at_least(Role.VIEWER))
     except ValueError:
         allowed = False
     if not allowed:

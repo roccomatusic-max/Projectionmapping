@@ -331,7 +331,7 @@ class MonitoringService:
                 log.exception("retention pruning failed")
 
     async def _prune(self) -> None:
-        from app.db.models import CommandLog
+        from app.db.models import AutomationRun, CommandLog, EnclosureReading
 
         now = datetime.now(UTC)
         async with session_scope() as session:
@@ -343,6 +343,15 @@ class MonitoringService:
             ))
             await session.execute(delete(Event).where(
                 Event.created_at < now - timedelta(days=settings.event_retention_days)
+            ))
+            # An enclosure sensor may report every few seconds for years.
+            await session.execute(delete(EnclosureReading).where(
+                EnclosureReading.recorded_at
+                < now - timedelta(days=settings.telemetry_retention_days)
+            ))
+            await session.execute(delete(AutomationRun).where(
+                AutomationRun.finished_at.is_not(None),
+                AutomationRun.finished_at < now - timedelta(days=settings.event_retention_days),
             ))
 
 

@@ -97,9 +97,14 @@ def next_runs(trigger_type: str, schedule: dict[str, Any], *, now: datetime | No
     cursor = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
     end = cursor + timedelta(days=horizon_days)
     found: list[datetime] = []
-    # Minute-stepping is fine here: 400 days is ~576k iterations worst case,
-    # but any real schedule matches long before that and we stop at `count`.
+    expression = str(schedule.get("cron", "")).strip()
+    # Minute-stepping, but never through a date a cron schedule cannot fire
+    # on: a yearly one ("0 20 24 12 *") would otherwise test all 576k minutes
+    # of the horizon and hold the server up for seconds per preview.
     while cursor < end and len(found) < count:
+        if trigger_type == "cron" and not cron.matches_day(expression, cursor):
+            cursor = (cursor + timedelta(days=1)).replace(hour=0, minute=0)
+            continue
         if schedule_matches(trigger_type, schedule, cursor):
             found.append(cursor)
             # Jump to the next minute boundary that could possibly match.

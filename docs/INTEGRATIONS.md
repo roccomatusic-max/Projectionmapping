@@ -73,7 +73,9 @@ it". Poll `/api/projectors/{id}/status` to see the actual state.
 ### Rate limits
 
 60 commands/minute and 120 config writes/minute, per user. Exceeding either
-returns `429` with a `Retry-After` header.
+returns `429` with a `Retry-After` header. Ten wrong passwords for one
+account from one address pause its sign-in for up to five minutes, also
+with `429` and `Retry-After`.
 
 ---
 

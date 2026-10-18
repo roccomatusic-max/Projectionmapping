@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, RequireAdmin, SessionDep, write_rate_limit
+from app.api.deps import CurrentUser, RequireAdmin, SessionDep, _FixedWindow, write_rate_limit
 from app.config import settings
 from app.core.security import create_access_token, hash_password, needs_rehash, verify_password
 from app.db.models import Event, Role, Severity, User
+from app.paths import first_run_password_file
 from app.schemas import (
     LoginRequest,
     PasswordChange,
@@ -23,24 +26,45 @@ from app.schemas import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+#: Wrong passwords allowed per account name and address before sign-in
+#: pauses. Without it a script on the show network can guess as fast as
+#: Argon2 allows, about ten a second, indefinitely.
+login_failures = _FixedWindow(limit=10, window=300.0, scope="sign-in")
+
+# Argon2 deliberately costs ~0.1 s of CPU. Run in a worker thread (it
+# releases the GIL) so a sign-in does not freeze polling, the live feed and
+# the output windows' clock for that long, and a guessing script cannot
+# freeze them continuously.
+
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, session: SessionDep) -> TokenResponse:
+async def login(payload: LoginRequest, session: SessionDep, request: Request) -> TokenResponse:
+    principal = f"{request.client.host if request.client else '-'}:{payload.username.lower()}"
+    wait = login_failures.retry_after(principal)
+    if wait:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed sign-ins. Try again in {wait} seconds.",
+            headers={"Retry-After": str(wait)},
+        )
     user = (await session.execute(
         select(User).where(User.username == payload.username)
     )).scalars().first()
 
     # Same failure for unknown user and wrong password, and the hash is
     # verified either way so timing does not reveal which it was.
-    valid = bool(user) and verify_password(payload.password, user.password_hash)
+    valid = bool(user) and await asyncio.to_thread(
+        verify_password, payload.password, user.password_hash)
     if not valid or user is None or not user.is_active:
         if user is None:
-            hash_password(payload.password)  # equalise work
+            await asyncio.to_thread(hash_password, payload.password)  # equalise work
+        login_failures.record(principal)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Invalid username or password")
+    login_failures.forget(principal)
 
     if needs_rehash(user.password_hash):
-        user.password_hash = hash_password(payload.password)
+        user.password_hash = await asyncio.to_thread(hash_password, payload.password)
     user.last_login_at = datetime.now(UTC)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="login",
                       message=f"{user.username} signed in"))
@@ -62,14 +86,21 @@ async def me(user: CurrentUser) -> User:
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def change_password(payload: PasswordChange, user: CurrentUser,
                           session: SessionDep) -> None:
-    if not verify_password(payload.current_password, user.password_hash):
+    if not await asyncio.to_thread(verify_password, payload.current_password,
+                                   user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Current password is incorrect")
-    user.password_hash = hash_password(payload.new_password)
+    user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
     session.add(Event(projector_id=None, severity=Severity.INFO.value,
                       kind="password_changed",
                       message=f"{user.username} changed their password"))
     await session.commit()
+    # Opening the desktop app shows the password from this note; once the
+    # admin has chosen their own, it would only show a wrong one.
+    note = first_run_password_file()
+    if user.username == "admin" and note is not None:
+        with contextlib.suppress(OSError):
+            note.unlink(missing_ok=True)
 
 
 @router.post("/tokens", response_model=ServiceTokenResponse,
@@ -116,7 +147,8 @@ async def create_user(payload: UserCreate, session: SessionDep,
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail=f"User {payload.username!r} already exists")
-    user = User(username=payload.username, password_hash=hash_password(payload.password),
+    user = User(username=payload.username,
+                password_hash=await asyncio.to_thread(hash_password, payload.password),
                 role=payload.role)
     session.add(user)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="user_created",

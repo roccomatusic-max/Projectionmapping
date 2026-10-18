@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -34,23 +35,33 @@ class BusMessage:
 
 class EventBus:
     def __init__(self) -> None:
-        self._subscribers: set[asyncio.Queue[BusMessage]] = set()
+        #: Each subscriber's queue, and the message types it takes (None: all).
+        self._subscribers: dict[asyncio.Queue[BusMessage], frozenset[str] | None] = {}
         self._lock = asyncio.Lock()
 
-    async def subscribe(self) -> asyncio.Queue[BusMessage]:
+    async def subscribe(self, types: Iterable[str] | None = None) -> asyncio.Queue[BusMessage]:
+        """A queue of every message, or of only those of ``types``.
+
+        A service that acts on a few types should name them. The bus also
+        carries camera reports up to 60 times a second; queued for a service
+        that is busy (a slow webhook, a locked database) they would push the
+        messages it does act on, a projector going offline, out of its queue.
+        """
         queue: asyncio.Queue[BusMessage] = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
         async with self._lock:
-            self._subscribers.add(queue)
+            self._subscribers[queue] = frozenset(types) if types is not None else None
         return queue
 
     async def unsubscribe(self, queue: asyncio.Queue[BusMessage]) -> None:
         async with self._lock:
-            self._subscribers.discard(queue)
+            self._subscribers.pop(queue, None)
 
     def publish(self, type_: str, payload: dict[str, Any] | None = None) -> None:
         """Fan out without awaiting. Safe to call from any task."""
         message = BusMessage(type=type_, payload=payload or {})
-        for queue in list(self._subscribers):
+        for queue, types in list(self._subscribers.items()):
+            if types is not None and type_ not in types:
+                continue
             try:
                 queue.put_nowait(message)
             except asyncio.QueueFull:

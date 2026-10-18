@@ -11,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, token_predates
 from app.db.models import Role, User
 from app.db.session import get_session
 
@@ -40,7 +40,7 @@ async def current_user(
     user = (await session.execute(
         select(User).where(User.username == payload["sub"])
     )).scalars().first()
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or token_predates(payload, user.created_at):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="User no longer active")
     return user
@@ -118,6 +118,34 @@ class _FixedWindow:
                 headers={"Retry-After": str(retry_after)},
             )
         hits.append(now)
+
+    # Peek-and-record use, for counting failures (wrong passwords) rather
+    # than requests: ``retry_after`` before the attempt, ``record`` after a
+    # failed one.
+
+    def retry_after(self, principal: str) -> int:
+        """Seconds until ``principal`` is under the limit again; 0 if it is now."""
+        hits = self._hits.get(principal)
+        if not hits:
+            return 0
+        now = time.monotonic()
+        while hits and hits[0] < now - self.window:
+            hits.popleft()
+        if len(hits) < self.limit:
+            return 0
+        return max(1, int(self.window - (now - hits[0])))
+
+    def record(self, principal: str) -> None:
+        if len(self._hits) > 10_000:
+            # Principals here can be chosen by the caller (any sign-in name):
+            # forget the idle ones so the table cannot grow without bound.
+            cutoff = time.monotonic() - self.window
+            for key in [k for k, v in self._hits.items() if not v or v[-1] < cutoff]:
+                del self._hits[key]
+        self._hits[principal].append(time.monotonic())
+
+    def forget(self, principal: str) -> None:
+        self._hits.pop(principal, None)
 
 
 def rate_limiter(limit: int, window: float, scope: str):

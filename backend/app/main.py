@@ -7,6 +7,7 @@ and shuts them all down cleanly so no projector is left mid-command.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import sys
@@ -17,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.routes import (
     auth,
@@ -36,7 +38,7 @@ from app.api.routes import (
     ws,
 )
 from app.config import settings
-from app.core.security import hash_password
+from app.core.security import HideTokens, hash_password
 from app.db.migrate import upgrade_to_head
 from app.db.models import Role, User
 from app.db.session import create_all, engine, session_scope
@@ -91,7 +93,8 @@ async def bootstrap_admin() -> None:
             password_hash=hash_password(password),
             role=Role.ADMIN.value,
         ))
-        generated = settings.bootstrap_admin_password is None
+        # Blank counts as unset: docker-compose and .env.example pass it empty.
+        generated = not settings.bootstrap_admin_password
     banner = "=" * 72
     log.warning(
         "\n%s\nCreated the initial administrator account.\n"
@@ -106,6 +109,11 @@ async def bootstrap_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Here rather than at import: uvicorn sets up its loggers before it
+    # starts the app, and only once.
+    uvicorn_log = logging.getLogger("uvicorn.error")
+    if not any(isinstance(f, HideTokens) for f in uvicorn_log.filters):
+        uvicorn_log.addFilter(HideTokens())
     log.info("starting %s (%s)", settings.app_name, settings.environment)
     if settings.secret_key_generated:
         log.warning(
@@ -114,6 +122,14 @@ async def lifespan(_: FastAPI):
             "will become unreadable the next time the server restarts.\n"
             "Set SECRET_KEY in .env before registering projectors.\n%s",
             "=" * 72, "=" * 72,
+        )
+    elif len(settings.secret_key) < 32:
+        # HS256 with a short key: anyone holding one sign-in token (a phone's,
+        # a URL in a proxy log) can guess the key offline and forge an admin's.
+        log.warning(
+            "SECRET_KEY is only %d characters long; use at least 32 random characters "
+            "(python -c \"import secrets; print(secrets.token_urlsafe(48))\").",
+            len(settings.secret_key),
         )
     await prepare_database()
     await bootstrap_admin()
@@ -132,6 +148,8 @@ async def lifespan(_: FastAPI):
         log.info("shutting down")
         if auto_updates:
             auto_updates.cancel()
+            # gather keeps the task's own cancellation, not one aimed at us.
+            await asyncio.gather(auto_updates, return_exceptions=True)
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
         await discovery.stop()
@@ -174,6 +192,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Check the server logs for details."},
+    )
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
+    """A duplicate name or a reference to a missing record is the client's
+    mistake, not a server fault: answer 409 rather than a bare 500."""
+    log.warning("refused %s %s: %s", request.method, request.url.path, exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "That conflicts with what is already saved: the name may "
+                           "already be in use, or it refers to something that no "
+                           "longer exists."},
     )
 
 

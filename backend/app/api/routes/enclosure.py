@@ -28,17 +28,27 @@ async def _latest_readings(session, enclosure_id: int,
     A stale reading is returned with ``stale: true`` rather than omitted:
     "the sensor last said 22°C, 40 minutes ago" is useful, and materially
     different from "the sensor says 22°C".
+
+    Looked up per metric (each an index seek), not picked from the newest
+    rows overall: a sensor that reports often would push a rarer metric, a
+    leak switch that reports only on change, out of any such window.
     """
-    rows = (await session.execute(
-        select(EnclosureReading)
+    metrics = (await session.execute(
+        select(EnclosureReading.metric)
         .where(EnclosureReading.enclosure_id == enclosure_id)
-        .order_by(EnclosureReading.recorded_at.desc())
-        .limit(200)
+        .distinct()
     )).scalars().all()
     now = datetime.now(UTC)
     latest: dict[str, dict] = {}
-    for row in rows:
-        if row.metric in latest:
+    for metric in sorted(metrics):
+        row = (await session.execute(
+            select(EnclosureReading)
+            .where(EnclosureReading.enclosure_id == enclosure_id,
+                   EnclosureReading.metric == metric)
+            .order_by(EnclosureReading.recorded_at.desc())
+            .limit(1)
+        )).scalars().first()
+        if row is None:
             continue
         recorded = as_utc(row.recorded_at)
         age = (now - recorded).total_seconds()
