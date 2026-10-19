@@ -66,6 +66,30 @@ instead, unzip it and double-click `ProjectorControl.exe` in the
 because the program is not signed with a paid certificate. Press
 **More info**, then **Run anyway**, then **Yes**.)
 
+### Windows blocked it
+
+If the window says **"Windows blocked Projector Control on this computer"**
+(or, from an older install line, *"An Application Control policy has blocked
+this file"*), that computer has **Smart App Control** on. It is a Windows 11
+feature that only lets programs signed with a paid certificate run, and it
+has no "allow this one program" button. Projector Control is not signed, the
+same as the Mac app. Pick one:
+
+- **Install on another machine.** Windows Server never has Smart App Control,
+  and most PCs that were upgraded rather than freshly installed have it off.
+- **Turn it off on this one:** Windows Security → **App & browser control** →
+  **Smart App Control settings** → **Off**, then run the line again. On many
+  Windows versions it cannot be turned back on without resetting Windows.
+
+To see whether it is on, paste this into PowerShell: `1` means on, `0` off.
+
+```powershell
+(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy').VerifiedAndReputablePolicyState
+```
+
+The same message on a work-managed PC with Smart App Control off means the
+company's App Control policy blocks it; its IT admin would have to allow it.
+
 If Microsoft Defender or another virus scanner removes `ProjectorControl.exe`
 during the install, that is a false alarm that unsigned Python programs often
 get. In **Windows Security → Virus & threat protection → Protection history**,
