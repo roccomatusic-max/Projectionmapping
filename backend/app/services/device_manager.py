@@ -149,6 +149,8 @@ class DeviceWorker:
             connect_timeout=settings.connect_timeout,
             command_gap=gap,
             allow_unverified_commands=record.allow_unverified_commands,
+            pjlink_port=getattr(record, "pjlink_port", None),
+            pjlink_password=decrypt_secret(getattr(record, "pjlink_password_enc", None)),
             label=record.name,
         )
 

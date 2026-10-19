@@ -161,6 +161,8 @@ class PanasonicSimulator:
                 return f"00{self._lamp_control_status()}"
             case "QLS":
                 return "00" + "".join("1" if on else "0" for on in self.state.lamp_on)
+            case "QTM":
+                return self._temperature(param)
             case "VXX":
                 return self._lens(param)
             case "LPM":
@@ -189,6 +191,16 @@ class PanasonicSimulator:
                 return "3"
         return "0"
 
+    def _temperature(self, code: str) -> str:
+        """``QTM:<n>`` → Celsius/Fahrenheit, four characters each."""
+        celsius = self.state.temperature(code)
+        if celsius is None:
+            return "00ER401"
+        if not self.state.temperatures_in_standby and self.state.power is not SimPower.ON:
+            return "00ER401"
+        fahrenheit = celsius * 9 / 5 + 32
+        return f"00{round(celsius):04d}/{round(fahrenheit):04d}"
+
     def _lens(self, param: str) -> str:
         if param.startswith("LNSI"):
             return "00VXX"
@@ -214,6 +226,11 @@ async def main() -> None:  # pragma: no cover - CLI entry point
     parser.add_argument("--fault", choices=["silent", "busy", "drop"], default=None)
     parser.add_argument("--model", choices=["dz13k", "dz770"], default="dz13k",
                         help="dz13k: 3-chip, 4 lamps, SDI option; dz770: 1-chip, 2 lamps, S-VIDEO")
+    parser.add_argument("--pjlink-port", type=int, default=None,
+                        help="Also answer PJLink on this port (4352 on a real unit), "
+                             "for fan and temperature condition")
+    parser.add_argument("--hot", type=float, default=0.0,
+                        help="Add this many °C to every temperature sensor")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -230,11 +247,17 @@ async def main() -> None:  # pragma: no cover - CLI entry point
         state.busy = True
     elif args.fault == "drop":
         state.drop_after = 3
+    state.temperature_offset = args.hot
 
     simulator = PanasonicSimulator(state, host=args.host, port=args.port)
     await simulator.start()
     print(f"SIMULATED {state.model} on {args.host}:{args.port} "
           f"(protect mode: {'on' if args.password else 'off'})")
+    if args.pjlink_port:
+        from .pjlink_sim import PJLinkSimulator
+
+        await PJLinkSimulator(state, host=args.host, port=args.pjlink_port).start()
+        print(f"  and PJLink on {args.host}:{args.pjlink_port} (same password)")
     print("This is a simulator. Data it reports is not from real hardware.")
     await asyncio.Event().wait()
 

@@ -152,6 +152,7 @@ class ProjectorOut(ProjectorBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     has_password: bool = False
+    has_pjlink_password: bool = False
     created_at: datetime | None = None
     state: ProjectorStateOut = Field(default_factory=ProjectorStateOut)
 

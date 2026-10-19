@@ -171,6 +171,7 @@ export function ProjectorForm({
     location: projector?.location ?? '',
     username: projector?.username ?? 'admin1',
     password: '',
+    pjlink_password: '',
     lamp_warn_hours: projector?.lamp_warn_hours ?? 2000,
     lamp_critical_hours: projector?.lamp_critical_hours ?? 2500,
     allow_unverified_commands: projector?.allow_unverified_commands ?? false,
@@ -190,6 +191,8 @@ export function ProjectorForm({
       const body: Record<string, unknown> = { ...form }
       // An empty password field means "leave unchanged" when editing.
       if (editing && !form.password) delete body.password
+      // Blank PJLink password: the projector uses the control password.
+      if (!form.pjlink_password || form.driver === 'pjlink') delete body.pjlink_password
       if (editing) {
         await api.updateProjector(projector.id, body)
         onSaved(`${form.name} updated`)
@@ -308,6 +311,26 @@ export function ProjectorForm({
               never shown again.
             </p>
           </div>
+          {form.driver !== 'pjlink' && (
+            <div className="sm:col-span-2">
+              <label className="label">
+                PJLink password (only if different) {editing && projector?.has_pjlink_password && '(leave blank to keep)'}
+              </label>
+              <input
+                className="input"
+                type="password"
+                value={form.pjlink_password}
+                autoComplete="new-password"
+                onChange={(e) => set('pjlink_password', e.target.value)}
+                placeholder={projector?.has_pjlink_password ? '••••••••' : 'same as Control password'}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Fan condition is read over the projector's PJLink connection. Most
+                Panasonic projectors use the Control password for it; fill this in
+                only if yours has its own PJLink password.
+              </p>
+            </div>
+          )}
           <div>
             <label className="label">Lamp warning hours</label>
             <input

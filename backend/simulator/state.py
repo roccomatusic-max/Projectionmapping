@@ -48,6 +48,16 @@ class SimulatedProjector:
 
     #: PJLink %1ERST digits: fan, lamp, temperature, cover, filter, other.
     erst: list[int] = field(default_factory=lambda: [0, 0, 0, 0, 0, 0])
+    #: Panasonic ``QTM:<n>`` sensors as code → (standby °C, running °C):
+    #: intake air, exhaust air, optics module. Typical of a lamp projector
+    #: in a 24 °C room; a sensor missing here answers ER401.
+    temperature_profile: dict[str, tuple[float, float]] = field(
+        default_factory=lambda: {"0": (24.0, 27.0), "1": (25.0, 41.0), "2": (25.0, 36.0)}
+    )
+    #: Added to every sensor, to rehearse a hot enclosure.
+    temperature_offset: float = 0.0
+    #: False: QTM answers ER401 unless the projector is on.
+    temperatures_in_standby: bool = True
     #: Lamp select / lamp power as last commanded (LPM / OLP on dual-lamp models).
     lamp_select: str = "0"
     lamp_power: str = "0"
@@ -133,6 +143,25 @@ class SimulatedProjector:
     def set_shutter(self, closed: bool) -> None:
         self.tick()
         self.shutter_closed = closed
+
+    def temperature(self, code: str) -> float | None:
+        """Current reading of one sensor, or None if this unit lacks it.
+
+        Running temperature while on, standby temperature in standby, and
+        halfway between during warm-up and cool-down.
+        """
+        self.tick()
+        profile = self.temperature_profile.get(code)
+        if profile is None:
+            return None
+        cold, hot = profile
+        if self.power is SimPower.ON:
+            value = hot
+        elif self.power is SimPower.STANDBY:
+            value = cold
+        else:
+            value = (cold + hot) / 2
+        return value + self.temperature_offset
 
     @property
     def is_on(self) -> bool:

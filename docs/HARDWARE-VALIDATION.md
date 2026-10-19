@@ -195,25 +195,23 @@ documents that someone checked.
 
 ---
 
-## Stage 7 — PJLink (optional but recommended)
+## Stage 7 — Temperatures and fan condition
 
-The Panasonic LAN protocol has no confirmed per-subsystem error query. PJLink
-does: `%1ERST` reports fan, lamp, temperature, cover, filter and "other" as
-ok/warning/error. That is the backbone of useful health monitoring.
+The Panasonic driver reads temperatures with `QTM` and fan, lamp,
+temperature, cover and filter condition with PJLink `%1ERST` on port 4352
+(see PROTOCOL-RESEARCH.md §2.7). Neither has been checked on a real unit yet.
 
-1. Enable PJLink on the projector.
-2. Register the **same physical projector a second time**, with driver
-   `pjlink` and port 4352, named e.g. "House Left (PJLink)".
-3. Poll it and confirm the subsystem chips appear on the detail page.
-
-Run both entries side by side. The Panasonic driver gives you the richer
-control surface; the PJLink entry gives you health reporting neither has
-alone.
-
-> Numeric intake/exhaust temperatures are **not** exposed by either path, and
-> the platform does not invent them. The UI marks temperature as
-> `n/a — not supported by this model`. If you want real numbers, put a sensor
-> in the enclosure and feed it in through the enclosure API.
+1. Make sure PJLink is on in the projector's NETWORK menu.
+2. Open the projector's page in the app, press **Poll now**, and look at
+   **Condition**.
+3. Compare each temperature with the projector's own status page (web
+   control → Projector status, or the on-screen STATUS menu). They should
+   match to the degree.
+4. If a sensor says "not understood", note the raw reply it shows: the
+   reply format needs adjusting in `parse_temperature`.
+5. If Fans shows a note instead of OK, read it: PJLink is off, or the
+   projector has its own PJLink password (fill in **PJLink password** under
+   Edit).
 
 ---
 

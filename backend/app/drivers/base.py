@@ -249,6 +249,11 @@ class Capability:
 
     @property
     def requires_opt_in(self) -> bool:
+        # A query only reads: it cannot move a lens or blank a show, and a
+        # projector that does not know it answers with an error and nothing
+        # else. The opt-in protects hardware from frames that change things.
+        if self.kind is CapabilityKind.QUERY:
+            return False
         return not self.provenance.is_trusted
 
     def as_dict(self) -> dict[str, Any]:
@@ -364,8 +369,9 @@ class ProjectorStatus:
     input_signal: TelemetryValue = field(default_factory=TelemetryValue.unavailable)
     resolution: TelemetryValue = field(default_factory=TelemetryValue.unavailable)
     filter_usage: TelemetryValue = field(default_factory=TelemetryValue.unavailable)
-    #: Numeric temperature/fan readings. See PROTOCOL-RESEARCH.md §4 — for the
-    #: PT-DZ13K these stay UNSUPPORTED; PJLink ERST severity is used instead.
+    #: Temperature sensors and fan condition. See PROTOCOL-RESEARCH.md §4:
+    #: Panasonic models answer QTM with degrees per sensor; fan condition is
+    #: ok/warning/error from PJLink %1ERST, as no protocol reports fan speed.
     temperature: TelemetryValue = field(default_factory=TelemetryValue.unavailable)
     fan: TelemetryValue = field(default_factory=TelemetryValue.unavailable)
     errors: list[str] = field(default_factory=list)
@@ -421,6 +427,11 @@ class ConnectionConfig:
     #: (seconds). None lets the driver choose; 0 disables.
     idle_reconnect: float | None = None
     allow_unverified_commands: bool = False
+    #: Secondary PJLink endpoint on a non-PJLink driver (Panasonic reads
+    #: %1ERST there for fan and temperature condition). None means the
+    #: standard port 4352; the password defaults to ``password``.
+    pjlink_port: int | None = None
+    pjlink_password: str | None = None
     #: Label shown in logs; set to the device name.
     label: str = ""
 
