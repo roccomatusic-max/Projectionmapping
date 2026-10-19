@@ -55,6 +55,14 @@ function Wait-Version([string] $wanted, [int] $seconds = 120) {
   }
   return $false
 }
+function Wait-Until([scriptblock] $condition, [int] $seconds) {
+  $deadline = (Get-Date).AddSeconds($seconds)
+  while ((Get-Date) -lt $deadline) {
+    if (& $condition) { return $true }
+    Start-Sleep -Seconds 1
+  }
+  return [bool] (& $condition)
+}
 function Service-Pid { (Get-CimInstance Win32_Service -Filter "Name='$Service'").ProcessId }
 function Login([string] $password) {
   try {
@@ -191,9 +199,8 @@ Check ($offer.available -and $offer.latest -eq $next) "Check now offers $next"
 $started = Api $token '/system/updates/install' 'Post' @{ confirm = $true }
 Check ($started.installing) 'Install starts'
 Check (Wait-Version $next 180) "the service comes back as $next by itself"
-Start-Sleep -Seconds 3
-Check ((Get-Content (Join-Path $Data 'updates\last-result.txt') -Raw).Trim() -eq "installed $next") 'the update is recorded as installed'
-Check (-not (Test-Path (Join-Path $env:ProgramFiles '.Projector Control.previous'))) 'the previous copy is cleaned up'
+Check (Wait-Until { $r = Get-Content (Join-Path $Data 'updates\last-result.txt') -Raw -ErrorAction SilentlyContinue; $r -and $r.Trim() -eq "installed $next" } 30) 'the update is recorded as installed'
+Check (Wait-Until { -not (Test-Path (Join-Path $env:ProgramFiles '.Projector Control.previous')) } 60) 'the previous copy is cleaned up'
 Check ((((sc.exe qfailure $Service) -join "`n") | Select-String -Pattern 'RESTART' -AllMatches).Matches.Count -ge 3) 'crash restarts are switched back on after the update'
 $token = Login $newPassword
 Check ([bool] $token) 'the same password still signs in after the update (data kept)'
