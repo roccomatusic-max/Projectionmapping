@@ -12,6 +12,10 @@ remote all talk to it. The Mac app sets that up by itself:
 
 There is no Terminal, git or build step on the server.
 
+The same server also runs on a Windows computer: see
+[WINDOWS-SERVER.md](WINDOWS-SERVER.md). Both are built from every change with
+the same version number ([SERVER-PARITY.md](SERVER-PARITY.md)).
+
 **Tested:** installed on a real Mac server on 2026-10-17 by following the
 steps below: the download, the one-line Terminal step, the password prompt,
 the first sign-in and the dashboard all worked. Not yet exercised there:

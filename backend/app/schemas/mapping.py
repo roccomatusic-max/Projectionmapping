@@ -463,6 +463,8 @@ class NetworkInfo(BaseModel):
     discoverable: bool
     #: Where to point one by hand on this network, when known.
     address: str | None = None
+    #: The server's own system ("mac", "windows", "linux"), for the setup steps.
+    server_os: str = "linux"
     #: Where a phone with Tailscale reaches it from any internet connection.
     tailscale_address: str | None = None
 

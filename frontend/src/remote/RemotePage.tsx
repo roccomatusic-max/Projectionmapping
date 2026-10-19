@@ -601,7 +601,7 @@ function ProjectorsTab({ session }: { session: Session }) {
           )
         })}
         {!loading && projectors.length === 0 && (
-          <li className="px-4 py-4 text-[15px] text-slate-500">No projectors yet. Add them in Projector Control on the Mac.</li>
+          <li className="px-4 py-4 text-[15px] text-slate-500">No projectors yet. Add them in the Projector Control dashboard.</li>
         )}
       </ul>
 

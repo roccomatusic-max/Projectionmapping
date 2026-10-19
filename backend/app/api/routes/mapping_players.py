@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import hmac
 import secrets
+import sys
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -183,9 +184,10 @@ async def network(_: RequireViewer) -> NetworkInfo:
         ip, tailscale = lan_address(), tailscale_address()
         address = f"http://{ip}:{settings.advertise_port}" if ip else None
         anywhere = f"http://{tailscale}:{settings.advertise_port}" if tailscale else None
+    system = {"darwin": "mac", "win32": "windows"}.get(sys.platform, "linux")
     return NetworkInfo(local_only=settings.local_only,
                        discoverable=settings.advertise_port is not None, address=address,
-                       tailscale_address=anywhere)
+                       tailscale_address=anywhere, server_os=system)
 
 
 @router.get("", response_model=list[PlayerOut])
