@@ -6,8 +6,11 @@ import type {
   CapabilityManifest,
   CommandLogRow,
   ConnectionTest,
+  FanReading,
   Projector,
   Telemetry,
+  TemperatureReading,
+  TemperatureSensor,
 } from '@/api/types'
 import { useFleetContext, useOps, latestCommand, phaseIsActive, type TrackedCommand } from '@/live/LiveProvider'
 import { useDrivers } from '@/live/useCatalog'
@@ -1078,18 +1081,49 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 const SUBSYSTEMS: Array<{ key: string; label: string; icon: LucideIcon; equipment?: 'temperature' | 'fan' | 'filter_usage' }> = [
   { key: 'temperature', label: 'Temperature', icon: TemperatureIcon, equipment: 'temperature' },
-  { key: 'fan', label: 'Fan', icon: FanIcon, equipment: 'fan' },
+  { key: 'fan', label: 'Fans', icon: FanIcon, equipment: 'fan' },
   { key: 'lamp', label: 'Lamp', icon: LampIcon },
   { key: 'filter', label: 'Filter', icon: FilterIcon, equipment: 'filter_usage' },
   { key: 'cover', label: 'Cover', icon: CoverIcon },
   { key: 'other', label: 'Other', icon: FaultIcon },
 ]
 
+const CONDITION_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', error: 'Fault' }
+
 function severityTone(severity: string | undefined): Tone {
   if (severity === 'error') return 'fault'
   if (severity === 'warning') return 'warn'
   if (severity === 'ok') return 'ok'
   return 'unknown'
+}
+
+function ConditionChip({ severity }: { severity: string | undefined }) {
+  return (
+    <Chip tone={severityTone(severity)}>
+      {severity ? (CONDITION_LABEL[severity] ?? severity) : 'not reported'}
+    </Chip>
+  )
+}
+
+/** Sensor readings, when the driver reads them (Panasonic QTM). */
+function temperatureReading(field: Telemetry<unknown> | undefined): TemperatureReading | null {
+  if (field?.availability !== 'available' || !field.value || typeof field.value !== 'object') return null
+  const value = field.value as TemperatureReading
+  return Array.isArray(value.sensors) && value.sensors.length > 0 ? value : null
+}
+
+function fanReading(field: Telemetry<unknown> | undefined): FanReading | null {
+  if (field?.availability !== 'available' || !field.value || typeof field.value !== 'object') return null
+  const value = field.value as FanReading
+  return typeof value.condition === 'string' ? value : null
+}
+
+function degrees(sensor: TemperatureSensor): { text: string; muted: boolean; title?: string } {
+  if (sensor.celsius == null) {
+    return { text: `not understood: ${sensor.raw}`, muted: true, title: 'The projector sent a reply this app could not read as degrees.' }
+  }
+  const fahrenheit = sensor.fahrenheit == null ? '' : ` · ${sensor.fahrenheit} °F`
+  return { text: `${sensor.celsius} °C${fahrenheit}`, muted: false }
 }
 
 function EquipmentStatus({ projector, driverName }: { projector: Projector; driverName: string }) {
@@ -1102,6 +1136,8 @@ function EquipmentStatus({ projector, driverName }: { projector: Projector; driv
   const lamps = lampReadings(projector)
   const lampStatus = renderTelemetry(state.lamp_status, (value) => value.state ?? `raw: ${value.raw}`)
   const erst = state.error_status?.availability === 'available' ? (state.error_status.value ?? {}) : null
+  const temperatures = temperatureReading(equipment.temperature)
+  const fan = fanReading(equipment.fan)
 
   return (
     <>
@@ -1163,47 +1199,59 @@ function EquipmentStatus({ projector, driverName }: { projector: Projector; driv
       <Panel
         icon={TemperatureIcon}
         title="Condition"
-        description={erst ? 'Reported by the projector (PJLink error status).' : undefined}
+        description={
+          temperatures && erst
+            ? 'Temperatures from the projector’s sensors. OK, warning or fault from the projector’s own checks (PJLink).'
+            : temperatures
+              ? 'Temperatures from the projector’s sensors.'
+              : erst
+                ? 'Reported by the projector (PJLink error status).'
+                : undefined
+        }
         bodyClassName="px-4 py-2"
       >
-        {erst ? (
-          <ul className="divide-y divide-white/5">
-            {SUBSYSTEMS.map((sub) => {
-              const severity = erst[sub.key]
-              const tone = severityTone(severity)
-              return (
-                <li key={sub.key} className="flex items-center justify-between gap-3 py-1.5">
+        <ul className="divide-y divide-white/5">
+          {SUBSYSTEMS.filter((sub) => erst || sub.equipment).map((sub) => {
+            const field = sub.equipment ? equipment[sub.equipment] : undefined
+            const fallback = telemetryRow(field, notRead)
+            const showNote = sub.key === 'temperature' ? !temperatures : sub.key === 'fan' && Boolean(fan)
+            return (
+              <li key={sub.key} className="py-1.5">
+                <div className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2 text-sm text-slate-300">
-                    <sub.icon size={14} className={TONE_TEXT[tone]} aria-hidden /> {sub.label}
+                    <sub.icon size={14} className={erst ? TONE_TEXT[severityTone(erst[sub.key])] : 'text-slate-500'} aria-hidden /> {sub.label}
                   </span>
-                  <Chip tone={tone}>{severity ?? 'not reported'}</Chip>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <>
-            <ul className="divide-y divide-white/5">
-              {SUBSYSTEMS.filter((sub) => sub.equipment).map((sub) => {
-                const reading = telemetryRow(sub.equipment ? equipment[sub.equipment] : undefined, notRead)
-                return (
-                  <li key={sub.key} className="flex items-center justify-between gap-3 py-1.5">
-                    <span className="flex items-center gap-2 text-sm text-slate-300">
-                      <sub.icon size={14} className="text-slate-500" aria-hidden /> {sub.label}
-                    </span>
-                    <Value {...reading} className="text-sm" />
-                  </li>
-                )
-              })}
-            </ul>
-            <UnavailableNote
-              className="my-2"
-              reason={
-                state.error_status?.note ??
-                'No per-subsystem error query is available on this transport. Fan, temperature, cover and filter faults are reported only by projectors that answer PJLink error status.'
-              }
-            />
-          </>
+                  {erst ? (
+                    <ConditionChip severity={erst[sub.key]} />
+                  ) : sub.key === 'temperature' && temperatures ? null : (
+                    <Value {...fallback} className="text-sm" />
+                  )}
+                </div>
+                {sub.key === 'temperature' && temperatures && (
+                  <dl className="mt-1 space-y-0.5 pl-6">
+                    {temperatures.sensors.map((sensor) => (
+                      <div key={sensor.key} className="flex items-baseline justify-between gap-3">
+                        <dt className="text-xs text-slate-500">{sensor.label}</dt>
+                        <dd className="text-sm"><Value {...degrees(sensor)} /></dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {showNote && field?.note && (
+                  <p className="mt-0.5 pl-6 text-2xs text-slate-500">{field.note}</p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        {!erst && (
+          <UnavailableNote
+            className="my-2"
+            reason={
+              state.error_status?.note ??
+              'No per-subsystem error query is available on this transport. Fan, temperature, cover and filter faults are reported only by projectors that answer PJLink error status.'
+            }
+          />
         )}
       </Panel>
 

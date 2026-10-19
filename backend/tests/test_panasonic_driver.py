@@ -134,13 +134,20 @@ async def test_lamp_status_marks_unrecognised_values(panasonic_driver):
     assert result.value["unparsed"] is False
 
 
-async def test_errors_query_is_honestly_unsupported(panasonic_driver):
-    """There is no confirmed per-subsystem error query for this model.
+async def test_errors_query_without_pjlink_says_so(panasonic_driver):
+    """Per-subsystem condition comes only from the projector's PJLink side.
 
-    The driver must say so rather than returning a fabricated clean status.
+    With PJLink unreachable the driver must say so rather than returning a
+    fabricated clean status.
     """
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        panasonic_driver.config.pjlink_port = sock.getsockname()[1]
     result = await panasonic_driver.get_errors()
-    assert result.outcome is CommandOutcome.UNSUPPORTED
+    assert result.outcome is CommandOutcome.CONNECTION_ERROR
+    assert result.value is None
     assert "PJLink" in (result.error or "")
 
 

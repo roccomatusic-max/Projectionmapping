@@ -102,6 +102,7 @@ def _projector_out(record: Projector, state: ProjectorState | None) -> Projector
         lamp_critical_hours=record.lamp_critical_hours,
         pjlink_port=record.pjlink_port,
         has_password=bool(record.password_enc),
+        has_pjlink_password=bool(record.pjlink_password_enc),
         created_at=record.created_at,
         state=_state_out(record, state),
     )
