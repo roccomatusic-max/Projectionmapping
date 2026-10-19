@@ -41,6 +41,9 @@ class CommandOutcome(str, enum.Enum):
     REJECTED = "rejected"
     #: Device is busy / command not acceptable right now. Retrying may work.
     BUSY = "busy"
+    #: Refused for now (a projector cooling down), and held by the device
+    #: worker to be sent by itself as soon as the projector will take it.
+    QUEUED = "queued"
     #: Not supported by this model, or gated off as unverified. No I/O performed.
     UNSUPPORTED = "unsupported"
     #: Authentication failed.

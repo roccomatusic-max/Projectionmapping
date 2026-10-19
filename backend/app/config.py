@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     #: Seconds to wait after PON/POF before the confirming QPW poll.
     power_verify_delay: float = 2.0
     power_verify_attempts: int = 30
+    #: A power command refused while the projector cools down (or starts
+    #: up) is held and re-sent every ``power_queue_interval`` seconds, for
+    #: at most ``power_queue_seconds``. Panasonic cool-down is 1-2 minutes.
+    power_queue_interval: float = 5.0
+    power_queue_seconds: float = 300.0
 
     # -- alerting ---------------------------------------------------------
     alert_renotify_minutes: int = 60

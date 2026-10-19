@@ -621,7 +621,7 @@ function ProjectorsTab({ session }: { session: Session }) {
   )
 }
 
-const TOOK_IT = new Set(['confirmed', 'accepted', 'ok'])
+const TOOK_IT = new Set(['confirmed', 'accepted', 'ok', 'queued'])
 
 /** What happened, without claiming more than the projectors said. The
  *  list below shows each one's state as read back from it. */

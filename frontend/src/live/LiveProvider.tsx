@@ -13,12 +13,16 @@
  *   accepted    the projector acknowledged; waiting for the read-back
  *   sent        acknowledged, and this command has no read-back to wait for
  *   confirmed   the projector reports the requested state
+ *   waiting     refused for now (cooling down, starting up); the server
+ *               holds it and sends it by itself once the projector takes it
  *   unverified  acknowledged, but the read-back never showed the new state
+ *   notnow      refused for now: in standby, cooling down or starting up
  *   failed      refused, timed out, or could not be delivered
  *   unavailable not sent: unsupported or gated on this unit
  *
  * Nothing is ever retried from here. A timed-out power command in
- * particular may or may not have acted; the next poll tells us which.
+ * particular may or may not have acted; the next poll tells us which. The
+ * one hold the server does (power during cool-down) it reports as waiting.
  */
 
 import {
@@ -53,9 +57,11 @@ export const SILENT_MS = 70_000
 export type CommandPhase =
   | 'pending'
   | 'accepted'
+  | 'waiting'
   | 'sent'
   | 'confirmed'
   | 'unverified'
+  | 'notnow'
   | 'failed'
   | 'unavailable'
 
@@ -98,6 +104,10 @@ const READ_BACK_TIMEOUT_MS: Record<string, number> = {
   'input.set': 30_000,
 }
 
+/** A held command: the server tries for up to 5 minutes, then the start-up
+ *  (or cool-down) itself has to be read back. */
+const WAITING_TIMEOUT_MS = 7 * 60_000
+
 const ACTIVE_PHASES: CommandPhase[] = ['pending', 'accepted']
 
 export function phaseIsActive(phase: CommandPhase) {
@@ -107,9 +117,11 @@ export function phaseIsActive(phase: CommandPhase) {
 export const PHASE_LABEL: Record<CommandPhase, string> = {
   pending: 'Sending',
   accepted: 'Awaiting read-back',
+  waiting: 'Waiting for projector',
   sent: 'Sent',
   confirmed: 'Confirmed',
   unverified: 'Not confirmed',
+  notnow: 'Not right now',
   failed: 'Failed',
   unavailable: 'Unavailable',
 }
@@ -117,9 +129,11 @@ export const PHASE_LABEL: Record<CommandPhase, string> = {
 export const PHASE_TONE: Record<CommandPhase, Tone> = {
   pending: 'busy',
   accepted: 'busy',
+  waiting: 'busy',
   sent: 'idle',
   confirmed: 'ok',
   unverified: 'warn',
+  notnow: 'warn',
   failed: 'fault',
   unavailable: 'idle',
 }
@@ -130,7 +144,9 @@ function readBackMatches(command: TrackedCommand, projector: Projector): boolean
   const params = command.params ?? {}
   switch (command.capability) {
     case 'power.set':
-      return projector.state.power === params.state
+      // Cooling is the projector turning off: the lamp is already out.
+      return projector.state.power === params.state ||
+        (params.state === 'off' && projector.state.power === 'cooling')
     case 'shutter.set':
       return projector.state.shutter === params.state
     case 'input.set': {
@@ -150,6 +166,10 @@ function phaseFromOutcome(capability: string, outcome: Outcome): CommandPhase {
     case 'accepted':
     case 'ok':
       return READ_BACK.has(capability) ? 'accepted' : 'sent'
+    case 'queued':
+      return 'waiting'
+    case 'busy':
+      return 'notnow'
     case 'unsupported':
       return 'unavailable'
     default:
@@ -160,6 +180,7 @@ function phaseFromOutcome(capability: string, outcome: Outcome): CommandPhase {
 function describe(phase: CommandPhase, result: CommandResult): string {
   if (phase === 'accepted') return 'Acknowledged by the projector. Waiting for it to report the new state.'
   if (phase === 'sent') return 'Acknowledged. This setting cannot be read back from the projector.'
+  if (phase === 'waiting') return result.error ?? OUTCOME_HELP.queued
   return result.error ?? OUTCOME_HELP[result.outcome]
 }
 
@@ -291,7 +312,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     // Keep the stack short; the activity panel has the full history.
     setToasts((current) => [...current.slice(-3), toast])
     // Problems stay up long enough to read; routine news goes quickly.
-    const ttl = tone === 'fault' ? 12000 : tone === 'warn' ? 9000 : 4500
+    const ttl = tone === 'fault' ? 12000 : tone === 'warn' || tone === 'busy' ? 9000 : 4500
     window.setTimeout(() => setToasts((current) => current.filter((t) => t.id !== toast.id)), ttl)
   }, [])
 
@@ -366,7 +387,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addCommand = useCallback((command: TrackedCommand) => {
-    setCommands((current) => [command, ...current].slice(0, 80))
+    // A newer command of the same kind replaces one the server was holding
+    // (it cancels the hold too), so the old one must not linger as waiting.
+    setCommands((current) => [
+      command,
+      ...current.filter((c) => !(c.phase === 'waiting' && c.projectorId === command.projectorId &&
+        c.capability === command.capability)),
+    ].slice(0, 80))
   }, [])
 
   // Resolve the command awaiting read-back for this projector and capability.
@@ -377,7 +404,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const settle = useCallback(
     (projectorId: number, capability: string, phase: CommandPhase, detail: string) => {
       const target = commandsRef.current.find(
-        (c) => c.projectorId === projectorId && c.capability === capability && c.phase === 'accepted',
+        (c) => c.projectorId === projectorId && c.capability === capability &&
+          (c.phase === 'accepted' || c.phase === 'waiting'),
       )
       if (!target) return
       commandsRef.current = commandsRef.current.map((c) => (c.id === target.id ? { ...c, phase } : c))
@@ -419,7 +447,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         patchCommand(id, {
           phase, outcome: result.outcome, detail: describe(phase, result), latencyMs: result.latency_ms,
         })
-        if (phase === 'failed' || phase === 'unavailable') {
+        if (phase === 'waiting') {
+          notify('busy', `${projector.name}: ${spec.label} — waiting for the projector`, describe(phase, result))
+        } else if (phase === 'failed' || phase === 'unavailable' || phase === 'notnow') {
           notify(
             phase === 'failed' ? 'fault' : 'warn',
             `${projector.name}: ${spec.label} — ${OUTCOME_LABEL[result.outcome]}`,
@@ -501,7 +531,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // Confirm from observed state: if a poll shows what was asked for, that is
   // a read-back, whether or not the socket delivered the verification event.
   useEffect(() => {
-    const waiting = commands.filter((c) => c.phase === 'accepted')
+    const waiting = commands.filter((c) => c.phase === 'accepted' || c.phase === 'waiting')
     if (waiting.length === 0) return
     const byId = new Map(projectors.map((p) => [p.id, p]))
     for (const command of waiting) {
@@ -514,12 +544,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   // Give up waiting after the read-back window.
   useEffect(() => {
-    if (!commands.some((c) => c.phase === 'accepted')) return
+    if (!commands.some((c) => c.phase === 'accepted' || c.phase === 'waiting')) return
     const timer = window.setInterval(() => {
       const now = Date.now()
       for (const command of commands) {
-        if (command.phase !== 'accepted') continue
-        const limit = READ_BACK_TIMEOUT_MS[command.capability] ?? 30_000
+        if (command.phase !== 'accepted' && command.phase !== 'waiting') continue
+        const limit = command.phase === 'waiting'
+          ? WAITING_TIMEOUT_MS
+          : READ_BACK_TIMEOUT_MS[command.capability] ?? 30_000
         if (now - command.updatedAt > limit) {
           settle(
             command.projectorId, command.capability, 'unverified',

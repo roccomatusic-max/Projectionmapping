@@ -157,6 +157,23 @@ LENS_CAVEAT = (
 )
 
 
+#: What the operator is told when a refusal is about the projector's state,
+#: not about the model. Panasonic answers ER401 ("cannot be executed") for
+#: both, so the driver tells them apart from what it knows of the power state.
+COOLING_REFUSAL = (
+    "The projector is cooling down after being turned off. It will not turn on "
+    "until that finishes, usually 1 to 2 minutes."
+)
+WARMING_REFUSAL = (
+    "The projector is still starting up and will not turn off until start-up finishes."
+)
+STARTING_REFUSAL = "The projector is still starting up. Try again in a moment."
+COOLING_STATE_REFUSAL = (
+    "The projector is cooling down after being turned off. This works once it is on again."
+)
+STANDBY_REFUSAL = "The projector is in standby. This works once the projector is turned on."
+
+
 class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
     """PT-DZ13K series, and the base for other Panasonic models.
 
@@ -184,6 +201,13 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
     EXTRA_CAPABILITIES: tuple[Capability, ...] = ()
     #: After PJLink fails to answer, wait this long before trying it again.
     PJLINK_RETRY_SECONDS: float = 600.0
+    #: Upper estimate of how long the projector refuses power-on after a
+    #: power-off. QPW already reads standby while it cools, so this, refined
+    #: by Q$S where the model answers it, is how cooling is reported at all.
+    COOLDOWN_SECONDS: float = 120.0
+    #: How long after power-on the projector may still refuse commands
+    #: because it is starting up rather than because it lacks them.
+    WARMUP_SECONDS: float = 60.0
 
     def __init__(self, config: ConnectionConfig) -> None:
         super().__init__(config)
@@ -195,6 +219,72 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
         self._erst: dict[str, str] | None = None
         self._pjlink_retry_at = 0.0
         self._pjlink_note: str | None = None
+        #: The last power state QPW reported, raw (cooling reads as standby).
+        self._power_seen = PowerState.UNKNOWN
+        #: When PON / POF was last accepted, for telling a state refusal
+        #: from a missing command. Monotonic seconds.
+        self._on_at: float | None = None
+        self._off_at: float | None = None
+
+    # -- power-state bookkeeping -------------------------------------------
+
+    def _cooling(self) -> bool:
+        return self._off_at is not None and time.monotonic() - self._off_at < self.COOLDOWN_SECONDS
+
+    def _warming(self) -> bool:
+        return self._on_at is not None and time.monotonic() - self._on_at < self.WARMUP_SECONDS
+
+    async def raw_command(
+        self, capability: str, command: str, *, timeout: float | None = None
+    ) -> CommandResult:
+        result = await super().raw_command(capability, command, timeout=timeout)
+        mnemonic = command.split(":", 1)[0].upper()
+        if result.outcome is CommandOutcome.ACCEPTED and mnemonic == "PON":
+            self._on_at, self._off_at = time.monotonic(), None
+        elif result.outcome is CommandOutcome.ACCEPTED and mnemonic == "POF":
+            self._off_at, self._on_at = time.monotonic(), None
+        elif mnemonic == "QPW" and result.outcome in (CommandOutcome.OK, CommandOutcome.ACCEPTED):
+            self._power_seen = _POWER_TO_STATE.get(str(result.value or "").strip(),
+                                                   PowerState.UNKNOWN)
+        return self._explain_refusal(mnemonic, result)
+
+    def _explain_refusal(self, mnemonic: str, result: CommandResult) -> CommandResult:
+        """Turn a refusal caused by the power state into a plain BUSY.
+
+        A real unit answers ER401 to power-on while cooling down and to most
+        commands in standby. Read as UNSUPPORTED, that told the operator the
+        model cannot do it, and retracted inputs and buttons for good. Only
+        refusals the projector actually sent are considered, and only when
+        the power state explains them; ER401 from a projector that is on and
+        settled still means "not on this unit".
+        """
+        if result.outcome not in (CommandOutcome.UNSUPPORTED, CommandOutcome.BUSY):
+            return result
+        if not result.raw_response or mnemonic in ("QPW", "Q$S"):
+            return result
+        if mnemonic == "PON":
+            if self._power_seen is PowerState.ON and not self._cooling():
+                return result
+            if not self._cooling():
+                # Turned off from the remote or the panel: no POF of ours to
+                # time from, but a refused power-on from standby is cooling.
+                self._off_at = time.monotonic() - self.COOLDOWN_SECONDS + 30.0
+            why = COOLING_REFUSAL
+        elif mnemonic == "POF":
+            if not self._warming():
+                return result
+            why = WARMING_REFUSAL
+        elif self._cooling():
+            why = COOLING_STATE_REFUSAL
+        elif self._warming():
+            why = STARTING_REFUSAL
+        elif self._power_seen is PowerState.OFF:
+            why = STANDBY_REFUSAL
+        else:
+            return result
+        result.outcome = CommandOutcome.BUSY
+        result.error = f"{why} (projector answered {result.raw_response})"
+        return result
 
     # -- manifest ----------------------------------------------------------
 
@@ -295,9 +385,28 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
                     raw_request=result.raw_request, raw_response=result.raw_response,
                     error=f"unrecognised QPW value {raw!r}", latency_ms=result.latency_ms,
                 )
+            if state is PowerState.OFF and self._cooling():
+                state = await self._cooling_state()
             result.outcome = CommandOutcome.OK
             result.value = state
         return result
+
+    async def _cooling_state(self) -> PowerState:
+        """Standby by QPW, inside the cool-down window: still cooling?
+
+        Q$S says so directly on models that answer it (3 = lamp off in
+        progress, 0 = standby). Otherwise the window decides.
+        """
+        if self._manifest.get("lamp.status") is not None:
+            lamp = await super().raw_command("lamp.status", "Q$S")
+            if lamp.outcome in (CommandOutcome.OK, CommandOutcome.ACCEPTED):
+                raw = str(lamp.value or "").strip()
+                if raw == "0":
+                    self._off_at = None
+                    return PowerState.OFF
+                if raw == "3":
+                    return PowerState.COOLING
+        return PowerState.COOLING
 
     async def set_power_state(self, on: bool) -> CommandResult:
         """Issue PON/POF.
