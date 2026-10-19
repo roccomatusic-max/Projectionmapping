@@ -74,7 +74,7 @@ export default function Logs() {
           <ul className="max-h-64 divide-y divide-white/5 overflow-y-auto text-xs">
             {live.map((message, index) => {
               const outcome = String(message.payload.outcome ?? '')
-              const good = ['confirmed', 'accepted', 'ok'].includes(outcome)
+              const good = ['confirmed', 'accepted', 'ok', 'queued'].includes(outcome)
               return (
                 <li key={`${message.at}-${index}`} className="flex items-center gap-3 py-1.5">
                   <StatusDot tone={message.type === 'alert' ? 'fault' : !outcome ? 'busy' : good ? 'ok' : 'fault'} />

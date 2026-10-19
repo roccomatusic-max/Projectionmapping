@@ -35,7 +35,7 @@ from app.services.device_manager import Priority, manager
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 SUCCESS_OUTCOMES = {CommandOutcome.CONFIRMED.value, CommandOutcome.ACCEPTED.value,
-                    CommandOutcome.OK.value}
+                    CommandOutcome.OK.value, CommandOutcome.QUEUED.value}
 
 
 def _group_out(group: Group) -> GroupOut:

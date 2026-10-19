@@ -201,7 +201,7 @@ function StateSwitch<T extends string>({
 
 /** For settings the projector cannot report: what was last sent from here. */
 function LastSent({ command, history, capability }: { command?: TrackedCommand; history: CommandLogRow[]; capability: string }) {
-  if (command && command.phase !== 'failed' && command.phase !== 'unavailable') {
+  if (command && command.phase !== 'failed' && command.phase !== 'unavailable' && command.phase !== 'notnow') {
     const value = command.params?.state ?? command.params?.value
     return (
       <p className="text-2xs text-slate-500">
@@ -369,10 +369,13 @@ export default function ProjectorDetail({ session }: { session: Session }) {
     }
   }
 
-  const powerBlocked = blocked('power.set') ?? (transitioning
+  const powerBlocked = blocked('power.set')
+  // Not a block: the server holds a power command the projector refuses
+  // while it changes state, and sends it as soon as it is taken.
+  const powerNote = powerBlocked ?? (transitioning
     ? state.power === 'warming'
-      ? 'The lamp is striking. Power commands are refused until start-up finishes.'
-      : 'Cooling. The projector will not accept power-on until cooling completes.'
+      ? 'Starting up. If you press Standby now, it turns off by itself once start-up finishes.'
+      : 'Cooling down, usually 1 to 2 minutes. If you press On now, it turns on by itself once cooling finishes.'
     : null)
   const shutterBlocked = blocked('shutter.set') ?? (state.power !== 'on' ? 'Shutter control needs the projector powered on.' : null)
   const inputBlocked = blocked('input.set')
@@ -491,7 +494,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                   title={powerBlocked ?? undefined}
                   onSelect={(value) => ask(powerRequest([projector], value))}
                 />
-                {powerBlocked && live && <p className="text-2xs text-slate-500">{powerBlocked}</p>}
+                {powerNote && live && <p className="text-2xs text-slate-500">{powerNote}</p>}
               </ControlBlock>
 
               <ControlBlock
@@ -765,7 +768,7 @@ function PictureControls({
 }
 
 function lastSentValue(capability: string, commands: TrackedCommand[], history: CommandLogRow[]): { value: number; at: string } | null {
-  const mine = commands.find((c) => c.capability === capability && c.phase !== 'failed' && c.phase !== 'unavailable')
+  const mine = commands.find((c) => c.capability === capability && !['failed', 'unavailable', 'notnow'].includes(c.phase))
   if (mine && typeof mine.params?.value === 'number') {
     return { value: mine.params.value, at: new Date(mine.startedAt).toISOString() }
   }
