@@ -17,8 +17,13 @@ is approved with it and shows up on **Mapping → Camera**.
 
 ## Before you start
 
-On the main computer, Projector Control has to accept connections from the
-network. Start it with `--lan`:
+This is the app for the computers **beside the projectors**. The main server
+is a different download: the [Mac app](../docs/MAC-SERVER.md) or the
+[Windows server](../docs/WINDOWS-SERVER.md), which both accept mini PCs from
+the network already.
+
+If you run the main program by hand instead, it has to accept connections
+from the network. Start it with `--lan`:
 
 ```bash
 ./dist/ProjectorControl/ProjectorControl --lan        # macOS / Linux

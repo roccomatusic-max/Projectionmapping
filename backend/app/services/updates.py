@@ -1,16 +1,21 @@
-"""Updates for the Mac app, from the project's GitHub release.
+"""Updates for the Mac app and the Windows server, from the project's GitHub releases.
 
 Every merge to the default branch publishes a new build to the ``mac-latest``
-release (``.github/workflows/mac.yml``). The installed Mac service checks it
-when an administrator opens Settings, and installs it on request or by itself
-(below):
+and ``windows-server-latest`` releases (``.github/workflows/mac.yml``), with
+the same version number. The installed service checks the one for its own
+system when an administrator opens Settings, and installs it on request or by
+itself (below):
 
-1. download the zip for this Mac's chip and unpack it beside the data folder,
+1. download the zip for this computer and unpack it beside the data folder,
 2. check the new copy runs (``--version``),
-3. swap it in for the installed bundle, keeping the old one beside it,
-4. hand over to a small detached watcher and stop; launchd starts the new
-   version. If it has not answered with its new version number within two
-   minutes, the watcher puts the old copy back and restarts that.
+3. Mac: swap it in for the installed bundle, keeping the old one beside it,
+   then hand over to a small detached watcher and stop; launchd starts the
+   new version.
+   Windows: a running program's folder cannot be moved, so stage the new copy
+   beside it and hand over to a detached PowerShell watcher, which stops the
+   service, swaps the folders and starts it again.
+4. If the new version has not answered with its number within two minutes,
+   the watcher puts the old copy back and restarts that.
 
 The repository is public, so no GitHub key is needed. Should it ever be made
 private, the panel asks for a read-only access key, kept in the data folder
@@ -40,7 +45,7 @@ from pathlib import Path
 
 import httpx
 
-from app import macservice
+from app import macservice, winservice
 from app.paths import app_version
 
 log = logging.getLogger(__name__)
@@ -51,6 +56,12 @@ ASSETS = {
     "arm64": "ProjectorControl-Mac-AppleSilicon.zip",
     "x86_64": "ProjectorControl-Mac-Intel.zip",
 }
+WINDOWS_RELEASE_TAG = "windows-server-latest"
+WINDOWS_ASSET = "ProjectorControl-Windows-Server.zip"
+#: Windows on Arm runs the x64 build.
+WINDOWS_ASSETS = {"AMD64": WINDOWS_ASSET, "x86_64": WINDOWS_ASSET, "ARM64": WINDOWS_ASSET}
+#: Only for the Windows build check, which serves a release from the runner itself.
+API_BASE = os.environ.get("UPDATE_API_BASE", "https://api.github.com").rstrip("/")
 CHECK_EVERY = timedelta(minutes=15)
 AUTO_EVERY = 15 * 60
 #: How long since the last projector command before the system counts as quiet.
@@ -82,6 +93,87 @@ fi
 echo "rolled-back $VERSION" > "$RESULT"
 """
 
+WINDOWS_WATCH_SCRIPT = r"""# Detached from the service it replaces. A running program's folder cannot be
+# moved on Windows, so this stops the service, swaps the folders, starts it
+# again, and puts the previous copy back if the new one does not answer.
+param($Install, $Staging, $Previous, $Failed, $Version, $Port, $Result, $Service, $Recovery)
+$ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'
+$Log = Join-Path (Split-Path $Result) 'watch-update.log'
+function Note($text) { Add-Content -Path $Log -Value ("{0:u} {1}" -f (Get-Date), $text) }
+trap { Note "error: $_"; continue }
+
+function Stop-Server {
+  # No restarts from the service's recovery settings while files move.
+  sc.exe failure $Service reset= 0 actions= none/0 | Out-Null
+  Stop-Service -Name $Service -Force -ErrorAction SilentlyContinue
+  for ($i = 0; $i -lt 60; $i++) {
+    if ((Get-Service -Name $Service).Status -eq 'Stopped') { break }
+    Start-Sleep -Seconds 1
+  }
+  # One stuck in start-up may never stop on a polite request.
+  Get-Process -Name ProjectorControl -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($Install + '\') } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 2
+}
+function Move-Folder($from, $to) {
+  # A virus scanner may hold a file of the old copy for a moment.
+  for ($i = 0; $i -lt 30; $i++) {
+    try { Move-Item -LiteralPath $from -Destination $to -ErrorAction Stop; return $true }
+    catch { Start-Sleep -Seconds 1 }
+  }
+  Note "could not move $from to ${to}: $($Error[0])"
+  return $false
+}
+function Start-Server {
+  & sc.exe failure $Service ($Recovery -split ' ') | Out-Null
+  Start-Service -Name $Service -ErrorAction SilentlyContinue
+}
+function Answers {
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2
+    return $health.version -eq $Version
+  } catch { return $false }
+}
+
+Note "installing $Version"
+Start-Sleep -Seconds 2   # let the server answer the Install request first
+Stop-Server
+Remove-Item -LiteralPath $Previous, $Failed -Recurse -Force -ErrorAction SilentlyContinue
+if (-not (Move-Folder $Install $Previous)) {
+  Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
+  Start-Server
+  Set-Content -Path $Result -Value "rolled-back $Version" -Encoding ASCII
+  exit 1
+}
+if (-not (Move-Folder $Staging $Install)) {
+  Move-Folder $Previous $Install | Out-Null
+  Start-Server
+  Set-Content -Path $Result -Value "rolled-back $Version" -Encoding ASCII
+  exit 1
+}
+Start-Server
+# By the clock: on Windows a refused connection takes about two seconds.
+$deadline = (Get-Date).AddSeconds(120)
+while ((Get-Date) -lt $deadline) {
+  Start-Sleep -Seconds 1
+  if (Answers) {
+    Remove-Item -LiteralPath $Previous -Recurse -Force -ErrorAction SilentlyContinue
+    Set-Content -Path $Result -Value "installed $Version" -Encoding ASCII
+    Note "installed $Version"
+    exit 0
+  }
+}
+Note "$Version did not answer; putting the previous version back"
+Stop-Server
+Move-Folder $Install $Failed | Out-Null
+Move-Folder $Previous $Install | Out-Null
+Start-Server
+Set-Content -Path $Result -Value "rolled-back $Version" -Encoding ASCII
+Note "put back the previous version"
+"""
+
 
 class UpdateError(Exception):
     pass
@@ -89,9 +181,13 @@ class UpdateError(Exception):
 
 class Updater:
     def __init__(self, folder: Path, bundle: Path | None, *, current: str | None = None,
-                 machine: str | None = None, managed: bool | None = None) -> None:
+                 machine: str | None = None, managed: bool | None = None,
+                 system: str | None = None) -> None:
         self.folder = folder
+        #: The installed program: the Mac's .app, or the Windows program folder.
         self.bundle = bundle
+        #: "darwin" or "win32": which build this is and which release it follows.
+        self.system = system or sys.platform
         self.current = current or app_version()
         self.machine = machine or platform.machine()
         self.managed = (os.environ.get(macservice.SERVICE_ENV) == "1"
@@ -156,8 +252,20 @@ class Updater:
     # -- status ---------------------------------------------------------------
 
     @property
+    def windows(self) -> bool:
+        return self.system == "win32"
+
+    @property
+    def release_tag(self) -> str:
+        return WINDOWS_RELEASE_TAG if self.windows else RELEASE_TAG
+
+    @property
+    def wanted_asset(self) -> str | None:
+        return (WINDOWS_ASSETS if self.windows else ASSETS).get(self.machine)
+
+    @property
     def supported(self) -> bool:
-        return sys.platform == "darwin" and self.bundle is not None and self.managed
+        return self.system in ("darwin", "win32") and self.bundle is not None and self.managed
 
     @property
     def available(self) -> bool:
@@ -186,6 +294,7 @@ class Updater:
             "auto": self.auto,
             "waiting": self.waiting if self.auto and self.available else None,
             "repository": REPOSITORY,
+            "system": "windows" if self.windows else "mac",
         }
 
     def _headers(self, accept: str = "application/vnd.github+json") -> dict:
@@ -200,7 +309,7 @@ class Updater:
             return self.status()
         if not force and self.checked_at and datetime.now(UTC) - self.checked_at < CHECK_EVERY:
             return self.status()
-        url = f"https://api.github.com/repos/{REPOSITORY}/releases/tags/{RELEASE_TAG}"
+        url = f"{API_BASE}/repos/{REPOSITORY}/releases/tags/{self.release_tag}"
         public = False
         try:
             async with httpx.AsyncClient(timeout=15) as client:
@@ -208,7 +317,7 @@ class Updater:
                 if response.status_code == 404 and self.key() is None:
                     # A public repository between releases (each merge deletes and
                     # republishes mac-latest) also answers 404; it needs no key.
-                    probe = await client.get(f"https://api.github.com/repos/{REPOSITORY}",
+                    probe = await client.get(f"{API_BASE}/repos/{REPOSITORY}",
                                              headers=self._headers())
                     public = probe.status_code == 200
         except httpx.HTTPError as exc:
@@ -246,15 +355,16 @@ class Updater:
             self.needs_key = True
             self.error = "GitHub did not accept the access key. Make a new one and paste it here."
             return
+        which = "Windows server" if self.windows else "Mac"
         if status_code == 404:
             # A private repository answers 404, not 403, without a key.
             if public:
-                self.error = ("No Mac release is published right now; a new one may be "
+                self.error = (f"No {which} release is published right now; a new one may be "
                               "uploading. It checks again by itself.")
             elif self.key() is None:
                 self.needs_key = True
             else:
-                self.error = ("No Mac release is published yet, or the access key cannot "
+                self.error = (f"No {which} release is published yet, or the access key cannot "
                               "see this repository.")
             return
         if status_code != 200:
@@ -262,18 +372,19 @@ class Updater:
             return
         match = VERSION_RE.search(release.get("name") or "")
         self.latest = match.group(1) if match else None
-        wanted = ASSETS.get(self.machine)
+        wanted = self.wanted_asset
         self.asset_url = next(
             (a.get("url") for a in release.get("assets", []) if a.get("name") == wanted), None
         )
         if self.latest is None or self.asset_url is None:
-            self.error = "The latest release has no download for this Mac."
+            self.error = ("The latest release has no download for this computer." if self.windows
+                          else "The latest release has no download for this Mac.")
 
     # -- installing -----------------------------------------------------------
 
     async def install(self) -> dict:
         if not self.supported:
-            raise UpdateError("Updates are only installed by the Mac app.")
+            raise UpdateError(NOT_SUPPORTED)
         async with self._lock:
             # Stays set until the restart: a second install would delete the
             # copy the watcher needs to roll back to.
@@ -300,8 +411,10 @@ class Updater:
                 self.installing = False
                 raise
         log.warning("update: installed %s over %s; restarting", self.latest, self.current)
-        # Answer the request first, then stop gracefully; launchd starts the new copy.
-        asyncio.get_running_loop().call_later(1.5, os.kill, os.getpid(), signal.SIGTERM)
+        if not self.windows:
+            # Answer the request first, then stop gracefully; launchd starts the new copy.
+            # (On Windows the watcher stops the service itself, then swaps the folders.)
+            asyncio.get_running_loop().call_later(1.5, os.kill, os.getpid(), signal.SIGTERM)
         return self.status()
 
     async def auto_tick(self, quiet_check) -> None:
@@ -342,20 +455,35 @@ class Updater:
 
     def _unpack(self, archive: Path) -> Path:
         destination = self.work_dir / "new"
-        subprocess.run(["ditto", "-x", "-k", str(archive), str(destination)], check=True)
-        archive.unlink(missing_ok=True)
-        bundle = destination / macservice.APP_NAME
-        found = macservice.bundle_version(bundle)
+        if self.windows:
+            import zipfile
+
+            with zipfile.ZipFile(archive) as zipped:
+                zipped.extractall(destination)
+            archive.unlink(missing_ok=True)
+            bundle = destination / winservice.FOLDER_NAME
+            found = winservice.folder_version(bundle)
+            executable = winservice.folder_executable(bundle)
+        else:
+            subprocess.run(["ditto", "-x", "-k", str(archive), str(destination)], check=True)
+            archive.unlink(missing_ok=True)
+            bundle = destination / macservice.APP_NAME
+            found = macservice.bundle_version(bundle)
+            executable = macservice.bundle_executable(bundle)
         if found != self.latest:
             raise UpdateError(f"The download is version {found}, expected {self.latest}.")
-        probe = subprocess.run([str(macservice.bundle_executable(bundle)), "--version"],
-                               capture_output=True, text=True, timeout=60, check=False)
+        probe = subprocess.run([str(executable), "--version"],
+                               capture_output=True, text=True, timeout=60, check=False,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if probe.returncode != 0:
             raise UpdateError("The new version did not start: " + (probe.stderr or "")[-300:])
         return bundle
 
     def _swap_in(self, new_bundle: Path) -> None:
         assert self.bundle is not None
+        if self.windows:
+            self._stage_windows(new_bundle)
+            return
         staging = self.bundle.with_name(".Projector Control.installing.app")
         previous = self.bundle.with_name(".Projector Control.previous.app")
         # Hidden, so a broken version that was rolled back is never opened by mistake.
@@ -381,6 +509,51 @@ class Updater:
             start_new_session=True, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+
+
+    def _stage_windows(self, new_folder: Path) -> None:
+        """Put the new copy beside the installed one; the watcher swaps them."""
+        assert self.bundle is not None
+        name = winservice.FOLDER_NAME
+        staging = self.bundle.with_name(f".{name}.installing")
+        previous = self.bundle.with_name(f".{name}.previous")
+        failed = self.bundle.with_name(f".{name}.failed")
+        shutil.rmtree(staging, ignore_errors=True)
+        shutil.move(str(new_folder), str(staging))
+        script = self.work_dir / "watch-update.ps1"
+        script.write_text(WINDOWS_WATCH_SCRIPT, encoding="utf-8")
+        with contextlib.suppress(FileNotFoundError):
+            self.result_path.unlink()
+        recovery = " ".join(winservice.recovery_command()[3:])
+        command = [
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", str(script),
+            "-Install", str(self.bundle), "-Staging", str(staging), "-Previous", str(previous),
+            "-Failed", str(failed), "-Version", str(self.latest),
+            "-Port", os.environ.get("DESKTOP_PORT", str(macservice.PORT)),
+            "-Result", str(self.result_path), "-Service", winservice.SERVICE_NAME,
+            "-Recovery", recovery,
+        ]
+        # A hidden console of its own (PowerShell does not start without one)
+        # and its own process group, so it outlives the service it stops.
+        detached = 0x08000000 | 0x00000200  # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+        breakaway = 0x01000000  # CREATE_BREAKAWAY_FROM_JOB, should the service be in a job
+        output = (self.work_dir / "watch-update.out").open("w", encoding="utf-8")
+        options = {"stdin": subprocess.DEVNULL, "stdout": output,
+                   "stderr": subprocess.STDOUT, "close_fds": True}
+        try:
+            try:
+                watcher = subprocess.Popen(command, creationflags=detached | breakaway,  # noqa: S603
+                                           **options)
+            except OSError:
+                watcher = subprocess.Popen(command, creationflags=detached, **options)  # noqa: S603
+        finally:
+            output.close()
+        log.info("update: the watcher (process %s) takes over to install %s",
+                 watcher.pid, self.latest)
+
+
+NOT_SUPPORTED = "Updates are only installed by the Mac app and the Windows server."
 
 
 async def busy_reason() -> str | None:
@@ -426,7 +599,7 @@ async def _auto_loop(updater: Updater) -> None:
 
 
 def start_auto_updates() -> asyncio.Task | None:
-    """Run automatic updates in the background, only in the installed Mac app."""
+    """Run automatic updates in the background, only in the installed Mac or Windows app."""
     updater = get_updater()
     if not updater.supported:
         return None
@@ -440,5 +613,7 @@ def get_updater() -> Updater:
     global _updater
     if _updater is None:
         folder = Path(os.environ.get("DESKTOP_DATA_DIR") or ".").expanduser()
-        _updater = Updater(folder, macservice.running_bundle())
+        bundle = (winservice.running_folder() if sys.platform == "win32"
+                  else macservice.running_bundle())
+        _updater = Updater(folder, bundle)
     return _updater

@@ -3,7 +3,9 @@
 
 Build from the repository root with desktop/build.sh or desktop/build.ps1,
 which first compile the web UI into backend/static. Output: dist/ProjectorControl/,
-and on macOS also "dist/Projector Control.app" (see docs/MAC-SERVER.md).
+and on macOS also "dist/Projector Control.app" (see docs/MAC-SERVER.md). On
+Windows, desktop/build.ps1 zips the folder as the Windows server download
+(see docs/WINDOWS-SERVER.md).
 APP_VERSION in the environment stamps the build number.
 """
 
@@ -37,6 +39,10 @@ hiddenimports = (
     + ["aiosqlite", "argon2", "argon2.low_level", "_cffi_backend", "jwt", "httpx",
        "websockets", "websockets.legacy", "email.mime.text", "multipart"]
 )
+if sys.platform == "win32":
+    # The Windows service host (app/winservice.py), imported only inside the service.
+    hiddenimports += ["servicemanager", "win32service", "win32serviceutil", "win32event",
+                      "win32timezone", "pywintypes"]
 
 datas = (
     [(str(static), "static"), (str(BACKEND / "alembic"), "alembic"),

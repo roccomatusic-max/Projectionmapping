@@ -4,8 +4,9 @@ import { Chip, ConfirmDialog, Panel } from '@/components/ui'
 import { RefreshIcon } from '@/components/icons'
 
 /**
- * Updates for the Mac app (docs/MAC-SERVER.md). Renders nothing anywhere
- * else: Docker and Terminal installs are updated the way they were set up.
+ * Updates for the Mac app (docs/MAC-SERVER.md) and the Windows server
+ * (docs/WINDOWS-SERVER.md). Renders nothing anywhere else: Docker and
+ * Terminal installs are updated the way they were set up.
  * Kept self-contained so the page around it can be restyled freely.
  */
 
@@ -23,13 +24,14 @@ interface UpdateStatus {
   repository: string
   auto: boolean
   waiting: string | null
+  system?: 'mac' | 'windows'
 }
 
 const keyLink = (repository: string) => {
   const owner = repository.split('/')[0]
   const params = new URLSearchParams({
     name: 'Projector Control updates',
-    description: 'Lets the Mac server download new versions of Projector Control.',
+    description: 'Lets the server download new versions of Projector Control.',
     target_name: owner,
     expires_in: 'none',
     contents: 'read',
@@ -68,7 +70,7 @@ export default function AppUpdates() {
     const timer = window.setInterval(async () => {
       try {
         const health = await fetch('/api/health').then((r) => r.json())
-        // Back on the new version, or back on the old one after the Mac
+        // Back on the new version, or back on the old one after the server
         // rolled a failed update back (the page then says so).
         if (health.version === target || wentDown) window.location.reload()
       } catch {
@@ -79,6 +81,7 @@ export default function AppUpdates() {
   }, [status?.installing, status?.latest])
 
   if (!status?.supported) return null
+  const machine = status.system === 'windows' ? 'This server' : 'This Mac'
 
   const saveKey = (event: FormEvent) => {
     event.preventDefault()
@@ -113,7 +116,7 @@ export default function AppUpdates() {
     >
       <div className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-slate-300">This Mac runs version {status.current}</span>
+          <span className="text-slate-300">{machine} runs version {status.current}</span>
           {status.installing ? (
             <Chip tone="busy">installing {status.latest}</Chip>
           ) : status.available ? (
@@ -174,7 +177,7 @@ export default function AppUpdates() {
         {status.needs_key && (
           <form onSubmit={saveKey} className="space-y-2">
             <p className="text-slate-400">
-              The project's GitHub repository is private, so this Mac needs a read-only GitHub key
+              The project's GitHub repository is private, so {machine.toLowerCase()} needs a read-only GitHub key
               to see new versions. It only has to be done once.
             </p>
             <ol className="list-decimal space-y-1 pl-5 text-slate-400">

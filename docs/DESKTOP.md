@@ -38,10 +38,12 @@ other by copying the database file.
 
 **On a Mac, download the ready-made app** instead of building: it installs
 itself as an always-on service. See [MAC-SERVER.md](MAC-SERVER.md).
+**On a Windows server, use the one-line install** in
+[WINDOWS-SERVER.md](WINDOWS-SERVER.md): the same, as a Windows service.
 
-There is no pre-built download yet — PyInstaller cannot cross-compile, so
-each operating system's build has to be made on that operating system. The
-build takes about five minutes.
+For anything else there is no pre-built download — PyInstaller cannot
+cross-compile, so each operating system's build has to be made on that
+operating system. The build takes about five minutes.
 
 ### Windows
 
@@ -51,9 +53,11 @@ build takes about five minutes.
    ```powershell
    .\desktop\build.ps1
    ```
-3. The application is `dist\ProjectorControl\ProjectorControl.exe`. Copy the
-   whole `ProjectorControl` folder wherever you like; the `.exe` inside it is
-   what you run.
+3. The application is `dist\ProjectorControl\ProjectorControl.exe`, and the
+   same program zipped as the Windows server download is
+   `dist\ProjectorControl-Windows-Server.zip`. Double-clicking the `.exe`
+   installs it as the Windows service (as administrator); to run it in a
+   window instead, start it with `--serve` (or any option below).
 
 ### macOS / Linux
 
@@ -85,7 +89,7 @@ The data folder is:
 
 | OS | Location |
 |---|---|
-| Windows | `%LOCALAPPDATA%\ProjectorControl\` |
+| Windows | `%LOCALAPPDATA%\ProjectorControl\` from source; `C:\ProgramData\ProjectorControl\` for the built program |
 | macOS | `~/Library/Application Support/ProjectorControl/` |
 | Linux | `~/.local/share/ProjectorControl/` |
 
@@ -118,18 +122,12 @@ a service, which the operating system starts at boot and restarts if it
 dies. Then desktop mode is a server in all but name — SQLite instead of
 PostgreSQL is fine for a handful of projectors.
 
-### Windows (NSSM)
+### Windows
 
-```powershell
-# https://nssm.cc — a small, well-known service wrapper
-nssm install ProjectorControl "C:\ProjectorControl\ProjectorControl.exe" --no-browser --lan
-nssm set ProjectorControl AppStdout C:\ProjectorControl\service.log
-nssm set ProjectorControl AppStderr C:\ProjectorControl\service.log
-nssm start ProjectorControl
-```
-
-Set `PROJECTOR_CONTROL_DATA` as a system environment variable first if the
-service account should use a specific data folder.
+Use the Windows server install instead: it registers a Windows service that
+starts at boot, restarts itself, opens the firewall and updates from GitHub.
+See [WINDOWS-SERVER.md](WINDOWS-SERVER.md). From a build of your own,
+`ProjectorControl.exe --install` (as administrator) does the same.
 
 ### Linux (systemd user service)
 
@@ -182,7 +180,7 @@ or start with `--port 9000`.
 
 **Windows Defender SmartScreen warns about the .exe.** The build is unsigned.
 Click *More info → Run anyway*, or sign it with your own certificate if you
-distribute it.
+distribute it. The Windows server's PowerShell install line avoids the warning.
 
 **Everything else** — connection problems, missing telemetry, confirmation
 errors — is identical to the server deployment: see
