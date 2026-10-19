@@ -530,14 +530,23 @@ class Updater:
             "-Result", str(self.result_path), "-Service", winservice.SERVICE_NAME,
             "-Recovery", recovery,
         ]
-        detached = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        breakaway = 0x01000000  # CREATE_BREAKAWAY_FROM_JOB: outlive the service's process
-        options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
-                   "stderr": subprocess.DEVNULL, "close_fds": True}
+        # A hidden console of its own (PowerShell does not start without one)
+        # and its own process group, so it outlives the service it stops.
+        detached = 0x08000000 | 0x00000200  # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+        breakaway = 0x01000000  # CREATE_BREAKAWAY_FROM_JOB, should the service be in a job
+        output = (self.work_dir / "watch-update.out").open("w", encoding="utf-8")
+        options = {"stdin": subprocess.DEVNULL, "stdout": output,
+                   "stderr": subprocess.STDOUT, "close_fds": True}
         try:
-            subprocess.Popen(command, creationflags=detached | breakaway, **options)  # noqa: S603
-        except OSError:
-            subprocess.Popen(command, creationflags=detached, **options)  # noqa: S603
+            try:
+                watcher = subprocess.Popen(command, creationflags=detached | breakaway,  # noqa: S603
+                                           **options)
+            except OSError:
+                watcher = subprocess.Popen(command, creationflags=detached, **options)  # noqa: S603
+        finally:
+            output.close()
+        log.info("update: the watcher (process %s) takes over to install %s",
+                 watcher.pid, self.latest)
 
 
 NOT_SUPPORTED = "Updates are only installed by the Mac app and the Windows server."

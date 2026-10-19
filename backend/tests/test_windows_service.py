@@ -270,6 +270,8 @@ def test_the_new_copy_is_staged_beside_the_old_and_the_watcher_swaps_them(tmp_pa
     started = []
 
     class Popen:
+        pid = 42
+
         def __init__(self, command, **options):
             started.append((command, options))
 
@@ -291,7 +293,7 @@ def test_the_new_copy_is_staged_beside_the_old_and_the_watcher_swaps_them(tmp_pa
     assert command[command.index("-Version") + 1] == "1.0.7"
     assert command[command.index("-Recovery") + 1] == \
         "reset= 86400 actions= restart/5000/restart/5000/restart/10000"
-    assert options["creationflags"] & 0x00000008  # detached: outlives the service
+    assert options["creationflags"] & 0x00000200  # own process group: outlives the service
     for step in ("Stop-Service", "Start-Service", "rolled-back $Version", "installed $Version",
                  "/api/health"):
         assert step in text

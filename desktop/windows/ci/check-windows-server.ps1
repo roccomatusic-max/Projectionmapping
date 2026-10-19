@@ -30,7 +30,7 @@ function Check([bool] $ok, [string] $what) {
 }
 function Note([string] $what) { Write-Host "--  $what"; $Report.Add("| $what | noted |") }
 function Show-Logs {
-  foreach ($log in 'logs\service.log', 'logs\projector-control.log', 'updates\watch-update.log') {
+  foreach ($log in 'logs\service.log', 'logs\projector-control.log', 'updates\watch-update.log', 'updates\watch-update.out') {
     $path = Join-Path $Data $log
     Write-Host "---- $log"
     try { Get-Content $path -Tail 80 -ErrorAction Stop } catch { Write-Host "(cannot read: $_)"; icacls $path }
