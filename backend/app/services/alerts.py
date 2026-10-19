@@ -158,7 +158,7 @@ class AlertingService:
         # the operator for the shutdown they just requested.
         commanded = any(
             str((row.params or {}).get("state", "")).lower() == "off"
-            and row.outcome in ("accepted", "confirmed", "ok", "pending",
+            and row.outcome in ("accepted", "confirmed", "ok", "pending", "queued",
                                 "timeout", "connection_error")
             for row in recent
         )

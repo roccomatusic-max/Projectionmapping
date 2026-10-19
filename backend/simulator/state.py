@@ -78,6 +78,10 @@ class SimulatedProjector:
     #: firmware does: every command then needs a new connection, greeting
     #: and (in protect mode) digest.
     close_after_reply: bool = False
+    #: Refuse shutter and input changes unless the lamp is on, as real
+    #: Panasonic units do (ER401). Off by default so protocol tests can
+    #: exercise those commands without a power cycle first.
+    standby_refuses_controls: bool = False
     #: Require authentication.
     password: str | None = None
     username: str = "admin1"

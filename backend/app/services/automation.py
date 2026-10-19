@@ -586,7 +586,7 @@ class AutomationEngine:
 
 def _outcome_ok(outcome: str | None) -> bool:
     return outcome in (CommandOutcome.CONFIRMED.value, CommandOutcome.ACCEPTED.value,
-                       CommandOutcome.OK.value)
+                       CommandOutcome.OK.value, CommandOutcome.QUEUED.value)
 
 
 def _state_matches(value: Any, expect: str) -> bool:

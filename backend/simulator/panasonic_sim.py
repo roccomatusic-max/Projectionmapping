@@ -127,15 +127,20 @@ class PanasonicSimulator:
         command = command.upper()
 
         match command:
+            # A real unit answers ER401 ("cannot be executed") to power-on
+            # while cooling down and to power-off while starting up: the
+            # same code it uses for a command the model does not have.
             case "PON":
-                return "00PON" if self.state.power_on() else "00ER403"
+                return "00PON" if self.state.power_on() else "00ER401"
             case "POF":
-                return "00POF" if self.state.power_off() else "00ER403"
+                return "00POF" if self.state.power_off() else "00ER401"
             case "QPW":
                 return "00001" if self.state.is_on else "00000"
             case "OSH":
                 if param not in ("0", "1"):
                     return "00ER402"
+                if self.state.standby_refuses_controls and not self.state.is_on:
+                    return "00ER401"
                 self.state.set_shutter(param == "1")
                 return "00OSH"
             case "QSH":
@@ -143,6 +148,8 @@ class PanasonicSimulator:
             case "IIS":
                 if not param:
                     return "00ER402"
+                if self.state.standby_refuses_controls and not self.state.is_on:
+                    return "00ER401"
                 # An input with no board fitted answers ER401, exactly as the
                 # real unit does. This is what the driver's capability
                 # retraction logic is written against.
@@ -211,6 +218,8 @@ async def main() -> None:  # pragma: no cover - CLI entry point
                         help="Simulate a unit with no SDI board fitted (default)")
     parser.add_argument("--with-sdi", action="store_true",
                         help="Simulate a unit with the SDI board fitted")
+    parser.add_argument("--lenient-standby", action="store_true",
+                        help="Accept shutter and input changes in standby (real units refuse them)")
     parser.add_argument("--fault", choices=["silent", "busy", "drop"], default=None)
     parser.add_argument("--model", choices=["dz13k", "dz770"], default="dz13k",
                         help="dz13k: 3-chip, 4 lamps, SDI option; dz770: 1-chip, 2 lamps, S-VIDEO")
@@ -221,6 +230,7 @@ async def main() -> None:  # pragma: no cover - CLI entry point
     state = factory(
         warmup_seconds=args.warmup, cooldown_seconds=args.cooldown,
         password=args.password,
+        standby_refuses_controls=not args.lenient_standby,
     )
     if args.with_sdi:
         state.fitted_inputs |= {"SD1", "SD2"}

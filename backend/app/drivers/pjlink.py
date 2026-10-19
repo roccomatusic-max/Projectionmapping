@@ -48,7 +48,8 @@ INPUT_FAMILIES = {"1": "RGB", "2": "VIDEO", "3": "DIGITAL", "4": "STORAGE", "5":
 _ERR_MAP = {
     "ERR1": (CommandOutcome.UNSUPPORTED, "undefined command"),
     "ERR2": (CommandOutcome.REJECTED, "parameter out of range"),
-    "ERR3": (CommandOutcome.BUSY, "unavailable at this time"),
+    "ERR3": (CommandOutcome.BUSY,
+             "not accepted right now: the projector is warming up, cooling down or busy"),
     "ERR4": (CommandOutcome.DEVICE_FAULT, "projector or display failure"),
 }
 

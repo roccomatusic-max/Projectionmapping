@@ -11,6 +11,7 @@ export type Outcome =
   | 'timeout'
   | 'rejected'
   | 'busy'
+  | 'queued'
   | 'unsupported'
   | 'auth_failed'
   | 'connection_error'
