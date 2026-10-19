@@ -35,6 +35,8 @@ function Show-Logs {
     Write-Host "---- $log"
     try { Get-Content $path -Tail 80 -ErrorAction Stop } catch { Write-Host "(cannot read: $_)"; icacls $path }
   }
+  Write-Host '---- update watchers still running'
+  Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match 'watch-update' } | Format-List ProcessId, CommandLine | Out-String | Write-Host
   Write-Host '---- data folder permissions'
   icacls $Data
   Write-Host '---- service control events'
@@ -44,7 +46,9 @@ function Show-Logs {
 }
 function Health { try { Invoke-RestMethod "$Base/api/health" -TimeoutSec 3 } catch { $null } }
 function Wait-Version([string] $wanted, [int] $seconds = 120) {
-  for ($i = 0; $i -lt $seconds; $i++) {
+  # By the clock: on Windows a refused connection takes about two seconds.
+  $deadline = (Get-Date).AddSeconds($seconds)
+  while ((Get-Date) -lt $deadline) {
     $h = Health
     if ($h -and $h.version -eq $wanted) { return $true }
     Start-Sleep -Seconds 1
@@ -149,7 +153,8 @@ $before = Service-Pid
 Stop-Process -Id $before -Force
 Start-Sleep -Seconds 2
 $back = $false
-for ($i = 0; $i -lt 90 -and -not $back; $i++) { Start-Sleep 1; $h = Health; $back = $h -and (Service-Pid) -ne $before -and (Service-Pid) -ne 0 }
+$deadline = (Get-Date).AddSeconds(90)
+while ((Get-Date) -lt $deadline -and -not $back) { Start-Sleep 1; $h = Health; $back = $h -and (Service-Pid) -ne $before -and (Service-Pid) -ne 0 }
 Check $back 'after the program is killed, Windows starts it again by itself'
 
 # -- password reset ---------------------------------------------------------------
@@ -204,10 +209,10 @@ $offer = Api $token '/system/updates?check=true'
 Check ($offer.available -and $offer.latest -eq $broken) "Check now offers the broken $broken"
 $started = Api $token '/system/updates/install' 'Post' @{ confirm = $true }
 Check ($started.installing) 'Install of the broken version starts'
-Start-Sleep -Seconds 20
 $rolled = $false
-for ($i = 0; $i -lt 240 -and -not $rolled; $i++) {
-  Start-Sleep 1
+$deadline = (Get-Date).AddMinutes(5)
+while ((Get-Date) -lt $deadline -and -not $rolled) {
+  Start-Sleep 2
   $result = Get-Content (Join-Path $Data 'updates\last-result.txt') -Raw -ErrorAction SilentlyContinue
   $rolled = $result -and $result.Trim() -eq "rolled-back $broken"
 }

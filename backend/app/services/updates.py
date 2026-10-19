@@ -101,6 +101,7 @@ $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 $Log = Join-Path (Split-Path $Result) 'watch-update.log'
 function Note($text) { Add-Content -Path $Log -Value ("{0:u} {1}" -f (Get-Date), $text) }
+trap { Note "error: $_"; continue }
 
 function Stop-Server {
   # No restarts from the service's recovery settings while files move.
@@ -112,7 +113,7 @@ function Stop-Server {
   }
   # One stuck in start-up may never stop on a polite request.
   Get-Process -Name ProjectorControl -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -and $_.Path.StartsWith($Install + '') } |
+    Where-Object { $_.Path -and $_.Path.StartsWith($Install + '\') } |
     Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 2
 }
@@ -153,7 +154,9 @@ if (-not (Move-Folder $Staging $Install)) {
   exit 1
 }
 Start-Server
-for ($i = 0; $i -lt 120; $i++) {
+# By the clock: on Windows a refused connection takes about two seconds.
+$deadline = (Get-Date).AddSeconds(120)
+while ((Get-Date) -lt $deadline) {
   Start-Sleep -Seconds 1
   if (Answers) {
     Remove-Item -LiteralPath $Previous -Recurse -Force -ErrorAction SilentlyContinue
@@ -168,6 +171,7 @@ Move-Folder $Install $Failed | Out-Null
 Move-Folder $Previous $Install | Out-Null
 Start-Server
 Set-Content -Path $Result -Value "rolled-back $Version" -Encoding ASCII
+Note "put back the previous version"
 """
 
 
