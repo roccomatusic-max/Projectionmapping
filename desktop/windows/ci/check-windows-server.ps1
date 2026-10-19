@@ -30,12 +30,17 @@ function Check([bool] $ok, [string] $what) {
 }
 function Note([string] $what) { Write-Host "--  $what"; $Report.Add("| $what | noted |") }
 function Show-Logs {
-  foreach ($log in 'service.log', 'projector-control.log') {
-    $path = Join-Path $Data "logs\$log"
-    if (Test-Path $path) { Write-Host "---- $log"; Get-Content $path -Tail 60 }
+  foreach ($log in 'logs\service.log', 'logs\projector-control.log', 'updates\watch-update.log') {
+    $path = Join-Path $Data $log
+    Write-Host "---- $log"
+    try { Get-Content $path -Tail 80 -ErrorAction Stop } catch { Write-Host "(cannot read: $_)"; icacls $path }
   }
-  $watch = Join-Path $Data 'updates\watch-update.log'
-  if (Test-Path $watch) { Write-Host '---- watch-update.log'; Get-Content $watch }
+  Write-Host '---- data folder permissions'
+  icacls $Data
+  Write-Host '---- service control events'
+  Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager' } -MaxEvents 30 -ErrorAction SilentlyContinue |
+    Where-Object { $_.Message -match 'Projector' } | Format-Table TimeCreated, Id, Message -Wrap -AutoSize | Out-String -Width 200 | Write-Host
+  Get-CimInstance Win32_Service -Filter "Name='$Service'" | Format-List Name, State, StartMode, PathName, ProcessId | Out-String | Write-Host
 }
 function Health { try { Invoke-RestMethod "$Base/api/health" -TimeoutSec 3 } catch { $null } }
 function Wait-Version([string] $wanted, [int] $seconds = 120) {
@@ -158,6 +163,10 @@ $token = Login $newPassword
 # -- running the install line again -------------------------------------------------
 $again = Run-Installer
 Check ((Wait-Version $Version) -and (Get-Service $Service).Status -eq 'Running') 'running the install line again keeps it running'
+foreach ($file in 'projector-control.db', 'secret.key', 'logs\service.log') {
+  $access = (Get-Acl (Join-Path $Data $file)).Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value }
+  Check (('S-1-5-18' -in $access) -and ('S-1-5-32-544' -in $access)) "after installing again, $file is still readable by the service and administrators"
+}
 
 # -- an update from the release ----------------------------------------------------
 $parts = $Version.Split('.')

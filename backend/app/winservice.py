@@ -218,9 +218,15 @@ def delete_service() -> None:
 def protect_data_folder(folder: Path) -> None:
     """Only the service (SYSTEM) and administrators may read the database and key."""
     folder.mkdir(parents=True, exist_ok=True)
+    # The folder only: "/T" here would strip every file's inherited access,
+    # and the folder's (OI)(CI) grants cannot be set on a file, leaving the
+    # database readable by nobody, not even the service.
     run("icacls", str(folder), "/inheritance:r",
-        "/grant:r", f"{SYSTEM_SID}:(OI)(CI)F", f"{ADMINISTRATORS_SID}:(OI)(CI)F",
-        "/T", "/C", "/Q")
+        "/grant:r", f"{SYSTEM_SID}:(OI)(CI)F", f"{ADMINISTRATORS_SID}:(OI)(CI)F", "/C", "/Q")
+    # Whatever is already inside (an earlier install, data copied from a Mac)
+    # takes the folder's permissions.
+    if any(folder.iterdir()):
+        run("icacls", str(folder / "*"), "/reset", "/T", "/C", "/Q")
 
 
 def open_firewall() -> bool:
