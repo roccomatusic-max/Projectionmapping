@@ -75,8 +75,9 @@ BUNDLE=$1 PREVIOUS=$2 VERSION=$3 PORT=$4 PIDFILE=$5 RESULT=$6 FAILED=$7
 for i in $(seq 1 120); do
   sleep 1
   if curl -sf --max-time 2 "http://127.0.0.1:$PORT/api/health" | grep -q "\"version\":\"$VERSION\""; then
-    rm -rf "$PREVIOUS"
+    # Record the result first: removing the old copy can take a while.
     echo "installed $VERSION" > "$RESULT"
+    rm -rf "$PREVIOUS"
     exit 0
   fi
 done
@@ -159,9 +160,10 @@ $deadline = (Get-Date).AddSeconds(120)
 while ((Get-Date) -lt $deadline) {
   Start-Sleep -Seconds 1
   if (Answers) {
-    Remove-Item -LiteralPath $Previous -Recurse -Force -ErrorAction SilentlyContinue
+    # Record the result first: removing the old copy can take a while.
     Set-Content -Path $Result -Value "installed $Version" -Encoding ASCII
     Note "installed $Version"
+    Remove-Item -LiteralPath $Previous -Recurse -Force -ErrorAction SilentlyContinue
     exit 0
   }
 }
