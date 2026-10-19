@@ -38,6 +38,7 @@ Windows Server 2022 and 2025 machines for every change
 | Download | `mac-latest` release, zip per chip | `windows-server-latest` release, one zip (x64; Windows on Arm runs it too) | CI builds and publishes it |
 | Install | one Terminal line, then the Mac's password | one PowerShell line, then Yes on the Windows prompt | CI runs the same line in Windows PowerShell 5.1 |
 | Unsigned-app warning | Gatekeeper, cleared by the Terminal line | SmartScreen does not appear with the PowerShell line; by hand: More info → Run anyway | the line never double-clicks anything |
+| Blocked outright | (no Mac equivalent: Gatekeeper can always be cleared) | Smart App Control (Windows 11) blocks unsigned programs with no exception; the installer says so and how to proceed | unsigned builds; signing would need a paid certificate |
 | Where the program goes | `/Applications/Projector Control.app` | `C:\Program Files\Projector Control` | CI |
 | Starts at boot, before sign-in | launchd daemon, `RunAtLoad` | Windows service, Automatic start | CI checks the setting; a real reboot is not possible on build machines |
 | Restarts if it stops | `KeepAlive`, 10 s throttle | recovery: restart after 5 s, every time, also after an exit with an error | CI kills the program and sees it come back |

@@ -320,3 +320,13 @@ async def test_installing_on_windows_leaves_the_stop_to_the_watcher(tmp_path, mo
 
     await asyncio.sleep(2)
     assert killed == []
+
+
+def test_the_installer_explains_a_smart_app_control_block_before_downloading():
+    script = (Path(__file__).resolve().parents[2] / "desktop" / "windows"
+              / "install-windows-server.ps1").read_text(encoding="utf-8")
+    body = script.split("function Install-ProjectorControlServer", 1)[1]
+    check = body.index("VerifiedAndReputablePolicyState")
+    assert check < body.index("Invoke-WebRequest")
+    assert "ApplicationFailedException" in body  # a company policy blocks the same way
+    assert body.count("Show-AppControlBlock") == 2

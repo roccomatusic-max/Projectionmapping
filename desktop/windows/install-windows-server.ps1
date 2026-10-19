@@ -13,6 +13,18 @@
 # check, PROJECTOR_CONTROL_ZIP points at a local zip instead of the download,
 # and PROJECTOR_CONTROL_NO_BROWSER=1 skips opening the dashboard.
 
+function Show-AppControlBlock {
+  Write-Host ''
+  Write-Host 'Windows blocked Projector Control on this computer.' -ForegroundColor Red
+  Write-Host 'Smart App Control (Windows 11) only lets programs signed with a paid certificate run,' -ForegroundColor Red
+  Write-Host 'and it has no exception for one program. Projector Control is not signed.' -ForegroundColor Red
+  Write-Host 'Either install on a computer without Smart App Control (any Windows Server, or a PC'
+  Write-Host 'where it is off), or turn it off here: Windows Security > App & browser control >'
+  Write-Host 'Smart App Control settings > Off. On many Windows versions it cannot be turned back'
+  Write-Host 'on without resetting Windows. Then run this line again.'
+  Write-Host 'More: docs/WINDOWS-SERVER.md, "Windows blocked it".'
+}
+
 function Install-ProjectorControlServer {
   $ErrorActionPreference = 'Stop'
   $ProgressPreference = 'SilentlyContinue'   # Windows PowerShell downloads slowly with a progress bar
@@ -29,6 +41,13 @@ function Install-ProjectorControlServer {
   }
   if (-not [Environment]::Is64BitOperatingSystem) {
     Write-Host 'Projector Control needs 64-bit Windows 10, 11 or Windows Server 2016 or newer.' -ForegroundColor Red
+    return
+  }
+
+  # Smart App Control: 1 = on (blocks unsigned programs), 2 = evaluating, 0 = off.
+  $appControl = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name VerifiedAndReputablePolicyState -ErrorAction SilentlyContinue
+  if ($appControl -and $appControl.VerifiedAndReputablePolicyState -eq 1) {
+    Show-AppControlBlock
     return
   }
 
@@ -50,7 +69,17 @@ function Install-ProjectorControlServer {
     if (-not (Test-Path -LiteralPath $exe)) { throw "The download has no ProjectorControl.exe." }
     $arguments = @('--install')
     if ($env:PROJECTOR_CONTROL_NO_BROWSER -eq '1') { $arguments += '--no-browser' }
-    & $exe @arguments
+    try {
+      & $exe @arguments
+    } catch [System.Management.Automation.ApplicationFailedException] {
+      # A company App Control (WDAC) policy blocks it the same way.
+      if ($_.Exception.Message -match 'Application Control|policy has blocked') {
+        Show-AppControlBlock
+        $global:LASTEXITCODE = 1
+        return
+      }
+      throw
+    }
     $code = $LASTEXITCODE
     if ($code -ne 0) {
       Write-Host ''
