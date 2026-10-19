@@ -72,6 +72,9 @@ async def test_a_sensor_the_model_lacks_is_dropped_only_while_on(panasonic_drive
     assert panasonic_driver._absent_sensors == set()
 
     await _power_on(panasonic_driver, sim_state)
+    # Just after power-on a refusal may still be the start-up; this unit
+    # is past it.
+    panasonic_driver.WARMUP_SECONDS = 0.0
     result = await panasonic_driver.get_temperatures(PowerState.ON)
     assert [s["key"] for s in result.value] == ["intake", "exhaust"]
     assert panasonic_driver._absent_sensors == {"optics"}
