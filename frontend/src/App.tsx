@@ -86,14 +86,17 @@ export default function App() {
             <Route path="/projectors/:id" element={<ProjectorDetail session={session} />} />
             <Route path="/groups" element={<Groups session={session} />} />
             <Route path="/control" element={<ControlCenter session={session} />} />
-            <Route
-              path="/mapping"
-              element={
-                <Suspense fallback={<Spinner label="Loading mapping…" />}>
-                  <Mapping session={session} />
-                </Suspense>
-              }
-            />
+            {['/mapping', '/mapping/:section'].map((path) => (
+              <Route
+                key={path}
+                path={path}
+                element={
+                  <Suspense fallback={<Spinner label="Loading mapping…" />}>
+                    <Mapping session={session} />
+                  </Suspense>
+                }
+              />
+            ))}
             <Route path="/automation" element={<Automation session={session} />} />
             <Route path="/alerts" element={<Alerts session={session} />} />
             <Route

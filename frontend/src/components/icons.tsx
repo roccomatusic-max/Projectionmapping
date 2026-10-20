@@ -5,6 +5,12 @@
 export {
   ArrowUpDown as SortIcon,
   Bell as AlertsIcon,
+  Camera as CameraIcon,
+  CirclePlay as RunShowIcon,
+  CircleHelp as HelpIcon,
+  Cpu as MiniPcIcon,
+  PenTool as EditorIcon,
+  Sparkles as ScenesIcon,
   Captions as OsdIcon,
   ChevronDown as ChevronDownIcon,
   ChevronLeft as ChevronLeftIcon,
