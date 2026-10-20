@@ -114,7 +114,7 @@ it with a new time if you still want it.
 
 ### Connection drops repeatedly
 
-Check queue depth under Settings → Device connections. If it is climbing, the
+Check queue depth under Settings → Technical details → Device connections. If it is climbing, the
 projector is answering slower than it is being polled. Raise that projector's
 poll overrides, or raise `POLL_*` globally.
 

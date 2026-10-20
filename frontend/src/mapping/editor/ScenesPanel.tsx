@@ -685,7 +685,7 @@ export function ScenesPanel({
           ) : ai ? (
             <p className="text-xs text-slate-500">
               To describe scenes in plain words instead, add an Anthropic API key in{' '}
-              <Link className="text-sky-300 hover:underline" to="/settings">Settings</Link>. Everything else works without one.
+              <Link className="text-sky-300 hover:underline" to="/settings?part=ai">Settings → AI keys</Link>. Everything else works without one.
             </p>
           ) : null}
           <div className="space-y-3">

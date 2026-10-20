@@ -87,8 +87,8 @@ export function PaintHouse({
       {!status.available ? (
         <p className="text-xs text-slate-400">
           Add an OpenAI API key in{' '}
-          <Link className="text-sky-300 hover:underline" to="/settings">
-            Settings
+          <Link className="text-sky-300 hover:underline" to="/settings?part=ai">
+            Settings → AI keys
           </Link>{' '}
           to paint pictures of your house.
         </p>
