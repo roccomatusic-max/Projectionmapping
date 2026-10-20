@@ -131,7 +131,9 @@ export function CanvasOverview({
       <svg
         ref={svgRef}
         viewBox={`${-W * 0.02} ${-H * 0.02} ${W * 1.04} ${H * 1.04}`}
-        className="w-full touch-none select-none rounded-md bg-panel-950"
+        className="mx-auto block touch-none select-none rounded-md bg-panel-950"
+        // Never taller than about half the screen, so the settings below stay in view.
+        style={{ width: `min(100%, calc(42vh * ${W / H}))` }}
         onPointerMove={move}
         onPointerUp={end}
         onPointerCancel={end}
@@ -242,7 +244,7 @@ export function OutputPreviews({
   const live = transport?.show_id === show.id && (transport.status === 'playing' || transport.status === 'paused')
   const idle = transport?.show_id !== show.id || transport.status === 'stopped'
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
       {outputs.map((o, i) => {
         const active = o.id === selectedId
         const note = !o.enabled

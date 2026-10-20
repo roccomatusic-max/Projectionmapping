@@ -189,8 +189,9 @@ export function WarpEditor({
   return (
     <div>
       <div
-        className="relative mx-auto w-full overflow-hidden rounded-md bg-black ring-1 ring-white/10"
-        style={{ aspectRatio: `${W} / ${H}` }}
+        className="relative mx-auto overflow-hidden rounded-md bg-black ring-1 ring-white/10"
+        // As wide as there is room for, but never taller than about 60% of the screen.
+        style={{ aspectRatio: `${W} / ${H}`, width: `min(100%, calc(55vh * ${W / H}))` }}
       >
         <OutputView
           output={output}

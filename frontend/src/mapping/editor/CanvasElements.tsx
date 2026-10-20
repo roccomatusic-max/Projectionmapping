@@ -97,7 +97,16 @@ export function CanvasElements({
           ? { kind: 'camera' }
           : { kind: 'none' }
 
-  useEffect(() => () => window.clearTimeout(saveTimer.current), [])
+  // Leaving the page (another Editor section or tab) saves a change still
+  // waiting for its delay instead of dropping it.
+  const pendingSave = useRef<(() => void) | null>(null)
+  useEffect(
+    () => () => {
+      window.clearTimeout(saveTimer.current)
+      pendingSave.current?.()
+    },
+    [],
+  )
   useEffect(() => {
     setLayerId(null)
     setPinIndex(null)
@@ -113,7 +122,8 @@ export function CanvasElements({
     setDraft(next)
     const mine = ++serial.current
     window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(async () => {
+    const write = async () => {
+      pendingSave.current = null
       try {
         await mappingApi.updateScene(next.id, { name: next.name, description: next.description, layers: next.layers })
         await reloadScenes()
@@ -122,7 +132,9 @@ export function CanvasElements({
       } catch (err) {
         onError(err instanceof Error ? err.message : 'Saving the elements failed')
       }
-    }, SAVE_DELAY_MS)
+    }
+    pendingSave.current = () => void write()
+    saveTimer.current = window.setTimeout(write, SAVE_DELAY_MS)
   }
 
   const changeLayer = (id: string, patch: Partial<SceneLayer>) => {

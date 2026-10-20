@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Chip, Panel } from '@/components/ui'
 import { mappingApi, mediaUrl } from '../api'
 import type { AiStatus, MediaAsset, Show } from '../types'
@@ -86,9 +87,9 @@ export function PaintHouse({
       {!status.available ? (
         <p className="text-xs text-slate-400">
           Add an OpenAI API key in{' '}
-          <a className="text-sky-300 hover:underline" href="/settings">
+          <Link className="text-sky-300 hover:underline" to="/settings">
             Settings
-          </a>{' '}
+          </Link>{' '}
           to paint pictures of your house.
         </p>
       ) : !source ? (
