@@ -165,7 +165,7 @@ location / {
 
 ## 4. Adding your first projector
 
-1. **Settings → check the driver list.** `panasonic_pt_dz13k` is the one for a
+1. **Settings → Technical details → check the driver list.** `panasonic_pt_dz13k` is the one for a
    PT-DZ13K; `pjlink` works with anything speaking PJLink.
 2. **Projectors → Add projector.**
    - Host: the projector's static IP

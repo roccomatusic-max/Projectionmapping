@@ -171,13 +171,13 @@ export default function Automation({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={AutomationIcon} title="Automation" subtitle="Scheduled sequences, templates and scenes." />
+      <PageHeader icon={AutomationIcon} title="Automation" subtitle="Start-up and shut-down sequences that run on a timer or when you press Run." />
       {error && <ErrorBanner message={error} />}
 
       <Panel
         icon={AutomationIcon}
         title="Automations"
-        description="Multi-step sequences. Each step reports its own per-projector result."
+        description="Each one is a list of steps, such as power on, wait, open shutters. Every step shows how each projector answered."
         action={
           isAdmin ? (
             <button

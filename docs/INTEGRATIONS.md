@@ -14,7 +14,7 @@ Interactive docs at `/api/docs`; the OpenAPI schema at
 
 Interactive sign-ins produce a token that expires in 12 hours. Integrations
 need something longer-lived: **service tokens**, issued by an administrator
-under *Settings → Service tokens* or with:
+under *Settings → Users and tokens → Service tokens* or with:
 
 ```bash
 curl -s -X POST http://projector.local:8000/api/auth/tokens \

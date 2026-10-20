@@ -221,4 +221,12 @@ export const PLACES: Place[] = [
     hint: 'Trace the walls, roof, windows and doors.', keywords: 'trace walls roof windows doors surfaces' },
   { to: '/mapping/scenes?part=paint', label: 'Paint the house', where: 'Scenes', icon: ScenesIcon,
     hint: 'An AI repaints a photo of your house as you describe it.', keywords: 'openai ai picture' },
+  { to: '/settings', label: 'App updates and password', where: 'Settings', icon: SettingsIcon,
+    hint: 'Check for a new version, install it, change your password.', keywords: 'update version install account' },
+  { to: '/settings?part=ai', label: 'AI keys', where: 'Settings', icon: SettingsIcon,
+    hint: 'Optional Anthropic and OpenAI keys for describing and painting scenes.', keywords: 'anthropic openai claude key api' },
+  { to: '/settings?part=people', label: 'Users and tokens', where: 'Settings', icon: SettingsIcon,
+    hint: 'Who can sign in, and tokens for Home Assistant or scripts.', keywords: 'user add viewer operator admin token home assistant' },
+  { to: '/settings?part=technical', label: 'Technical details', where: 'Settings', icon: SettingsIcon,
+    hint: 'How often projectors are checked, open connections, what each make supports.', keywords: 'polling poll drivers connections queue' },
 ]
