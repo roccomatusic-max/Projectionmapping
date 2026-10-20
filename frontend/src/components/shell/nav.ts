@@ -205,6 +205,8 @@ export interface Place {
 }
 
 export const PLACES: Place[] = [
+  { to: '/projectors?add=1', label: 'Add a projector', where: 'Projectors', icon: ProjectorIcon,
+    hint: 'Type in its address and pick its make to start controlling it.', keywords: 'new register ip address' },
   { to: '/mapping/editor', label: 'Cues and media', where: 'Editor', icon: EditorIcon,
     hint: 'The list GO plays, and uploading videos and pictures.', keywords: 'cue fade loop auto upload video picture library' },
   { to: '/mapping/editor?part=projectors', label: 'Projectors on the picture', where: 'Editor', icon: EditorIcon,
