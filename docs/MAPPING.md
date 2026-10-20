@@ -186,7 +186,11 @@ http://<main-server>:8765/player
 On a Windows mini PC, the [Mini PC app](../minipc/README.md) does all of
 this: install it once and it finds the server by itself, opens that page as
 a kiosk with media caching on, reopens it if it closes, starts at sign-in,
-and runs a camera plugged into the same computer. The main server has to
+and runs a camera plugged into the same computer. To install it, paste one
+line into PowerShell on the mini PC (the line is in the
+[Mini PC app's guide](../minipc/README.md#install)); it also says so plainly
+when Windows 11's Smart App Control would block the app, and how to turn
+that off. The main server has to
 accept connections from the network for any of it (desktop app:
 `--lan`); the Players tab says when it does not. Under Docker, set
 `ADVERTISE_PORT` to the published HTTP port and use host networking so the

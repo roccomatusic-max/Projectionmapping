@@ -470,3 +470,21 @@ def test_a_briefly_locked_file_is_still_replaced(tmp_path, monkeypatch):
     monkeypatch.setattr(kiosk.time, "sleep", lambda _s: None)
     kiosk.write_atomically(target, "new")
     assert target.read_text() == "new"
+
+
+# -- install line ------------------------------------------------------------------------
+
+
+def test_install_line_is_the_same_everywhere_and_is_published():
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "minipc" / "install-minipc.ps1").read_text(encoding="utf-8")
+    url = "https://github.com/roccomatusic-max/Projectionmapping/releases/download/minipc-latest/install-minipc.ps1"
+    line = f"[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm {url} | iex"
+    assert f"#   {line}" in script
+    assert line in (root / "minipc" / "README.md").read_text(encoding="utf-8")
+    assert line in (root / "frontend" / "src" / "mapping" / "editor" / "PlayersPanel.tsx").read_text(encoding="utf-8")
+    workflow = (root / ".github" / "workflows" / "minipc.yml").read_text(encoding="utf-8")
+    assert "gh release create minipc-latest MiniPC-Setup.exe minipc/install-minipc.ps1" in workflow
+    # The Smart App Control check runs before anything is downloaded or started.
+    assert script.index("VerifiedAndReputablePolicyState") < script.index("Invoke-WebRequest")
+    assert script.index("Show-AppControlBlock\n    $global:LASTEXITCODE = 1") < script.index("Start-Process")
