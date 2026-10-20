@@ -283,9 +283,12 @@ release; do not try it on the show server.
 
 On each Windows mini PC, with the projector as its only or main display:
 
-1. **Install and pair** (minipc/README.md). Expected: the projector shows a
-   six-letter code, the code appears on Mapping → **Players**, and
-   **Approve** with an output makes the projector show that output. If no
+1. **Install and pair** (minipc/README.md: the PowerShell line). Expected:
+   the line either installs the app or explains that Smart App Control is on
+   (turn it off and run it again; record which mini PCs had it on). Then the
+   projector shows a six-letter code, the code appears on Mapping →
+   **Players**, and **Approve** with an output makes the projector show that
+   output. If no
    code ever appears on the Players tab, the mini PC did not find the
    server: check that Windows did not block the Mini PC app in its firewall,
    or give it the address with `--server http://<mac>:8765`.

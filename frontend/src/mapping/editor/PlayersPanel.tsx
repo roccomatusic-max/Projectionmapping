@@ -5,6 +5,9 @@ import { formatBytes } from './controls'
 
 /** Where the Windows installer for the computers beside the projectors is published. */
 export const MINIPC_DOWNLOAD = 'https://github.com/roccomatusic-max/Projectionmapping/releases/tag/minipc-latest'
+/** The one line pasted into PowerShell on a mini PC (minipc/README.md, Install). */
+export const MINIPC_INSTALL_LINE =
+  "[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://github.com/roccomatusic-max/Projectionmapping/releases/download/minipc-latest/install-minipc.ps1 | iex"
 
 export interface Player {
   id: number
@@ -144,6 +147,14 @@ export function PlayersPanel({
             </a>{' '}
             on each Windows computer beside a projector. It finds this server by itself, fills the projector, and
             shows a pairing code there to approve here. A camera plugged into it comes along.
+          </p>
+          <p>To install it, open PowerShell on the mini PC, paste this line and press Enter:</p>
+          <p className="select-all break-all rounded bg-black/30 px-2 py-1 font-mono text-xs text-slate-100">
+            {MINIPC_INSTALL_LINE}
+          </p>
+          <p className="text-xs text-slate-500">
+            If it says Smart App Control blocks the app, turn that off in Windows Security → App &amp; browser
+            control → Smart App Control settings, then paste the line again.
           </p>
           <p className="text-xs text-slate-500">
             Any other computer can open{' '}

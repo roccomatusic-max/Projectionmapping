@@ -34,13 +34,64 @@ Without it the Players tab says that no mini PC can reach it.
 
 ## Install
 
-1. Download **MiniPC-Setup.exe** from the repository's
-   [minipc-latest release](https://github.com/roccomatusic-max/Projectionmapping/releases/tag/minipc-latest)
-   (no GitHub account needed). Copying it to the mini PC on a USB stick
-   works too.
-2. Run it on the mini PC. Windows may say it protected the PC, because the
-   installer is not signed: **More info → Run anyway**.
-3. The projector shows a pairing code. Approve it on **Mapping → Players**.
+On each mini PC, signed in as the user that will run the show:
+
+**1. Open PowerShell.** Click **Start**, type `PowerShell` and press Enter.
+
+**2. Paste this one line** and press Enter:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://github.com/roccomatusic-max/Projectionmapping/releases/download/minipc-latest/install-minipc.ps1 | iex
+```
+
+It first checks that Windows will let the app run (see
+[Windows blocked it](#windows-blocked-it)), then downloads the newest
+**MiniPC-Setup.exe**, installs it and starts it. No administrator rights
+needed, and Windows SmartScreen does not appear, because nothing is
+double-clicked.
+
+**3. Approve it.** The projector shows a six-letter pairing code. Approve it
+on **Mapping → Players** and pick the output.
+
+Without PowerShell: download **MiniPC-Setup.exe** from the
+[minipc-latest release](https://github.com/roccomatusic-max/Projectionmapping/releases/tag/minipc-latest)
+(no GitHub account needed; a USB stick works too) and double-click it.
+Windows says **"Windows protected your PC"** because the installer is not
+signed with a paid certificate: press **More info**, then **Run anyway**.
+
+### Windows blocked it
+
+If the PowerShell window says **"Windows blocks the Mini PC app on this
+computer"**, or double-clicking MiniPC-Setup.exe says *"An Application
+Control policy has blocked this file"* with no Run anyway button, that mini
+PC has **Smart App Control** on. It is a Windows 11 feature that only lets
+programs signed with a paid certificate run, and it has no "allow this one
+program" button. The Mini PC app is not signed, the same as the main server.
+Freshly reset Windows 11 PCs, which refurbished mini PCs often are, can have
+it on.
+
+**Turn it off on the mini PC:** Windows Security → **App & browser control**
+→ **Smart App Control settings** → **Off**, then run the line again. On many
+Windows versions it cannot be turned back on without resetting Windows, which
+is fine for a computer that only runs the show.
+
+To see whether it is on, paste this into PowerShell: `1` means on, `0` off,
+`2` means Windows is still deciding (the app installs, and if it ever stops
+starting, turn Smart App Control off as above).
+
+```powershell
+(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy').VerifiedAndReputablePolicyState
+```
+
+The same message on a work-managed PC with Smart App Control off means the
+company's App Control policy blocks it; its IT admin would have to allow it.
+
+If Microsoft Defender or another virus scanner removes `MiniPC.exe` during
+the install, that is a false alarm that unsigned Python programs often get.
+In **Windows Security → Virus & threat protection → Protection history**,
+open the entry, choose **Allow on device**, and run the line again.
+
+### After the install
 
 It installs for the signed-in user and starts whenever that user signs in.
 For the show to come back by itself after a power cut, Windows has to sign
@@ -58,7 +109,8 @@ and set it to the projector's native resolution.
   the clock (under the ^ arrow) and choose **Quit**. It starts again at the
   next sign-in, or from the Start menu.
 - **Restart the output** in the same menu reopens the window.
-- **Updating**: run the new MiniPC-Setup.exe over the old one.
+- **Updating**: paste the install line again (or run the new MiniPC-Setup.exe
+  over the old one). It does not update by itself.
 - **Removing**: Settings → Apps → Mini PC → Uninstall.
 
 ## Options

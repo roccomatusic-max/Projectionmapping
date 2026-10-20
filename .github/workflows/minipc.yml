@@ -59,6 +59,36 @@ jobs:
           $run = Start-Process dist\MiniPC\MiniPC.exe -ArgumentList "--check", "--data-dir", $data -Wait -PassThru
           Get-Content (Join-Path $data "logs\minipc.log")
           if ($run.ExitCode -ne 0) { throw "self-check failed with exit code $($run.ExitCode)" }
+      - name: The install line explains Smart App Control instead of failing
+        shell: powershell   # Windows PowerShell 5.1, what Rocco pastes the line into
+        run: |
+          $env:MINIPC_SETUP = (Resolve-Path dist\MiniPC-Setup.exe).Path
+          $env:MINIPC_APP_CONTROL = '1'
+          $out = Invoke-Expression (Get-Content minipc\install-minipc.ps1 -Raw) 6>&1 | Out-String
+          Write-Output $out
+          if ($LASTEXITCODE -ne 1) { throw "exit code $LASTEXITCODE, expected 1" }
+          if ($out -notmatch 'Smart App Control settings > Off') { throw 'the Smart App Control explanation is missing' }
+          if (Test-Path "$env:LOCALAPPDATA\Programs\Mini PC\MiniPC.exe") { throw 'it installed anyway' }
+          $global:LASTEXITCODE = 0
+      - name: The install line installs and starts the app
+        shell: powershell
+        run: |
+          $env:MINIPC_SETUP = (Resolve-Path dist\MiniPC-Setup.exe).Path
+          $env:MINIPC_APP_CONTROL = '0'
+          $out = Invoke-Expression (Get-Content minipc\install-minipc.ps1 -Raw) 6>&1 | Out-String
+          Write-Output $out
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }
+          $app = "$env:LOCALAPPDATA\Programs\Mini PC"
+          if (-not (Test-Path "$app\MiniPC.exe")) { throw 'MiniPC.exe was not installed' }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Mini PC.lnk")) { throw 'it does not start at sign-in' }
+          $started = $false
+          foreach ($i in 1..30) { if (Get-Process MiniPC -ErrorAction SilentlyContinue) { $started = $true; break }; Start-Sleep 1 }
+          if (-not $started) { throw 'the app did not start after the install' }
+          & "$app\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART | Out-Null
+          foreach ($i in 1..30) { if (-not (Test-Path "$app\MiniPC.exe")) { break }; Start-Sleep 1 }
+          if (Test-Path "$app\MiniPC.exe") { throw 'the uninstaller left MiniPC.exe behind' }
+          Get-Process chrome, msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          $global:LASTEXITCODE = 0
       - uses: actions/upload-artifact@v4
         with:
           name: MiniPC-Setup
@@ -74,6 +104,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: MiniPC-Setup
@@ -83,6 +114,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release delete minipc-latest --cleanup-tag --yes || true
-          gh release create minipc-latest MiniPC-Setup.exe --target "$GITHUB_SHA" \
+          gh release create minipc-latest MiniPC-Setup.exe minipc/install-minipc.ps1 --target "$GITHUB_SHA" \
             --title "Mini PC app" \
-            --notes "Download MiniPC-Setup.exe and run it on each Windows computer beside a projector. Built from ${GITHUB_SHA::7}. Setup: docs/MAPPING.md, section Mini PCs."
+            --notes "For each Windows computer beside a projector (not the main server). Install: open PowerShell on the mini PC, paste the line from minipc/README.md and press Enter; it checks for Smart App Control first. Running MiniPC-Setup.exe by hand works too. Built from ${GITHUB_SHA::7}."
