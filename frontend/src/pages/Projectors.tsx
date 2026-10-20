@@ -22,6 +22,8 @@ export default function Projectors({ session }: { session: Session }) {
   const responding = projectors.filter(isLive).length
 
   useEffect(() => {
+    // "Go to → Add a projector" can arrive while this page is already open.
+    if (params.get('add') === '1') setAdding(true)
     if (params.get('add')) setParams({}, { replace: true })
   }, [params, setParams])
 

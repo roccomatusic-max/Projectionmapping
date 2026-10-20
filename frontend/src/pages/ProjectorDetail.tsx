@@ -28,6 +28,7 @@ import {
   Banner,
   Chip,
   EmptyState,
+  InfoTip,
   Panel,
   Spinner,
   Tabs,
@@ -64,7 +65,6 @@ import {
   RemoteIcon,
   ShutterIcon,
   TemperatureIcon,
-  TestPatternIcon,
   type LucideIcon,
 } from '@/components/icons'
 import {
@@ -101,27 +101,33 @@ interface Gate {
   reason: (name: string) => string | null
   /** Enabled only because the operator opted into unverified commands. */
   unverified: (name: string) => boolean
+  /** The technical why behind a reason, for a tooltip. */
+  detail: (name: string) => string | undefined
 }
 
 function makeGate(manifest: CapabilityManifest | null): Gate {
   const capability = (name: string) => manifest?.capabilities.find((item) => item.name === name)
   const reason = (name: string): string | null => {
     const cap = capability(name)
-    if (!manifest) return 'Loading capabilities…'
-    if (!cap) return 'This driver does not implement it for this model.'
+    if (!manifest) return 'Loading what this projector can do…'
+    if (!cap) return 'This projector model does not offer it here.'
     const retracted = manifest.retracted[name]
     if (retracted) return retracted
     if (cap.requires_opt_in && !manifest.allow_unverified_commands) {
-      const why = cap.caveat ?? 'Documented only for a sibling model.'
-      return `${why.replace(/\.?$/, '.')} Off until an administrator turns on “Allow unverified commands” for this projector (Edit).`
+      return 'Not yet confirmed on this exact model, so it is off. To try it, an administrator turns on “Allow unverified commands” under Edit.'
     }
     return null
+  }
+  const detail = (name: string) => {
+    const cap = capability(name)
+    return cap?.requires_opt_in ? cap.caveat ?? 'Documented only for a sibling model.' : undefined
   }
   return {
     capability,
     reason,
     usable: (name) => reason(name) === null,
     unverified: (name) => Boolean(capability(name)?.requires_opt_in && manifest?.allow_unverified_commands),
+    detail,
   }
 }
 
@@ -160,6 +166,27 @@ function ControlBlock({
       {children}
       {footer}
     </div>
+  )
+}
+
+/**
+ * Controls this projector cannot use, named on one line instead of a box
+ * each, with the reasons a tap or hover away.
+ */
+function NotAvailable({ items, className }: { items: Array<{ label: string; reason: string; detail?: string }>; className?: string }) {
+  if (items.length === 0) return null
+  return (
+    <p className={classNames('flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-500', className)}>
+      <span>Not available on this projector: {items.map((item) => item.label).join(', ')}.</span>
+      <InfoTip label="Why are these not available?" text="Why?">
+        {items.map((item) => (
+          <span key={item.label} className="mb-1 block last:mb-0">
+            <b>{item.label}</b>: {item.reason}
+            {item.detail && <span className="block text-slate-400">({item.detail})</span>}
+          </span>
+        ))}
+      </InfoTip>
+    </p>
   )
 }
 
@@ -397,7 +424,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
   return (
     <div className="space-y-4">
       {/* Target bar: always says which projector receives the commands. */}
-      <div className="z-30 -mx-3 border-b md:sticky md:top-12 border-white/[0.06] bg-panel-950/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+      <div className="z-30 -mx-3 border-b md:sticky md:top-[var(--shell-top,3rem)] border-white/[0.06] bg-panel-950/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
         <Link to="/projectors" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
           <BackIcon size={12} aria-hidden /> Projectors
         </Link>
@@ -421,10 +448,10 @@ export default function ProjectorDetail({ session }: { session: Session }) {
             <Freshness projector={projector} className="ml-1 text-xs" />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <button className="btn-default btn-sm" disabled={checking !== null || !projector.enabled} onClick={() => void pollNow()} title="Read every value from the projector now">
-              {checking === 'poll' ? <Spinner size="sm" label={null} /> : <RefreshIcon size={13} aria-hidden />} Poll now
+            <button className="btn-default btn-sm" disabled={checking !== null || !projector.enabled} onClick={() => void pollNow()} title="Ask the projector for every reading now, instead of waiting for the next regular check">
+              {checking === 'poll' ? <Spinner size="sm" label={null} /> : <RefreshIcon size={13} aria-hidden />} Check now
             </button>
-            <button className="btn-default btn-sm" disabled={checking !== null} onClick={() => void testConnection()} title="Open a connection and authenticate, without changing anything">
+            <button className="btn-default btn-sm" disabled={checking !== null} onClick={() => void testConnection()} title="Connect and sign in to the projector to prove the address and password work. Changes nothing.">
               {checking === 'test' ? <Spinner size="sm" label={null} /> : <LiveIcon size={13} aria-hidden />} Test connection
             </button>
             {isAdmin && (
@@ -478,7 +505,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
           {/* -- Primary controls ------------------------------------- */}
-          <Panel icon={PowerIcon} title="Primary controls" description="Highlighted states are read back from the projector, not assumed from the command.">
+          <Panel icon={PowerIcon} title="Power, shutter and input" description="The lit button is what the projector itself reports right now, not just the last one pressed.">
             <div className="grid gap-3 md:grid-cols-2">
               <ControlBlock
                 icon={PowerIcon}
@@ -568,27 +595,42 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                 </ControlBlock>
               </div>
 
-              <OnOffBlock
-                icon={FreezeIcon}
-                title="Freeze"
-                capability="image.freeze"
-                gate={gate}
-                blocked={blocked('image.freeze')}
-                command={command('image.freeze')}
-                history={history}
-                onSend={(value) => send('image.freeze', value === 'on' ? 'Freeze on' : 'Freeze off', { state: value })}
-              />
-              <OnOffBlock
-                icon={OsdIcon}
-                title="On-screen display"
-                capability="osd.set"
-                gate={gate}
-                blocked={blocked('osd.set')}
-                command={command('osd.set')}
-                history={history}
-                onSend={(value) => send('osd.set', value === 'on' ? 'OSD on' : 'OSD off', { state: value })}
-              />
+              {gate.usable('image.freeze') && (
+                <OnOffBlock
+                  icon={FreezeIcon}
+                  title="Freeze"
+                  capability="image.freeze"
+                  gate={gate}
+                  blocked={blocked('image.freeze')}
+                  command={command('image.freeze')}
+                  history={history}
+                  onSend={(value) => send('image.freeze', value === 'on' ? 'Freeze on' : 'Freeze off', { state: value })}
+                />
+              )}
+              {gate.usable('osd.set') && (
+                <OnOffBlock
+                  icon={OsdIcon}
+                  title="On-screen display"
+                  capability="osd.set"
+                  gate={gate}
+                  blocked={blocked('osd.set')}
+                  command={command('osd.set')}
+                  history={history}
+                  onSend={(value) => send('osd.set', value === 'on' ? 'OSD on' : 'OSD off', { state: value })}
+                />
+              )}
             </div>
+            {manifest && (
+              <NotAvailable
+                className="mt-3"
+                items={[
+                  { label: 'Freeze', capability: 'image.freeze' },
+                  { label: 'On-screen display', capability: 'osd.set' },
+                ]
+                  .filter((item) => !gate.usable(item.capability))
+                  .map((item) => ({ label: item.label, reason: gate.reason(item.capability) ?? 'Unavailable', detail: gate.detail(item.capability) }))}
+              />
+            )}
           </Panel>
 
           {/* -- Secondary controls ----------------------------------- */}
@@ -722,18 +764,13 @@ function PictureControls({
   const sharedGate = reasons.length > 1 && reasons[0] && reasons.every((r) => r === reasons[0]) ? reasons[0] : null
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500">
-        Picture settings cannot be read back from the projector, so each slider starts from the last value sent
-        (from this browser or the command log). Nothing is sent until you press Apply.
-      </p>
-      {declared.length === 0 ? (
-        <UnavailableNote reason="This driver offers no picture adjustments for this model." />
-      ) : sharedGate ? (
-        // One reason for every slider: say it once instead of five times.
-        <ControlBlock icon={PictureIcon} title={declared.map((item) => item.label).join(', ')}>
-          <UnavailableNote reason={sharedGate} />
-        </ControlBlock>
-      ) : (
+      {declared.length > 0 && !sharedGate && (
+        <p className="text-xs text-slate-500">
+          The projector does not report these settings, so each slider starts from the last value sent. Nothing is
+          sent until you press Apply.
+        </p>
+      )}
+      {declared.length === 0 || sharedGate ? null : (
         <div className="grid gap-3 md:grid-cols-2">
           {declared.map((item) => (
             <PictureSlider
@@ -750,22 +787,27 @@ function PictureControls({
           ))}
         </div>
       )}
-      <div className="grid gap-3 md:grid-cols-2">
-        <ControlBlock icon={PictureIcon} title="Picture mode">
-          {pictureMode ? (
-            <UnavailableNote reason={gate.reason('image.picture_mode') ?? 'Picture mode is declared but has no control here yet.'} />
-          ) : (
-            <UnavailableNote reason="Not offered: no picture-mode command has been confirmed for this projector's control protocol, so the platform does not send one." />
-          )}
-        </ControlBlock>
-        <ControlBlock icon={TestPatternIcon} title="Test patterns">
-          {testPattern ? (
-            <UnavailableNote reason={gate.reason('image.test_pattern') ?? 'Test patterns are declared but have no control here yet.'} />
-          ) : (
-            <UnavailableNote reason="Not offered: no test-pattern command has been confirmed for this projector's control protocol. Use the projector's own menu (Remote tab) or the Mapping calibration patterns." />
-          )}
-        </ControlBlock>
-      </div>
+      <NotAvailable
+        items={[
+          ...(declared.length === 0
+            ? [{ label: 'Brightness, contrast, colour, tint and sharpness', reason: 'This projector model offers no picture adjustments here.' }]
+            : sharedGate
+              ? [{ label: declared.map((item) => item.label).join(', '), reason: sharedGate, detail: gate.detail(declared[0].capability) }]
+              : []),
+          {
+            label: 'Picture mode',
+            reason: pictureMode
+              ? gate.reason('image.picture_mode') ?? 'Picture mode has no control here yet.'
+              : 'No picture-mode command has been confirmed for this projector, so none is sent. Use the projector’s own menu.',
+          },
+          {
+            label: 'Test patterns',
+            reason: testPattern
+              ? gate.reason('image.test_pattern') ?? 'Test patterns have no control here yet.'
+              : 'No test-pattern command has been confirmed for this projector. Use the projector’s own menu (Remote & lens tab), or the test patterns in Mapping → Editor → Projectors.',
+          },
+        ]}
+      />
     </div>
   )
 }
@@ -1129,7 +1171,7 @@ function degrees(sensor: TemperatureSensor): { text: string; muted: boolean; tit
 function EquipmentStatus({ projector, driverName }: { projector: Projector; driverName: string }) {
   const { state } = projector
   const equipment = state.equipment ?? {}
-  const notRead = 'Not read yet: identity and condition are read on the slower diagnostics poll. Press Poll now to read them.'
+  const notRead = 'Not read yet: these are read every few minutes. Press Check now to read them at once.'
   const serial = telemetryRow(equipment.serial_number, notRead)
   const firmware = telemetryRow(equipment.firmware, notRead)
   const reportedModel = equipment.model?.availability === 'available' ? String(equipment.model.value) : null
@@ -1249,7 +1291,7 @@ function EquipmentStatus({ projector, driverName }: { projector: Projector; driv
             className="my-2"
             reason={
               state.error_status?.note ??
-              'No per-subsystem error query is available on this transport. Fan, temperature, cover and filter faults are reported only by projectors that answer PJLink error status.'
+              'This projector is not reporting fan, filter or cover checks. Projectors that answer PJLink report them: turn PJLink on in the projector’s network menu and fill in the PJLink password under Edit.'
             }
           />
         )}
