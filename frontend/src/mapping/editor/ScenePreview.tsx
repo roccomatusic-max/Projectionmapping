@@ -626,10 +626,14 @@ export function ScenePreview({
     <div
       ref={boxRef}
       className={classNames(
-        'relative w-full overflow-hidden rounded-md bg-black ring-1 ring-white/10',
+        'relative mx-auto overflow-hidden rounded-md bg-black ring-1 ring-white/10',
         drawing || placing ? 'cursor-crosshair' : peopleSource === 'simulated' || showSurfaces ? 'cursor-pointer' : '',
       )}
-      style={{ aspectRatio: `${show.canvas_width} / ${show.canvas_height}` }}
+      // As wide as there is room for, but short enough to leave its controls in view.
+      style={{
+        aspectRatio: `${show.canvas_width} / ${show.canvas_height}`,
+        width: `min(100%, calc(52vh * ${show.canvas_width / show.canvas_height}))`,
+      }}
     >
       <OutputView
         output={output}

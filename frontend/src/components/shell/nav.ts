@@ -204,4 +204,19 @@ export interface Place {
   keywords?: string
 }
 
-export const PLACES: Place[] = []
+export const PLACES: Place[] = [
+  { to: '/mapping/editor', label: 'Cues and media', where: 'Editor', icon: EditorIcon,
+    hint: 'The list GO plays, and uploading videos and pictures.', keywords: 'cue fade loop auto upload video picture library' },
+  { to: '/mapping/editor?part=projectors', label: 'Projectors on the picture', where: 'Editor', icon: EditorIcon,
+    hint: 'Where each projector lands, warp, masks, blends and colour.', keywords: 'warp corner pin mesh mask blend colour color output window identify test pattern add output' },
+  { to: '/mapping/editor?part=elements', label: 'Elements', where: 'Editor', icon: EditorIcon,
+    hint: 'Objects and the countdown on a cue; a picture of its own on one projector.', keywords: 'countdown objects place pictures on each projector' },
+  { to: '/mapping/editor?part=maps', label: 'Saved maps and show settings', where: 'Editor', icon: EditorIcon,
+    hint: 'Keep or reuse the lined-up projectors; rename, resize or delete the show.', keywords: 'save map load rename delete canvas size' },
+  { to: '/mapping/scenes?part=projectors', label: 'Scenes on each projector', where: 'Scenes', icon: ScenesIcon,
+    hint: 'A different scene, or none, on one projector in a cue.' },
+  { to: '/mapping/scenes?part=house', label: 'House parts', where: 'Scenes', icon: ScenesIcon,
+    hint: 'Trace the walls, roof, windows and doors.', keywords: 'trace walls roof windows doors surfaces' },
+  { to: '/mapping/scenes?part=paint', label: 'Paint the house', where: 'Scenes', icon: ScenesIcon,
+    hint: 'An AI repaints a photo of your house as you describe it.', keywords: 'openai ai picture' },
+]

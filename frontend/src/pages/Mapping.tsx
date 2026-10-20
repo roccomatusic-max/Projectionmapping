@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, type Session } from '@/api/client'
 import type { Projector } from '@/api/types'
-import { ConfirmDialog, EmptyState, ErrorBanner, Panel, Spinner, ToastStack, useToasts } from '@/components/ui'
+import { ConfirmDialog, EmptyState, ErrorBanner, InfoTip, Panel, SectionBar, Spinner, ToastStack, useToasts } from '@/components/ui'
 import { CameraIcon, EditorIcon, MiniPcIcon, RunShowIcon, ScenesIcon, type LucideIcon } from '@/components/icons'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
@@ -42,6 +42,16 @@ const SECTIONS: Array<{ id: Section; slug: string; label: string; icon: LucideIc
     hint: 'The mini PCs beside the projectors. Approve a new one’s code and pick its projector.' },
 ]
 
+type EditorPart = 'cues' | 'projectors' | 'elements' | 'maps'
+
+/** The Editor, one part at a time, so no part needs a long scroll to reach. */
+export const EDITOR_PARTS: Array<{ id: EditorPart; label: string; hint: string }> = [
+  { id: 'cues', label: 'Cues and media', hint: 'The list GO plays, and the videos and pictures it uses' },
+  { id: 'projectors', label: 'Projectors', hint: 'Where each projector lands on the picture: warp, masks, blends, colour' },
+  { id: 'elements', label: 'Elements', hint: 'Objects and the countdown on a cue, and a picture of its own on one projector' },
+  { id: 'maps', label: 'Saved maps and show', hint: 'Keep or reuse the lined-up projectors; rename, resize or delete the show' },
+]
+
 /** Messages the camera tab follows: progress, new photos, tracked people. */
 const CAMERA_MESSAGES = new Set(['mapping_calib_pattern', 'mapping_camera', 'mapping_people'])
 
@@ -58,6 +68,9 @@ export default function Mapping({ session }: { session: Session }) {
   const current = SECTIONS.find((s) => s.slug === slug)
   const section: Section = current?.id ?? 'show'
   const setSection = (id: Section) => navigate(`/mapping/${SECTIONS.find((s) => s.id === id)!.slug}`)
+  const [search, setSearch] = useSearchParams()
+  const part: EditorPart = EDITOR_PARTS.find((p) => p.id === search.get('part'))?.id ?? 'cues'
+  const setPart = (id: EditorPart) => setSearch(id === 'cues' ? {} : { part: id }, { replace: true })
   const [selectedOutput, setSelectedOutput] = useState<number | null>(null)
   const [projectors, setProjectors] = useState<Projector[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -70,6 +83,17 @@ export default function Mapping({ session }: { session: Session }) {
   const [confirm, setConfirm] = useState<{ title: string; body: string; action: () => void } | null>(null)
 
   const cameraFeed = useRef(new EventTarget()).current
+  // The GO bar sticks under the top bar; things that stick below it (the
+  // Scenes preview) need its height.
+  const [barEl, setBarEl] = useState<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!barEl) return
+    const publish = () => document.documentElement.style.setProperty('--mapping-bar', `${barEl.offsetHeight}px`)
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(barEl)
+    return () => observer.disconnect()
+  }, [barEl])
   const runtime = useShowRuntime(showId, (message) => {
     if (message.type === 'mapping_player') setPlayersKey((n) => n + 1)
     if (message.type === 'mapping_map') setMapsKey((n) => n + 1)
@@ -388,7 +412,7 @@ export default function Mapping({ session }: { session: Session }) {
 
       {show && section !== 'players' && (
         <>
-          <div className={section === 'remote' ? undefined : 'sticky top-[var(--shell-top,3rem)] z-30 -mx-1 bg-panel-950/95 px-1 pb-1 backdrop-blur'}>
+          <div ref={setBarEl} className={section === 'remote' ? undefined : 'z-30 -mx-1 bg-panel-950/95 px-1 pb-1 backdrop-blur md:sticky md:top-[var(--shell-top,3rem)]'}>
             <TransportBar show={show} transport={transport} clock={clock} canRun={canRun} busy={busy}
               large={section === 'remote'} onCommand={command} />
           </div>
@@ -415,141 +439,162 @@ export default function Mapping({ session }: { session: Session }) {
           )}
 
           {section === 'camera' && (
-            <Panel title="Camera" description="Line the show up with the camera, let it calibrate each projector, and see who it tracks.">
+            <Panel>
               <CameraPanel show={show} outputs={outputs} canEdit={canEdit} feed={cameraFeed}
                 refreshKey={playersKey} onError={setError} onShowChanged={() => void runtime.refresh()} />
             </Panel>
           )}
 
           {section === 'show' && (
-            <div className="grid gap-4 2xl:grid-cols-[420px_minmax(0,1fr)]">
-              <div className="space-y-4">
-                <Panel title="Cues" description="GO plays them in order.">
-                  <CueList show={show} media={media} scenes={scenes} transport={transport} canEdit={canEdit} canRun={canRun} {...cueOps} />
-                </Panel>
-                <Panel title="Media library">
-                  <MediaLibrary media={media} canEdit={canEdit} onUploaded={() => void reloadMedia()}
-                    onDelete={deleteMedia} onAddCue={addCue} />
-                </Panel>
-              </div>
+            <div className="space-y-4">
+              <SectionBar label="Editor sections" sections={EDITOR_PARTS} value={part} onChange={setPart} />
 
-              <div className="min-w-0 space-y-4">
-                {outputs.length > 0 && (
-                  <Panel title="Output previews" description="What each projector is showing right now. Click one to edit it.">
-                    <OutputPreviews show={show} outputs={outputs} selectedId={output?.id ?? null}
-                      playback={playback} clock={clock} transport={transport} onSelect={setSelectedOutput} />
+              {part === 'cues' && (
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                  <Panel title="Cues" description="GO plays them from the top, one after another. Play jumps straight to one."
+                    action={<CueHelp />}>
+                    <CueList show={show} media={media} scenes={scenes} transport={transport} canEdit={canEdit} canRun={canRun} {...cueOps} />
                   </Panel>
-                )}
-
-                <Panel title="Media and elements"
-                  description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects or the countdown here and drag them into place.">
-                  <CanvasElements show={show} outputs={outputs} scenes={scenes} media={media} clock={clock}
-                    transport={transport} canEdit={canEdit} reloadScenes={runtime.reloadScenes}
-                    onShowChanged={() => runtime.refresh()} onError={setError} />
-                </Panel>
-
-                {outputs.length > 1 && show.cues.length > 0 && (
-                  <Panel title="Pictures on each projector"
-                    description="Each projector shows its part of the cue's shared picture, or a picture or video of its own that stays apart from the others. Ones set apart are marked in blue.">
-                    <ProjectorMedia show={show} media={media} canEdit={canEdit} onChanged={() => reloadShow()} onError={setError} />
+                  <Panel title="Media library" description="Your videos and pictures. Add cue puts one at the end of the cue list.">
+                    <MediaLibrary media={media} canEdit={canEdit} onUploaded={() => void reloadMedia()}
+                      onDelete={deleteMedia} onAddCue={addCue} />
                   </Panel>
-                )}
+                </div>
+              )}
 
-                <Panel
-                  title="Canvas"
-                  description={`${show.canvas_width} × ${show.canvas_height}. Each numbered box is the part of the canvas one projector shows; after the camera calibration they sit on the building where each projector's light lands.${canEdit ? ' Drag a box to move it, or pull its edges to resize it.' : ''}`}
-                  action={
-                    canEdit ? (
-                      <div className="flex gap-2">
-                        {outputs.length > 1 && <ArrangeButton onArrange={arrange} />}
-                        <button className="btn-default text-xs" onClick={addOutput} disabled={busy}>
-                          Add output
-                        </button>
-                      </div>
-                    ) : undefined
-                  }
-                >
-                  {outputs.length === 0 ? (
-                    <EmptyState title="No outputs">Add one output per projector.</EmptyState>
-                  ) : (
-                    <CanvasOverview show={show} outputs={outputs} selectedId={output?.id ?? null}
-                      onSelect={setSelectedOutput}
-                      onChange={canEdit ? (o, source) => changeOutput(o, { source }) : undefined} />
+              {part === 'projectors' && (
+                <>
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+                    <Panel
+                      title="Where each projector lands on the picture"
+                      description={`The whole picture is ${show.canvas_width} × ${show.canvas_height}. Each numbered box is the part one projector shows; after the camera calibration they sit where each projector's light really lands.${canEdit ? ' Drag a box to move it, or pull its edges to resize it.' : ''}`}
+                      action={
+                        canEdit ? (
+                          <div className="flex gap-2">
+                            {outputs.length > 1 && <ArrangeButton onArrange={arrange} />}
+                            <button className="btn-default text-xs" onClick={addOutput} disabled={busy}
+                              title="Add another projector to this show. Each one gets its own box on the picture.">
+                              Add projector
+                            </button>
+                          </div>
+                        ) : undefined
+                      }
+                    >
+                      {outputs.length === 0 ? (
+                        <EmptyState title="No projectors in this show yet">
+                          Press Add projector once for each projector that lights the building.
+                        </EmptyState>
+                      ) : (
+                        <CanvasOverview show={show} outputs={outputs} selectedId={output?.id ?? null}
+                          onSelect={setSelectedOutput}
+                          onChange={canEdit ? (o, source) => changeOutput(o, { source }) : undefined} />
+                      )}
+                    </Panel>
+
+                    {outputs.length > 0 && (
+                      <Panel title="Pick a projector" description="What each one shows right now. Click one to set it up below.">
+                        <OutputPreviews show={show} outputs={outputs} selectedId={output?.id ?? null}
+                          playback={playback} clock={clock} transport={transport} onSelect={setSelectedOutput} />
+                      </Panel>
+                    )}
+                  </div>
+
+                    {output && (
+                      <Panel title={`Set up ${output.name}`}
+                        description={`${output.width} × ${output.height}. Line its picture up with the building, mask out what it should not light, and blend where it overlaps a neighbour.`}>
+                        <OutputInspector
+                          show={show}
+                          output={output}
+                          projectors={projectors}
+                          playback={playback}
+                          clock={clock}
+                          canEdit={canEdit}
+                          onChange={(patch) => changeOutput(output, patch)}
+                          onOpenWindow={() => void openWindow(output)}
+                          onIdentify={() => void guard(() => mappingApi.identifyOutput(output.id))}
+                          onDelete={() =>
+                            setConfirm({
+                              title: 'Delete output',
+                              body: `Delete ${output.name} and its warp, masks and blends?`,
+                              action: () =>
+                                guard(async () => {
+                                  await mappingApi.deleteOutput(output.id)
+                                  setSelectedOutput(null)
+                                  await reloadShow()
+                                }),
+                            })
+                          }
+                        />
+                      </Panel>
+                    )}
+                </>
+              )}
+
+              {part === 'elements' && (
+                <>
+                  <Panel title="Media and elements"
+                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects or the countdown here and drag them into place.">
+                    <CanvasElements show={show} outputs={outputs} scenes={scenes} media={media} clock={clock}
+                      transport={transport} canEdit={canEdit} reloadScenes={runtime.reloadScenes}
+                      onShowChanged={() => runtime.refresh()} onError={setError} />
+                  </Panel>
+
+                  {outputs.length > 1 && show.cues.length > 0 && (
+                    <Panel title="Pictures on each projector"
+                      description="Each projector shows its part of the cue's shared picture, or a picture or video of its own that stays apart from the others. Ones set apart are marked in blue.">
+                      <ProjectorMedia show={show} media={media} canEdit={canEdit} onChanged={() => reloadShow()} onError={setError} />
+                    </Panel>
                   )}
-                </Panel>
+                </>
+              )}
 
-                <Panel title="Saved maps"
-                  description="Keep this show's lined-up projectors, calibration and traced house parts, and start other shows from them.">
-                  <SavedMaps
-                    show={show}
-                    canEdit={canEdit}
-                    refreshKey={mapsKey}
-                    onError={setError}
-                    onApplied={(message) => {
-                      toasts.push('ok', message)
-                      setOverrides(new Map())
-                      setSelectedOutput(null)
-                      setPlayersKey((n) => n + 1)
-                      void reloadShow()
-                    }}
-                  />
-                </Panel>
-
-                {output && (
-                  <Panel title={output.name} description={`${output.width} × ${output.height} output`}>
-                    <OutputInspector
+              {part === 'maps' && (
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <Panel title="Saved maps"
+                    description="Keep this show's lined-up projectors, calibration and traced house parts, and start other shows from them.">
+                    <SavedMaps
                       show={show}
-                      output={output}
-                      projectors={projectors}
-                      playback={playback}
-                      clock={clock}
                       canEdit={canEdit}
-                      onChange={(patch) => changeOutput(output, patch)}
-                      onOpenWindow={() => void openWindow(output)}
-                      onIdentify={() => void guard(() => mappingApi.identifyOutput(output.id))}
+                      refreshKey={mapsKey}
+                      onError={setError}
+                      onApplied={(message) => {
+                        toasts.push('ok', message)
+                        setOverrides(new Map())
+                        setSelectedOutput(null)
+                        setPlayersKey((n) => n + 1)
+                        void reloadShow()
+                      }}
+                    />
+                  </Panel>
+
+                  {canEdit && (
+                    <ShowSettings
+                      key={show.id}
+                      name={show.name}
+                      width={show.canvas_width}
+                      height={show.canvas_height}
+                      onSave={(body) =>
+                        guard(async () => {
+                          await mappingApi.updateShow(show.id, body)
+                          await reloadShow()
+                        })
+                      }
                       onDelete={() =>
                         setConfirm({
-                          title: 'Delete output',
-                          body: `Delete ${output.name} and its warp, masks and blends?`,
+                          title: 'Delete show',
+                          body: `Delete ${show.name}, its outputs and cues? Media stays in the library.`,
                           action: () =>
                             guard(async () => {
-                              await mappingApi.deleteOutput(output.id)
-                              setSelectedOutput(null)
-                              await reloadShow()
+                              await mappingApi.deleteShow(show.id)
+                              setShowId(null)
+                              await loadShows()
                             }),
                         })
                       }
                     />
-                  </Panel>
-                )}
-
-                {canEdit && (
-                  <ShowSettings
-                    key={show.id}
-                    name={show.name}
-                    width={show.canvas_width}
-                    height={show.canvas_height}
-                    onSave={(body) =>
-                      guard(async () => {
-                        await mappingApi.updateShow(show.id, body)
-                        await reloadShow()
-                      })
-                    }
-                    onDelete={() =>
-                      setConfirm({
-                        title: 'Delete show',
-                        body: `Delete ${show.name}, its outputs and cues? Media stays in the library.`,
-                        action: () =>
-                          guard(async () => {
-                            await mappingApi.deleteShow(show.id)
-                            setShowId(null)
-                            await loadShows()
-                          }),
-                      })
-                    }
-                  />
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </>
@@ -590,6 +635,21 @@ function chooseScreen(screens: ScreenLike[]): Promise<ScreenLike | null> {
   const answer = window.prompt(`Open the output on which display?\n${lines.join('\n')}`, '2')
   const index = Number(answer) - 1
   return Promise.resolve(screens[index] ?? null)
+}
+
+/** What the cue settings do, in one place. */
+function CueHelp() {
+  return (
+    <InfoTip label="What do the cue settings do?" text="What these do">
+      <span className="block"><b>Media</b>: the video or picture this cue shows. Black shows nothing.</span>
+      <span className="mt-1 block"><b>Fill / Fit / Stretch</b>: Fill covers the whole picture and may crop; Fit shows it all with black edges; Stretch pulls it to the picture's shape.</span>
+      <span className="mt-1 block"><b>Scene</b>: reactive light drawn on top (made on the Scenes tab).</span>
+      <span className="mt-1 block"><b>Loop</b>: start the video again when it ends.</span>
+      <span className="mt-1 block"><b>Fade</b>: seconds to blend from the previous cue into this one.</span>
+      <span className="mt-1 block"><b>Auto</b>: move to the next cue by itself after this many seconds. Empty waits for GO.</span>
+      <span className="mt-1 block"><b>People</b>: a simple reaction when the camera sees someone.</span>
+    </InfoTip>
+  )
 }
 
 function ArrangeButton({ onArrange }: { onArrange: (overlap: number) => void }) {

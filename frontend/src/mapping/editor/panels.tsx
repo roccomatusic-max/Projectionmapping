@@ -37,8 +37,8 @@ export function CueList({
   if (show.cues.length === 0) {
     return (
       <p className="text-sm text-slate-500">
-        No cues yet. Upload media below and add it as a cue, or add a scene from the Scenes tab. GO steps through
-        the cues in order.
+        No cues yet. Add a video or picture from the media library with Add cue, or add a scene from the Scenes
+        tab. GO steps through the cues in order.
       </p>
     )
   }
@@ -113,7 +113,7 @@ export function CueList({
                 {isLive ? 'Live' : 'Play'}
               </button>
             </div>
-            <div className="mt-2 grid grid-cols-[1fr_auto] gap-2 pl-8">
+            <div className="mt-2 grid grid-cols-[1fr_auto] gap-2 pl-8 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
               <select
                 className="input py-1 text-xs"
                 value={cue.media_id ?? ''}
@@ -132,7 +132,7 @@ export function CueList({
                 value={cue.fit}
                 disabled={!canEdit}
                 onChange={(event) => onUpdate(cue, { fit: event.target.value as Fit })}
-                title="How the media fits the canvas"
+                title="Fill covers the whole picture (may crop). Fit shows all of it with black edges. Stretch pulls it to the picture's shape."
               >
                 <option value="fill">Fill</option>
                 <option value="fit">Fit</option>
@@ -140,7 +140,7 @@ export function CueList({
               </select>
               {(scenes.length > 0 || cue.scene_id != null) && (
                 <select
-                  className="input col-span-2 py-1 text-xs"
+                  className="input col-span-2 py-1 text-xs lg:col-span-1"
                   value={cue.scene_id ?? ''}
                   disabled={!canEdit}
                   title="A reactive scene drawn over the media (or on its own over black)"
@@ -155,23 +155,23 @@ export function CueList({
                 </select>
               )}
               {Object.keys(cue.output_scenes ?? {}).length > 0 && (
-                <p className="col-span-2 text-[11px] text-sky-300/80" title="Set under Scenes → Scenes on each projector">
+                <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Set under Scenes → On each projector">
                   Some projectors play a different scene
                 </p>
               )}
               {Object.keys(cue.output_media ?? {}).length > 0 && (
-                <p className="col-span-2 text-[11px] text-sky-300/80" title="Set under Pictures on each projector">
+                <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Set under Editor → Elements → Pictures on each projector">
                   Some projectors show a picture of their own
                 </p>
               )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 pl-8">
-              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+              <label className="flex items-center gap-1.5 text-xs text-slate-400" title="Start the video again when it ends">
                 <input type="checkbox" className="accent-sky-500" checked={cue.loop} disabled={!canEdit}
                   onChange={(event) => onUpdate(cue, { loop: event.target.checked })} />
                 Loop
               </label>
-              <label className="flex items-center gap-1.5 text-xs text-slate-400" title="Crossfade into this cue">
+              <label className="flex items-center gap-1.5 text-xs text-slate-400" title="Seconds to blend from the previous cue into this one">
                 Fade
                 <input type="number" className="input w-16 py-1 text-xs" min={0} max={60} step={0.5}
                   defaultValue={cue.fade_seconds} key={`f${cue.id}:${cue.fade_seconds}`} disabled={!canEdit}
