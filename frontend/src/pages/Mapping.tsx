@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { api, type Session } from '@/api/client'
 import type { Projector } from '@/api/types'
 import { ConfirmDialog, EmptyState, ErrorBanner, Panel, Spinner, ToastStack, useToasts } from '@/components/ui'
+import { CameraIcon, EditorIcon, MiniPcIcon, RunShowIcon, ScenesIcon, type LucideIcon } from '@/components/icons'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
 import { CameraPanel } from '@/mapping/editor/CameraPanel'
@@ -26,6 +28,20 @@ const SAVE_DELAY_MS = 250
 
 type Section = 'show' | 'scenes' | 'camera' | 'players' | 'remote'
 
+/** The Mapping tabs, in the order of a show's life, each with its own address. */
+const SECTIONS: Array<{ id: Section; slug: string; label: string; icon: LucideIcon; hint: string }> = [
+  { id: 'remote', slug: 'run', label: 'Run the show', icon: RunShowIcon,
+    hint: 'GO plays the next cue. Pause, Stop and Blackout act on every projector at once.' },
+  { id: 'show', slug: 'editor', label: 'Editor', icon: EditorIcon,
+    hint: 'Build the show: cues and media, where each projector lands on the picture, warp and blends.' },
+  { id: 'scenes', slug: 'scenes', label: 'Scenes', icon: ScenesIcon,
+    hint: 'Light effects that react to people. Make one here, then add it to a cue.' },
+  { id: 'camera', slug: 'camera', label: 'Camera', icon: CameraIcon,
+    hint: 'Let the camera line every projector up with the building, and see who it tracks.' },
+  { id: 'players', slug: 'players', label: 'Players', icon: MiniPcIcon,
+    hint: 'The mini PCs beside the projectors. Approve a new one’s code and pick its projector.' },
+]
+
 /** Messages the camera tab follows: progress, new photos, tracked people. */
 const CAMERA_MESSAGES = new Set(['mapping_calib_pattern', 'mapping_camera', 'mapping_people'])
 
@@ -37,7 +53,11 @@ export default function Mapping({ session }: { session: Session }) {
     const stored = Number(localStorage.getItem(SHOW_KEY))
     return Number.isFinite(stored) && stored > 0 ? stored : null
   })
-  const [section, setSection] = useState<Section>(() => (window.innerWidth < 768 ? 'remote' : 'show'))
+  const { section: slug } = useParams()
+  const navigate = useNavigate()
+  const current = SECTIONS.find((s) => s.slug === slug)
+  const section: Section = current?.id ?? 'show'
+  const setSection = (id: Section) => navigate(`/mapping/${SECTIONS.find((s) => s.id === id)!.slug}`)
   const [selectedOutput, setSelectedOutput] = useState<number | null>(null)
   const [projectors, setProjectors] = useState<Projector[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -274,44 +294,62 @@ export default function Mapping({ session }: { session: Session }) {
         }),
     })
 
+  // /mapping on its own: the GO button on a phone, the editor at a desk.
+  if (!current) return <Navigate to={window.innerWidth < 768 ? '/mapping/run' : '/mapping/editor'} replace />
+
   if (shows === null) return <Spinner label="Loading shows…" />
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold text-slate-100">Mapping</h1>
-        {shows.length > 0 && (
-          <select className="input w-auto py-1.5" value={showId ?? ''} onChange={(e) => setShowId(Number(e.target.value))}>
-            {shows.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} · {s.canvas_width}×{s.canvas_height}
-              </option>
-            ))}
-          </select>
-        )}
-        {canEdit && (
-          <button className="btn-default text-xs" onClick={startCreating}>
-            New show
-          </button>
-        )}
-        <div className="ml-auto flex items-center gap-3">
-          <span className={classNames('text-xs', link === 'open' ? 'text-slate-500' : 'text-yellow-300')}>
-            live link {link}
-          </span>
-          <div className="inline-flex gap-0.5 rounded-md bg-panel-850 p-0.5 ring-1 ring-white/5">
-            {(['remote', 'show', 'scenes', 'camera', 'players'] as Section[]).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSection(s)}
-                className={classNames(
-                  'rounded px-3 py-1 text-xs font-medium capitalize',
-                  section === s ? 'bg-panel-700 text-slate-100' : 'text-slate-400 hover:text-slate-200',
-                )}
-              >
-                {s === 'show' ? 'Editor' : s}
-              </button>
-            ))}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <current.icon size={18} strokeWidth={1.75} className="shrink-0 text-slate-500" aria-hidden />
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold leading-tight tracking-tight text-slate-50">{current.label}</h1>
+              <p className="mt-0.5 text-xs text-slate-400">{current.hint}</p>
+            </div>
           </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {link !== 'open' && (
+              <span className="text-xs text-yellow-300" title="The live connection to the server dropped. It reconnects by itself.">
+                Reconnecting…
+              </span>
+            )}
+            {shows.length > 0 && section !== 'players' && (
+              <label className="flex items-center gap-2 text-xs text-slate-400">
+                Show
+                <select className="input w-auto py-1.5" value={showId ?? ''} onChange={(e) => setShowId(Number(e.target.value))}
+                  title="The show you are working on. Each show has its own canvas, projectors and cues.">
+                  {shows.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} · {s.canvas_width}×{s.canvas_height}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {canEdit && section !== 'players' && section !== 'remote' && (
+              <button className="btn-default text-xs" onClick={startCreating} title="Start another show with its own canvas and cues">
+                New show
+              </button>
+            )}
+          </div>
+        </div>
+        <div role="tablist" aria-label="Mapping" className="flex overflow-x-auto border-b border-white/[0.06] lg:hidden">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              role="tab"
+              aria-selected={section === s.id}
+              onClick={() => setSection(s.id)}
+              title={s.hint}
+              className={classNames('tab', section === s.id && 'tab-active')}
+            >
+              <s.icon size={14} aria-hidden />
+              {s.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -338,7 +376,7 @@ export default function Mapping({ session }: { session: Session }) {
       )}
 
       {section === 'players' && (
-        <Panel title="Players" description="The small computers beside the projectors, each driving one output.">
+        <Panel title="Mini PCs and cameras" description="Each mini PC drives one projector. A camera plugged into one comes with it.">
           <PlayersPanel
             outputs={outputs.map((o) => ({ id: o.id, label: `${show?.name ?? ''} · ${o.name}` }))}
             canEdit={canEdit}
@@ -350,8 +388,10 @@ export default function Mapping({ session }: { session: Session }) {
 
       {show && section !== 'players' && (
         <>
-          <TransportBar show={show} transport={transport} clock={clock} canRun={canRun} busy={busy}
-            large={section === 'remote'} onCommand={command} />
+          <div className={section === 'remote' ? undefined : 'sticky top-[var(--shell-top,3rem)] z-30 -mx-1 bg-panel-950/95 px-1 pb-1 backdrop-blur'}>
+            <TransportBar show={show} transport={transport} clock={clock} canRun={canRun} busy={busy}
+              large={section === 'remote'} onCommand={command} />
+          </div>
 
           {section === 'remote' && (
             <Panel title="Cues">

@@ -82,7 +82,7 @@ export function TransportBar({
           Blackout
         </button>
       </div>
-      <div className="min-w-0 flex-1">
+      <div className={classNames('min-w-0 flex-1', large && 'basis-full sm:basis-auto')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className={classNames('chip ring-1', STATUS[status].tone)}>{STATUS[status].label}</span>
           {current && (

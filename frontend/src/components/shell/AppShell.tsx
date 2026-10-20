@@ -6,7 +6,7 @@
  * is visible wherever the operator happens to be.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import type { Session } from '@/api/client'
 import { classNames, relativeTime } from '@/lib/format'
@@ -16,74 +16,37 @@ import { useTicker } from '@/hooks/useLiveData'
 import { Banner, StatusDot, ToastStack } from '../ui'
 import {
   AlertsIcon,
-  AutomationIcon,
   CloseIcon,
-  ControlIcon,
   DashboardIcon,
-  GroupsIcon,
   HistoryIcon,
   LinkDownIcon,
   LiveIcon,
-  LogsIcon,
-  MappingIcon,
-  MonitoringIcon,
   MoreIcon,
-  PhoneIcon,
   ProjectorIcon,
-  SettingsIcon,
+  RunShowIcon,
+  SearchIcon,
   SignOutIcon,
-  type LucideIcon,
 } from '../icons'
 import { ActivityPanel } from './ActivityPanel'
-
-interface NavItem {
-  to: string
-  label: string
-  icon: LucideIcon
-  end?: boolean
-  badge?: 'offline' | 'alerts'
-}
-
-const NAV: Array<{ section: string; items: NavItem[] }> = [
-  {
-    section: 'Operate',
-    items: [
-      { to: '/', label: 'Dashboard', icon: DashboardIcon, end: true },
-      { to: '/projectors', label: 'Projectors', icon: ProjectorIcon, badge: 'offline' },
-      { to: '/groups', label: 'Groups', icon: GroupsIcon },
-      { to: '/control', label: 'Control Center', icon: ControlIcon },
-    ],
-  },
-  {
-    section: 'Show',
-    items: [
-      { to: '/mapping', label: 'Mapping', icon: MappingIcon },
-      { to: '/automation', label: 'Automation', icon: AutomationIcon },
-      { to: '/phone', label: 'Phone remote', icon: PhoneIcon },
-    ],
-  },
-  {
-    section: 'Health',
-    items: [
-      { to: '/alerts', label: 'Alerts', icon: AlertsIcon, badge: 'alerts' },
-      { to: '/monitoring', label: 'Monitoring', icon: MonitoringIcon },
-      { to: '/logs', label: 'Logs', icon: LogsIcon },
-    ],
-  },
-  { section: 'System', items: [{ to: '/settings', label: 'Settings', icon: SettingsIcon }] },
-]
+import { JumpMenu, isMac } from './JumpMenu'
+import { NAV, type NavItem } from './nav'
+import { ShowStatusChip, ShowStatusProvider, useShowStatus } from './ShowStatus'
 
 /** The phone tab bar: the four places an operator goes on site. */
-const MOBILE_TABS: NavItem[] = [
+const MOBILE_TABS: Array<Pick<NavItem, 'to' | 'label' | 'icon' | 'end' | 'badge'>> = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon, end: true },
+  { to: '/mapping/run', label: 'Show', icon: RunShowIcon },
   { to: '/projectors', label: 'Projectors', icon: ProjectorIcon, badge: 'offline' },
-  { to: '/control', label: 'Control', icon: ControlIcon },
   { to: '/alerts', label: 'Alerts', icon: AlertsIcon, badge: 'alerts' },
 ]
 
-function useBadges() {
+type BadgeInfo = { count: number; tone: 'idle' | 'warn' | 'fault' | 'busy'; title: string } | null
+
+function useBadges(): Record<NonNullable<NavItem['badge']>, BadgeInfo> {
   const { projectors, overview } = useFleetContext()
+  const { players } = useShowStatus()
   const offline = projectors.filter((p) => p.enabled && !isLive(p)).length
+  const playersOffline = players.paired - players.online
   return {
     offline: offline > 0 ? { count: offline, tone: 'idle' as const, title: `${offline} not responding` } : null,
     alerts:
@@ -94,10 +57,16 @@ function useBadges() {
             title: `${overview.open_alerts} unresolved alert(s), ${overview.critical_alerts} critical`,
           }
         : null,
+    players:
+      players.waiting > 0
+        ? { count: players.waiting, tone: 'busy' as const, title: `${players.waiting} waiting for you to approve` }
+        : playersOffline > 0
+          ? { count: playersOffline, tone: 'warn' as const, title: `${playersOffline} mini PC(s) not connected` }
+          : null,
   }
 }
 
-function NavBadge({ badge }: { badge: { count: number; tone: 'idle' | 'warn' | 'fault'; title: string } | null }) {
+function NavBadge({ badge }: { badge: BadgeInfo }) {
   if (!badge) return null
   return (
     <span
@@ -106,6 +75,7 @@ function NavBadge({ badge }: { badge: { count: number; tone: 'idle' | 'warn' | '
         badge.tone === 'fault' && 'bg-red-500/20 text-red-300',
         badge.tone === 'warn' && 'bg-yellow-500/15 text-yellow-300',
         badge.tone === 'idle' && 'bg-white/[0.08] text-slate-300',
+        badge.tone === 'busy' && 'bg-sky-500/20 text-sky-200',
       )}
       title={badge.title}
     >
@@ -114,10 +84,10 @@ function NavBadge({ badge }: { badge: { count: number; tone: 'idle' | 'warn' | '
   )
 }
 
-function SideNav({ onNavigate }: { onNavigate?: () => void }) {
+function SideNav({ onNavigate, showHints = false }: { onNavigate?: () => void; showHints?: boolean }) {
   const badges = useBadges()
   return (
-    <nav className="flex flex-col gap-4" aria-label="Main">
+    <nav className="flex flex-col gap-3" aria-label="Main">
       {NAV.map((group) => (
         <div key={group.section}>
           <p className="eyebrow mb-1 px-2.5 text-slate-600">{group.section}</p>
@@ -128,10 +98,18 @@ function SideNav({ onNavigate }: { onNavigate?: () => void }) {
                 to={item.to}
                 end={item.end}
                 onClick={onNavigate}
+                title={showHints ? undefined : item.hint}
                 className={({ isActive }) => classNames('sidebar-link', isActive && 'sidebar-link-active')}
               >
-                <item.icon size={16} strokeWidth={1.75} aria-hidden />
-                {item.label}
+                <item.icon size={16} strokeWidth={1.75} className={showHints ? 'mt-0.5 self-start' : undefined} aria-hidden />
+                {showHints ? (
+                  <span className="min-w-0">
+                    <span className="block">{item.label}</span>
+                    <span className="block text-xs text-slate-500">{item.hint}</span>
+                  </span>
+                ) : (
+                  item.label
+                )}
                 {item.badge && <NavBadge badge={badges[item.badge]} />}
               </NavLink>
             ))}
@@ -142,6 +120,26 @@ function SideNav({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
+/** Opens "Go to"; shows the shortcut so it can be learned. */
+function JumpButton({ onOpen, wide = false }: { onOpen: () => void; wide?: boolean }) {
+  return (
+    <button
+      className={classNames(
+        'flex items-center gap-2 rounded-md border border-white/[0.08] bg-panel-850 text-sm text-slate-400 hover:border-white/[0.16] hover:text-slate-200',
+        wide ? 'w-full px-2.5 py-1.5' : 'px-2 py-1',
+      )}
+      onClick={onOpen}
+      title={`Find any page, setting or projector (${isMac ? '⌘K' : 'Ctrl+K'})`}
+    >
+      <SearchIcon size={14} aria-hidden />
+      <span className={wide ? undefined : 'hidden sm:inline'}>Go to…</span>
+      <kbd className={classNames('ml-auto rounded bg-white/[0.06] px-1 font-sans text-2xs text-slate-500', !wide && 'hidden md:inline')}>
+        {isMac ? '⌘K' : 'Ctrl K'}
+      </kbd>
+    </button>
+  )
+}
+
 /** Link to the server and fleet reachability, in words. */
 function SystemStatus() {
   const { wsStatus, projectors, lastSync, error } = useFleetContext()
@@ -149,7 +147,7 @@ function SystemStatus() {
   const enabled = projectors.filter((p) => p.enabled)
   const online = enabled.filter(isLive).length
   const serverDown = Boolean(error)
-  const label = serverDown ? 'Server unreachable' : wsStatus === 'open' ? 'Live' : wsStatus === 'connecting' ? 'Connecting' : 'Polling'
+  const label = serverDown ? 'Server unreachable' : wsStatus === 'open' ? 'Connected' : wsStatus === 'connecting' ? 'Connecting' : 'Slow updates'
   const tone = serverDown ? 'fault' : wsStatus === 'open' ? 'ok' : 'warn'
   const title = serverDown
     ? `Cannot reach the control server: ${error}`
@@ -168,9 +166,9 @@ function SystemStatus() {
         )}
       </span>
       {enabled.length > 0 && (
-        <span className="hidden items-center gap-1.5 whitespace-nowrap text-slate-400 sm:flex" title="Projectors answering their polls">
+        <span className="hidden items-center gap-1.5 whitespace-nowrap text-slate-400 sm:flex" title="Projectors answering right now">
           {online === enabled.length ? <LiveIcon size={13} className="text-slate-500" aria-hidden /> : <LinkDownIcon size={13} className="text-slate-500" aria-hidden />}
-          <span className="tnum text-slate-200">{online}</span>/<span className="tnum">{enabled.length}</span> online
+          <span className="tnum text-slate-200">{online}</span>/<span className="tnum">{enabled.length}</span> projectors
         </span>
       )}
     </div>
@@ -221,7 +219,15 @@ function CriticalBanner() {
   )
 }
 
-export function AppShell({
+export function AppShell(props: { session: Session; onSignOut: () => void; children: ReactNode }) {
+  return (
+    <ShowStatusProvider>
+      <Shell {...props} />
+    </ShowStatusProvider>
+  )
+}
+
+function Shell({
   session,
   onSignOut,
   children,
@@ -235,8 +241,34 @@ export function AppShell({
   const badges = useBadges()
   const [moreOpen, setMoreOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
+  const [jumpOpen, setJumpOpen] = useState(false)
+  const headerRef = useRef<HTMLElement>(null)
 
   useEffect(() => setMoreOpen(false), [location.pathname])
+
+  // Ctrl+K (⌘K on a Mac) opens "Go to" from anywhere.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setJumpOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Pages keep things stuck just under the top bar (the show's GO bar);
+  // the bar grows when a banner shows, so publish its real height.
+  useEffect(() => {
+    const header = headerRef.current
+    if (!header) return
+    const publish = () => document.documentElement.style.setProperty('--shell-top', `${header.offsetHeight}px`)
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [])
 
   const inFlight = commands.filter((c) => phaseIsActive(c.phase)).length
 
@@ -245,7 +277,7 @@ export function AppShell({
       className={classNames('btn-ghost btn-sm relative', inFlight > 0 && 'text-sky-300')}
       onClick={() => setActivityOpen(true)}
       aria-label={`Command activity${inFlight ? `, ${inFlight} in progress` : ''}`}
-      title="Command activity"
+      title="Commands sent to the projectors and what each one answered"
     >
       <HistoryIcon size={15} aria-hidden />
       <span className="hidden md:inline">Activity</span>
@@ -256,7 +288,7 @@ export function AppShell({
   )
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
+    <div className="min-h-screen lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen flex-col border-r border-white/[0.06] bg-panel-900 px-3 py-3 lg:flex">
         <Link to="/" className="flex items-center gap-2 px-2.5 py-1.5 text-sm font-semibold tracking-tight text-slate-50">
@@ -265,7 +297,10 @@ export function AppShell({
           </span>
           Projector Control
         </Link>
-        <div className="mt-5 min-h-0 flex-1 overflow-y-auto">
+        <div className="mt-3">
+          <JumpButton wide onOpen={() => setJumpOpen(true)} />
+        </div>
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
           <SideNav />
         </div>
         <div className="mt-3 border-t border-white/[0.06] px-2.5 pt-3">
@@ -280,16 +315,21 @@ export function AppShell({
       </aside>
 
       <div className="flex min-h-screen min-w-0 flex-col">
-        {/* Status bar */}
-        <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-panel-950/95 backdrop-blur">
-          <div className="flex h-12 items-center gap-3 px-3 lg:px-6">
+        {/* Status bar: the show, the projectors and the server link, on every page */}
+        <header ref={headerRef} className="sticky top-0 z-40 border-b border-white/[0.06] bg-panel-950/95 backdrop-blur">
+          <div className="flex h-12 items-center gap-2 px-3 lg:gap-3 lg:px-6">
             <Link to="/" className="flex items-center gap-2 lg:hidden" aria-label="Dashboard">
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-sky-500/15 text-sky-300" aria-hidden>
                 <ProjectorIcon size={15} strokeWidth={2} />
               </span>
             </Link>
+            <ShowStatusChip />
+            <span className="hidden h-4 w-px bg-white/[0.08] sm:block" aria-hidden />
             <SystemStatus />
             <div className="ml-auto flex items-center gap-1.5">
+              <span className="lg:hidden">
+                <JumpButton onOpen={() => setJumpOpen(true)} />
+              </span>
               {badges.alerts && (
                 <Link
                   to="/alerts"
@@ -321,43 +361,48 @@ export function AppShell({
         className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-white/[0.08] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
         aria-label="Main"
       >
-        {MOBILE_TABS.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) =>
-              classNames(
-                'relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-2xs',
-                isActive ? 'text-sky-300' : 'text-slate-400',
-              )
-            }
-          >
-            <item.icon size={19} strokeWidth={1.75} aria-hidden />
-            {item.label}
-            {item.badge && badges[item.badge] && (
-              <span
-                className={classNames(
-                  'tnum absolute right-[calc(50%-20px)] top-1.5 min-w-[16px] rounded-full px-1 text-center text-[10px] font-semibold leading-4',
-                  badges[item.badge]!.tone === 'fault' ? 'bg-red-500 text-white' : badges[item.badge]!.tone === 'warn' ? 'bg-yellow-400 text-black' : 'bg-slate-500 text-white',
-                )}
-              >
-                {badges[item.badge]!.count}
-              </span>
-            )}
-          </NavLink>
-        ))}
+        {MOBILE_TABS.map((item) => {
+          const badge = item.badge ? badges[item.badge] : null
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                classNames(
+                  'relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-2xs',
+                  isActive || (item.to === '/mapping/run' && location.pathname.startsWith('/mapping'))
+                    ? 'text-sky-300'
+                    : 'text-slate-400',
+                )
+              }
+            >
+              <item.icon size={19} strokeWidth={1.75} aria-hidden />
+              {item.label}
+              {badge && (
+                <span
+                  className={classNames(
+                    'tnum absolute right-[calc(50%-20px)] top-1.5 min-w-[16px] rounded-full px-1 text-center text-[10px] font-semibold leading-4',
+                    badge.tone === 'fault' ? 'bg-red-500 text-white' : badge.tone === 'warn' ? 'bg-yellow-400 text-black' : badge.tone === 'busy' ? 'bg-sky-500 text-white' : 'bg-slate-500 text-white',
+                  )}
+                >
+                  {badge.count}
+                </span>
+              )}
+            </NavLink>
+          )
+        })}
         <button
           className={classNames('flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-2xs', moreOpen ? 'text-sky-300' : 'text-slate-400')}
           onClick={() => setMoreOpen(true)}
           aria-expanded={moreOpen}
         >
           <MoreIcon size={19} aria-hidden />
-          More
+          Menu
         </button>
       </nav>
 
-      {/* Phone "More" sheet: the full navigation */}
+      {/* Phone menu sheet: every page, each with a line on what it is for */}
       {moreOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 animate-fade-in lg:hidden" onClick={() => setMoreOpen(false)}>
           <div
@@ -375,7 +420,10 @@ export function AppShell({
                 <CloseIcon size={18} />
               </button>
             </div>
-            <SideNav onNavigate={() => setMoreOpen(false)} />
+            <div className="mb-3">
+              <JumpButton wide onOpen={() => { setMoreOpen(false); setJumpOpen(true) }} />
+            </div>
+            <SideNav showHints onNavigate={() => setMoreOpen(false)} />
             <button className="btn-default mt-4 w-full" onClick={onSignOut}>
               <SignOutIcon size={15} aria-hidden /> Sign out
             </button>
@@ -383,6 +431,7 @@ export function AppShell({
         </div>
       )}
 
+      <JumpMenu open={jumpOpen} onClose={() => setJumpOpen(false)} />
       <ActivityPanel open={activityOpen} onClose={() => setActivityOpen(false)} />
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>

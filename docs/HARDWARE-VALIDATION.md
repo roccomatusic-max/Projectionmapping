@@ -320,7 +320,7 @@ On each Windows mini PC, with the projector as its only or main display:
 2. **Edge blend.** Set blends on the overlaps with a white pattern. Expected:
    no brighter band where two projectors overlap. Record the blend widths.
 3. **Masks.** Mask a window. Expected: it stays black, with feathered edges.
-4. **Blackout.** Press blackout on Mapping → Remote and on the phone remote.
+4. **Blackout.** Press blackout on Mapping → Run the show and on the phone remote.
    Expected: every output goes black at once.
 
 ---

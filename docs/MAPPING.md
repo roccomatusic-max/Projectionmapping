@@ -281,7 +281,7 @@ results name each projector that did not take the command, and the list
 shows the state read back from each one. Operators can run the show;
 viewers can watch it; only administrators can change it.
 
-The same buttons are on **Mapping → Remote** in the full app.
+The same buttons are on **Mapping → Run the show** in the full app.
 
 ## 6. Cameras: calibration and people
 
