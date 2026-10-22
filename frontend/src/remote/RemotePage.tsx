@@ -2,6 +2,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 import { api, clearSession, getSession, type Session } from '@/api/client'
 import type { CommandResult, Projector } from '@/api/types'
 import { ConfirmDialog } from '@/components/ui'
+import { EmergencyBanner, EmergencyStopButton, type UsePower } from '@/components/EmergencyStop'
 import {
   AddToHomeIcon,
   BlackoutIcon,
@@ -57,18 +58,52 @@ export default function RemotePage() {
       {!session ? (
         <Welcome onSignedIn={setSession} />
       ) : (
-        <>
-          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {tab === 'show' ? <ShowTab session={session} onSignOut={signOut} /> : <ProjectorsTab session={session} />}
-          </main>
-          <nav className="grid grid-cols-2 border-t border-white/[0.06] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
-            <TabButton active={tab === 'show'} onClick={() => setTab('show')} icon={<SceneIcon size={22} />} label="Show" />
-            <TabButton active={tab === 'projectors'} onClick={() => setTab('projectors')}
-              icon={<ProjectorIcon size={22} />} label="Projectors" />
-          </nav>
-        </>
+        <SignedIn session={session} tab={tab} onTab={setTab} onSignOut={signOut} />
       )}
     </div>
+  )
+}
+
+/** Each projector's power, read only while the emergency stop's report is open. */
+const usePhonePower: UsePower = () => {
+  const { projectors } = useFleet(5000)
+  return (id) => projectors.find((p) => p.id === id)?.state.power
+}
+
+function SignedIn({ session, tab, onTab, onSignOut }: {
+  session: Session
+  tab: Tab
+  onTab: (tab: Tab) => void
+  onSignOut: () => void
+}) {
+  const canRun = session.role === 'admin' || session.role === 'operator'
+  const [showId, setShowId] = useState<number | null>(() => Number(localStorage.getItem(SHOW_KEY)) || null)
+  // One live link for both tabs: the emergency stop is on either.
+  const live = useTransport(showId)
+
+  useEffect(() => {
+    if (showId != null) localStorage.setItem(SHOW_KEY, String(showId))
+  }, [showId])
+
+  return (
+    <>
+      {canRun && (
+        <div className="space-y-2 px-4 pt-2">
+          <EmergencyBanner emergency={live.transport?.emergency} canClear={canRun} variant="remote" />
+          <EmergencyStopButton variant="remote" usePower={usePhonePower} />
+        </div>
+      )}
+      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {tab === 'show'
+          ? <ShowTab session={session} onSignOut={onSignOut} showId={showId} onShowId={setShowId} live={live} />
+          : <ProjectorsTab session={session} />}
+      </main>
+      <nav className="grid grid-cols-2 border-t border-white/[0.06] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+        <TabButton active={tab === 'show'} onClick={() => onTab('show')} icon={<SceneIcon size={22} />} label="Show" />
+        <TabButton active={tab === 'projectors'} onClick={() => onTab('projectors')}
+          icon={<ProjectorIcon size={22} />} label="Projectors" />
+      </nav>
+    </>
   )
 }
 
@@ -237,15 +272,20 @@ function useTransport(showId: number | null) {
   return { show, transport, clock, link, error }
 }
 
-function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+function ShowTab({ session, onSignOut, showId, onShowId: setShowId, live }: {
+  session: Session
+  onSignOut: () => void
+  showId: number | null
+  onShowId: (update: number | null | ((current: number | null) => number | null)) => void
+  live: ReturnType<typeof useTransport>
+}) {
   const canRun = session.role === 'admin' || session.role === 'operator'
   const [shows, setShows] = useState<ShowSummary[] | null>(null)
-  const [showId, setShowId] = useState<number | null>(() => Number(localStorage.getItem(SHOW_KEY)) || null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [picked, setPicked] = useState<number | null>(null)
   const [menu, setMenu] = useState(false)
-  const { show, transport, clock, link, error } = useTransport(showId)
+  const { show, transport, clock, link, error } = live
   const [, tick] = useState(0)
 
   useEffect(() => {
@@ -256,16 +296,12 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
         setShowId((current) => (current && list.some((s) => s.id === current) ? current : list[0]?.id ?? null))
       })
       .catch((err) => setProblem(err instanceof Error ? err.message : 'Could not load the shows'))
-  }, [])
+  }, [setShowId])
 
   // Follow the show that goes live, wherever it was started from.
   useEffect(() => {
     if (transport?.show_id && transport.status !== 'stopped') setShowId(transport.show_id)
-  }, [transport?.show_id, transport?.status])
-
-  useEffect(() => {
-    if (showId != null) localStorage.setItem(SHOW_KEY, String(showId))
-  }, [showId])
+  }, [transport?.show_id, transport?.status, setShowId])
 
   useEffect(() => {
     const timer = window.setInterval(() => tick((n) => n + 1), 250)
@@ -288,6 +324,7 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
     }
   }
 
+  const held = !!transport?.emergency
   const thisShow = !!show && transport?.show_id === show.id
   const status = thisShow && transport ? transport.status : 'stopped'
   const look = STATUS[status]
@@ -392,16 +429,17 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
 
           <button
             className="group relative flex h-40 flex-col items-center justify-center overflow-hidden rounded-3xl bg-gradient-to-b from-emerald-500 to-emerald-700 text-white shadow-[0_18px_40px_-16px_rgba(16,185,129,0.75),inset_0_1px_0_rgba(255,255,255,0.25)] transition duration-100 active:scale-[0.97] active:from-emerald-400 disabled:from-panel-750 disabled:to-panel-800 disabled:text-slate-500 disabled:shadow-none"
-            disabled={!canRun || busy || !next}
+            disabled={!canRun || busy || !next || held}
             onClick={() => void command('go')}
           >
             <span className="text-6xl font-bold tracking-wider">GO</span>
-            {next && <span className="mt-1 max-w-[85%] truncate text-sm font-medium text-white/80">{next.name || `Cue ${nextIndex + 1}`}</span>}
+            {held ? <span className="mt-1 text-sm font-medium">Held by the emergency stop</span>
+              : next && <span className="mt-1 max-w-[85%] truncate text-sm font-medium text-white/80">{next.name || `Cue ${nextIndex + 1}`}</span>}
           </button>
 
           <div className="grid grid-cols-3 gap-3">
             {status === 'paused' ? (
-              <BigButton icon={<SceneIcon size={22} />} label="Resume" disabled={!canRun || busy} onClick={() => void command('resume')} />
+              <BigButton icon={<SceneIcon size={22} />} label="Resume" disabled={!canRun || busy || held} onClick={() => void command('resume')} />
             ) : (
               <BigButton icon={<PauseIcon size={22} />} label="Pause" disabled={!canRun || busy || status !== 'playing'}
                 onClick={() => void command('pause')} />
@@ -434,7 +472,7 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
                     </button>
                     {open && (
                       <div className="flex gap-2 px-4 pb-4">
-                        <button className="btn-primary flex-1 rounded-xl py-3 text-[15px]" disabled={!canRun || busy}
+                        <button className="btn-primary flex-1 rounded-xl py-3 text-[15px]" disabled={!canRun || busy || held}
                           onClick={() => {
                             setPicked(null)
                             void command('goto', cue.position)

@@ -105,6 +105,9 @@ export function describeShow(status: ShowStatus): { label: string; tone: Tone; d
   const cue = t?.current
   const cueText = cue ? `cue ${cue.position + 1}${cue.name ? ` · ${cue.name}` : ''}` : ''
   const show = status.showName ?? 'the show'
+  if (t?.emergency) {
+    return { label: 'Stopped (emergency)', tone: 'fault', detail: 'The emergency stop is on: every output is black' }
+  }
   switch (t?.status) {
     case 'playing':
       return { label: 'Playing', tone: 'ok', detail: `${show}, ${cueText}` }
@@ -132,8 +135,8 @@ export function ShowStatusChip() {
         title={`Show: ${label}. ${detail}. Click to open Run the show.`}
       >
         <StatusDot tone={tone} pulse={tone === 'ok'} />
-        <span className={classNames('whitespace-nowrap font-medium', tone === 'fault' ? 'text-red-300' : 'text-slate-100')}>
-          Show {label.toLowerCase()}
+        <span className={classNames('truncate font-medium', tone === 'fault' ? 'text-red-300' : 'text-slate-100')}>
+          {status.transport?.emergency ? 'Emergency stop on' : `Show ${label.toLowerCase()}`}
         </span>
         {status.transport?.current && (status.transport.status === 'playing' || status.transport.status === 'paused') && (
           <span className="hidden min-w-0 truncate text-slate-400 md:inline">

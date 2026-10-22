@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.routes import (
     auth,
     automation,
+    emergency,
     enclosure,
     groups,
     integration,
@@ -50,6 +51,7 @@ from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
 from app.services.device_manager import manager
 from app.services.discovery import discovery
+from app.services.emergency import emergency as emergency_stop
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
@@ -137,6 +139,7 @@ async def lifespan(_: FastAPI):
     await prepare_database()
     await bootstrap_admin()
     await load_projectors()
+    await emergency_stop.restore()
     await monitor.start()
     await alerting.start()
     await automation_engine.start()
@@ -235,7 +238,7 @@ for router in (
     system.router, auth.router, projectors.router, groups.router,
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
-    mapping_maps.router, updates.router,
+    mapping_maps.router, updates.router, emergency.router,
     ws.router,
 ):
     app.include_router(router, prefix="/api")

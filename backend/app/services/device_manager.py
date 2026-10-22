@@ -45,6 +45,8 @@ log = logging.getLogger(__name__)
 class Priority(IntEnum):
     """Lower sorts first. Operator intent always outranks housekeeping."""
 
+    #: The emergency stop: ahead of everything, operator commands included.
+    EMERGENCY = -1
     USER = 0
     AUTOMATION = 1
     VERIFY = 2
@@ -277,11 +279,14 @@ class DeviceWorker:
                 return
             if item.priority <= Priority.AUTOMATION:
                 self._urgent_waiting -= 1
-            if item.future is not None and item.future.done():
+            if (item.future is not None and item.future.done()
+                    and item.priority != Priority.EMERGENCY):
                 # The caller stopped waiting (its timeout fired) while this
                 # sat in the queue, and was told the command did not reach
                 # the device. Sending it now, minutes later, would make that
                 # untrue: a power-off nobody is waiting for any more.
+                # The emergency stop is the exception: it was told "still
+                # trying", and late is better than never for that one.
                 self._queue.task_done()
                 continue
             try:
@@ -407,10 +412,21 @@ class DeviceWorker:
 
     # -- power held during cool-down ---------------------------------------
 
-    def _cancel_power_queue(self) -> None:
+    def _cancel_power_queue(self) -> bool:
         task, self._power_queue = self._power_queue, None
         if task is not None and not task.done():
             task.cancel()
+            return True
+        return False
+
+    def cancel_held_power(self) -> bool:
+        """Drop a power command waiting for cool-down; True if there was one.
+
+        The emergency stop calls this for a projector it does not send a
+        power off to (already off or cooling), so a power on held from
+        before cannot switch it back on a minute later.
+        """
+        return self._cancel_power_queue()
 
     def _queue_power(self, params: Mapping[str, Any], refusal: CommandResult) -> CommandResult:
         state = str(params.get("state", "")).strip().lower()

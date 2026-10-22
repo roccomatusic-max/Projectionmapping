@@ -173,6 +173,14 @@ export interface TransportState {
   paused_position: number | null
   revision: number
   server_time_ms: number
+  /** Set while the emergency stop is on: outputs draw nothing, GO is held. */
+  emergency?: EmergencyState | null
+}
+
+export interface EmergencyState {
+  /** Server epoch milliseconds when it was pressed. */
+  at_ms: number
+  by: string | null
 }
 
 export type TransportAction = 'go' | 'goto' | 'pause' | 'resume' | 'stop' | 'blackout'

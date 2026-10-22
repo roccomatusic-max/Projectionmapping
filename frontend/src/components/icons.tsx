@@ -67,6 +67,7 @@ export {
   Moon as BlackoutIcon,
   MonitorDot as RgbIcon,
   Network as DigitalLinkIcon,
+  OctagonX as EmergencyIcon,
   Pause as PauseIcon,
   Pencil as EditIcon,
   Play as SceneIcon,

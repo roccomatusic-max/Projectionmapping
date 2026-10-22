@@ -31,6 +31,10 @@ expensive, hard to reach, and the show starts whether or not they came up.
   with CSV export
 - **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout
   and projector power, from anywhere through Tailscale (Phone remote page)
+- **Emergency stop** — one press-and-hold button on every page and on the
+  phone remote: stops the show, blacks out every mini PC, stops automations
+  and turns every projector off, reporting each projector on its own
+  ([SAFETY.md](docs/SAFETY.md))
 - **Integrations** — documented REST API, WebSocket live feed, MQTT with Home
   Assistant auto-discovery
 - **Enclosure monitoring** — temperature, humidity, leak and fan sensors, with

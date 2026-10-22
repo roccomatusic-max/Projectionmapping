@@ -189,8 +189,9 @@ export function OutputScreen({
   }, [output])
 
   // Hide the cursor over the image once the overlay is away. During a
-  // calibration nothing but the pattern may be on screen.
-  const showHud = hud && !calibration
+  // calibration nothing but the pattern may be on screen, and during the
+  // emergency stop nothing at all.
+  const showHud = hud && !calibration && !transport?.emergency
   const cursor = showHud ? 'default' : 'none'
 
   if (error) return <Message text={error} />

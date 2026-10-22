@@ -150,6 +150,8 @@ matching how projector configuration is gated.
 | POST | `/maps` | Load a map file (a clashing name gets a number added) |
 | GET | `/transport` | Current transport state |
 | POST | `/transport` | `go`, `goto`, `pause`, `resume`, `stop`, `blackout` |
+| POST | `/api/emergency/stop` | Emergency stop: show black, automations held, every projector off; one result per projector (see [SAFETY.md](SAFETY.md)) |
+| POST | `/api/emergency/clear` | Lift the emergency stop; turns nothing back on |
 | GET | `/clock` | Server time, for the clock-offset estimate |
 | POST | `/outputs/{id}/identify` | Flash the output's name on its windows and players |
 | POST | `/players/hello` | Unauthenticated: a player introduces itself and polls for approval |

@@ -53,6 +53,8 @@ export interface Frame {
   surfaces: Surface[]
   /** Outputs showing a picture of their own (or none) in the live cue. */
   separate: number[]
+  /** The emergency stop is on: draw nothing at all, not even a test pattern. */
+  emergency: boolean
 }
 
 const NONE: number[] = []
@@ -321,13 +323,15 @@ export class Playback {
     const surfaces = this.surfaces
     if (this.preview) {
       const scenes = this.sceneItems(state, now, 1, outputId)
-      return { a: this.backdrop, b: null, mix: 1, blackout: false, drift: null, scenes, people, surfaces, separate: NONE }
+      // A scene being tried out in the editor, on this computer only.
+      return { a: this.backdrop, b: null, mix: 1, blackout: false, drift: null, scenes, people, surfaces, separate: NONE, emergency: false }
     }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) {
       const scenes = this.sceneItems(state, now, 1, outputId)
       return {
         a: null, b: null, mix: 1, blackout: scenes.length === 0, drift: null, scenes, people, surfaces,
         separate: this.separate(state?.current ?? null),
+        emergency: !!state?.emergency,
       }
     }
     let mix = 1
@@ -360,6 +364,7 @@ export class Playback {
       people,
       surfaces,
       separate: this.separate(state.current),
+      emergency: !!state.emergency,
     }
   }
 
