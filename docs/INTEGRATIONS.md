@@ -81,6 +81,12 @@ with `429` and `Retry-After`.
 
 ## Home Assistant
 
+**Use the Projector Control integration: see [HOME-ASSISTANT.md](HOME-ASSISTANT.md).**
+One line pasted into Home Assistant's Terminal installs it; it gives a
+device per projector (power, shutter, input, temperatures) and the show's
+GO, cues and emergency stop. The two options below predate it and still
+work for setups that want YAML or MQTT.
+
 ### Option A — REST (no broker)
 
 `/api/integration/homeassistant/discovery` returns every projector with its

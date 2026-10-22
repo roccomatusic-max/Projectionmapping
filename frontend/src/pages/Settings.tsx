@@ -12,15 +12,17 @@ import {
   PageHeader,
 } from '@/components/ui'
 import AppUpdates from '@/components/AppUpdates'
+import HomeAssistantSetup from '@/components/HomeAssistantSetup'
 import SceneAiKey from '@/components/SceneAiKey'
 import { ClockIcon, LiveIcon, ProjectorIcon, SettingsIcon, TokenIcon, UsersIcon } from '@/components/icons'
 
-type SettingsPart = 'account' | 'ai' | 'people' | 'technical'
+type SettingsPart = 'account' | 'ai' | 'homeassistant' | 'people' | 'technical'
 
 const SETTINGS_PARTS: Array<{ id: SettingsPart; label: string; hint: string; admin?: boolean }> = [
   { id: 'account', label: 'Updates and password', hint: 'Update the app and change your password.' },
   { id: 'ai', label: 'AI keys', hint: 'Optional keys for “Describe a scene” and “Paint the house”.', admin: true },
-  { id: 'people', label: 'Users and tokens', hint: 'Who can sign in, and keys for Home Assistant or scripts.', admin: true },
+  { id: 'homeassistant', label: 'Home Assistant', hint: 'Control projectors and the show from Home Assistant.', admin: true },
+  { id: 'people', label: 'Users and tokens', hint: 'Who can sign in, and keys for scripts and sensors.', admin: true },
   { id: 'technical', label: 'Technical details', hint: 'How often projectors are checked, connections and what each make supports.' },
 ]
 
@@ -63,7 +65,7 @@ export default function Settings({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={SettingsIcon} title="Settings" subtitle="App updates, your password, AI keys and who can sign in." />
+      <PageHeader icon={SettingsIcon} title="Settings" subtitle="App updates, your password, AI keys, Home Assistant and who can sign in." />
       {error && <ErrorBanner message={error} />}
 
       <SectionBar label="Settings sections" sections={parts} value={part} onChange={setPart} />
@@ -84,6 +86,10 @@ export default function Settings({ session }: { session: Session }) {
       )}
 
       {part === 'ai' && isAdmin && <SceneAiKey />}
+
+      {part === 'homeassistant' && isAdmin && (
+        <HomeAssistantSetup onToast={(tone, title, detail) => push(tone, title, detail)} />
+      )}
 
       {part === 'technical' && (
         <>
@@ -197,7 +203,7 @@ export default function Settings({ session }: { session: Session }) {
         <Panel
           icon={TokenIcon}
           title="Service tokens"
-          description="Long-lived tokens for Home Assistant, scripts and enclosure sensors. A token carries its user's role; deactivating the user revokes it."
+          description="Long-lived tokens for scripts and enclosure sensors (Home Assistant has its own page). A token carries its user's role; deactivating the user revokes it."
         >
           <ServiceTokens
             users={users}

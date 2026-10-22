@@ -39,3 +39,6 @@ backend/static/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Left by the Home Assistant install line; never part of the integration.
+custom_components/projector_control/pairing.json

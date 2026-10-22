@@ -225,8 +225,10 @@ export const PLACES: Place[] = [
     hint: 'Check for a new version, install it, change your password.', keywords: 'update version install account' },
   { to: '/settings?part=ai', label: 'AI keys', where: 'Settings', icon: SettingsIcon,
     hint: 'Optional Anthropic and OpenAI keys for describing and painting scenes.', keywords: 'anthropic openai claude key api' },
+  { to: '/settings?part=homeassistant', label: 'Home Assistant', where: 'Settings', icon: SettingsIcon,
+    hint: 'Connect Home Assistant: one line to paste, then Submit.', keywords: 'home assistant hass ha integration smart home hacs key' },
   { to: '/settings?part=people', label: 'Users and tokens', where: 'Settings', icon: SettingsIcon,
-    hint: 'Who can sign in, and tokens for Home Assistant or scripts.', keywords: 'user add viewer operator admin token home assistant' },
+    hint: 'Who can sign in, and tokens for scripts and sensors.', keywords: 'user add viewer operator admin token' },
   { to: '/settings?part=technical', label: 'Technical details', where: 'Settings', icon: SettingsIcon,
     hint: 'How often projectors are checked, open connections, what each make supports.', keywords: 'polling poll drivers connections queue' },
 ]

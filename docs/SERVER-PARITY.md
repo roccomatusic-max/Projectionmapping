@@ -54,6 +54,7 @@ Windows Server 2022 and 2025 machines for every change
 | Name on the network | `name.local` (Bonjour) | `NAME` from other Windows PCs; `name.local` may work, not confirmed; the number always does | noted in CI, not provable from one machine |
 | Tailscale link on the Phone remote page | Mac download | Windows download | CI checks the server reports Windows to that page |
 | Settings → App updates | yes | yes, same panel | CI shows it with the right version |
+| Settings → Home Assistant (integration bundled in the app, install line, key) | yes | yes, same files and endpoints | both builds' `--check` downloads the bundled integration; Home Assistant itself tested on Linux CI only |
 | Install updates by themselves | on, quiet rules, every 15 min | same code | unit tests (shared) |
 | Check now → Install, then refresh | swaps the bundle, launchd restarts | stages the new copy; a watcher stops the service, swaps, starts | CI installs a newer build through the panel's API |
 | Rollback within 2 minutes | yes | yes | CI installs a broken build and sees the old one come back |

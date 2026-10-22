@@ -203,6 +203,7 @@ docs/                 Protocol research, architecture, deployment, validation,
 | [HARDWARE-VALIDATION.md](docs/HARDWARE-VALIDATION.md) | Stage-by-stage procedure for validating against a real projector |
 | [SAFETY.md](docs/SAFETY.md) | What this software is and is not responsible for |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Reading outcomes, connection problems, missing telemetry |
+| [HOME-ASSISTANT.md](docs/HOME-ASSISTANT.md) | Home Assistant: one line to install, projectors and the show as devices |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | REST, WebSocket, MQTT, Home Assistant, enclosure sensors, service tokens |
 | [DESKTOP.md](docs/DESKTOP.md) | Running it as a desktop application instead of a server |
 | [MAC-SERVER.md](docs/MAC-SERVER.md) | The Mac app: download, open, and it runs as an always-on server that updates itself |
