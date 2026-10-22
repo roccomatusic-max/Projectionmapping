@@ -10,12 +10,14 @@ on:
       - "backend/**"
       - "frontend/**"
       - "desktop/**"
+      - "custom_components/**"
       - ".github/workflows/mac.yml"
   pull_request:
     paths:
       - "backend/**"
       - "frontend/**"
       - "desktop/**"
+      - "custom_components/**"
       - ".github/workflows/mac.yml"
   workflow_dispatch:
 

@@ -44,9 +44,13 @@ if sys.platform == "win32":
     hiddenimports += ["servicemanager", "win32service", "win32serviceutil", "win32event",
                       "win32timezone", "pywintypes"]
 
+#: Served to Home Assistant by Settings → Home Assistant (app/paths.py).
+ha_integration = ROOT / "custom_components" / "projector_control"
+
 datas = (
     [(str(static), "static"), (str(BACKEND / "alembic"), "alembic"),
-     (str(version_file), ".")]
+     (str(version_file), "."),
+     (str(ha_integration), "homeassistant/projector_control")]
     + collect_data_files("tzdata")
     + collect_data_files("certifi")
 )

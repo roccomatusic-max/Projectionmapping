@@ -260,6 +260,16 @@ def self_check(app, host: str, port: int, log: logging.Logger) -> int:
                 healthy = response.status == 200
         except Exception:  # noqa: BLE001 - not up yet
             time.sleep(0.5)
+    if healthy:
+        # The Home Assistant integration ships inside the app (Settings →
+        # Home Assistant installs it from here); a build without it is broken.
+        package = f"http://127.0.0.1:{port}/api/integration/homeassistant/package.tar.gz"
+        try:
+            with urllib.request.urlopen(package, timeout=10) as response:  # noqa: S310
+                healthy = response.read(2) == b"\x1f\x8b"
+        except Exception as exc:  # noqa: BLE001 - reported below
+            log.error("self-check: Home Assistant integration missing (%s)", exc)
+            healthy = False
     server.should_exit = True
     thread.join(timeout=30)
     log.info("self-check: %s", "healthy" if healthy else "FAILED")

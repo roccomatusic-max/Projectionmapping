@@ -1,0 +1,110 @@
+{
+  "config": {
+    "step": {
+      "pair": {
+        "title": "Connect to Projector Control",
+        "description": "Your install line found Projector Control at {url}. Press Submit to connect. Change the address only if the server has moved.",
+        "data": {
+          "url": "Server address"
+        }
+      },
+      "key": {
+        "title": "Connect to Projector Control",
+        "description": "In Projector Control open Settings > Home Assistant and press \"Make a key\". Copy the server address and the key from there into the boxes below.",
+        "data": {
+          "url": "Server address (for example 192.168.1.50:8765)",
+          "key": "Key"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Projector Control needs a new key",
+        "description": "Projector Control at {url} no longer accepts Home Assistant's key. In Projector Control open Settings > Home Assistant, press \"Make a key\", and paste it here.",
+        "data": {
+          "key": "Key"
+        }
+      },
+      "reconfigure": {
+        "title": "Change the Projector Control server",
+        "description": "Leave the key empty to keep the one Home Assistant already has.",
+        "data": {
+          "url": "Server address",
+          "key": "Key (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Home Assistant could not reach Projector Control at that address. Check the server is on and the address is right.",
+      "invalid_auth": "Projector Control did not accept that key. Make a new one under Settings > Home Assistant.",
+      "pairing_used": "The install line's code was already used or is more than an hour old. Make a key in Projector Control (Settings > Home Assistant > Make a key) and paste it below.",
+      "unknown": "Something unexpected went wrong. Check the address points at Projector Control."
+    },
+    "abort": {
+      "already_configured": "This Projector Control server is already added.",
+      "reauth_successful": "Connected again.",
+      "reconfigure_successful": "Saved."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "emergency": { "name": "Emergency stop on" },
+      "connected": { "name": "Connected" },
+      "problem": { "name": "Problem" }
+    },
+    "button": {
+      "go": { "name": "GO" },
+      "pause": { "name": "Pause" },
+      "resume": { "name": "Resume" },
+      "stop": { "name": "Stop" },
+      "blackout": { "name": "Blackout" },
+      "emergency_stop": { "name": "Emergency stop" },
+      "emergency_clear": { "name": "Clear emergency stop" }
+    },
+    "select": {
+      "show_select": { "name": "Show" },
+      "cue_select": { "name": "Jump to cue" },
+      "input": { "name": "Input" }
+    },
+    "sensor": {
+      "show_status": {
+        "name": "Show status",
+        "state": {
+          "playing": "Playing",
+          "paused": "Paused",
+          "stopped": "Stopped",
+          "blackout": "Blackout",
+          "emergency_stop": "Emergency stop"
+        }
+      },
+      "show_name": { "name": "Show playing" },
+      "cue": { "name": "Cue" },
+      "alerts": { "name": "Open alerts" },
+      "mini_pcs_online": { "name": "Mini PCs online" },
+      "power_state": {
+        "name": "Power state",
+        "state": {
+          "on": "On",
+          "off": "Off (standby)",
+          "warming": "Warming up",
+          "cooling": "Cooling down"
+        }
+      },
+      "input_now": { "name": "Input now" },
+      "lamp_hours": { "name": "Light source hours" },
+      "fan": {
+        "name": "Fans",
+        "state": { "ok": "OK", "warning": "Warning", "error": "Fault" }
+      },
+      "temperature_condition": {
+        "name": "Temperature condition",
+        "state": { "ok": "OK", "warning": "Warning", "error": "Fault" }
+      }
+    },
+    "switch": {
+      "power": { "name": "Power" },
+      "shutter": { "name": "Shutter open" }
+    },
+    "update": {
+      "integration_update": { "name": "Integration" }
+    }
+  }
+}

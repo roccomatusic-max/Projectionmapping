@@ -57,6 +57,7 @@ export {
   Focus as LensIcon,
   Gamepad2 as RemoteIcon,
   Globe as AnywhereIcon,
+  House as HomeAssistantIcon,
   KeyRound as TokenIcon,
   Layers as GroupsIcon,
   LayoutDashboard as DashboardIcon,
