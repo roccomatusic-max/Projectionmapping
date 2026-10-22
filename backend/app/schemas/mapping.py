@@ -401,6 +401,15 @@ class TransportCue(BaseModel):
     started_at_ms: float
 
 
+class EmergencyState(BaseModel):
+    """The emergency stop, while it is on: every output black, shows held."""
+
+    #: Server epoch milliseconds when it was pressed.
+    at_ms: float
+    #: Who pressed it.
+    by: str | None = None
+
+
 class TransportState(BaseModel):
     show_id: int | None = None
     status: Literal["stopped", "playing", "paused", "blackout"] = "stopped"
@@ -414,6 +423,10 @@ class TransportState(BaseModel):
     #: Bumped on every change, so a client can ignore a stale message.
     revision: int = 0
     server_time_ms: float = 0.0
+    #: Set while the emergency stop is on. Outputs draw nothing at all, not
+    #: even a test pattern or a calibration frame, and GO is refused until
+    #: someone clears it.
+    emergency: EmergencyState | None = None
 
 
 # -- players -------------------------------------------------------------------
@@ -764,3 +777,37 @@ class PaintHouse(BaseModel):
     #: The picture, as base64 JPEG or PNG, already the canvas's shape.
     image: str = Field(min_length=100, max_length=30_000_000)
     show_id: int
+
+
+# -- emergency stop --------------------------------------------------------------
+
+
+class EmergencyProjector(BaseModel):
+    projector_id: int
+    name: str | None = None
+    #: "off" (took the power off), "waiting" (busy; held and sent by itself
+    #: once it accepts), "already_off" (off or cooling; nothing sent),
+    #: "failed" (did not take it; may still be on).
+    result: Literal["off", "waiting", "already_off", "failed"]
+    #: What happened, in words, for the operator.
+    detail: str
+    #: Raw outcomes of the commands sent, when they were sent.
+    shutter: str | None = None
+    power: str | None = None
+    error: str | None = None
+
+
+class EmergencyPlayer(BaseModel):
+    id: int
+    name: str
+    #: Connected now, so it went black at once; one that is not goes black
+    #: as soon as it reconnects.
+    online: bool
+
+
+class EmergencyResult(BaseModel):
+    transport: TransportState
+    projectors: list[EmergencyProjector] = Field(default_factory=list)
+    players: list[EmergencyPlayer] = Field(default_factory=list)
+    #: Names of the automations that were running and were stopped.
+    automations_stopped: list[str] = Field(default_factory=list)

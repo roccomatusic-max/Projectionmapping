@@ -322,6 +322,14 @@ On each Windows mini PC, with the projector as its only or main display:
 3. **Masks.** Mask a window. Expected: it stays black, with feathered edges.
 4. **Blackout.** Press blackout on Mapping → Run the show and on the phone remote.
    Expected: every output goes black at once.
+5. **Emergency stop.** With the show playing and every projector on, hold the
+   red Emergency stop button in the top bar for a second. Expected: every
+   output goes black at once, each projector's shutter closes and it turns
+   off, and the window lists every projector with what it did. Press Clear in
+   the red bar, turn the projectors back on and press GO. Repeat from the
+   phone remote, and once while a projector is still warming up (expected:
+   "Turning off when ready", then off by itself). Record how long each
+   projector took to go dark.
 
 ---
 

@@ -14,6 +14,7 @@ import { isLive } from '@/lib/status'
 import { phaseIsActive, useFleetContext, useOps } from '@/live/LiveProvider'
 import { useTicker } from '@/hooks/useLiveData'
 import { Banner, StatusDot, ToastStack } from '../ui'
+import { EmergencyBanner, EmergencyStopButton, type UsePower } from '../EmergencyStop'
 import {
   AlertsIcon,
   CloseIcon,
@@ -39,6 +40,18 @@ const MOBILE_TABS: Array<Pick<NavItem, 'to' | 'label' | 'icon' | 'end' | 'badge'
   { to: '/projectors', label: 'Projectors', icon: ProjectorIcon, badge: 'offline' },
   { to: '/alerts', label: 'Alerts', icon: AlertsIcon, badge: 'alerts' },
 ]
+
+/** Each projector's power as the live feed has it, for the emergency stop's report. */
+const useFleetPower: UsePower = () => {
+  const { projectors } = useFleetContext()
+  return (id) => projectors.find((p) => p.id === id)?.state.power
+}
+
+/** On every page while the emergency stop is on. */
+function EmergencyBar({ canClear }: { canClear: boolean }) {
+  const { transport } = useShowStatus()
+  return <EmergencyBanner emergency={transport?.emergency} canClear={canClear} />
+}
 
 type BadgeInfo = { count: number; tone: 'idle' | 'warn' | 'fault' | 'busy'; title: string } | null
 
@@ -158,7 +171,8 @@ function SystemStatus() {
     <div className="flex min-w-0 items-center gap-3 text-xs">
       <span className="flex items-center gap-1.5 whitespace-nowrap" title={title}>
         <StatusDot tone={tone} pulse={tone !== 'ok'} />
-        <span className={classNames(tone === 'ok' ? 'text-slate-300' : tone === 'warn' ? 'text-yellow-300' : 'text-red-300')}>
+        {/* On a phone the green dot says "connected"; the words make room for Stop. */}
+        <span className={classNames(tone === 'ok' ? 'hidden text-slate-300 sm:inline' : tone === 'warn' ? 'text-yellow-300' : 'text-red-300')}>
           {label}
         </span>
         {lastSync && wsStatus !== 'open' && (
@@ -271,6 +285,7 @@ function Shell({
   }, [])
 
   const inFlight = commands.filter((c) => phaseIsActive(c.phase)).length
+  const canStop = session.role === 'admin' || session.role === 'operator'
 
   const activityButton = (
     <button
@@ -327,6 +342,7 @@ function Shell({
             <span className="hidden h-4 w-px bg-white/[0.08] sm:block" aria-hidden />
             <SystemStatus />
             <div className="ml-auto flex items-center gap-1.5">
+              {canStop && <EmergencyStopButton variant="bar" usePower={useFleetPower} />}
               <span className="lg:hidden">
                 <JumpButton onOpen={() => setJumpOpen(true)} />
               </span>
@@ -348,6 +364,7 @@ function Shell({
               <Clock />
             </div>
           </div>
+          <EmergencyBar canClear={canStop} />
           <CriticalBanner />
         </header>
 

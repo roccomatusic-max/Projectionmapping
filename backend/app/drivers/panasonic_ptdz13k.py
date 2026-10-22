@@ -387,6 +387,11 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
                 )
             if state is PowerState.OFF and self._cooling():
                 state = await self._cooling_state()
+            elif state is PowerState.OFF and self._warming():
+                # Power on was accepted and the projector is still starting:
+                # some units read standby until the lamp has struck. Saying
+                # "off" here would let a held power off count as done.
+                state = PowerState.WARMING
             result.outcome = CommandOutcome.OK
             result.value = state
         return result

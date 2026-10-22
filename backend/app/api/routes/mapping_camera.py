@@ -118,6 +118,10 @@ def _output_changed(output: MappingOutput) -> OutputOut:
              dependencies=[Depends(write_rate_limit)])
 async def request_calibration(output_id: int, payload: CalibrateRequest, session: SessionDep,
                               admin: RequireAdmin) -> dict:
+    if transport.snapshot().emergency is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="The emergency stop is on, so every output is black. "
+                                   "Clear it first, then calibrate.")
     output = await _load_output(session, output_id)
     camera = await _load_camera(session, payload.camera_id)
     if not camera.approved:
