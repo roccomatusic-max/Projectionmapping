@@ -161,7 +161,8 @@ matching how projector configuration is gated.
 | POST | `/players/me` | A player's heartbeat; returns its assignment |
 | POST | `/outputs/{id}/calibrate` | Ask a camera to calibrate this output |
 | POST | `/calibration/step` | Camera only: the pattern every window of the show should show now |
-| PUT · GET · DELETE | `/outputs/{id}/calibration` | The decoded camera → projector map (PUT is camera only) |
+| PUT · GET · DELETE | `/outputs/{id}/calibration` | The decoded camera → projector map (PUT is camera only); DELETE undoes that output's calibration (see below) |
+| POST | `/shows/{id}/remove-calibration` | Undo the show's calibration: every calibrated output back to its slice and warp from before, the camera placement too, and a run in progress stopped |
 | POST | `/shows/{id}/fit-canvas` | Place the canvas inside the projectors' light on the camera photo, and optionally set each output's slice from its light |
 | POST | `/shows/{id}/apply-calibration` | Set calibrated outputs' corner pin and mesh from the camera |
 | PUT | `/cameras/me/snapshot` | Camera only: its current photo |
@@ -320,6 +321,23 @@ there. Where the camera saw no light, a flat-wall homography fitted to all
 decoded cells fills in, carrying the measured curvature a few cells past the
 edge of the light. In a test with the real output window photographed
 through a simulated camera, the corners land within 2 projector pixels.
+
+**Undoing a calibration.** When the camera first uploads a result for an
+output, the server keeps that output's slice and warp as they were, and the
+show's camera placement, with the calibration (`before`; a second run of
+the same output keeps the first one's). **Remove calibration** on the Camera
+tab (`remove-calibration`) puts every calibrated output of the show back to
+that, forgets the calibration and the placement, and so turns off the
+automatic blend the calibration switched on; hand changes made since the
+calibration go with it, and outputs never calibrated are not touched.
+**Remove** on one projector's row (`DELETE /outputs/{id}/calibration`) does
+the same for that output; the placement goes back once no output of the
+show is calibrated. Both also stop a run in progress: the output windows go
+back to the show at once, and the server refuses that output's further
+patterns and result until it is asked to calibrate again, which ends the run
+on the camera (no mini PC update needed). Calibrations made before this
+existed have no `before`: their outputs go back to a flat corner pin, side
+by side as a new show lays them out.
 
 **Cameras** are found by the agent itself (`camera-agent/sources.py`): an
 Intel RealSense, Orbbec or Luxonis OAK depth camera through its maker's SDK,

@@ -85,7 +85,7 @@ export const NAV: NavSection[] = [
         label: 'Camera',
         icon: CameraIcon,
         hint: 'Line the projectors up with the building and track people.',
-        keywords: 'calibrate calibration patterns correct depth tracking',
+        keywords: 'calibrate calibration patterns correct depth tracking remove undo calibration',
       },
       {
         to: '/mapping/players',

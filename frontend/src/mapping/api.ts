@@ -92,8 +92,12 @@ export const mappingApi = {
 
   calibrate: (outputId: number, cameraId: number) =>
     request<void>(`/mapping/outputs/${outputId}/calibrate`, { method: 'POST', body: { camera_id: cameraId } }),
+  /** Undo one output's calibration: back to its slice and warp from before. */
   clearCalibration: (outputId: number) =>
     request<void>(`/mapping/outputs/${outputId}/calibration`, { method: 'DELETE' }),
+  /** Undo the whole show's calibration and stop one still running. */
+  removeCalibration: (showId: number) =>
+    request<{ restored: number[] }>(`/mapping/shows/${showId}/remove-calibration`, { method: 'POST' }),
   applyCalibration: (showId: number, mesh: number) =>
     request<ApplyResult[]>(`/mapping/shows/${showId}/apply-calibration`, { method: 'POST', body: { mesh } }),
   calibrationGrid: (outputId: number) => request<CalibrationGrid>(`/mapping/outputs/${outputId}/calibration`),
