@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
-import { enterFullscreen, OutputScreen } from './OutputPage'
+import { enterFullscreen, OutputScreen, OVERLAY_EVENT } from './OutputPage'
 import { trackingDelayMs } from './people'
 import type { Show } from './types'
 
@@ -29,6 +29,16 @@ interface Assignment {
   name: string
   output_id: number | null
   show_id: number | null
+  /** Asked from the Players page, each to do once: "reload", "overlay_on", "overlay_off". */
+  commands?: string[]
+}
+
+function obey(commands: string[] | undefined) {
+  for (const command of commands ?? []) {
+    if (command === 'reload') window.location.reload()
+    if (command === 'overlay_on' || command === 'overlay_off')
+      window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: command === 'overlay_on' }))
+  }
 }
 
 type CacheState = { mode: 'off' | 'syncing' | 'on'; bytes: number; failed: number }
@@ -118,6 +128,7 @@ export default function PlayerPage() {
         method: 'POST',
         body: { ...stats.current, cache: cache.mode, cached_bytes: cache.bytes },
       })
+      obey(next.commands)
       setAssignment((current) =>
         current &&
         current.output_id === next.output_id &&
@@ -226,6 +237,9 @@ export default function PlayerPage() {
           height: s.height,
           cue: s.cue,
           people_ms: trackingDelayMs(),
+          clock_ms: s.clockMs,
+          link: s.link,
+          overlay: s.overlay,
         }
       }}
       hudExtra={

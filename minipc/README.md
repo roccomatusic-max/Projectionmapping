@@ -109,6 +109,12 @@ and set it to the projector's native resolution.
   the clock (under the ^ arrow) and choose **Quit**. It starts again at the
   next sign-in, or from the Start menu.
 - **Restart the output** in the same menu reopens the window.
+- **From the Players page** (Mapping → Players, on any computer or phone):
+  each mini PC has Restart output, Restart computer, Shut down and, once it
+  is off, Turn on (Wake-on-LAN, if its BIOS allows it), plus test pictures
+  and an info overlay for its projector. Restart computer and Shut down
+  need a Mini PC app installed after these controls arrived: paste the
+  install line once.
 - **Updating**: paste the install line again (or run the new MiniPC-Setup.exe
   over the old one). It does not update by itself.
 - **Removing**: Settings → Apps → Mini PC → Uninstall.

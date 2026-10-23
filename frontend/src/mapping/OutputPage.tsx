@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { withDefaults } from './geometry'
-import { useLocalChannel } from './live'
+import { type LinkStatus, useLocalChannel } from './live'
 import { type CalibrationFrame, type FrameStats, OutputView } from './OutputView'
 import type { CalibrationStepMessage, Show } from './types'
 import { useShowRuntime } from './useShowRuntime'
@@ -38,6 +38,21 @@ const STATUS_LABEL = {
   blackout: 'Blackout',
 } as const
 
+/** What a player reports about its picture, for the Players page. */
+export type OutputStats = FrameStats & {
+  width: number
+  height: number
+  cue: string | null
+  /** Half the round trip to the server clock (ms), null until it is set. */
+  clockMs: number | null
+  link: LinkStatus
+  /** The status overlay is on the projector. */
+  overlay: boolean
+}
+
+/** A player page asks its output to show or hide the status overlay with this event. */
+export const OVERLAY_EVENT = 'pc:player-overlay'
+
 /** An output window opened from the editor on an operator's computer. */
 export default function OutputPage() {
   const params = useParams()
@@ -62,7 +77,7 @@ export function OutputScreen({
   /** Set on a paired player, so "identify" requests for it are honoured. */
   playerId?: number
   hudExtra?: ReactNode
-  onStats?: (stats: FrameStats & { width: number; height: number; cue: string | null }) => void
+  onStats?: (stats: OutputStats) => void
   /** The show, and the pictures its cues' scenes show, to download ahead. */
   onShow?: (show: Show, sceneMedia: number[]) => void
 }) {
@@ -135,13 +150,29 @@ export function OutputScreen({
     if (show) onShow?.(show, sceneMedia)
   }, [show, sceneMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const statsRef = useRef({ size, transport })
-  statsRef.current = { size, transport }
+  // Shown when asked from the Players page; H on a keyboard still toggles it.
+  useEffect(() => {
+    if (playerId == null) return
+    const onOverlay = (event: Event) => setHud(Boolean((event as CustomEvent<boolean>).detail))
+    window.addEventListener(OVERLAY_EVENT, onOverlay)
+    return () => window.removeEventListener(OVERLAY_EVENT, onOverlay)
+  }, [playerId])
+
+  const statsRef = useRef({ size, transport, clock, link, hud })
+  statsRef.current = { size, transport, clock, link, hud }
   const handleStats = useCallback(
     (frame: FrameStats) => {
       setStats(frame)
-      const { size: [width, height], transport: t } = statsRef.current
-      onStats?.({ ...frame, width, height, cue: t?.current ? `${t.current.position + 1} ${t.current.name}` : null })
+      const { size: [width, height], transport: t, clock: c, link: l, hud: h } = statsRef.current
+      onStats?.({
+        ...frame,
+        width,
+        height,
+        cue: t?.current ? `${t.current.position + 1} ${t.current.name}` : null,
+        clockMs: c.synced ? Math.round(c.rtt / 2) : null,
+        link: l,
+        overlay: h,
+      })
     },
     [onStats],
   )

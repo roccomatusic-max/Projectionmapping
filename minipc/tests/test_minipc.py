@@ -488,3 +488,82 @@ def test_install_line_is_the_same_everywhere_and_is_published():
     # The Smart App Control check runs before anything is downloaded or started.
     assert script.index("VerifiedAndReputablePolicyState") < script.index("Invoke-WebRequest")
     assert script.index("Show-AppControlBlock\n    $global:LASTEXITCODE = 1") < script.index("Start-Process")
+
+
+# -- the Players page's controls ------------------------------------------------------------
+
+
+class Reply:
+    def __init__(self, status: int, body: dict | None = None) -> None:
+        self.status_code = status
+        self.body = body or {}
+
+    def json(self) -> dict:
+        return self.body
+
+
+def test_check_in_sends_the_identity_and_returns_the_commands(tmp_path, monkeypatch):
+    app = minipc.MiniPC(minipc.Config(tmp_path / "config.json"), tmp_path)
+    assert app.check_in() == []  # no server yet: nothing sent
+    app.server = "http://10.0.0.5:8765"
+    sent = []
+
+    def post(url, json, timeout):
+        sent.append((url, json))
+        return Reply(200, {"commands": ["restart_output", "reboot"]})
+
+    monkeypatch.setattr(minipc.requests, "post", post)
+    monkeypatch.setattr(minipc, "network_card", lambda _address: "aa:bb:cc:dd:ee:01")
+    assert app.check_in() == ["restart_output", "reboot"]
+    url, body = sent[0]
+    assert url == "http://10.0.0.5:8765/api/mapping/players/app"
+    assert body["device_id"] == app.config["device_id"] and body["secret"] == app.config["secret"]
+    assert body["mac"] == "aa:bb:cc:dd:ee:01"
+
+
+def test_check_in_quietly_asks_nothing_of_an_older_or_missing_server(tmp_path, monkeypatch):
+    app = minipc.MiniPC(minipc.Config(tmp_path / "config.json"), tmp_path)
+    app.server = "http://10.0.0.5:8765"
+    monkeypatch.setattr(minipc.requests, "post", lambda *_a, **_k: Reply(404))
+    assert app.check_in() == []
+
+    def down(*_a, **_k):
+        raise minipc.requests.ConnectionError("gone")
+
+    monkeypatch.setattr(minipc.requests, "post", down)
+    assert app.check_in() == []
+    app._lost_since = 1.0  # known to be away: not even tried
+    monkeypatch.setattr(minipc.requests, "post", lambda *_a, **_k: pytest.fail("asked a lost server"))
+    assert app.check_in() == []
+
+
+def test_obey_restarts_the_window_and_the_computer(tmp_path, monkeypatch):
+    app = minipc.MiniPC(minipc.Config(tmp_path / "config.json"), tmp_path)
+    ran = []
+    monkeypatch.setattr(minipc.sys, "platform", "win32")
+    monkeypatch.setattr(minipc.subprocess, "run", lambda command, **_k: ran.append(command))
+
+    app.obey(["restart_output", "something-new"])
+    assert app.restart_requested.is_set() and ran == []
+    app.obey(["reboot"])
+    app.obey(["shutdown"])
+    assert ran == [["shutdown", "/r", "/t", "0", "/f"], ["shutdown", "/s", "/t", "0", "/f"]]
+
+
+def test_power_does_nothing_off_windows(monkeypatch):
+    monkeypatch.setattr(minipc.sys, "platform", "linux")
+    monkeypatch.setattr(minipc.subprocess, "run", lambda *_a, **_k: pytest.fail("powered off"))
+    minipc.power("reboot")
+
+
+def test_network_card_is_the_one_holding_the_address(monkeypatch):
+    nic = SimpleNamespace
+    monkeypatch.setattr(minipc.psutil, "net_if_addrs", lambda: {
+        "Wi-Fi": [nic(family=socket.AF_INET, address="10.1.1.2"),
+                  nic(family=minipc.psutil.AF_LINK, address="11-11-11-11-11-11")],
+        "Ethernet": [nic(family=socket.AF_INET, address="192.168.1.23"),
+                     nic(family=minipc.psutil.AF_LINK, address="AA-BB-CC-DD-EE-01")],
+    })
+    assert minipc.network_card("192.168.1.23") == "aa:bb:cc:dd:ee:01"
+    assert minipc.network_card("172.16.0.1") is None
+    assert minipc.network_card(None) is None
