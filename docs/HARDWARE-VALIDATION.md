@@ -342,7 +342,11 @@ On each Windows mini PC, with the projector as its only or main display:
 2. **Calibration** (camera-agent/README.md, Calibrating), at night: each
    projector shows its patterns for about half a minute. Expected: after
    **Correct**, the canvas grid lands straight on the building. Record how
-   far off it is before and after **Map by hand**.
+   far off it is before and after **Map by hand**. Then press **Remove
+   calibration** (top right of the Camera page). Expected: every projector
+   goes back to exactly the shape it had before calibrating, and the Camera
+   page opens on its first step. Also try it while the patterns are still
+   running: the patterns stop within a few seconds and the show comes back.
 3. **People.** Walk in front of the building with a *Spotlight* cue live.
    Expected: the light follows you, nothing lights where nobody is, and two
    people get two lights. Then **Re-learn empty scene** with the area clear.

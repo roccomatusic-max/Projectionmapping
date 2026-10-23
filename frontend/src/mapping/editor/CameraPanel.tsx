@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { request } from '@/api/client'
 import type { BusMessage } from '@/api/types'
+import { ConfirmDialog } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { mappingApi, snapshotUrl } from '../api'
 import { type Grid, gridCorners, gridFromView, gridPoint } from '../cameraView'
@@ -86,6 +87,8 @@ export function CameraPanel({
   const [liveUntil, setLiveUntil] = useState(0)
   const [footprints, setFootprints] = useState<Footprint[]>([])
   const [step, setStep] = useState<StepKey | null>(null)
+  /** Asking before removing the calibration: the whole show's, or one output's. */
+  const [removing, setRemoving] = useState<'all' | Output | null>(null)
   const peopleTimer = useRef<number>()
   const heardAt = useRef(0)
 
@@ -122,7 +125,13 @@ export function CameraPanel({
       } else if (message.type === 'mapping_calib_pattern') {
         const step = payload as unknown as CalibrationStepMessage
         heardAt.current = Date.now()
-        setProgress((current) => new Map(current).set(step.output_id, step))
+        setProgress((current) => {
+          const next = new Map(current)
+          // Removed: nothing to report, the row is back to how it was.
+          if (step.removed) next.delete(step.output_id)
+          else next.set(step.output_id, step)
+          return next
+        })
       } else if (message.type === 'mapping_people') {
         setPeople((payload as unknown as PeopleMessage).people)
         window.clearTimeout(peopleTimer.current)
@@ -273,6 +282,27 @@ export function CameraPanel({
       else onShowChanged()
     })
 
+  // Back to the start: a run still going stops, and the projectors go back to
+  // how they were before the camera changed them.
+  const removeCalibration = (target: 'all' | Output) =>
+    guard(async () => {
+      setBatch(null)
+      setResults(null)
+      if (target === 'all') {
+        await mappingApi.removeCalibration(show.id)
+        setProgress(new Map())
+        setStep('camera')
+      } else {
+        await mappingApi.clearCalibration(target.id)
+        setProgress((current) => {
+          const next = new Map(current)
+          next.delete(target.id)
+          return next
+        })
+      }
+      onShowChanged()
+    })
+
   const toggleLive = () =>
     guard(async () => {
       if (cameraId == null) return
@@ -315,6 +345,7 @@ export function CameraPanel({
   const active = step ?? 'camera'
   const photoMode = active === 'hand' ? 'grid' : active === 'correct' ? 'outline' : 'none'
   const canAct = canEdit && !!camera?.online && !busy
+  const anyCalibrated = outputs.some((o) => o.calibration != null)
 
   return (
     <div className="space-y-4">
@@ -338,6 +369,12 @@ export function CameraPanel({
           </span>
         )}
         {live && <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-300">Live</span>}
+        {canEdit && (anyCalibrated || calibrating || placed) && (
+          <button className="btn-default ml-auto text-xs" disabled={busy} onClick={() => setRemoving('all')}
+            title="Stop a calibration that is running and put every projector back the way it was before">
+            {calibrating ? 'Stop and remove calibration' : 'Remove calibration'}
+          </button>
+        )}
       </div>
 
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Calibration steps">
@@ -459,10 +496,19 @@ export function CameraPanel({
                           <div className="h-full bg-sky-400" style={{ width: `${((state.step + 1) / state.steps) * 100}%` }} />
                         </div>
                       )}
-                      <button className="btn-default ml-auto px-3 py-1 text-xs" disabled={!canAct || calibrating}
-                        onClick={() => void calibrate([output])}>
-                        {output.calibration?.camera_id === cameraId ? 'Again' : 'Calibrate'}
-                      </button>
+                      <span className="ml-auto flex gap-2">
+                        {canEdit && (output.calibration != null || running) && (
+                          <button className="btn-ghost px-3 py-1 text-xs" disabled={busy}
+                            title="Put this projector back the way it was before it was calibrated"
+                            onClick={() => setRemoving(output)}>
+                            {running ? 'Stop' : 'Remove'}
+                          </button>
+                        )}
+                        <button className="btn-default px-3 py-1 text-xs" disabled={!canAct || calibrating}
+                          onClick={() => void calibrate([output])}>
+                          {output.calibration?.camera_id === cameraId ? 'Again' : 'Calibrate'}
+                        </button>
+                      </span>
                     </div>
                   )
                 })}
@@ -571,6 +617,22 @@ export function CameraPanel({
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={removing != null}
+        title={removing === 'all' ? 'Remove the camera calibration?' : `Remove the calibration of ${removing?.name ?? ''}?`}
+        body={
+          removing === 'all'
+            ? 'Every calibrated projector goes back to the shape and part of the picture it had before the camera calibrated it, and the picture is no longer placed on the camera photo. A calibration that is running stops. Changes made by hand since the calibration go too. Projectors that were never calibrated are not touched.'
+            : 'This projector goes back to the shape and part of the picture it had before the camera calibrated it. Changes made by hand since then go too. If it is being calibrated right now, that stops.'
+        }
+        confirmLabel={removing === 'all' ? 'Remove calibration' : 'Remove'}
+        danger
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) void removeCalibration(removing)
+          setRemoving(null)
+        }}
+      />
     </div>
   )
 }

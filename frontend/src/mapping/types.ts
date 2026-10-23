@@ -235,6 +235,8 @@ export interface CalibrationStepMessage {
   steps: number
   status: 'running' | 'done' | 'failed'
   message: string
+  /** Sent when the calibration was removed, to end a run in progress. */
+  removed?: boolean
 }
 
 /** A person a depth camera sees. ``x``/``y`` are canvas fractions, when mapped. */

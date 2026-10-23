@@ -587,6 +587,11 @@ class ApplyCalibration(BaseModel):
     output_ids: list[int] | None = None
 
 
+class RemoveResult(BaseModel):
+    #: Outputs put back as they were before calibration.
+    restored: list[int] = Field(default_factory=list)
+
+
 class ApplyResult(BaseModel):
     output_id: int
     name: str
