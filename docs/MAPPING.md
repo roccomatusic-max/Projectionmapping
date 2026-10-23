@@ -210,6 +210,29 @@ broadcast reaches the server, or give each mini PC the address with
 **Identify** flashes a player's name on its projector, to tell machines
 apart. **Remove** revokes it; it goes back to showing a pairing code.
 
+Each paired mini PC also has its own controls on the Players page:
+
+- what it is doing in words (playing cue 3, a test picture, offline), its
+  resolution, frame rate, clock and drift, whether its media is saved on
+  it, its computer name and network address;
+- **Projector: Show / Grid / White / Black** puts a test picture on that
+  one projector (it is its output's test pattern, so the Editor shows the
+  same; saved maps leave it out) and **Show** goes back to the show;
+- **Info on screen** shows the status overlay on the projector itself;
+- **Restart output** closes and reopens the full-screen window (the Mini
+  PC app does it; with an older app the page reloads instead);
+- **Restart computer** and **Shut down** (Windows Mini PC app, after a
+  confirm box), and **Turn on** for one that is off, by Wake-on-LAN. That
+  works only when the mini PC's BIOS allows Wake-on-LAN, and the server
+  learns its network card from the app while it is on.
+
+The page side of these reaches every player with the server. The Mini PC
+app picks its part up by checking in every few seconds
+(`POST /api/mapping/players/app` with the computer's secret); an app
+installed before these controls existed does not, so Restart computer and
+Shut down say to paste the install line once. Commands are kept in memory
+for 30 seconds only, so nothing happens later out of the blue.
+
 Approval creates a dedicated viewer account for the player, so a player
 can watch the show but cannot run it or change it.
 
