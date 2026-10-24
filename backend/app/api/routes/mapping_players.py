@@ -25,6 +25,8 @@ restart asked for before the server itself restarted never happens later.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import contextlib
 import hashlib
 import hmac
@@ -34,7 +36,7 @@ import sys
 import time
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, func, select
 
 from app.api.deps import CurrentUser, RequireAdmin, RequireViewer, SessionDep, write_rate_limit
@@ -56,6 +58,7 @@ from app.schemas.mapping import (
     NetworkInfo,
     PlayerApp,
     PlayerAppHello,
+    PlayerAppPicture,
     PlayerAppReply,
     PlayerAssignment,
     PlayerCommand,
@@ -63,6 +66,7 @@ from app.schemas.mapping import (
     PlayerHello,
     PlayerHelloResponse,
     PlayerOut,
+    PlayerPicture,
     PlayerReport,
     PlayerScreen,
     PlayerUpdate,
@@ -98,6 +102,33 @@ def _now() -> float:
 _queued: dict[tuple[int, str], list[tuple[str, float]]] = {}
 #: When each player's Mini PC app last checked in (_now()).
 _app_seen: dict[int, float] = {}
+
+#: The Dashboard's live view: the latest picture of each mini PC's output,
+#: kept in memory only. (JPEG bytes, when received (_now()), "screen" from
+#: the Mini PC app or "page" from the player page.)
+_pictures: dict[int, tuple[bytes, float, str]] = {}
+#: Pictures are asked for only while someone has the live view open.
+_watched_until = 0.0
+#: How long one look at the live view keeps the pictures coming.
+WATCH_SECONDS = 30.0
+#: A picture of the whole screen this fresh wins over the player page's own.
+SCREEN_FRESH_SECONDS = 10.0
+
+
+def _watching() -> bool:
+    return _now() < _watched_until
+
+
+def _jpeg(image: str) -> bytes:
+    try:
+        data = base64.b64decode(image, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The picture is not base64") from None
+    if not data.startswith(b"\xff\xd8"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The picture must be a JPEG")
+    return data
 
 
 def _queue(player_id: int, target: str, action: str) -> None:
@@ -344,6 +375,7 @@ async def delete_player(player_id: int, session: SessionDep, admin: RequireAdmin
     await session.commit()
     for gone in removed:
         _app_seen.pop(gone.id, None)
+        _pictures.pop(gone.id, None)
         for target in ("page", "app"):
             _queued.pop((gone.id, target), None)
         _changed(gone.id)
@@ -465,14 +497,7 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
     It proves itself with its computer's secret, which only it and its own
     player page hold. Nothing is handed out before the player is approved.
     """
-    player = (await session.execute(
-        select(MappingPlayer).where(MappingPlayer.device_id == payload.device_id)
-    )).scalars().first()
-    if player is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not paired")
-    if not hmac.compare_digest(player.secret_hash, _hash(payload.secret)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="This device id is registered with a different secret")
+    player = await _app_player(session, payload.device_id, payload.secret)
     if not player.approved:
         return PlayerAppReply()
     first = player.id not in _app_seen
@@ -485,7 +510,69 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
         await session.commit()
     if first or old != info:
         _changed(player.id)
-    return PlayerAppReply(commands=_take(player.id, "app"))
+    return PlayerAppReply(commands=_take(player.id, "app"), picture=_watching())
+
+
+async def _app_player(session, device_id: str, secret: str) -> MappingPlayer:
+    """The player whose Mini PC app this is, proven by its computer's secret."""
+    player = (await session.execute(
+        select(MappingPlayer).where(MappingPlayer.device_id == device_id)
+    )).scalars().first()
+    if player is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not paired")
+    if not hmac.compare_digest(player.secret_hash, _hash(secret)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="This device id is registered with a different secret")
+    return player
+
+
+@router.post("/app/picture", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def app_picture(payload: PlayerAppPicture, session: SessionDep) -> None:
+    """The Mini PC app's picture of its whole screen: exactly what goes to the projector."""
+    player = await _app_player(session, payload.device_id, payload.secret)
+    if not player.approved:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not approved yet")
+    _pictures[player.id] = (_jpeg(payload.image), _now(), "screen")
+
+
+@router.post("/me/picture", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def page_picture(payload: PlayerPicture, session: SessionDep, user: CurrentUser) -> None:
+    """The player page's picture of what it draws, for computers without the newer app."""
+    player = (await session.execute(
+        select(MappingPlayer).where(MappingPlayer.user_id == user.id)
+    )).scalars().first()
+    if player is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="This account is not a player")
+    data = _jpeg(payload.image)
+    held = _pictures.get(player.id)
+    if held and held[2] == "screen" and _now() - held[1] <= SCREEN_FRESH_SECONDS:
+        return  # the whole screen, from the app, says more
+    _pictures[player.id] = (data, _now(), "page")
+
+
+@router.get("/{player_id}/picture", response_model=None,
+            responses={200: {"content": {"image/jpeg": {}}}})
+async def picture(player_id: int, session: SessionDep, _: RequireViewer) -> Response:
+    """The latest picture of what this mini PC is showing, for the live view.
+
+    Asking for it is what makes the mini PCs send pictures, for the next
+    half a minute. ``X-Picture-Age`` is its age in seconds; ``X-Picture-From``
+    is ``screen`` (the whole screen, from the Mini PC app) or ``page``
+    (what the player page drew).
+    """
+    global _watched_until
+    await _load(session, player_id)
+    _watched_until = _now() + WATCH_SECONDS
+    held = _pictures.get(player_id)
+    if held is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    data, at, source = held
+    return Response(content=data, media_type="image/jpeg", headers={
+        "Cache-Control": "no-store",
+        "X-Picture-Age": f"{max(0.0, _now() - at):.1f}",
+        "X-Picture-From": source,
+    })
 
 
 @router.post("/me", response_model=PlayerAssignment)
@@ -507,4 +594,5 @@ async def report(payload: PlayerReport, request: Request, session: SessionDep,
     out = await _player_out(session, player)
     return PlayerAssignment(player_id=player.id, name=player.name,
                             output_id=out.output_id, show_id=out.show_id,
-                            commands=_take(player.id, "page") if player.kind != "camera" else [])
+                            commands=_take(player.id, "page") if player.kind != "camera" else [],
+                            picture=_watching() and player.kind != "camera")

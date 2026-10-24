@@ -19,6 +19,49 @@ export interface FrameStats {
 
 const NO_OUTPUTS: Output[] = []
 
+interface CaptureRequest {
+  width: number
+  resolve: (picture: Blob | null) => void
+}
+
+const captureRequests: CaptureRequest[] = []
+
+/**
+ * A small JPEG of the next frame an output on this page draws, for the
+ * Dashboard's live view; null when nothing is drawn within a second.
+ * Taken right after drawing, while the WebGL picture is still there.
+ */
+export function captureOutput(width = 480): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const request = { width, resolve }
+    captureRequests.push(request)
+    window.setTimeout(() => {
+      const index = captureRequests.indexOf(request)
+      if (index >= 0) {
+        captureRequests.splice(index, 1)
+        resolve(null)
+      }
+    }, 1000)
+  })
+}
+
+function serveCaptures(canvas: HTMLCanvasElement) {
+  for (const request of captureRequests.splice(0)) {
+    const width = Math.max(1, Math.min(request.width, canvas.width))
+    const height = Math.max(1, Math.round((canvas.height * width) / canvas.width))
+    const small = document.createElement('canvas')
+    small.width = width
+    small.height = height
+    const context = small.getContext('2d')
+    if (!context) {
+      request.resolve(null)
+      continue
+    }
+    context.drawImage(canvas, 0, 0, width, height)
+    small.toBlob((picture) => request.resolve(picture), 'image/jpeg', 0.6)
+  }
+}
+
 /** Seconds of dropped frames before scenes are drawn with less detail. */
 const SLOW_SECONDS = 3
 
@@ -117,6 +160,7 @@ export function OutputView({
         })
         if (frame.scenes.length) sceneFrames++
       }
+      if (captureRequests.length) serveCaptures(canvas)
       frames++
       const now = performance.now()
       if (now - since >= 1000) {

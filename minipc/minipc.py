@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import logging
 import os
@@ -298,6 +299,25 @@ def power(action: str) -> None:
 # -- the program --------------------------------------------------------------------------
 
 
+#: The live view's pictures: this wide at most, and this JPEG quality.
+PICTURE_WIDTH = 480
+PICTURE_QUALITY = 60
+
+
+def grab_screen() -> str:
+    """Every screen of this computer, shrunk, as a base64 JPEG."""
+    import base64
+
+    from PIL import ImageGrab
+
+    shot = ImageGrab.grab(all_screens=True).convert("RGB")
+    if shot.width > PICTURE_WIDTH:
+        shot = shot.resize((PICTURE_WIDTH, max(1, round(shot.height * PICTURE_WIDTH / shot.width))))
+    buffer = io.BytesIO()
+    shot.save(buffer, "JPEG", quality=PICTURE_QUALITY)
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
 def keep_awake() -> None:
     """No sleep, no screen blanking, while this thread lives (Windows)."""
     if sys.platform == "win32":
@@ -324,6 +344,9 @@ class MiniPC:
         self._lost_since: float | None = None
         self.stopping = threading.Event()
         self.restart_requested = threading.Event()
+        #: Someone has the Dashboard's live view open: send pictures of the screen.
+        self.picture_wanted = False
+        self._picture_failed = False
         self.on_change = lambda: None
 
     # -- what the window and the tray show ----------------------------------
@@ -416,12 +439,35 @@ class MiniPC:
         try:
             reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
             if reply.status_code != 200:
+                self.picture_wanted = False
                 return []
-            commands = reply.json().get("commands", [])
+            answer = reply.json()
+            commands = answer.get("commands", [])
+            self.picture_wanted = answer.get("picture") is True
         except (requests.RequestException, ValueError, AttributeError) as exc:
             log.debug("check-in failed: %s", exc)
+            self.picture_wanted = False
             return []
         return [c for c in commands if isinstance(c, str)]
+
+    def send_picture(self) -> None:
+        """A small picture of the whole screen for the Dashboard's live view.
+
+        Taken here, not by the browser, so it shows what really goes to the
+        projector: the show, or a Windows message or the desktop over it.
+        """
+        if not self.picture_wanted or self.server is None:
+            return
+        identity = self.config.identity()
+        try:
+            image = grab_screen()
+            requests.post(f"{self.server}/api/mapping/players/app/picture", timeout=3, json={
+                "device_id": identity["device_id"], "secret": identity["secret"], "image": image})
+            self._picture_failed = False
+        except Exception as exc:  # noqa: BLE001 - a picture is never worth stopping for
+            if not self._picture_failed:
+                log.info("could not send a picture of the screen: %s", exc)
+            self._picture_failed = True
 
     def obey(self, commands: list[str]) -> None:
         for command in commands:
@@ -452,6 +498,7 @@ class MiniPC:
                 try:
                     reopen = self.follow_server()
                     self.obey(self.check_in())
+                    self.send_picture()
                     if kiosk:
                         if self.server and kiosk.secure_origin != self.server:
                             # Opened before the server was known: reopen it so the

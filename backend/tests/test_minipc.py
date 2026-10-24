@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import socket
 
@@ -152,9 +153,13 @@ def _forget_commands():
     import app.api.routes.mapping_players as players
     players._queued.clear()
     players._app_seen.clear()
+    players._pictures.clear()
+    players._watched_until = 0.0
     yield
     players._queued.clear()
     players._app_seen.clear()
+    players._pictures.clear()
+    players._watched_until = 0.0
 
 
 async def paired(api, headers) -> tuple[int, dict]:
@@ -329,3 +334,61 @@ async def test_only_admins_use_the_controls(api):
     player_id, token = await paired(api, headers)
     # A player's own token is a viewer: it cannot drive other mini PCs.
     assert (await command(api, token, player_id, "reboot")).status_code == 403
+
+
+#: A tiny JPEG (the start and end markers are all the server checks).
+JPEG = base64.b64encode(b"\xff\xd8\xff\xe0" + b"0" * 40 + b"\xff\xd9").decode()
+SCREEN_JPEG = base64.b64encode(b"\xff\xd8\xff\xe0" + b"1" * 40 + b"\xff\xd9").decode()
+
+
+async def test_the_live_view_shows_what_each_mini_pc_puts_out(api):
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+
+    # Nobody is looking: nothing is asked for.
+    assert (await api.post("/api/mapping/players/me", headers=token, json={})).json()["picture"] is False
+    assert (await app_checkin(api))["picture"] is False
+
+    # The Dashboard looks: nothing yet, and now both are asked for pictures.
+    empty = await api.get(f"/api/mapping/players/{player_id}/picture", headers=headers)
+    assert empty.status_code == 204
+    assert (await api.post("/api/mapping/players/me", headers=token, json={})).json()["picture"] is True
+    assert (await app_checkin(api))["picture"] is True
+
+    # The player page sends what it draws.
+    sent = await api.post("/api/mapping/players/me/picture", headers=token, json={"image": JPEG})
+    assert sent.status_code == 204, sent.text
+    shown = await api.get(f"/api/mapping/players/{player_id}/picture", headers=headers)
+    assert shown.status_code == 200
+    assert shown.headers["content-type"] == "image/jpeg"
+    assert shown.headers["x-picture-from"] == "page"
+    assert float(shown.headers["x-picture-age"]) < 5
+    assert shown.content == base64.b64decode(JPEG)
+
+    # The Mini PC app's picture of the whole screen wins while it is fresh.
+    screen = await api.post("/api/mapping/players/app/picture", json={
+        "device_id": PLAYER["device_id"], "secret": SECRET, "image": SCREEN_JPEG})
+    assert screen.status_code == 204, screen.text
+    await api.post("/api/mapping/players/me/picture", headers=token, json={"image": JPEG})
+    shown = await api.get(f"/api/mapping/players/{player_id}/picture", headers=headers)
+    assert shown.headers["x-picture-from"] == "screen"
+    assert shown.content == base64.b64decode(SCREEN_JPEG)
+
+    # Only JPEGs, only from the computer itself.
+    png = base64.b64encode(b"\x89PNG" + b"0" * 40).decode()
+    assert (await api.post("/api/mapping/players/me/picture", headers=token,
+                           json={"image": png})).status_code == 400
+    assert (await api.post("/api/mapping/players/me/picture", headers=token,
+                           json={"image": "not base64 at all!!"})).status_code in (400, 422)
+    stranger = await api.post("/api/mapping/players/app/picture", json={
+        "device_id": PLAYER["device_id"], "secret": "z" * 64, "image": JPEG})
+    assert stranger.status_code == 403
+    assert (await api.post("/api/mapping/players/me/picture", headers=headers,
+                           json={"image": JPEG})).status_code == 404
+    # Viewing needs a sign-in.
+    assert (await api.get(f"/api/mapping/players/{player_id}/picture")).status_code == 401
+
+    # A removed mini PC's picture goes with it.
+    await api.delete(f"/api/mapping/players/{player_id}", headers=headers)
+    assert (await api.get(f"/api/mapping/players/{player_id}/picture",
+                          headers=headers)).status_code == 404

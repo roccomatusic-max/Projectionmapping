@@ -31,6 +31,7 @@ import {
   StopIcon,
 } from '@/components/icons'
 import { classNames, formatHours } from '@/lib/format'
+import { LiveView } from './LiveView'
 import { isLive, lampTone, matchesFilter, peakLampHours } from '@/lib/status'
 import {
   DAY_NAMES,
@@ -748,6 +749,7 @@ export function TonightShow({ session }: { session: Session }) {
           />
         )}
         <Metrics />
+        <LiveView />
       </section>
 
       <section className="panel" aria-label="Tonight's scenes">

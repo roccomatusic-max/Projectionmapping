@@ -174,6 +174,10 @@ computer's identity; delete it to pair the computer as a new one.
   The player page gets it in the address fragment (which browsers never
   send to the server), and the camera uses the same secret, so the server
   knows they are one machine.
+- **Live view.** While someone has the server's Dashboard open, the app
+  sends a small picture of its whole screen (480 px wide, about every 3
+  seconds) so the Dashboard shows what this computer is really putting
+  out. Nothing is sent when nobody is watching, and nothing is saved.
 - **The camera** is the [camera agent](../camera-agent/README.md), run in
   the background whenever a camera answers; it is looked for again every 30
   seconds.
