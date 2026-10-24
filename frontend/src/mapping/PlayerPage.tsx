@@ -34,7 +34,7 @@ interface Assignment {
   show_id: number | null
   /** Asked from the Players page, each to do once: "reload", "overlay_on", "overlay_off". */
   commands?: string[]
-  /** Someone has the Dashboard's live view open: send pictures of this output. */
+  /** Someone has the Dashboard's live view open: send copies of the frames drawn. */
   picture?: boolean
 }
 

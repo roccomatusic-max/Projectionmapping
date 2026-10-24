@@ -15,7 +15,7 @@ HERE = ROOT / "minipc"
 AGENT = ROOT / "camera-agent"
 ICON = ROOT / "build" / "minipc.ico"
 
-hiddenimports = ["agent", "sources", "simcam", "vision", "websocket", "psutil", "PIL.ImageGrab"]
+hiddenimports = ["agent", "sources", "simcam", "vision", "websocket", "psutil"]
 binaries = []
 datas = []
 if sys.platform == "win32":

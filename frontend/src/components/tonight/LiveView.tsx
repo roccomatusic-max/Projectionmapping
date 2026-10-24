@@ -2,11 +2,9 @@
  * A small live picture of what each mini PC is really putting out, for the
  * home page.
  *
- * The pictures come from the mini PCs themselves, every few seconds and
- * only while someone has this open: the Mini PC app photographs its whole
- * screen (so a Windows message over the show shows up too); without the
- * newer app, the player page sends what it drew. See
- * routes/mapping_players.py ("live view").
+ * Each mini PC's player page sends a small copy of the very frame it is
+ * drawing, every few seconds and only while someone has this open; no
+ * screenshots. See routes/mapping_players.py ("live view").
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -47,7 +45,6 @@ interface Picture {
   /** Seconds old when fetched. */
   age: number
   fetchedAt: number
-  source: 'screen' | 'page'
 }
 
 /** The latest picture of one mini PC's output, fetched every few seconds. */
@@ -78,7 +75,6 @@ function usePicture(playerId: number): { picture: Picture | null; tried: boolean
           url,
           age: Number(response.headers.get('X-Picture-Age') ?? '0'),
           fetchedAt: Date.now(),
-          source: response.headers.get('X-Picture-From') === 'page' ? 'page' : 'screen',
         })
       } catch {
         // The server restarting: try again next time.
@@ -115,12 +111,8 @@ function MiniPcPicture({ player }: { player: Player }) {
       : stale
         ? `No new picture for ${ageText(age!).replace(' ago', '')}`
         : null
-  const title =
-    picture?.source === 'page'
-      ? 'What the player page drew. Rerun the install line on this mini PC to see its whole screen, Windows messages included.'
-      : 'A picture of this mini PC’s whole screen, taken on the mini PC.'
   return (
-    <div className="w-32 shrink-0 sm:w-40" title={title}>
+    <div className="w-32 shrink-0 sm:w-40" title={`The frame ${player.name} is drawing for its projector`}>
       <div className="relative aspect-video w-full overflow-hidden rounded bg-black ring-1 ring-white/10">
         {picture && (
           <img

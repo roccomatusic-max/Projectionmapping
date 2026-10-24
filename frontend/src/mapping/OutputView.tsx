@@ -45,20 +45,25 @@ export function captureOutput(width = 480): Promise<Blob | null> {
   })
 }
 
+/** Never lets a picture for the Dashboard get in the way of the show itself. */
 function serveCaptures(canvas: HTMLCanvasElement) {
   for (const request of captureRequests.splice(0)) {
-    const width = Math.max(1, Math.min(request.width, canvas.width))
-    const height = Math.max(1, Math.round((canvas.height * width) / canvas.width))
-    const small = document.createElement('canvas')
-    small.width = width
-    small.height = height
-    const context = small.getContext('2d')
-    if (!context) {
+    try {
+      const width = Math.max(1, Math.min(request.width, canvas.width))
+      const height = Math.max(1, Math.round((canvas.height * width) / canvas.width))
+      const small = document.createElement('canvas')
+      small.width = width
+      small.height = height
+      const context = small.getContext('2d')
+      if (!context) {
+        request.resolve(null)
+        continue
+      }
+      context.drawImage(canvas, 0, 0, width, height)
+      small.toBlob((picture) => request.resolve(picture), 'image/jpeg', 0.6)
+    } catch {
       request.resolve(null)
-      continue
     }
-    context.drawImage(canvas, 0, 0, width, height)
-    small.toBlob((picture) => request.resolve(picture), 'image/jpeg', 0.6)
   }
 }
 

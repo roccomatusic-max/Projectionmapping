@@ -556,19 +556,13 @@ on). What happened last is shown under the time and kept in the log.
 
 **Live view**, under the numbers, is a small picture of what each paired mini
 PC is really putting out, about every 3 seconds, with how old the picture is
-and "Offline" when the mini PC is not connected. The pictures are taken on
-the mini PCs, not drawn by the server, and only while someone has the
-Dashboard open with the live view showing (the Dashboard's request sets a
-30 second "someone is watching" flag that each mini PC sees in its replies):
-
-- The Mini PC app grabs its whole screen (`grab_screen` in
-  `minipc/minipc.py`, 480 px wide JPEG), so a Windows message or a desktop
-  over the show shows up too. Older Mini PC apps do not, until the install
-  line is run again on that mini PC.
-- The player page also sends what it drew (`captureOutput` in
-  `OutputView.tsx`), which covers mini PCs on an older app and plain
-  browsers. A screen picture under 10 seconds old wins over it.
-
+and "Offline" when the mini PC is not connected. It is not drawn by the
+server: each player page keeps a 480 px wide copy of the very frame it just
+drew for its projector (`captureOutput` in `OutputView.tsx`, taken right
+after rendering) and sends it as a JPEG. Nothing photographs the screen,
+and the Mini PC app is unchanged. Frames are sent only while someone has
+the Dashboard open with the live view showing (its request sets a 30 second
+"someone is watching" flag that each player sees in its `/me` reply).
 Pictures are kept in memory only, one per player. Hide stops the fetching
 on that browser.
 
@@ -579,9 +573,8 @@ on that browser.
 | POST | `/mapping/scene-groups/{id}/use` | Operator: tonight's group, set on every cue now |
 | GET/PUT | `/api/tonight` | Tonight's plan and where in it we are (`state`: off, later, running, done, not_tonight); PUT is operator |
 | POST | `/api/tonight/start`, `/api/tonight/stop` | Operator: start or stop now |
-| GET | `/mapping/players/{id}/picture` | Viewer: the latest picture (JPEG; `X-Picture-Age` seconds, `X-Picture-From` screen or page); 204 when none |
-| POST | `/mapping/players/app/picture` | The Mini PC app's screen picture (device id and secret) |
-| POST | `/mapping/players/me/picture` | The player page's picture (player token) |
+| GET | `/mapping/players/{id}/picture` | Viewer: the latest frame (JPEG; `X-Picture-Age` seconds); 204 when none |
+| POST | `/mapping/players/me/picture` | The player page's copy of its frame (player token) |
 
 Changes go out as `scene_groups` and `tonight` messages.
 
