@@ -17,7 +17,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.config import settings
-from app.db.models import Enclosure, Projector, Scene
+from app.db.models import Enclosure, MappingCue, MappingScene, MappingShow, Projector, Scene
 from app.drivers import Provenance
 from app.drivers.registry import capability_manifest
 from app.services import cron
@@ -25,7 +25,7 @@ from app.services.automation import resolve_target
 from app.services.device_manager import manager
 
 STEP_TYPES = ("command", "wait_state", "delay", "check_online", "check_faults",
-              "check_enclosure", "scene", "notify")
+              "check_enclosure", "scene", "play_scene", "show", "notify")
 
 #: Which key in ``params`` carries a capability's enumerated value.
 PARAM_KEY: dict[str, str] = {
@@ -301,7 +301,33 @@ async def validate_steps(session, steps: list[dict[str, Any]]) -> list[dict[str,
         elif kind == "scene":
             scene_id = step.get("scene_id")
             if scene_id is None or await session.get(Scene, int(scene_id)) is None:
-                problems.append(problem(index, "Choose a scene that exists."))
+                problems.append(problem(index, "Choose a projector preset that exists."))
+
+        elif kind == "play_scene":
+            scene_id = step.get("mapping_scene_id")
+            if scene_id is None or await session.get(MappingScene, int(scene_id)) is None:
+                problems.append(problem(index, "Choose a scene to play."))
+            fade = step.get("fade_seconds", 2)
+            if not isinstance(fade, int | float) or not 0 <= fade <= 30:
+                problems.append(problem(index, "Fade must be 0–30 seconds."))
+
+        elif kind == "show":
+            action = step.get("action", "start")
+            if action not in ("start", "stop"):
+                problems.append(problem(index, "Choose start or stop."))
+            elif action == "start":
+                show_id = step.get("show_id")
+                if show_id is None or await session.get(MappingShow, int(show_id)) is None:
+                    problems.append(problem(index, "Choose a show to start."))
+                else:
+                    cue_id = step.get("cue_id")
+                    cue = await session.get(MappingCue, int(cue_id)) if cue_id is not None else None
+                    if cue_id is not None and (cue is None or cue.show_id != int(show_id)):
+                        problems.append(problem(index, "Choose a cue from that show."))
+                    elif cue_id is None and not (await session.execute(
+                            select(MappingCue.id).where(MappingCue.show_id == int(show_id))
+                    )).first():
+                        problems.append(problem(index, "That show has no cues yet."))
 
         elif kind == "notify":
             if not str(step.get("message", "")).strip():

@@ -9,7 +9,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ApiError, api } from '@/api/client'
+import { mappingApi } from '@/mapping/api'
+import type { MappingScene, Show } from '@/mapping/types'
 import type {
   Automation,
   AutomationStep,
@@ -35,7 +38,9 @@ import {
   LogsIcon,
   OkIcon,
   PowerIcon,
+  RunShowIcon,
   SceneIcon,
+  ScenesIcon,
   TemperatureIcon,
   WarningIcon,
   type LucideIcon,
@@ -56,6 +61,21 @@ export interface Draft {
 }
 
 type Target = { type: 'all' | 'group' | 'projector'; id?: number }
+
+/** The light show side: scenes from Mapping → Scenes and the shows with their cues. */
+export interface Lights {
+  scenes: MappingScene[]
+  shows: Show[]
+}
+
+const NO_LIGHTS: Lights = { scenes: [], shows: [] }
+
+/** Every show with its cues, for the steps that play scenes or start a show. */
+export async function loadLights(): Promise<Lights> {
+  const [scenes, summaries] = await Promise.all([mappingApi.listScenes(), mappingApi.listShows()])
+  const shows = await Promise.all(summaries.map((s) => mappingApi.getShow(s.id)))
+  return { scenes, shows }
+}
 
 interface FunctionEntry {
   cap: Capability
@@ -78,9 +98,12 @@ const STEP_KINDS: Array<{ type: string; label: string; hint: string; icon: Lucid
   { type: 'check_online', label: 'Check connectivity', hint: 'Fail if any target is not responding', icon: LiveIcon },
   { type: 'check_faults', label: 'Check for faults', hint: 'Fail if any target reports an error', icon: FaultIcon },
   { type: 'check_enclosure', label: 'Check an enclosure', hint: 'Block on heat, leak or stale sensors', icon: TemperatureIcon },
-  { type: 'scene', label: 'Activate a scene', hint: 'Run a saved scene', icon: SceneIcon },
+  { type: 'play_scene', label: 'Play a scene', hint: 'One of your scenes, on every projector', icon: ScenesIcon },
+  { type: 'show', label: 'Start or stop the show', hint: 'Start at a cue, or stop', icon: RunShowIcon },
   { type: 'delay', label: 'Delay', hint: 'Pause for a number of seconds', icon: ClockIcon },
   { type: 'notify', label: 'Notify', hint: 'Record a message and alert', icon: LogsIcon },
+  // Offered only when presets exist; they cannot be made on any page.
+  { type: 'scene', label: 'Run a projector preset', hint: 'A saved set of projector commands', icon: SceneIcon },
 ]
 
 const CATEGORY: Array<[string, string]> = [
@@ -111,9 +134,20 @@ export function emptyDraft(): Draft {
 export function draftFromAutomation(a: Automation): Draft {
   return {
     name: a.name, description: a.description, enabled: a.enabled, trigger_type: a.trigger_type,
-    schedule: { ...a.schedule }, steps: a.steps.map((s) => ({ ...s })),
+    schedule: { ...a.schedule }, steps: a.steps.map(upgradeStep),
     abort_on_failure: a.abort_on_failure,
   }
+}
+
+/**
+ * The old "Activate a scene" step ran a projector preset, so it listed none
+ * of the scenes on Mapping → Scenes. One left without a preset chosen was
+ * meant to play one of those scenes: it becomes "Play a scene".
+ */
+function upgradeStep(step: AutomationStep): AutomationStep {
+  if (step.type !== 'scene' || step.scene_id != null) return { ...step }
+  const label = step.label && !step.label.startsWith('Scene: ') ? step.label : undefined
+  return { type: 'play_scene', fade_seconds: 2, ...(label ? { label } : {}) }
 }
 
 function targetKey(target: Target | undefined): string {
@@ -148,6 +182,7 @@ export function AutomationBuilder({
   const [groups, setGroups] = useState<Group[]>([])
   const [drivers, setDrivers] = useState<DriverInfo[]>([])
   const [scenes, setScenes] = useState<Scene[]>([])
+  const [lights, setLights] = useState<Lights>(NO_LIGHTS)
   const [enclosures, setEnclosures] = useState<Enclosure[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -156,9 +191,10 @@ export function AutomationBuilder({
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    void Promise.all([api.listProjectors(), api.listGroups(), api.drivers(), api.listScenes(), api.listEnclosures()])
-      .then(([p, g, d, s, e]) => {
-        setProjectors(p); setGroups(g); setDrivers(d.drivers); setScenes(s); setEnclosures(e)
+    void Promise.all([api.listProjectors(), api.listGroups(), api.drivers(), api.listScenes(), api.listEnclosures(),
+                      loadLights().catch(() => NO_LIGHTS)])
+      .then(([p, g, d, s, e, l]) => {
+        setProjectors(p); setGroups(g); setDrivers(d.drivers); setScenes(s); setEnclosures(e); setLights(l)
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load'))
       .finally(() => setLoading(false))
@@ -179,6 +215,8 @@ export function AutomationBuilder({
     if (type === 'check_faults') Object.assign(step, { block_on: ['error'] })
     if (type === 'check_enclosure') Object.assign(step, { enclosure_id: enclosures[0]?.id, require_fresh: true, max_age_seconds: 600 })
     if (type === 'scene') step.scene_id = scenes[0]?.id
+    if (type === 'play_scene') Object.assign(step, { mapping_scene_id: lights.scenes[0]?.id, fade_seconds: 2 })
+    if (type === 'show') Object.assign(step, { action: 'start', show_id: lights.shows[0]?.id })
     if (type === 'notify') Object.assign(step, { message: '', severity: 'info' })
     setDraft((d) => ({ ...d, steps: [...d.steps, step] }))
     setSelected(draft.steps.length)
@@ -270,7 +308,7 @@ export function AutomationBuilder({
         ...draft,
         steps: draft.steps.map((step) => ({
           ...step,
-          label: step.label?.trim() || summarise(step, projectors, groups, scenes, enclosures),
+          label: step.label?.trim() || summarise(step, projectors, groups, scenes, enclosures, lights),
         })),
       }
       const saved = existingId
@@ -372,7 +410,7 @@ export function AutomationBuilder({
                         <Icon size={16} className="shrink-0 text-slate-400" aria-hidden />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm text-slate-100">
-                            {summarise(step, projectors, groups, scenes, enclosures)}
+                            {summarise(step, projectors, groups, scenes, enclosures, lights)}
                           </span>
                           {step.label && <span className="block truncate text-xs text-slate-500">{step.label}</span>}
                         </span>
@@ -388,7 +426,7 @@ export function AutomationBuilder({
 
             <p className="label mt-4">Add a step</p>
             <div className="grid grid-cols-2 gap-1.5">
-              {STEP_KINDS.map((kind) => (
+              {STEP_KINDS.filter((kind) => kind.type !== 'scene' || scenes.length > 0).map((kind) => (
                 <button
                   key={kind.type}
                   className="flex items-start gap-2 rounded-lg border border-white/5 bg-panel-850 px-2.5 py-2 text-left hover:bg-panel-800"
@@ -429,6 +467,7 @@ export function AutomationBuilder({
                   projectors={projectors}
                   groups={groups}
                   scenes={scenes}
+                  lights={lights}
                   enclosures={enclosures}
                   functionsFor={functionsFor}
                 />
@@ -600,12 +639,13 @@ function TargetSelect({ value, onChange, projectors, groups }: {
   )
 }
 
-function StepEditor({ step, onChange, projectors, groups, scenes, enclosures, functionsFor }: {
+function StepEditor({ step, onChange, projectors, groups, scenes, lights, enclosures, functionsFor }: {
   step: AutomationStep
   onChange: (patch: Partial<AutomationStep>) => void
   projectors: Projector[]
   groups: Group[]
   scenes: Scene[]
+  lights: Lights
   enclosures: Enclosure[]
   functionsFor: (t: Target | undefined) => FunctionIndex
 }) {
@@ -838,13 +878,98 @@ function StepEditor({ step, onChange, projectors, groups, scenes, enclosures, fu
           {label}
         </div>
       )
-    case 'scene':
+    case 'play_scene': {
+      const chosen = lights.scenes.find((s) => s.id === step.mapping_scene_id)
       return (
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Scene</label>
+            {lights.scenes.length === 0 ? (
+              <p className="text-xs text-yellow-300">
+                You have no scenes yet. Make one on <Link className="underline" to="/mapping/scenes">Scenes</Link>.
+              </p>
+            ) : (
+              <select className="input" value={chosen ? chosen.id : ''}
+                      onChange={(e) => onChange({ mapping_scene_id: Number(e.target.value) })}>
+                {!chosen && <option value="" disabled>Choose a scene…</option>}
+                {lights.scenes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            )}
+          </div>
+          <div>
+            <label className="label">Fade in (seconds)</label>
+            <input type="number" className="input tnum" min={0} max={30} step={0.5}
+                   value={Number(step.fade_seconds ?? 2)}
+                   onChange={(e) => onChange({ fade_seconds: Number(e.target.value) })} />
+          </div>
+          <p className="text-xs text-slate-400 sm:col-span-2">
+            Plays on every projector until something else plays. Pressing GO on Run the show afterwards starts the
+            show from its first cue.
+          </p>
+          {label}
+        </div>
+      )
+    }
+    case 'show': {
+      const action = step.action === 'stop' ? 'stop' : 'start'
+      const show = lights.shows.find((s) => s.id === step.show_id)
+      return (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">Do</label>
+            <select className="input" value={action}
+                    onChange={(e) => onChange(e.target.value === 'stop'
+                      ? { action: 'stop', show_id: undefined, cue_id: undefined }
+                      : { action: 'start', show_id: lights.shows[0]?.id, cue_id: undefined })}>
+              <option value="start">Start the show</option>
+              <option value="stop">Stop the show</option>
+            </select>
+          </div>
+          {action === 'start' && (
+            lights.shows.length === 0 ? (
+              <p className="text-xs text-yellow-300">You have no shows yet. Make one in the Editor.</p>
+            ) : (
+              <>
+                <div>
+                  <label className="label">Show</label>
+                  <select className="input" value={show ? show.id : ''}
+                          onChange={(e) => onChange({ show_id: Number(e.target.value), cue_id: undefined })}>
+                    {!show && <option value="" disabled>Choose a show…</option>}
+                    {lights.shows.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                {show && (
+                  <div>
+                    <label className="label">Start at</label>
+                    {show.cues.length === 0 ? (
+                      <p className="text-xs text-yellow-300">This show has no cues yet.</p>
+                    ) : (
+                      <select className="input" value={step.cue_id == null ? '' : Number(step.cue_id)}
+                              onChange={(e) => onChange({ cue_id: e.target.value === '' ? undefined : Number(e.target.value) })}>
+                        <option value="">The first cue</option>
+                        {show.cues.map((cue, i) => (
+                          <option key={cue.id} value={cue.id}>{cueName(cue, i, lights)}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+              </>
+            )
+          )}
+          {label}
+        </div>
+      )
+    }
+    case 'scene':
+      return (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">Projector preset</label>
             {scenes.length === 0 ? (
-              <p className="text-xs text-yellow-300">No scenes are defined yet.</p>
+              <p className="text-xs text-yellow-300">
+                There are no projector presets. To play one of your scenes, remove this step and add Play a scene.
+              </p>
             ) : (
               <select className="input" value={Number(step.scene_id ?? scenes[0].id)} onChange={(e) => onChange({ scene_id: Number(e.target.value) })}>
                 {scenes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -897,7 +1022,15 @@ export function functionName(capability: string | undefined): string {
   return `${groupName} ${action.replace(/_/g, ' ')}`
 }
 
-export function summarise(step: AutomationStep, projectors: Projector[], groups: Group[], scenes: Scene[], enclosures: Enclosure[]): string {
+/** "Cue 2 · Ghosts (Haunted house)": the cue's name and the scene it plays. */
+function cueName(cue: Show['cues'][number], index: number, lights: Lights): string {
+  const scene = lights.scenes.find((s) => s.id === cue.scene_id)?.name
+  const name = cue.name || scene || 'Untitled'
+  return `Cue ${index + 1} · ${name}${scene && scene !== name ? ` (${scene})` : ''}`
+}
+
+export function summarise(step: AutomationStep, projectors: Projector[], groups: Group[], scenes: Scene[],
+                          enclosures: Enclosure[], lights: Lights = NO_LIGHTS): string {
   const target = describeTarget(step.target as Target | undefined, projectors, groups)
   const params = step.params ?? {}
   switch (step.type) {
@@ -917,7 +1050,16 @@ export function summarise(step: AutomationStep, projectors: Projector[], groups:
     case 'check_enclosure':
       return `Check enclosure ${enclosures.find((e) => e.id === step.enclosure_id)?.name ?? step.enclosure_id ?? '?'}`
     case 'scene':
-      return `Scene: ${scenes.find((s) => s.id === step.scene_id)?.name ?? step.scene_id ?? '?'}`
+      return `Projector preset: ${scenes.find((s) => s.id === step.scene_id)?.name ?? step.scene_id ?? '?'}`
+    case 'play_scene':
+      return `Play scene: ${lights.scenes.find((s) => s.id === step.mapping_scene_id)?.name ?? 'choose one'}`
+    case 'show': {
+      if (step.action === 'stop') return 'Stop the show'
+      const show = lights.shows.find((s) => s.id === step.show_id)
+      if (!show) return 'Start the show'
+      const index = step.cue_id == null ? -1 : show.cues.findIndex((c) => c.id === step.cue_id)
+      return `Start “${show.name}”${index >= 0 ? ` at ${cueName(show.cues[index], index, lights)}` : ''}`
+    }
     case 'notify':
       return `Notify: ${step.message || '(empty)'}`
     default:

@@ -262,7 +262,15 @@ export interface AutomationStep {
   interval?: number
   seconds?: number
   enclosure_id?: number
+  /** A projector preset (old "scene"). */
   scene_id?: number
+  /** play_scene: a scene from Mapping → Scenes. */
+  mapping_scene_id?: number
+  fade_seconds?: number
+  /** show: start (at cue_id, or the first cue) or stop. */
+  action?: 'start' | 'stop'
+  show_id?: number
+  cue_id?: number
   message?: string
   [key: string]: unknown
 }

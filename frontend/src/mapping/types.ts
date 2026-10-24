@@ -148,6 +148,7 @@ export interface Show extends ShowSummary {
 }
 
 export interface TransportCue {
+  /** A scene played on its own (an automation's Play a scene) has id -scene id and position -1. */
   id: number
   position: number
   name: string
@@ -160,6 +161,12 @@ export interface TransportCue {
   output_scenes?: Record<string, number | null>
   output_media?: Record<string, number | null>
   started_at_ms: number
+}
+
+/** "cue 3 · Ghosts", or "scene · Haunted house" for a scene played on its own. */
+export function liveLabel(cue: TransportCue): string {
+  if (cue.position < 0) return `scene · ${cue.name}`
+  return `cue ${cue.position + 1}${cue.name ? ` · ${cue.name}` : ''}`
 }
 
 export type TransportStatus = 'stopped' | 'playing' | 'paused' | 'blackout'

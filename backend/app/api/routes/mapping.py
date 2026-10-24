@@ -58,7 +58,7 @@ from app.schemas.mapping import (
 )
 from app.services import canvas_layout
 from app.services.calibration import calibration_summary
-from app.services.mapping import TransportError, now_ms, transport
+from app.services.mapping import TransportError, describe_live, now_ms, transport
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/mapping", tags=["mapping"])
@@ -613,10 +613,11 @@ async def command_transport(payload: TransportCommand, session: SessionDep,
                             user: RequireOperator) -> TransportState:
     try:
         state = await transport.command(payload.action, show_id=payload.show_id,
-                                        cue=payload.cue)
+                                        cue=payload.cue, scene_id=payload.scene_id,
+                                        fade_seconds=payload.fade_seconds)
     except TransportError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
-    cue = f" cue {state.current.position + 1}" if state.current else ""
+    cue = describe_live(state)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="show_transport",
                       message=f"{user.username}: {payload.action}{cue}"))
     await session.commit()

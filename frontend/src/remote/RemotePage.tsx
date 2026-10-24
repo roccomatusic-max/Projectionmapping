@@ -325,7 +325,8 @@ function ShowTab({ session, onSignOut, showId, onShowId: setShowId, live }: {
   }
 
   const held = !!transport?.emergency
-  const thisShow = !!show && transport?.show_id === show.id
+  // A scene an automation plays on its own is live on every show; GO then starts this one.
+  const thisShow = !!show && (transport?.show_id === show.id || (transport?.current?.position ?? 0) < 0)
   const status = thisShow && transport ? transport.status : 'stopped'
   const look = STATUS[status]
   const current = thisShow ? transport?.current ?? null : null
@@ -415,7 +416,7 @@ function ShowTab({ session, onSignOut, showId, onShowId: setShowId, live }: {
               </div>
               <p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">Now</p>
               <p className="mt-0.5 truncate text-[22px] font-semibold leading-tight text-slate-50">
-                {current ? <><span className="text-slate-500">{current.position + 1}</span>  {current.name || 'Untitled cue'}</> : 'Nothing playing'}
+                {current ? <><span className="text-slate-500">{current.position < 0 ? 'Scene' : current.position + 1}</span>  {current.name || 'Untitled cue'}</> : 'Nothing playing'}
               </p>
               <div className="mt-4 border-t border-white/[0.06] pt-3">
                 <p className="truncate text-[15px] text-slate-400">

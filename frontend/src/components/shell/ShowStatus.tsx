@@ -13,6 +13,7 @@ import { classNames } from '@/lib/format'
 import { useFleetContext } from '@/live/LiveProvider'
 import { mappingApi } from '@/mapping/api'
 import type { ShowSummary, TransportState } from '@/mapping/types'
+import { liveLabel } from '@/mapping/types'
 import type { Player } from '@/mapping/editor/PlayersPanel'
 import { MiniPcIcon } from '../icons'
 import type { Tone } from '../tone'
@@ -103,7 +104,7 @@ export function useShowStatus() {
 export function describeShow(status: ShowStatus): { label: string; tone: Tone; detail: string } {
   const t = status.transport
   const cue = t?.current
-  const cueText = cue ? `cue ${cue.position + 1}${cue.name ? ` · ${cue.name}` : ''}` : ''
+  const cueText = cue ? liveLabel(cue) : ''
   const show = status.showName ?? 'the show'
   if (t?.emergency) {
     return { label: 'Stopped (emergency)', tone: 'fault', detail: 'The emergency stop is on: every output is black' }
@@ -140,8 +141,7 @@ export function ShowStatusChip() {
         </span>
         {status.transport?.current && (status.transport.status === 'playing' || status.transport.status === 'paused') && (
           <span className="hidden min-w-0 truncate text-slate-400 md:inline">
-            · cue {status.transport.current.position + 1}
-            {status.transport.current.name ? ` ${status.transport.current.name}` : ''}
+            · {liveLabel(status.transport.current)}
           </span>
         )}
       </Link>

@@ -17,8 +17,10 @@ import {
   AutomationBuilder,
   draftFromAutomation,
   emptyDraft,
+  loadLights,
   summarise,
   type Draft,
+  type Lights,
 } from '@/components/AutomationBuilder'
 
 /** Templates matching the startup/shutdown sequences in the project brief.
@@ -86,6 +88,7 @@ function templates(groupId: number | null) {
 export default function Automation({ session }: { session: Session }) {
   const [automations, setAutomations] = useState<AutomationType[]>([])
   const [scenes, setScenes] = useState<Scene[]>([])
+  const [lights, setLights] = useState<Lights>({ scenes: [], shows: [] })
   const [groups, setGroups] = useState<Group[]>([])
   const [projectors, setProjectors] = useState<Projector[]>([])
   const [enclosures, setEnclosures] = useState<Enclosure[]>([])
@@ -105,18 +108,20 @@ export default function Automation({ session }: { session: Session }) {
 
   const load = async () => {
     try {
-      const [a, s, g, p, e] = await Promise.all([
+      const [a, s, g, p, e, l] = await Promise.all([
         api.listAutomations(),
         api.listScenes(),
         api.listGroups(),
         api.listProjectors(),
         api.listEnclosures(),
+        loadLights().catch(() => ({ scenes: [], shows: [] })),
       ])
       setAutomations(a)
       setScenes(s)
       setGroups(g)
       setProjectors(p)
       setEnclosures(e)
+      setLights(l)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load automations')
@@ -286,7 +291,7 @@ export default function Automation({ session }: { session: Session }) {
                     <ol className="space-y-1 text-xs text-slate-400">
                       {automation.steps.map((step, index) => (
                         <li key={index}>
-                          {index + 1}. {step.label || summarise(step, projectors, groups, scenes, enclosures)}
+                          {index + 1}. {step.label || summarise(step, projectors, groups, scenes, enclosures, lights)}
                         </li>
                       ))}
                     </ol>
@@ -369,33 +374,30 @@ export default function Automation({ session }: { session: Session }) {
         </Panel>
       )}
 
-      <Panel icon={SceneIcon} title="Scenes" description="Reusable one-shot actions over projectors or groups.">
-        {scenes.length === 0 ? (
-          <EmptyState title="No scenes defined">
-            Scenes activate a fixed set of commands in one action.
-          </EmptyState>
-        ) : (
-          <ul className="divide-y divide-white/5">
-            {scenes.map((scene) => (
-              <li key={scene.id} className="flex items-center justify-between gap-3 py-2">
-                <div>
-                  <p className="text-sm text-slate-200">{scene.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {scene.description || `${scene.actions.length} action(s)`}
-                  </p>
-                </div>
-                <button
-                  className="btn-default text-xs"
-                  disabled={!canRun || busy}
-                  onClick={() => setSceneConfirm(scene)}
-                >
-                  Activate
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+      {/* Presets can only be made through the API; your scenes live on Mapping → Scenes. */}
+      {scenes.length > 0 && (
+        <Panel icon={SceneIcon} title="Projector presets" description="Saved sets of projector commands, run in one action.">
+            <ul className="divide-y divide-white/5">
+              {scenes.map((scene) => (
+                <li key={scene.id} className="flex items-center justify-between gap-3 py-2">
+                  <div>
+                    <p className="text-sm text-slate-200">{scene.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {scene.description || `${scene.actions.length} action(s)`}
+                    </p>
+                  </div>
+                  <button
+                    className="btn-default text-xs"
+                    disabled={!canRun || busy}
+                    onClick={() => setSceneConfirm(scene)}
+                  >
+                    Activate
+                  </button>
+                </li>
+              ))}
+            </ul>
+        </Panel>
+      )}
 
       <ConfirmDialog
         open={confirming !== null}
@@ -464,8 +466,8 @@ export default function Automation({ session }: { session: Session }) {
       />
       <ConfirmDialog
         open={sceneConfirm !== null}
-        title={`Activate scene “${sceneConfirm?.name}”?`}
-        body={sceneConfirm?.description || 'Runs every action in the scene against live projectors.'}
+        title={`Run projector preset “${sceneConfirm?.name}”?`}
+        body={sceneConfirm?.description || 'Runs every command in the preset against live projectors.'}
         confirmLabel="Activate"
         onCancel={() => setSceneConfirm(null)}
         onConfirm={async () => {
