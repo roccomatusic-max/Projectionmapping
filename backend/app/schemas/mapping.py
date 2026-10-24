@@ -466,6 +466,14 @@ class PlayerApp(BaseModel):
     computer: str | None = None
     #: Its network card's hardware address, for turning it on over the network.
     mac: str | None = None
+    #: The Mini PC app's version; None for apps too old to update themselves.
+    version: str | None = None
+    #: old_app, up_to_date, waiting, updating or failed.
+    update: str = "old_app"
+    #: The newest Mini PC app this server has.
+    latest: str | None = None
+    #: The update state in words, for the Players page.
+    update_message: str = ""
 
 
 class PlayerOut(BaseModel):
@@ -557,7 +565,8 @@ class PlayerAssignment(BaseModel):
     picture: bool = False
 
 
-PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake"]
+PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake",
+                       "update"]
 
 
 class PlayerCommand(BaseModel):
@@ -583,11 +592,27 @@ class PlayerAppHello(BaseModel):
     power: bool = False
     computer: str | None = Field(default=None, max_length=128)
     mac: str | None = Field(default=None, pattern=r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+    #: Sent by apps that update themselves (minipc/selfupdate.py).
+    version: str | None = Field(default=None, max_length=32, pattern=r"^(dev|\d+\.\d+\.\d+)$")
+    #: How its last update went: {"state": "downloading" | "installing" | "failed",
+    #: "version": ..., "error": ...}.
+    update: dict[str, str | None] | None = None
+
+
+class PlayerAppUpdate(BaseModel):
+    """A newer Mini PC app to install now, from this server."""
+
+    version: str
+    sha256: str
+    size: int
+    url: str
 
 
 class PlayerAppReply(BaseModel):
     #: "restart_output", "reboot" or "shutdown", each to do once.
     commands: list[str] = Field(default_factory=list)
+    #: Install this version now (apps that update themselves only).
+    update: PlayerAppUpdate | None = None
 
 
 #: A small JPEG, base64: about 20 KB at the size the live view asks for.

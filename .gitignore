@@ -42,3 +42,5 @@ backend/static/
 
 # Left by the Home Assistant install line; never part of the integration.
 custom_components/projector_control/pairing.json
+# Written by minipc/build.ps1: the Mini PC app's version.
+minipc/_version.py

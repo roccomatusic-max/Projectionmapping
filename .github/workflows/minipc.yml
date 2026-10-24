@@ -57,8 +57,11 @@ jobs:
         run: |
           $data = Join-Path $env:RUNNER_TEMP "minipc"
           $run = Start-Process dist\MiniPC\MiniPC.exe -ArgumentList "--check", "--data-dir", $data -Wait -PassThru
-          Get-Content (Join-Path $data "logs\minipc.log")
+          $log = Get-Content (Join-Path $data "logs\minipc.log") -Raw
+          Write-Output $log
           if ($run.ExitCode -ne 0) { throw "self-check failed with exit code $($run.ExitCode)" }
+          # It updates itself by this number.
+          if ($log -notmatch 'version 1\.0\.${{ github.run_number }};') { throw 'the app does not know its version' }
       - name: The install line explains Smart App Control instead of failing
         shell: powershell   # Windows PowerShell 5.1, what Rocco pastes the line into
         run: |
@@ -84,6 +87,25 @@ jobs:
           $started = $false
           foreach ($i in 1..30) { if (Get-Process MiniPC -ErrorAction SilentlyContinue) { $started = $true; break }; Start-Sleep 1 }
           if (-not $started) { throw 'the app did not start after the install' }
+          # Updating itself: the script the app hands over to installs over
+          # the running copy without restarting Windows and starts it again.
+          $work = Join-Path $env:RUNNER_TEMP 'selfupdate'
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          Copy-Item dist\MiniPC-Setup.exe (Join-Path $work 'MiniPC-Setup-9.9.9.exe')
+          $old = (Get-Process MiniPC | Select-Object -First 1).Id
+          minipc\.venv\Scripts\python -c "import sys; sys.path.insert(0, 'minipc'); import selfupdate; open(sys.argv[1], 'w', encoding='utf-8').write(selfupdate.RUNNER)" (Join-Path $work 'install-update.ps1')
+          $result = Join-Path $work 'result.json'
+          $runner = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $work 'install-update.ps1'), '-Setup', (Join-Path $work 'MiniPC-Setup-9.9.9.exe'), '-AppPid', $old, '-App', "$app\MiniPC.exe", '-Result', $result, '-Version', '9.9.9') -PassThru
+          # Not -Wait: that also waits for the app it starts, which never exits.
+          $null = $runner.Handle
+          if (-not $runner.WaitForExit(180000)) { throw 'the update script did not finish in 3 minutes' }
+          Get-Content $result
+          $outcome = Get-Content $result -Raw | ConvertFrom-Json
+          if ($outcome.code -ne 0) { throw "the update's installer stopped with code $($outcome.code): $($outcome.error)" }
+          $started = $false
+          foreach ($i in 1..30) { $now = Get-Process MiniPC -ErrorAction SilentlyContinue; if ($now -and $now.Id -ne $old) { $started = $true; break }; Start-Sleep 1 }
+          if (-not $started) { throw 'the app did not start again after updating itself' }
+          if (Test-Path (Join-Path $work 'MiniPC-Setup-9.9.9.exe')) { throw 'the downloaded installer was left behind' }
           & "$app\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART | Out-Null
           foreach ($i in 1..30) { if (-not (Test-Path "$app\MiniPC.exe")) { break }; Start-Sleep 1 }
           if (Test-Path "$app\MiniPC.exe") { throw 'the uninstaller left MiniPC.exe behind' }
@@ -112,8 +134,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          VERSION: 1.0.${{ github.run_number }}
         run: |
+          # What main servers read to hand the update to their mini PCs
+          # (backend/app/services/minipc_updates.py).
+          printf '{"version": "%s", "sha256": "%s", "size": %s, "commit": "%s"}\n' "$VERSION" \
+            "$(sha256sum MiniPC-Setup.exe | cut -d' ' -f1)" "$(stat -c %s MiniPC-Setup.exe)" "$GITHUB_SHA" \
+            > minipc-version.json
+          cat minipc-version.json
           gh release delete minipc-latest --cleanup-tag --yes || true
-          gh release create minipc-latest MiniPC-Setup.exe minipc/install-minipc.ps1 --target "$GITHUB_SHA" \
-            --title "Mini PC app" \
+          gh release create minipc-latest MiniPC-Setup.exe minipc/install-minipc.ps1 minipc-version.json \
+            --target "$GITHUB_SHA" \
+            --title "Mini PC app $VERSION" \
             --notes "For each Windows computer beside a projector (not the main server). Install: open PowerShell on the mini PC, paste the line from minipc/README.md and press Enter; it checks for Smart App Control first. Running MiniPC-Setup.exe by hand works too. Built from ${GITHUB_SHA::7}."
