@@ -94,11 +94,34 @@ open the entry, choose **Allow on device**, and run the line again.
 ### After the install
 
 It installs for the signed-in user and starts whenever that user signs in.
-For the show to come back by itself after a power cut, Windows has to sign
-in without a password prompt: run `netplwiz` and untick *Users must enter a
-user name and password* (on Windows 11, first turn off *Settings → Accounts
-→ Sign-in options → For improved security, only allow Windows Hello
-sign-in*).
+
+**Coming back by itself after a power cut** takes two settings, once per
+mini PC:
+
+1. **The computer turns on when power returns.** This is in the BIOS:
+   restart the mini PC and tap the key as soon as the maker's logo shows.
+   - Lenovo ThinkCentre (M720q and similar): **F1** → **Power** →
+     **After Power Loss** → **Power On**, then **F10** and **Yes**.
+   - HP mini (EliteDesk, ProDesk): **F10** → **Advanced** →
+     **Power-On Options** → **After Power Loss** → **Power On**, then
+     **Main** → **Save Changes and Exit**.
+   - Other makers call it *Restore on AC Power Loss*, *AC Back* or
+     *After Power Failure*; set it to **Power On** (not *Last State*,
+     which stays off if the power failed while the computer was off).
+
+   **Turn on** on the Players page also needs Wake-on-LAN on in the same
+   BIOS: Lenovo **Power** → **Wake on LAN** → **Automatic**; HP
+   **Advanced** → **Power Management Options** → **S5 Wake on LAN** →
+   **Enable**.
+2. **Windows signs in without a password prompt.** Press Start, type
+   `netplwiz`, untick *Users must enter a user name and password*, press OK
+   and type the password twice. If the tick box is missing, first turn off
+   *Settings → Accounts → Sign-in options → For improved security, only
+   allow Windows Hello sign-in*.
+
+To check it, pull the mini PC's power plug during a show and plug it back
+in: it should be back on the output within about a minute, with nobody
+touching it.
 
 Plug the projector in as the computer's only display, or as its main one,
 and set it to the projector's native resolution.
