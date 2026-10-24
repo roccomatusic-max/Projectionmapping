@@ -57,6 +57,10 @@ class StepError(Exception):
     """A step failed in a way that should abort the run."""
 
 
+class _Halted(Exception):
+    """The emergency stop ended the run between or during its steps."""
+
+
 async def resolve_target(session, target: dict[str, Any] | None) -> list[int]:
     """Turn a target spec into a list of projector ids."""
     target = target or {"type": "all"}
@@ -87,6 +91,9 @@ class AutomationEngine:
         #: Scheduled runs in progress. Held so they are not garbage-collected
         #: mid-run and so shutdown can stop them.
         self._runs: set[asyncio.Task] = set()
+        #: Runs in progress, scheduled or by hand: the emergency stop sets
+        #: the event to stop one between (or in the middle of) its steps.
+        self._halts: dict[int, tuple[asyncio.Event, str]] = {}
 
     async def start(self) -> None:
         if self._running:
@@ -107,6 +114,37 @@ class AutomationEngine:
         for task in list(self._runs):
             task.cancel()
         await asyncio.gather(*self._runs, return_exceptions=True)
+
+    async def halt(self) -> list[str]:
+        """Stop every run in progress where it is (the emergency stop).
+
+        Returns the names of the automations stopped once their records say
+        so: aborted, with the steps they had done.
+        """
+        halting = dict(self._halts)
+        for event, _name in halting.values():
+            event.set()
+        deadline = asyncio.get_running_loop().time() + 10.0
+        while (any(aid in self._halts for aid in halting)
+               and asyncio.get_running_loop().time() < deadline):
+            await asyncio.sleep(0.05)
+        return [name for _event, name in halting.values()]
+
+    @staticmethod
+    async def _step_or_halt(work, halt: asyncio.Event) -> dict[str, Any]:
+        """Run one step, unless the emergency stop comes first."""
+        step = asyncio.create_task(work)
+        stop = asyncio.create_task(halt.wait())
+        try:
+            await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            stop.cancel()
+            if not step.done():
+                step.cancel()
+                await asyncio.gather(step, return_exceptions=True)
+        if step.cancelled():
+            raise _Halted
+        return step.result()
 
     @staticmethod
     async def _close_orphaned_runs() -> None:
@@ -174,6 +212,17 @@ class AutomationEngine:
                         "automation_id": automation.id, "name": automation.name,
                         "message": f"Automation '{automation.name}' missed its scheduled time",
                     })
+                elif verdict and _emergency_on():
+                    # Mark it as having had its turn, so it is neither tried
+                    # again every tick nor run late once the stop is cleared.
+                    automation.last_run_at = datetime.now(UTC)
+                    automation.last_status = "held"
+                    session.add(Event(
+                        projector_id=None, severity=Severity.WARNING.value,
+                        kind="automation_held",
+                        message=(f"Automation '{automation.name}' was due but did not run "
+                                 f"because the emergency stop is on"),
+                    ))
                 elif verdict:
                     due.append(automation)
 
@@ -256,7 +305,11 @@ class AutomationEngine:
         if automation_id in self._in_flight:
             return {"status": RunStatus.ABORTED.value,
                     "error": "this automation is already running"}
+        if _emergency_on():
+            return {"status": RunStatus.ABORTED.value,
+                    "error": "the emergency stop is on; clear it first, then run this again"}
         self._in_flight.add(automation_id)
+        halt = asyncio.Event()
         started = datetime.now(UTC)
         run_id: int | None = None
         try:
@@ -275,6 +328,7 @@ class AutomationEngine:
                 await session.flush()
                 run_id = run.id
                 automation.last_run_at = started
+            self._halts[automation_id] = (halt, name)
 
             bus.publish("automation_started", {
                 "automation_id": automation_id, "run_id": run_id,
@@ -287,7 +341,13 @@ class AutomationEngine:
 
             try:
                 for index, step in enumerate(steps):
-                    result = await self._run_step(index, step, user=user)
+                    try:
+                        result = await self._step_or_halt(
+                            self._run_step(index, step, user=user), halt)
+                    except _Halted:
+                        status = RunStatus.ABORTED
+                        error = f"stopped at step {index + 1} by the emergency stop"
+                        break
                     step_results.append(result)
                     bus.publish("automation_step", {
                         "automation_id": automation_id, "run_id": run_id,
@@ -337,7 +397,7 @@ class AutomationEngine:
 
             payload = {
                 "automation_id": automation_id, "run_id": run_id, "name": name,
-                "status": status.value, "steps": step_results,
+                "status": status.value, "steps": step_results, "error": error,
                 "duration_s": round((finished - started).total_seconds(), 1),
             }
             bus.publish("automation_finished", payload)
@@ -350,6 +410,7 @@ class AutomationEngine:
             return payload
         finally:
             self._in_flight.discard(automation_id)
+            self._halts.pop(automation_id, None)
 
     async def _run_step(self, index: int, step: dict[str, Any],
                         user: str | None = None) -> dict[str, Any]:
@@ -584,9 +645,15 @@ class AutomationEngine:
                         outcome.get("results"))
 
 
+def _emergency_on() -> bool:
+    from app.services.mapping import transport
+
+    return transport.snapshot().emergency is not None
+
+
 def _outcome_ok(outcome: str | None) -> bool:
     return outcome in (CommandOutcome.CONFIRMED.value, CommandOutcome.ACCEPTED.value,
-                       CommandOutcome.OK.value)
+                       CommandOutcome.OK.value, CommandOutcome.QUEUED.value)
 
 
 def _state_matches(value: Any, expect: str) -> bool:

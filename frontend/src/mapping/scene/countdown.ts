@@ -1,6 +1,7 @@
 /**
- * The "Christmas countdown" scene layer: days until Christmas as holiday
- * motion graphics (gold foil, frosted ice, candy cane or marquee bulbs).
+ * The countdown scene layer: days until Christmas (gold foil, frosted ice,
+ * candy cane or marquee bulbs) or until Halloween (a glowing jack-o'-lantern
+ * orange or ghostly green), as holiday motion graphics; the look picks the holiday.
  * Like the other objects it answers people who come near: it lights up
  * (a faster sweep of light and more glints), grows, or jumps.
  *
@@ -16,7 +17,7 @@
  * countdown, moved, sized and turned on the preview), or centred on the
  * layer's "Where" area for scenes saved before it could be placed. It counts with
  * the server's clock in the computer's own time zone, and turns into
- * "Merry Christmas" on the 25th.
+ * "Merry Christmas" on the 25th or "Happy Halloween" on the 31st.
  */
 
 import type { PersonSpot } from '../people'
@@ -26,9 +27,28 @@ import { LAYER_VERTEX } from './shaders'
 
 // -- the count ----------------------------------------------------------------------------
 
+export type Holiday = 'christmas' | 'halloween'
+
+interface HolidayInfo {
+  /** Month (0 is January) and day of the big day. */
+  month: number
+  day: number
+  name: string
+  /** The small line above the hours on the last day. */
+  eve: string
+  /** The two script lines on the day itself, and the caption under them. */
+  greeting: [string, string]
+  wish: string
+}
+
+const HOLIDAYS: Record<Holiday, HolidayInfo> = {
+  christmas: { month: 11, day: 25, name: 'Christmas', eve: "It's Christmas Eve", greeting: ['Merry', 'Christmas'], wish: 'From our house to yours' },
+  halloween: { month: 9, day: 31, name: 'Halloween', eve: 'Halloween is tomorrow', greeting: ['Happy', 'Halloween'], wish: 'Trick or treat!' },
+}
+
 export interface Countdown {
-  /** True on Christmas Day itself. */
-  christmas: boolean
+  /** True on the big day itself. */
+  arrived: boolean
   /** Whole days left, not counting today's remainder. */
   days: number
   hours: number
@@ -36,16 +56,17 @@ export interface Countdown {
   seconds: number
 }
 
-/** Time left until midnight at the start of the next 25 December, by the wall clock. */
-export function untilChristmas(nowMs: number): Countdown {
+/** Time left until midnight at the start of the holiday's next day (25 December, 31 October), by the wall clock. */
+export function untilHoliday(nowMs: number, holiday: Holiday = 'christmas'): Countdown {
+  const { month, day } = HOLIDAYS[holiday]
   const now = new Date(nowMs)
   const y = now.getFullYear()
   const m = now.getMonth()
   const d = now.getDate()
-  if (m === 11 && d === 25) return { christmas: true, days: 0, hours: 0, minutes: 0, seconds: 0 }
-  const year = m === 11 && d > 25 ? y + 1 : y
+  if (m === month && d === day) return { arrived: true, days: 0, hours: 0, minutes: 0, seconds: 0 }
+  const year = m > month || (m === month && d > day) ? y + 1 : y
   // Calendar days, so a daylight-saving change cannot make it 67 one hour and 68 the next.
-  const calendarDays = Math.round((Date.UTC(year, 11, 25) - Date.UTC(y, m, d)) / 86_400_000)
+  const calendarDays = Math.round((Date.UTC(year, month, day) - Date.UTC(y, m, d)) / 86_400_000)
   const sinceMidnight = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()
   let left = 86_400 - sinceMidnight
   let days = calendarDays - 1
@@ -54,7 +75,7 @@ export function untilChristmas(nowMs: number): Countdown {
     days += 1
   }
   return {
-    christmas: false,
+    arrived: false,
     days,
     hours: Math.floor(left / 3600),
     minutes: Math.floor((left % 3600) / 60),
@@ -63,17 +84,18 @@ export function untilChristmas(nowMs: number): Countdown {
 }
 
 /** The words around the big number. */
-export function countdownWords(c: Countdown): { top: string; value: string; caption: string } {
-  if (c.christmas) return { top: '', value: '', caption: 'From our house to yours' }
+export function countdownWords(c: Countdown, holiday: Holiday = 'christmas'): { top: string; value: string; caption: string } {
+  const h = HOLIDAYS[holiday]
+  if (c.arrived) return { top: '', value: '', caption: h.wish }
   if (c.days > 0) {
-    return { top: 'Only', value: String(c.days), caption: `${c.days === 1 ? 'Day' : 'Days'} until Christmas` }
+    return { top: 'Only', value: String(c.days), caption: `${c.days === 1 ? 'Day' : 'Days'} until ${h.name}` }
   }
   // The last day counts the hours, then the minutes.
   if (c.hours > 0) {
-    return { top: "It's Christmas Eve", value: String(c.hours), caption: `${c.hours === 1 ? 'Hour' : 'Hours'} until Christmas` }
+    return { top: h.eve, value: String(c.hours), caption: `${c.hours === 1 ? 'Hour' : 'Hours'} until ${h.name}` }
   }
   const minutes = Math.max(1, c.minutes + (c.seconds > 0 ? 1 : 0))
-  return { top: 'Almost there', value: String(minutes), caption: `${minutes === 1 ? 'Minute' : 'Minutes'} until Christmas` }
+  return { top: 'Almost there', value: String(minutes), caption: `${minutes === 1 ? 'Minute' : 'Minutes'} until ${h.name}` }
 }
 
 // -- fonts ---------------------------------------------------------------------------------
@@ -82,6 +104,7 @@ const FONTS: Array<[string, string, string]> = [
   ['Countdown Display', '900', new URL('./fonts/playfair-display-900.woff2', import.meta.url).href],
   ['Countdown Caps', '700', new URL('./fonts/cinzel-700.woff2', import.meta.url).href],
   ['Countdown Script', '400', new URL('./fonts/great-vibes-400.woff2', import.meta.url).href],
+  ['Countdown Spooky', '400', new URL('./fonts/creepster-400.woff2', import.meta.url).href],
 ]
 let fontsState: 'none' | 'loading' | 'ready' = 'none'
 
@@ -105,6 +128,7 @@ export function countdownFontsReady(): boolean {
 const DISPLAY = '"Countdown Display", "Playfair Display", Georgia, serif'
 const CAPS = '"Countdown Caps", "Cinzel", "Trajan Pro", Georgia, serif'
 const SCRIPT = '"Countdown Script", "Great Vibes", "Brush Script MT", cursive'
+const SPOOKY = '"Countdown Spooky", "Creepster", Impact, fantasy'
 
 // -- the artwork ---------------------------------------------------------------------------
 
@@ -114,8 +138,16 @@ export const DESIGN_H = 1000
 /** Where the ticking clock goes, in design units; nothing else is drawn there. */
 const CLOCK = { x: 420, y: 846, w: 760, h: 150 }
 
-export const COUNTDOWN_STYLES = ['gold', 'frost', 'candy', 'marquee'] as const
+// New looks go at the end: the shader knows them by their place in this list.
+export const COUNTDOWN_STYLES = ['gold', 'frost', 'candy', 'marquee', 'pumpkin', 'ghostly'] as const
 export type CountdownStyle = (typeof COUNTDOWN_STYLES)[number]
+
+const HALLOWEEN_STYLES: readonly string[] = ['pumpkin', 'ghostly']
+
+/** Which day a look counts to. */
+export function holidayOf(style: string): Holiday {
+  return HALLOWEEN_STYLES.includes(style) ? 'halloween' : 'christmas'
+}
 
 interface Palette {
   /** Face gradient, top to bottom. */
@@ -151,6 +183,18 @@ const PALETTES: Record<CountdownStyle, Palette> = {
     depth: ['#5c3a0a', '#1a0d02'],
     trim: ['#fff3c4', '#f5c451', '#b97c12'],
     edge: 'rgba(255,214,120,0.9)',
+  },
+  pumpkin: {
+    face: ['#fff1c2', '#ffcf6b', '#ff9a1f', '#c2410c', '#ea580c', '#ffb347', '#ffe3a6'],
+    depth: ['#5a1a02', '#140400'],
+    trim: ['#ffe3a6', '#ff9a1f', '#c2410c'],
+    edge: 'rgba(255,232,180,0.85)',
+  },
+  ghostly: {
+    face: ['#f7fff0', '#e2ffd0', '#b6f58c', '#4d9e2a', '#86d957', '#d9ffc2', '#f4ffec'],
+    depth: ['#24451a', '#050d03'],
+    trim: ['#f0ffe6', '#a3e635', '#4d7c0f'],
+    edge: 'rgba(240,255,230,0.9)',
   },
 }
 
@@ -324,6 +368,131 @@ function peppermint(ctx: Ctx, x: number, y: number, r: number, red: string) {
   ctx.restore()
 }
 
+/** A carved jack-o'-lantern lit from inside. */
+function jackOLantern(ctx: Ctx, x: number, y: number, r: number, glow: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.shadowColor = 'rgba(0,0,0,0.55)'
+  ctx.shadowBlur = 14
+  ctx.shadowOffsetY = 6
+  // Ribs: overlapping ovals, the outer ones darker.
+  for (const [ox, w, k] of [[-0.48, 0.62, -0.35], [0.48, 0.62, -0.35], [-0.22, 0.6, -0.12], [0.22, 0.6, -0.12], [0, 0.55, 0]] as const) {
+    const g = ctx.createRadialGradient(ox * r - r * 0.15, -r * 0.35, r * 0.05, ox * r, 0, r)
+    g.addColorStop(0, shade('#ff8c1a', 0.35 + k))
+    g.addColorStop(0.6, shade('#ea580c', k))
+    g.addColorStop(1, shade('#9a3412', k - 0.2))
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.ellipse(ox * r, 0, w * r, r * 0.86, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.shadowColor = 'transparent'
+  // The stem.
+  ctx.fillStyle = '#4d7c0f'
+  ctx.beginPath()
+  ctx.moveTo(-r * 0.1, -r * 0.8)
+  ctx.quadraticCurveTo(-r * 0.05, -r * 1.12, r * 0.18, -r * 1.2)
+  ctx.lineTo(r * 0.22, -r * 1.08)
+  ctx.quadraticCurveTo(r * 0.08, -r * 1.02, r * 0.1, -r * 0.8)
+  ctx.closePath()
+  ctx.fill()
+  // The face, glowing.
+  ctx.fillStyle = '#fff3b0'
+  ctx.shadowColor = glow
+  ctx.shadowBlur = r * 0.35
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(side * r * 0.42, -r * 0.08)
+    ctx.lineTo(side * r * 0.14, -r * 0.08)
+    ctx.lineTo(side * r * 0.3, -r * 0.42)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.beginPath()
+  ctx.moveTo(-r * 0.08, r * 0.08)
+  ctx.lineTo(r * 0.08, r * 0.08)
+  ctx.lineTo(0, -r * 0.06)
+  ctx.closePath()
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(-r * 0.55, r * 0.22)
+  ctx.quadraticCurveTo(0, r * 0.75, r * 0.55, r * 0.22)
+  ctx.lineTo(r * 0.32, r * 0.3)
+  ctx.lineTo(r * 0.24, r * 0.44)
+  ctx.lineTo(r * 0.1, r * 0.33)
+  ctx.lineTo(-r * 0.1, r * 0.33)
+  ctx.lineTo(-r * 0.24, r * 0.44)
+  ctx.lineTo(-r * 0.32, r * 0.3)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
+/** A little ghost with a wavy hem. */
+function ghost(ctx: Ctx, x: number, y: number, r: number, flip: boolean, glow: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(flip ? -1 : 1, 1)
+  ctx.rotate(-0.12)
+  ctx.shadowColor = glow
+  ctx.shadowBlur = r * 0.5
+  const g = ctx.createLinearGradient(0, -r, 0, r)
+  g.addColorStop(0, '#ffffff')
+  g.addColorStop(0.7, '#eef7ff')
+  g.addColorStop(1, 'rgba(214,232,255,0.75)')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(-r * 0.62, r * 0.9)
+  ctx.lineTo(-r * 0.62, -r * 0.2)
+  ctx.arc(0, -r * 0.2, r * 0.62, Math.PI, 0)
+  ctx.lineTo(r * 0.62, r * 0.9)
+  for (let i = 0; i < 4; i++) {
+    const x0 = r * 0.62 - (i * r * 1.24) / 4
+    ctx.quadraticCurveTo(x0 - r * 0.155, r * (i % 2 ? 0.7 : 1.1), x0 - r * 0.31, r * 0.9)
+  }
+  ctx.closePath()
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.fillStyle = '#0b1020'
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.ellipse(side * r * 0.22, -r * 0.25, r * 0.1, r * 0.16, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.beginPath()
+  ctx.ellipse(0, r * 0.12, r * 0.12, r * 0.17, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** A bat in silhouette, wings out, rimmed by the glow. */
+function bat(ctx: Ctx, x: number, y: number, r: number, tilt: number, glow: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(tilt)
+  ctx.fillStyle = '#0a0612'
+  ctx.shadowColor = glow
+  ctx.shadowBlur = r * 0.6
+  ctx.beginPath()
+  ctx.moveTo(0, -r * 0.22)
+  ctx.lineTo(r * 0.1, -r * 0.42)
+  ctx.lineTo(r * 0.14, -r * 0.2)
+  ctx.quadraticCurveTo(r * 0.55, -r * 0.6, r * 1.2, -r * 0.35)
+  ctx.quadraticCurveTo(r * 1.0, -r * 0.1, r * 1.02, r * 0.12)
+  ctx.quadraticCurveTo(r * 0.82, -r * 0.02, r * 0.66, r * 0.12)
+  ctx.quadraticCurveTo(r * 0.5, -r * 0.02, r * 0.36, r * 0.16)
+  ctx.quadraticCurveTo(r * 0.2, r * 0.05, 0, r * 0.32)
+  ctx.quadraticCurveTo(-r * 0.2, r * 0.05, -r * 0.36, r * 0.16)
+  ctx.quadraticCurveTo(-r * 0.5, -r * 0.02, -r * 0.66, r * 0.12)
+  ctx.quadraticCurveTo(-r * 0.82, -r * 0.02, -r * 1.02, r * 0.12)
+  ctx.quadraticCurveTo(-r * 1.0, -r * 0.1, -r * 1.2, -r * 0.35)
+  ctx.quadraticCurveTo(-r * 0.55, -r * 0.6, -r * 0.14, -r * 0.2)
+  ctx.lineTo(-r * 0.1, -r * 0.42)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
 /** A thin rule with a diamond, either side of the small top line. */
 function flourish(ctx: Ctx, x: number, y: number, length: number, dir: number, style: string | CanvasGradient) {
   ctx.save()
@@ -458,7 +627,8 @@ export interface ArtOptions {
   ribbon: string
   glow: string
   words: { top: string; value: string; caption: string }
-  christmas: boolean
+  /** The big day itself: the greeting instead of the number. */
+  arrived: boolean
 }
 
 /**
@@ -485,8 +655,10 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
   fxc.textAlign = 'center'
 
   const pal = PALETTES[o.style]
+  const holiday = holidayOf(o.style)
+  const spooky = holiday === 'halloween'
   // "Merry Christmas" is too thin for bulbs; the marquee look writes it in gold.
-  const bulbsOn = o.style === 'marquee' && !o.christmas
+  const bulbsOn = o.style === 'marquee' && !o.arrived
   const face = bulbsOn || o.style !== 'marquee' ? pal.face : PALETTES.gold.face
   const cx = DESIGN_W / 2
   const trim = vertical(ctx, 0, DESIGN_H, [pal.trim[0], pal.trim[1], pal.trim[2], pal.trim[1]])
@@ -508,8 +680,10 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
 
   // -- the top line -------------------------------------------------------------
   if (o.words.top) {
-    const size = fitFont(ctx, o.words.top.toUpperCase(), CAPS, '700', 62, 760, 16)
-    ctx.font = `700 ${size}px ${CAPS}`
+    const topFamily = spooky ? SPOOKY : CAPS
+    const topWeight = spooky ? '400' : '700'
+    const size = fitFont(ctx, o.words.top.toUpperCase(), topFamily, topWeight, spooky ? 70 : 62, 760, 16)
+    ctx.font = `${topWeight} ${size}px ${topFamily}`
     ctx.fillStyle = trim
     ctx.shadowColor = rgba(o.glow, 0.8)
     ctx.shadowBlur = 22
@@ -521,13 +695,15 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
     for (const dir of [-1, 1]) flourish(ctx, cx + dir * (w / 2 + 30), 130, 150, dir, trim)
   }
 
-  // -- the hero: the number, or "Merry Christmas" ------------------------------------
+  // -- the hero: the number, or "Merry Christmas" / "Happy Halloween" -----------------
   const lines: Array<{ text: string; y: number; size: number; family: string; weight: string }> = []
-  if (o.christmas) {
-    const s1 = fitFont(ctx, 'Merry', SCRIPT, '400', 300, 1100)
-    const s2 = fitFont(ctx, 'Christmas', SCRIPT, '400', 300, 1300)
-    lines.push({ text: 'Merry', y: 330, size: Math.min(s1, s2), family: SCRIPT, weight: '400' })
-    lines.push({ text: 'Christmas', y: 590, size: Math.min(s1, s2), family: SCRIPT, weight: '400' })
+  if (o.arrived) {
+    const [first, second] = HOLIDAYS[holiday].greeting
+    const family = spooky ? SPOOKY : SCRIPT
+    const s1 = fitFont(ctx, first, family, '400', spooky ? 260 : 300, 1100)
+    const s2 = fitFont(ctx, second, family, '400', spooky ? 260 : 300, 1300)
+    lines.push({ text: first, y: 330, size: Math.min(s1, s2), family, weight: '400' })
+    lines.push({ text: second, y: 590, size: Math.min(s1, s2), family, weight: '400' })
   } else {
     const base = o.words.value.length >= 3 ? 470 : 540
     const size = fitFont(ctx, o.words.value, DISPLAY, '900', base, 1000)
@@ -585,7 +761,7 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
   }
 
   // -- ribbon and caption ----------------------------------------------------------
-  const band = ribbon(ctx, ribbonY, o.ribbon, rgba(o.style === 'frost' ? '#e0f2ff' : '#ffe9a8', 0.55))
+  const band = ribbon(ctx, ribbonY, o.ribbon, rgba(o.style === 'frost' ? '#e0f2ff' : o.style === 'ghostly' ? '#d9ffc2' : '#ffe9a8', 0.55))
   // The ribbon hides the foot of the number, so light must not catch it there.
   fxc.fillStyle = '#000'
   fxc.fill(band)
@@ -611,11 +787,25 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
     } else if (o.style === 'candy') {
       peppermint(ctx, x, ribbonY - 4, 70, '#d61f2c')
       peppermint(ctx, x + (flip ? 80 : -80), ribbonY - 82, 38, '#d61f2c')
+    } else if (o.style === 'pumpkin') {
+      jackOLantern(ctx, x, ribbonY - 10, 82, o.glow)
+      jackOLantern(ctx, x + (flip ? 92 : -92), ribbonY - 104, 40, o.glow)
+    } else if (o.style === 'ghostly') {
+      ghost(ctx, x, ribbonY - 20, 82, flip, o.glow)
+      ghost(ctx, x + (flip ? 100 : -100), ribbonY - 130, 40, !flip, o.glow)
     } else {
       holly(ctx, x, ribbonY - 4, 0.95, flip, '#1f7a3a')
     }
   }
 
+  if (spooky) {
+    // Bats instead of stars, flying out from behind the number.
+    const bats: Array<[number, number, number, number]> = [
+      [240, 300, 58, -0.25], [1360, 290, 66, 0.2], [180, 500, 34, 0.15], [1430, 510, 38, -0.2], [170, 140, 28, 0.3], [1440, 130, 30, -0.3],
+    ]
+    for (const [x, y, r, tilt] of bats) bat(ctx, x, y, r, tilt, o.glow)
+    return
+  }
   // Scattered static stars around the hero; the shader makes some glint.
   ctx.fillStyle = trim
   ctx.shadowColor = rgba(o.glow, 0.9)
@@ -734,7 +924,7 @@ export function paintClock(canvas: HTMLCanvasElement, scale: number, c: Countdow
   const ctx = canvas.getContext('2d')!
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, W, H)
-  if (c.christmas) return
+  if (c.arrived) return
   ctx.setTransform(scale, 0, 0, scale, 0, 0)
   const pal = PALETTES[style]
   const groups = [
@@ -758,7 +948,7 @@ export function paintClock(canvas: HTMLCanvasElement, scale: number, c: Countdow
     ;[...digits].forEach((d, i) => ctx.fillText(d, gx + (i - 0.5) * cell, 96))
     ctx.shadowBlur = 0
     ctx.font = `700 27px ${CAPS}`
-    ctx.fillStyle = rgba(style === 'frost' ? '#e0f0ff' : '#ffe9a8', 0.9)
+    ctx.fillStyle = rgba(style === 'frost' ? '#e0f0ff' : style === 'ghostly' ? '#e8ffd9' : '#ffe9a8', 0.9)
     spaced(ctx, label.toUpperCase(), gx, 142, 4)
     if (gi < 2) {
       ctx.fillStyle = fill
@@ -885,6 +1075,12 @@ void main() {
   // A breath of extra glow on the foil, stronger when someone is near.
   float breathe = 0.5 + 0.5 * sin(t * 1.3);
   col += uGlow * fx.r * a * (0.06 + 0.1 * breathe) * (0.4 + uReact);
+
+  // Halloween looks flicker on the face like a candle in a pumpkin.
+  if (uStyle >= 4) {
+    float flick = 0.86 + 0.08 * sin(t * 7.3) + 0.05 * sin(t * 13.1 + 1.7) + 0.04 * sin(t * 23.7 + 0.4);
+    col *= mix(1.0, flick, fx.r);
+  }
 
   // A sweep of light across the foil every few seconds.
   float d = uv.x * 0.9 + uv.y * 0.5;
@@ -1056,17 +1252,18 @@ export class CountdownDrawer {
     })
     if (!shown.length) return
 
-    const count = untilChristmas(d.clockMs)
     const style: CountdownStyle = (COUNTDOWN_STYLES as readonly string[]).includes(layer.style)
       ? (layer.style as CountdownStyle)
       : 'gold'
+    const holiday = holidayOf(style)
+    const count = untilHoliday(d.clockMs, holiday)
     // Paint at about the pixels it covers, in steps so small changes do not repaint.
     const widest = Math.max(...shown.map((p) => (2 * p.hw) / aspect))
     const covers = (widest / d.rect.w) * d.w * d.detail
     const scale = Math.min(1.4, Math.max(0.25, Math.ceil((covers / DESIGN_W) * 8) / 8))
-    const words = countdownWords(count)
+    const words = countdownWords(count, holiday)
     const fonts = countdownFontsReady()
-    const artKey = [style, layer.color, layer.color2, words.top, words.value, words.caption, count.christmas, scale, fonts].join('|')
+    const artKey = [style, layer.color, layer.color2, words.top, words.value, words.caption, count.arrived, scale, fonts].join('|')
 
     if (!art) {
       art = {
@@ -1078,14 +1275,14 @@ export class CountdownDrawer {
     }
     art.seenAt = performance.now()
     if (art.key !== artKey) {
-      paintArt(art.art, art.fx, scale, { style, ribbon: layer.color, glow: layer.color2, words, christmas: count.christmas })
+      paintArt(art.art, art.fx, scale, { style, ribbon: layer.color, glow: layer.color2, words, arrived: count.arrived })
       this.upload(art.artTex, art.art, true)
       this.upload(art.fxTex, art.fx, false)
       art.key = artKey
       art.scale = scale
       art.clockKey = ''
     }
-    const clockKey = `${count.hours}:${count.minutes}:${count.seconds}:${count.christmas}`
+    const clockKey = `${count.hours}:${count.minutes}:${count.seconds}:${count.arrived}`
     if (art.clockKey !== clockKey) {
       paintClock(art.clock, art.scale, count, style, layer.color2)
       const x = Math.round(CLOCK.x * art.scale)

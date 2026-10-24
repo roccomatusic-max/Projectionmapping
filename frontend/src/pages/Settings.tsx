@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ApiError, api, type Session } from '@/api/client'
 import { useOps } from '@/live/LiveProvider'
 import type { DriverInfo, Role } from '@/api/types'
@@ -6,12 +7,24 @@ import {
   Chip,
   ErrorBanner,
   Panel,
+  SectionBar,
   Spinner,
   PageHeader,
 } from '@/components/ui'
 import AppUpdates from '@/components/AppUpdates'
+import HomeAssistantSetup from '@/components/HomeAssistantSetup'
 import SceneAiKey from '@/components/SceneAiKey'
 import { ClockIcon, LiveIcon, ProjectorIcon, SettingsIcon, TokenIcon, UsersIcon } from '@/components/icons'
+
+type SettingsPart = 'account' | 'ai' | 'homeassistant' | 'people' | 'technical'
+
+const SETTINGS_PARTS: Array<{ id: SettingsPart; label: string; hint: string; admin?: boolean }> = [
+  { id: 'account', label: 'Updates and password', hint: 'Update the app and change your password.' },
+  { id: 'ai', label: 'AI keys', hint: 'Optional keys for “Describe a scene” and “Paint the house”.', admin: true },
+  { id: 'homeassistant', label: 'Home Assistant', hint: 'Control projectors and the show from Home Assistant.', admin: true },
+  { id: 'people', label: 'Users and tokens', hint: 'Who can sign in, and keys for scripts and sensors.', admin: true },
+  { id: 'technical', label: 'Technical details', hint: 'How often projectors are checked, connections and what each make supports.' },
+]
 
 export default function Settings({ session }: { session: Session }) {
   const [info, setInfo] = useState<Awaited<ReturnType<typeof api.systemInfo>> | null>(null)
@@ -23,6 +36,10 @@ export default function Settings({ session }: { session: Session }) {
   const { notify: push } = useOps()
 
   const isAdmin = session.role === 'admin'
+  const parts = SETTINGS_PARTS.filter((p) => isAdmin || !p.admin)
+  const [search, setSearch] = useSearchParams()
+  const part: SettingsPart = parts.find((p) => p.id === search.get('part'))?.id ?? 'account'
+  const setPart = (id: SettingsPart) => setSearch(id === 'account' ? {} : { part: id }, { replace: true })
 
   const load = async () => {
     try {
@@ -48,117 +65,131 @@ export default function Settings({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={SettingsIcon} title="Settings" subtitle="Account, polling, device links, drivers, users and service tokens." />
+      <PageHeader icon={SettingsIcon} title="Settings" subtitle="App updates, your password, AI keys, Home Assistant and who can sign in." />
       {error && <ErrorBanner message={error} />}
 
-      {isAdmin && <AppUpdates />}
-      {isAdmin && <SceneAiKey />}
+      <SectionBar label="Settings sections" sections={parts} value={part} onChange={setPart} />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel icon={SettingsIcon} title="Your account">
-          <ChangePassword
-            onDone={() => push('ok', 'Password changed')}
-            onError={(message) => push('fault', 'Could not change password', message)}
-          />
-          <p className="mt-3 text-xs text-slate-500">
-            Signed in as {session.username} with the {session.role} role.
-          </p>
-        </Panel>
+      {part === 'account' && (
+        <>
+          {isAdmin && <AppUpdates />}
+          <Panel icon={SettingsIcon} title="Your account" className="lg:max-w-xl">
+            <ChangePassword
+              onDone={() => push('ok', 'Password changed')}
+              onError={(message) => push('fault', 'Could not change password', message)}
+            />
+            <p className="mt-3 text-xs text-slate-500">
+              Signed in as {session.username} with the {session.role} role.
+            </p>
+          </Panel>
+        </>
+      )}
 
-        <Panel icon={ClockIcon} title="Polling intervals" description="Server-side defaults, in seconds.">
-          <dl className="grid grid-cols-2 gap-y-2 text-sm">
-            {Object.entries(info.polling).map(([tier, seconds]) => (
-              <div key={tier} className="contents">
-                <dt className="text-slate-400 capitalize">{tier}</dt>
-                <dd className="tnum text-slate-200">{seconds}s</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-3 text-xs text-slate-500">
-            Set these with the POLL_* environment variables. Individual projectors can
-            override them with poll_overrides.
-          </p>
-        </Panel>
-      </div>
+      {part === 'ai' && isAdmin && <SceneAiKey />}
 
-      <Panel
-        icon={LiveIcon}
-        title="Device connections"
-        description="Live transport state for each registered projector."
-      >
-        {info.devices.length === 0 ? (
-          <p className="text-sm text-slate-500">No projectors registered.</p>
-        ) : (
-          <ul className="divide-y divide-white/5">
-            {info.devices.map((device) => (
-              <li
-                key={device.projector_id}
-                className="flex flex-wrap items-center justify-between gap-2 py-2"
-              >
-                <div>
-                  <p className="text-sm text-slate-200">{device.name}</p>
-                  {device.last_error && (
-                    <p className="text-xs text-red-300">{device.last_error}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {device.queue_depth > 0 && (
-                    <Chip tone="busy">{device.queue_depth} queued</Chip>
-                  )}
-                  <Chip tone={device.connected ? 'ok' : 'idle'}>
-                    {device.connected ? 'socket open' : 'socket closed'}
-                  </Chip>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+      {part === 'homeassistant' && isAdmin && (
+        <HomeAssistantSetup onToast={(tone, title, detail) => push(tone, title, detail)} />
+      )}
 
-      <Panel
-        icon={ProjectorIcon}
-        title="Drivers and command provenance"
-        description="Where each command comes from. Commands marked as sibling-model are refused unless a projector opts in."
-      >
-        <div className="space-y-4">
-          {drivers.map((driver) => {
-            const gated = driver.capabilities.filter((c) => c.requires_opt_in)
-            const trusted = driver.capabilities.filter((c) => !c.requires_opt_in)
-            return (
-              <div key={driver.driver_id} className="rounded-md bg-panel-850 p-3">
-                <p className="text-sm font-medium text-slate-200">
-                  {driver.display_name}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {driver.manufacturer} · {driver.models.join(', ')} · default port{' '}
-                  {driver.default_port}
-                </p>
-                <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <p className="mb-1 text-xs uppercase tracking-wide text-green-400">
-                      Verified ({trusted.length})
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {trusted.map((c) => c.name).join(', ') || '—'}
-                    </p>
+      {part === 'technical' && (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Panel icon={ClockIcon} title="How often projectors are checked" description="In seconds. Faster checks show changes sooner.">
+              <dl className="grid grid-cols-2 gap-y-2 text-sm">
+                {Object.entries(info.polling).map(([tier, seconds]) => (
+                  <div key={tier} className="contents">
+                    <dt className="text-slate-400 capitalize">{tier}</dt>
+                    <dd className="tnum text-slate-200">{seconds}s</dd>
                   </div>
-                  <div>
-                    <p className="mb-1 text-xs uppercase tracking-wide text-yellow-400">
-                      Needs opt-in ({gated.length})
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {gated.map((c) => c.name).join(', ') || '—'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </Panel>
+                ))}
+              </dl>
+              <p className="mt-3 text-xs text-slate-500">
+                Set on the server with the POLL_* environment variables. A single projector can
+                be given its own timing with poll_overrides.
+              </p>
+            </Panel>
 
-      {isAdmin && (
-        <Panel icon={UsersIcon} title="Users">
+            <Panel
+              icon={LiveIcon}
+              title="Device connections"
+              description="Whether the server has a connection open to each projector right now."
+            >
+              {info.devices.length === 0 ? (
+                <p className="text-sm text-slate-500">No projectors registered.</p>
+              ) : (
+                <ul className="divide-y divide-white/5">
+                  {info.devices.map((device) => (
+                    <li
+                      key={device.projector_id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2"
+                    >
+                      <div>
+                        <p className="text-sm text-slate-200">{device.name}</p>
+                        {device.last_error && (
+                          <p className="text-xs text-red-300">{device.last_error}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {device.queue_depth > 0 && (
+                          <Chip tone="busy">{device.queue_depth} queued</Chip>
+                        )}
+                        <Chip tone={device.connected ? 'ok' : 'idle'}>
+                          {device.connected ? 'connection open' : 'no open connection'}
+                        </Chip>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+          </div>
+
+          <Panel
+            icon={ProjectorIcon}
+            title="What each projector make supports"
+            description="Confirmed commands always work. The others were documented only for a related model, so they stay off until “Allow unverified commands” is turned on for a projector."
+          >
+            <div className="space-y-4">
+              {drivers.map((driver) => {
+                const gated = driver.capabilities.filter((c) => c.requires_opt_in)
+                const trusted = driver.capabilities.filter((c) => !c.requires_opt_in)
+                return (
+                  <div key={driver.driver_id} className="rounded-md bg-panel-850 p-3">
+                    <p className="text-sm font-medium text-slate-200">
+                      {driver.display_name}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {driver.manufacturer} · {driver.models.join(', ')} · default port{' '}
+                      {driver.default_port}
+                    </p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="mb-1 text-xs uppercase tracking-wide text-green-400">
+                          Confirmed ({trusted.length})
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {trusted.map((c) => c.name).join(', ') || '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-xs uppercase tracking-wide text-yellow-400">
+                          Off until turned on ({gated.length})
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {gated.map((c) => c.name).join(', ') || '—'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Panel>
+        </>
+      )}
+
+      {part === 'people' && isAdmin && (
+        <Panel icon={UsersIcon} title="Users" description="Viewers can only look. Operators can control projectors and the show. Admins can also change settings.">
           <UserAdmin
             users={users}
             currentUser={session.username}
@@ -168,11 +199,11 @@ export default function Settings({ session }: { session: Session }) {
         </Panel>
       )}
 
-      {isAdmin && (
+      {part === 'people' && isAdmin && (
         <Panel
           icon={TokenIcon}
           title="Service tokens"
-          description="Long-lived tokens for Home Assistant, scripts and enclosure sensors. A token carries its user's role; deactivating the user revokes it."
+          description="Long-lived tokens for scripts and enclosure sensors (Home Assistant has its own page). A token carries its user's role; deactivating the user revokes it."
         >
           <ServiceTokens
             users={users}

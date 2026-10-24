@@ -401,6 +401,15 @@ class TransportCue(BaseModel):
     started_at_ms: float
 
 
+class EmergencyState(BaseModel):
+    """The emergency stop, while it is on: every output black, shows held."""
+
+    #: Server epoch milliseconds when it was pressed.
+    at_ms: float
+    #: Who pressed it.
+    by: str | None = None
+
+
 class TransportState(BaseModel):
     show_id: int | None = None
     status: Literal["stopped", "playing", "paused", "blackout"] = "stopped"
@@ -414,6 +423,10 @@ class TransportState(BaseModel):
     #: Bumped on every change, so a client can ignore a stale message.
     revision: int = 0
     server_time_ms: float = 0.0
+    #: Set while the emergency stop is on. Outputs draw nothing at all, not
+    #: even a test pattern or a calibration frame, and GO is refused until
+    #: someone clears it.
+    emergency: EmergencyState | None = None
 
 
 # -- players -------------------------------------------------------------------
@@ -438,6 +451,19 @@ class PlayerHelloResponse(BaseModel):
     access_token: str | None = None
 
 
+class PlayerApp(BaseModel):
+    """What the Mini PC app on a player's computer last said about itself."""
+
+    #: Heard from in the last few seconds: commands for it arrive.
+    connected: bool
+    #: It can restart and shut down its computer (Windows).
+    power: bool = False
+    #: The computer's own name in Windows.
+    computer: str | None = None
+    #: Its network card's hardware address, for turning it on over the network.
+    mac: str | None = None
+
+
 class PlayerOut(BaseModel):
     id: int
     name: str
@@ -452,6 +478,10 @@ class PlayerOut(BaseModel):
     #: The other half of a mini PC: its camera, on a player; its player,
     #: on a camera. Approved and removed together.
     companion_id: int | None = None
+    #: What its output is set to show instead of the show ("none": the show).
+    screen: TestPattern | None = None
+    #: The Mini PC app around the player page, when it has been heard from.
+    app: PlayerApp | None = None
 
 
 class NetworkInfo(BaseModel):
@@ -463,6 +493,8 @@ class NetworkInfo(BaseModel):
     discoverable: bool
     #: Where to point one by hand on this network, when known.
     address: str | None = None
+    #: The server's own system ("mac", "windows", "linux"), for the setup steps.
+    server_os: str = "linux"
     #: Where a phone with Tailscale reaches it from any internet connection.
     tailscale_address: str | None = None
 
@@ -493,12 +525,17 @@ class PlayerReport(BaseModel):
     tracking_ms: float | None = None
     # Players: how old the camera's people reports are on arrival (ms).
     people_ms: float | None = None
+    #: Players: half the round trip to the server clock (ms), and the live link.
+    clock_ms: float | None = None
+    link: str | None = Field(default=None, max_length=16)
+    #: Players: the status overlay is showing on the projector.
+    overlay: bool | None = None
 
     @model_validator(mode="after")
     def _finite(self) -> PlayerReport:
         # A Python sender writes NaN for "no measurement yet"; stored, it would
         # make the players list unreadable for everyone. Keep the report.
-        for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms"):
+        for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms", "clock_ms"):
             value = getattr(self, name)
             if value is not None and not math.isfinite(value):
                 setattr(self, name, None)
@@ -510,6 +547,41 @@ class PlayerAssignment(BaseModel):
     name: str
     output_id: int | None
     show_id: int | None
+    #: Things to do once, sent from the Players page ("reload", "overlay_on", "overlay_off").
+    commands: list[str] = Field(default_factory=list)
+
+
+PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake"]
+
+
+class PlayerCommand(BaseModel):
+    action: PlayerAction
+
+
+class PlayerCommandResult(BaseModel):
+    #: What it was handed to: the Mini PC app, the player page, or the network.
+    via: Literal["app", "page", "network"]
+    message: str
+
+
+class PlayerScreen(BaseModel):
+    #: "none" goes back to the show.
+    pattern: TestPattern
+
+
+class PlayerAppHello(BaseModel):
+    """The Mini PC app checking in for commands, next to its player page."""
+
+    device_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    secret: str = Field(min_length=32, max_length=128)
+    power: bool = False
+    computer: str | None = Field(default=None, max_length=128)
+    mac: str | None = Field(default=None, pattern=r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+
+
+class PlayerAppReply(BaseModel):
+    #: "restart_output", "reboot" or "shutdown", each to do once.
+    commands: list[str] = Field(default_factory=list)
 
 
 # -- cameras -------------------------------------------------------------------
@@ -570,6 +642,11 @@ class ApplyCalibration(BaseModel):
     mesh: int = Field(default=9, ge=2, le=17)
     #: Restrict to these outputs; all calibrated outputs when omitted.
     output_ids: list[int] | None = None
+
+
+class RemoveResult(BaseModel):
+    #: Outputs put back as they were before calibration.
+    restored: list[int] = Field(default_factory=list)
 
 
 class ApplyResult(BaseModel):
@@ -762,3 +839,37 @@ class PaintHouse(BaseModel):
     #: The picture, as base64 JPEG or PNG, already the canvas's shape.
     image: str = Field(min_length=100, max_length=30_000_000)
     show_id: int
+
+
+# -- emergency stop --------------------------------------------------------------
+
+
+class EmergencyProjector(BaseModel):
+    projector_id: int
+    name: str | None = None
+    #: "off" (took the power off), "waiting" (busy; held and sent by itself
+    #: once it accepts), "already_off" (off or cooling; nothing sent),
+    #: "failed" (did not take it; may still be on).
+    result: Literal["off", "waiting", "already_off", "failed"]
+    #: What happened, in words, for the operator.
+    detail: str
+    #: Raw outcomes of the commands sent, when they were sent.
+    shutter: str | None = None
+    power: str | None = None
+    error: str | None = None
+
+
+class EmergencyPlayer(BaseModel):
+    id: int
+    name: str
+    #: Connected now, so it went black at once; one that is not goes black
+    #: as soon as it reconnects.
+    online: bool
+
+
+class EmergencyResult(BaseModel):
+    transport: TransportState
+    projectors: list[EmergencyProjector] = Field(default_factory=list)
+    players: list[EmergencyPlayer] = Field(default_factory=list)
+    #: Names of the automations that were running and were stopped.
+    automations_stopped: list[str] = Field(default_factory=list)

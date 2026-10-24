@@ -102,6 +102,7 @@ def _projector_out(record: Projector, state: ProjectorState | None) -> Projector
         lamp_critical_hours=record.lamp_critical_hours,
         pjlink_port=record.pjlink_port,
         has_password=bool(record.password_enc),
+        has_pjlink_password=bool(record.pjlink_password_enc),
         created_at=record.created_at,
         state=_state_out(record, state),
     )
@@ -328,7 +329,11 @@ async def test_connection(projector_id: int, session: SessionDep,
     return {
         "reachable": True,
         "tcp_latency_ms": tcp_ms,
-        "authenticated": result.outcome is not CommandOutcome.AUTH_FAILED,
+        # Only a projector that answered has shown our credentials are good;
+        # a refused connection or a missing password is not a pass.
+        "authenticated": result.outcome not in (
+            CommandOutcome.AUTH_FAILED, CommandOutcome.CONNECTION_ERROR,
+            CommandOutcome.TIMEOUT),
         "outcome": result.outcome.value,
         "value": str(result.value) if result.value is not None else None,
         "raw_response": result.raw_response,
@@ -342,8 +347,8 @@ def _probe_detail(result) -> str:
         case CommandOutcome.OK | CommandOutcome.ACCEPTED | CommandOutcome.CONFIRMED:
             return "Connected, authenticated and the projector answered a status query."
         case CommandOutcome.AUTH_FAILED:
-            return ("The projector rejected the credentials. Check the web-control "
-                    "administrator username and password.")
+            return result.error or ("The projector rejected the credentials. Check the "
+                                    "web-control administrator username and password.")
         case CommandOutcome.TIMEOUT:
             return ("The port is open but the projector did not answer. Another "
                     "controller may be holding the control session.")

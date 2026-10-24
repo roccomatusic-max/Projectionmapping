@@ -9,14 +9,17 @@ import { PhaseBadge } from '@/components/status'
 import { Banner, EmptyState, PageHeader, Panel, Spinner, StatusDot } from '@/components/ui'
 import { FleetBar, type FleetSegmentKind } from '@/components/graphics'
 import { TONE_TEXT } from '@/components/tone'
+import { describeShow, useShowStatus } from '@/components/shell/ShowStatus'
 import {
   AddIcon,
   AlertsIcon,
   ChevronIcon,
   DashboardIcon,
   HistoryIcon,
+  MiniPcIcon,
   OkIcon,
   RefreshIcon,
+  RunShowIcon,
   WarningIcon,
 } from '@/components/icons'
 import { classNames, relativeTime } from '@/lib/format'
@@ -121,7 +124,7 @@ function OverviewStrip({
         tone={offline > 0 ? 'idle' : online > 0 ? 'ok' : 'idle'}
         active={filter === 'offline'}
         onClick={() => toggle(offline > 0 ? 'offline' : 'online')}
-        title="Counted from a successful poll inside the staleness window, not from a remembered state. Click to filter."
+        title="Projectors that answered the last regular check. Click to show only these."
       />
       <Metric
         label="Powered on"
@@ -130,25 +133,25 @@ function OverviewStrip({
         tone={(overview?.powered_on ?? 0) > 0 ? 'ok' : 'idle'}
         active={filter === 'on'}
         onClick={() => toggle('on')}
-        title="Click to filter"
+        title="Click to show only these"
       />
       <Metric
         label="Warnings"
         value={warnings}
         tone={warnings > 0 ? 'warn' : 'idle'}
-        sub="device-reported"
+        sub="reported by the projector"
         active={filter === 'warnings'}
         onClick={() => toggle('warnings')}
-        title="Projectors reporting a warning (fan, temperature, filter, cover or lamp). Click to filter."
+        title="Projectors reporting a warning (fan, temperature, filter, cover or lamp). Click to show only these."
       />
       <Metric
         label="Faults"
         value={faults}
         tone={faults > 0 ? 'fault' : 'idle'}
-        sub="device-reported"
+        sub="reported by the projector"
         active={filter === 'faults'}
         onClick={() => toggle('faults')}
-        title="Projectors reporting an error. Unreachable projectors are counted under Online. Click to filter."
+        title="Projectors reporting an error. Projectors that cannot be reached are counted under Online instead. Click to show only these."
       />
       <Metric
         label="Need attention"
@@ -157,8 +160,50 @@ function OverviewStrip({
         sub={attentionCount > 0 ? 'offline, faults, warnings, lamps' : 'nothing outstanding'}
         active={filter === 'attention'}
         onClick={() => toggle('attention')}
-        title="Projectors that are offline, faulted, warning or past lamp replacement. Click to filter."
+        title="Projectors that are offline, faulted, warning or past their lamp replacement. Click to show only these."
       />
+    </div>
+  )
+}
+
+/**
+ * The mapping show in one row: what is playing and whether the mini PCs are
+ * there, each a click from the page that changes it.
+ */
+function ShowRow() {
+  const status = useShowStatus()
+  if (!status.ready || status.shows.length === 0) return null
+  const { label, tone, detail } = describeShow(status)
+  const { paired, online, waiting } = status.players
+  const playersTone: Tone = waiting > 0 ? 'busy' : paired === 0 ? 'idle' : online === paired ? 'ok' : 'warn'
+  const playersText =
+    waiting > 0
+      ? `${waiting} mini PC${waiting === 1 ? '' : 's'} waiting to be approved`
+      : paired === 0
+        ? 'No mini PCs paired yet'
+        : online === paired
+          ? `All ${paired} mini PC${paired === 1 ? '' : 's'} connected`
+          : `${online} of ${paired} mini PCs connected`
+  return (
+    <div className="panel flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+      <Link to="/mapping/run" className="group flex min-w-0 items-center gap-2.5" title="Open Run the show">
+        <RunShowIcon size={18} className="shrink-0 text-slate-400 group-hover:text-sky-300" aria-hidden />
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-slate-100">
+            <StatusDot tone={tone} pulse={tone === 'ok'} /> Show {label.toLowerCase()}
+          </span>
+          <span className="block truncate text-xs text-slate-400">{detail}</span>
+        </span>
+      </Link>
+      <Link to="/mapping/players" className="group flex min-w-0 items-center gap-2.5" title="Open Players">
+        <MiniPcIcon size={18} className="shrink-0 text-slate-400 group-hover:text-sky-300" aria-hidden />
+        <span className={classNames('flex items-center gap-1.5 text-sm', playersTone === 'idle' ? 'text-slate-400' : 'text-slate-200')}>
+          <StatusDot tone={playersTone} /> {playersText}
+        </span>
+      </Link>
+      <Link to="/mapping/run" className="btn-default btn-sm ml-auto hidden sm:inline-flex">
+        Run the show <ChevronIcon size={14} aria-hidden />
+      </Link>
     </div>
   )
 }
@@ -308,8 +353,8 @@ export default function Dashboard({ session }: { session: Session }) {
         title="Dashboard"
         subtitle={
           lastSync
-            ? <>Fleet state · updated <span className="tnum">{relativeTime(new Date(lastSync).toISOString())}</span></>
-            : 'Fleet state'
+            ? <>What the show and every projector are doing right now <span className="whitespace-nowrap">· updated <span className="tnum">{relativeTime(new Date(lastSync).toISOString())}</span></span></>
+            : 'What the show and every projector are doing right now'
         }
         actions={
           <button className="btn-default btn-sm" onClick={() => void refresh()}>
@@ -317,6 +362,8 @@ export default function Dashboard({ session }: { session: Session }) {
           </button>
         }
       />
+
+      <ShowRow />
 
       {loading ? (
         <div className="panel p-6">
@@ -355,8 +402,8 @@ export default function Dashboard({ session }: { session: Session }) {
 
           {(overview?.stale ?? 0) > 0 && (
             <Banner tone="warn">
-              {overview?.stale} projector{overview?.stale === 1 ? ' has' : 's have'} not answered recently. Their last
-              known values are marked stale rather than shown as live.
+              {overview?.stale} projector{overview?.stale === 1 ? ' has' : 's have'} not answered recently. What you see for
+              them is the last thing they reported, and it is marked as old.
             </Banner>
           )}
 

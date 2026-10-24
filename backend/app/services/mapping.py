@@ -22,13 +22,17 @@ from sqlalchemy.orm import selectinload
 from app.core.events import bus
 from app.db.models import MappingCue, MappingShow, MediaAsset
 from app.db.session import session_scope
-from app.schemas.mapping import TransportCue, TransportState
+from app.schemas.mapping import EmergencyState, TransportCue, TransportState
 
 log = logging.getLogger(__name__)
 
 
 class TransportError(Exception):
     """A transport request that cannot be carried out as asked."""
+
+
+EMERGENCY_HELD = ("The emergency stop is on. Clear it first (the red bar at the top of "
+                  "the page), then press GO.")
 
 
 def now_ms() -> float:
@@ -53,6 +57,8 @@ class MappingTransport:
     async def command(self, action: str, *, show_id: int | None = None,
                       cue: int | None = None) -> TransportState:
         async with self._lock:
+            if self._state.emergency is not None and action in ("go", "goto", "resume"):
+                raise TransportError(EMERGENCY_HELD)
             match action:
                 case "go":
                     await self._go(show_id, None)
@@ -70,6 +76,19 @@ class MappingTransport:
                     self._reset(status="blackout")
                 case _:
                     raise TransportError(f"unknown transport action {action!r}")
+            return self._publish()
+
+    async def emergency_stop(self, *, by: str | None, at_ms: float | None = None) -> TransportState:
+        """Black on every output at once, and hold the show until cleared."""
+        async with self._lock:
+            self._reset(status="blackout")
+            self._state.emergency = EmergencyState(at_ms=at_ms or now_ms(), by=by)
+            return self._publish()
+
+    async def clear_emergency(self) -> TransportState:
+        """Lift the hold. The outputs stay black until someone presses GO."""
+        async with self._lock:
+            self._state.emergency = None
             return self._publish()
 
     async def show_deleted(self, show_id: int) -> None:
@@ -146,9 +165,9 @@ class MappingTransport:
 
     def _reset(self, *, status: str) -> None:
         self._cancel_follow()
-        show_id = self._state.show_id
-        revision = self._state.revision
-        self._state = TransportState(show_id=show_id, status=status, revision=revision)
+        self._state = TransportState(show_id=self._state.show_id, status=status,
+                                     revision=self._state.revision,
+                                     emergency=self._state.emergency)
 
     def _publish(self) -> TransportState:
         self._state.revision += 1

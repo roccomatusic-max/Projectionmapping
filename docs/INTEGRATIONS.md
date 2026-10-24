@@ -14,7 +14,7 @@ Interactive docs at `/api/docs`; the OpenAPI schema at
 
 Interactive sign-ins produce a token that expires in 12 hours. Integrations
 need something longer-lived: **service tokens**, issued by an administrator
-under *Settings → Service tokens* or with:
+under *Settings → Users and tokens → Service tokens* or with:
 
 ```bash
 curl -s -X POST http://projector.local:8000/api/auth/tokens \
@@ -80,6 +80,12 @@ with `429` and `Retry-After`.
 ---
 
 ## Home Assistant
+
+**Use the Projector Control integration: see [HOME-ASSISTANT.md](HOME-ASSISTANT.md).**
+One line pasted into Home Assistant's Terminal installs it; it gives a
+device per projector (power, shutter, input, temperatures) and the show's
+GO, cues and emergency stop. The two options below predate it and still
+work for setups that want YAML or MQTT.
 
 ### Option A — REST (no broker)
 

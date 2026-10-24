@@ -1,4 +1,4 @@
-"""Updating the Mac app from GitHub. Administrators only."""
+"""Updating the Mac app and the Windows server from GitHub. Administrators only."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import RequireAdmin, require_confirmation
-from app.services.updates import UpdateError, get_updater
+from app.services.updates import NOT_SUPPORTED, UpdateError, get_updater
 
 router = APIRouter(prefix="/system/updates", tags=["system"])
 
@@ -35,7 +35,7 @@ async def set_key(body: KeyIn, _: RequireAdmin) -> dict:
     updater = get_updater()
     if not updater.supported:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Updates are only installed by the Mac app.")
+                            detail=NOT_SUPPORTED)
     updater.save_key(body.key)
     return await updater.check(force=True)
 
@@ -55,6 +55,6 @@ async def set_auto(body: AutoIn, _: RequireAdmin) -> dict:
     updater = get_updater()
     if not updater.supported:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Updates are only installed by the Mac app.")
+                            detail=NOT_SUPPORTED)
     updater.set_auto(body.enabled)
     return updater.status()

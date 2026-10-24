@@ -98,7 +98,10 @@ export function OutputView({
       const frame = playback.frame(clock.now(), current.id)
       renderer.setOutput(current, cw, ch, all ?? NO_OUTPUTS, frame.separate)
       lastFrame = frame
-      if (calib) {
+      if (frame.emergency) {
+        // The emergency stop: black, whatever else this output was asked to show.
+        renderer.renderPattern(null)
+      } else if (calib) {
         renderer.renderPattern(calib.pattern)
       } else {
         renderer.setSource('a', frame.a)

@@ -130,9 +130,12 @@ CATALOG: dict[str, dict] = {
         "nears": _AREA_NEARS,
     },
     "countdown": {
-        "about": "a big 'days until Christmas' countdown with a ribbon and a ticking "
-                 "clock, centred on the target area; it says Merry Christmas on the day",
-        "styles": ["gold", "frost", "candy", "marquee"],
+        "about": "a big 'days until Christmas' or 'days until Halloween' countdown "
+                 "with a ribbon and a ticking clock, centred on the target area; it "
+                 "greets on the day. gold, frost, candy and marquee count to Christmas; "
+                 "pumpkin (ribbon #3b0764, glow #ff7a18) and ghostly (ribbon #111827, "
+                 "glow #84cc16) count to Halloween",
+        "styles": ["gold", "frost", "candy", "marquee", "pumpkin", "ghostly"],
         "dials": "size: how much of the area it fills; fade: height (1 is the top); "
                  "speed: how fast light sweeps across it; amount: how much it sparkles",
         "nears": ["none", "light", "grow", "jump"],

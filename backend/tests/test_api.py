@@ -37,14 +37,16 @@ async def api(panasonic_sim, monkeypatch):
     import app.services.alerts as alerts_module
     import app.services.audit as audit_module
     import app.services.automation as automation_module
+    import app.services.emergency as emergency_module
     import app.services.mapping as mapping_module
     import app.services.monitor as monitor_module
     for module in (audit_module, monitor_module, alerts_module, automation_module,
-                   mapping_module):
+                   mapping_module, emergency_module):
         importlib.reload(module)
     import app.api.deps as deps_module
     import app.api.routes.auth as auth_routes
     import app.api.routes.automation as automation_routes
+    import app.api.routes.emergency as emergency_routes
     import app.api.routes.enclosure as enclosure_routes
     import app.api.routes.groups as group_routes
     import app.api.routes.integration as integration_routes
@@ -61,7 +63,7 @@ async def api(panasonic_sim, monkeypatch):
     for module in (auth_routes, projector_routes, group_routes, monitoring_routes,
                    automation_routes, enclosure_routes, integration_routes,
                    mapping_routes, player_routes, camera_routes, scene_routes, ws_routes, system_routes,
-                   update_routes):
+                   update_routes, emergency_routes):
         importlib.reload(module)
     import app.main as main_module
     importlib.reload(main_module)
@@ -411,6 +413,25 @@ async def test_connectivity_test_endpoint(api):
     assert body["reachable"] is True
     assert body["authenticated"] is True
     assert "authenticated" in body["detail"]
+
+
+async def test_connectivity_test_in_protect_mode_without_password_fails(api):
+    """A projector asking for a password must not pass the test without one,
+    and saving the password must make it pass straight away."""
+    api.sim.state.password = "panasonic"
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    body = (await api.post(f"/api/projectors/{pid}/test", headers=headers)).json()
+    assert body["reachable"] is True
+    assert body["authenticated"] is False
+    assert body["outcome"] == "auth_failed"
+    assert "Control password" in body["detail"]
+
+    response = await api.patch(f"/api/projectors/{pid}", headers=headers,
+                               json={"password": "panasonic"})
+    assert response.status_code == 200, response.text
+    body = (await api.post(f"/api/projectors/{pid}/test", headers=headers)).json()
+    assert body["authenticated"] is True, body
 
 
 async def test_connectivity_test_on_dead_host_explains_itself(api):

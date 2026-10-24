@@ -353,14 +353,16 @@ export const LAYER_KINDS: LayerKind[] = [
   },
   {
     type: 'countdown',
-    label: 'Christmas countdown',
-    about: 'Days until Christmas with a ribbon and a ticking clock: drag it, size it and turn it on the preview. Colour is the ribbon, second colour the glow',
+    label: 'Countdown',
+    about: 'Days until Christmas or Halloween (the style picks which) with a ribbon and a ticking clock: drag it, size it and turn it on the preview. Colour is the ribbon, second colour the glow',
     group: 'objects',
     styles: [
-      { id: 'gold', label: 'Gold and holly' },
-      { id: 'frost', label: 'Frosted' },
-      { id: 'candy', label: 'Candy cane' },
-      { id: 'marquee', label: 'Marquee lights' },
+      { id: 'gold', label: 'Christmas: gold and holly' },
+      { id: 'frost', label: 'Christmas: frosted' },
+      { id: 'candy', label: 'Christmas: candy cane' },
+      { id: 'marquee', label: 'Christmas: marquee lights' },
+      { id: 'pumpkin', label: 'Halloween: jack-o’-lantern' },
+      { id: 'ghostly', label: 'Halloween: ghostly green' },
     ],
     dials: { size: 'Size', fade: 'Height', speed: 'Shine speed', amount: 'Sparkle' },
     nears: ['none', 'light', 'grow', 'jump'],
@@ -375,6 +377,22 @@ export const LAYER_KINDS: LayerKind[] = [
 ]
 
 export const KIND = Object.fromEntries(LAYER_KINDS.map((k) => [k.type, k])) as Record<LayerType, LayerKind>
+
+/** Ribbon and glow for each countdown look, so picking a Halloween look does not keep Christmas red. */
+export const COUNTDOWN_COLORS: Record<string, { color: string; color2: string }> = {
+  gold: { color: '#b3122a', color2: '#ffcf70' },
+  frost: { color: '#b3122a', color2: '#ffcf70' },
+  candy: { color: '#b3122a', color2: '#ffcf70' },
+  marquee: { color: '#b3122a', color2: '#ffcf70' },
+  pumpkin: { color: '#3b0764', color2: '#ff7a18' },
+  ghostly: { color: '#111827', color2: '#84cc16' },
+}
+
+/** The countdowns the Add menus offer, one per holiday. */
+export const COUNTDOWN_PRESETS: Array<{ id: string; label: string; style: string }> = [
+  { id: 'christmas', label: 'Christmas countdown', style: 'gold' },
+  { id: 'halloween', label: 'Halloween countdown', style: 'pumpkin' },
+]
 
 /** The layer's motion, with older scenes doing what they always did. */
 export function motionOf(layer: SceneLayer): Motion {
@@ -634,6 +652,16 @@ export const STARTERS: Starter[] = [
       objects('bats', { name: 'Bats', target: 'outside', color: '#7c3aed', color2: '#facc15', size: 0.3, amount: 0.15, motion: 'flutter', near: 'flee' }),
       objects('spiders', { name: 'Spiders', target: 'roof', color: '#a855f7', color2: '#ef4444', size: 0.25, amount: 0.25, motion: 'bob', near: 'jump' }),
       { type: 'shadows', name: 'Giant shadows', style: 'giant', color: '#000000', amount: 0.8 },
+    ],
+  },
+  {
+    name: 'Halloween countdown',
+    occasion: 'Through the year',
+    description: 'Days until Halloween on a glowing, flickering jack-o’-lantern orange with bats and pumpkins and a ticking clock. It lights up as people walk up, bats flee and leaves blow away from them. Says Happy Halloween on the 31st.',
+    layers: [
+      { type: 'falling', name: 'Falling leaves', style: 'leaves', color: '#ea580c', color2: '#facc15', amount: 0.3, speed: 0.22, size: 0.35, near: 'flee' },
+      { type: 'countdown', name: 'Halloween countdown', style: 'pumpkin', color: '#3b0764', color2: '#ff7a18', target: 'building', size: 0.8, near: 'light' },
+      objects('bats', { name: 'Bats', target: 'outside', color: '#7c3aed', color2: '#facc15', size: 0.3, amount: 0.12, motion: 'flutter', near: 'flee' }),
     ],
   },
   {

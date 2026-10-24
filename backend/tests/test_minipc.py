@@ -9,6 +9,8 @@ import asyncio
 import json
 import socket
 
+import pytest
+
 from app.services.discovery import REQUEST, Discovery
 from tests.test_api import api, login  # noqa: F401 - fixture
 
@@ -130,7 +132,7 @@ async def test_network_says_whether_mini_pcs_can_reach_the_server(api, monkeypat
     monkeypatch.setattr(players.settings, "advertise_port", None)
     local = (await api.get("/api/mapping/players/network", headers=headers)).json()
     assert local == {"local_only": True, "discoverable": False, "address": None,
-                     "tailscale_address": None}
+                     "tailscale_address": None, "server_os": "linux"}
 
     monkeypatch.setattr(players.settings, "local_only", False)
     monkeypatch.setattr(players.settings, "advertise_port", 8765)
@@ -138,4 +140,192 @@ async def test_network_says_whether_mini_pcs_can_reach_the_server(api, monkeypat
     monkeypatch.setattr(players, "tailscale_address", lambda: None)
     lan = (await api.get("/api/mapping/players/network", headers=headers)).json()
     assert lan == {"local_only": False, "discoverable": True,
-                   "address": "http://192.168.1.10:8765", "tailscale_address": None}
+                   "address": "http://192.168.1.10:8765", "tailscale_address": None,
+                   "server_os": "linux"}
+
+
+# -- controls on the Players page ------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _forget_commands():
+    import app.api.routes.mapping_players as players
+    players._queued.clear()
+    players._app_seen.clear()
+    yield
+    players._queued.clear()
+    players._app_seen.clear()
+
+
+async def paired(api, headers) -> tuple[int, dict]:
+    """A paired mini PC that has sent one heartbeat; its id and token headers."""
+    player = await hello(api, PLAYER)
+    await api.patch(f"/api/mapping/players/{player['player_id']}", headers=headers,
+                    json={"approved": True})
+    token = {"Authorization": f"Bearer {(await hello(api, PLAYER))['access_token']}"}
+    beat = await api.post("/api/mapping/players/me", headers=token, json={"fps": 60})
+    assert beat.status_code == 200, beat.text
+    return player["player_id"], token
+
+
+async def command(api, headers, player_id: int, action: str):
+    return await api.post(f"/api/mapping/players/{player_id}/command", headers=headers,
+                          json={"action": action})
+
+
+async def app_checkin(api, **extra) -> dict:
+    response = await api.post("/api/mapping/players/app", json={
+        "device_id": PLAYER["device_id"], "secret": SECRET, "power": True,
+        "computer": "MINIPC-LEFT", "mac": "aa:bb:cc:dd:ee:01", **extra})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def test_the_player_page_picks_up_its_commands_once(api):
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+
+    sent = await command(api, headers, player_id, "overlay_on")
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["via"] == "page"
+    # Without the Mini PC app, restarting the output reloads the page.
+    assert (await command(api, headers, player_id, "restart_output")).json()["via"] == "page"
+
+    beat = (await api.post("/api/mapping/players/me", headers=token, json={})).json()
+    assert beat["commands"] == ["overlay_on", "reload"]
+    again = (await api.post("/api/mapping/players/me", headers=token, json={})).json()
+    assert again["commands"] == []
+
+
+async def test_power_needs_the_new_mini_pc_app(api):
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+
+    refused = await command(api, headers, player_id, "reboot")
+    assert refused.status_code == 409
+    assert "install line" in refused.json()["detail"]
+
+    first = await app_checkin(api)
+    assert first["commands"] == []
+    listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
+    assert listed["app"] == {"connected": True, "power": True, "computer": "MINIPC-LEFT",
+                             "mac": "aa:bb:cc:dd:ee:01"}
+
+    restart = await command(api, headers, player_id, "restart_output")
+    assert restart.json()["via"] == "app"
+    reboot = await command(api, headers, player_id, "reboot")
+    assert reboot.status_code == 200, reboot.text
+    assert (await app_checkin(api))["commands"] == ["restart_output", "reboot"]
+    assert (await app_checkin(api))["commands"] == []
+
+    events = (await api.get("/api/events", headers=headers)).json()
+    assert any("restart" in e["message"] and e["kind"] == "player_power" for e in events)
+
+
+async def test_a_mac_or_linux_app_cannot_power_off(api):
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    await app_checkin(api, power=False, mac=None)
+    refused = await command(api, headers, player_id, "shutdown")
+    assert refused.status_code == 409
+    assert "Windows" in refused.json()["detail"]
+
+
+async def test_the_app_needs_the_computers_secret(api):
+    headers = await login(api)
+    await paired(api, headers)
+    wrong = await api.post("/api/mapping/players/app", json={
+        "device_id": PLAYER["device_id"], "secret": "z" * 64})
+    assert wrong.status_code == 403
+    unknown = await api.post("/api/mapping/players/app", json={
+        "device_id": "mpc-nobody-0000000000000000", "secret": SECRET})
+    assert unknown.status_code == 404
+
+
+async def test_an_unapproved_mini_pc_gets_no_commands(api):
+    await hello(api, PLAYER)
+    assert (await app_checkin(api))["commands"] == []
+
+
+async def test_old_commands_are_dropped(api, monkeypatch):
+    import app.api.routes.mapping_players as players
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    await command(api, headers, player_id, "overlay_on")
+    later = players._now() + players.COMMAND_SECONDS + 1
+    monkeypatch.setattr(players, "_now", lambda: later)
+    assert (await api.post("/api/mapping/players/me", headers=token, json={})).json()["commands"] == []
+
+
+async def test_turn_on_sends_wake_on_lan_once_it_is_off(api, monkeypatch):
+    import app.api.routes.mapping_players as players
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+
+    assert (await command(api, headers, player_id, "wake")).status_code == 409  # still on
+    await app_checkin(api)
+    # Off: not heard from by the page or the app for a while.
+    later = players._now() + 60
+    monkeypatch.setattr(players, "_now", lambda: later)
+    monkeypatch.setattr(players, "is_online", lambda _p: False)
+    sent: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(players, "wake_on_lan", lambda mac, near=None: sent.append((mac, near)))
+
+    woken = await command(api, headers, player_id, "wake")
+    assert woken.status_code == 200, woken.text
+    assert woken.json()["via"] == "network"
+    assert sent and sent[0][0] == "aa:bb:cc:dd:ee:01"
+    # The network card survives the heartbeats in between.
+    assert (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]["mac"]
+    # Offline, the rest is refused plainly.
+    offline = await command(api, headers, player_id, "overlay_on")
+    assert offline.status_code == 409 and "offline" in offline.json()["detail"]
+
+
+def test_the_wake_packet_is_the_standard_one(monkeypatch):
+    import app.api.routes.mapping_players as players
+    packets = []
+
+    class Fake:
+        def __init__(self, *_a): pass
+        def __enter__(self): return self
+        def __exit__(self, *_a): return False
+        def setsockopt(self, *_a): pass
+        def sendto(self, data, target): packets.append((data, target))
+
+    monkeypatch.setattr(players.socket, "socket", Fake)
+    players.wake_on_lan("aa:bb:cc:dd:ee:01", "192.168.1.23")
+    data = packets[0][0]
+    assert data[:6] == b"\xff" * 6 and data[6:] == bytes.fromhex("aabbccddee01") * 16
+    assert {t for _, t in packets} >= {("255.255.255.255", 9), ("192.168.1.255", 9)}
+
+
+async def test_the_screen_control_sets_its_outputs_test_picture(api):
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    refused = await api.post(f"/api/mapping/players/{player_id}/screen", headers=headers,
+                             json={"pattern": "white"})
+    assert refused.status_code == 400
+
+    show = (await api.post("/api/mapping/shows", headers=headers, json={"name": "House"})).json()
+    output_id = show["outputs"][0]["id"] if show.get("outputs") else (await api.post(
+        f"/api/mapping/shows/{show['id']}/outputs", headers=headers, json={"name": "Left"})).json()["id"]
+    await api.patch(f"/api/mapping/players/{player_id}", headers=headers, json={"output_id": output_id})
+
+    white = await api.post(f"/api/mapping/players/{player_id}/screen", headers=headers,
+                           json={"pattern": "white"})
+    assert white.status_code == 200, white.text
+    assert white.json()["screen"] == "white"
+    full = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert next(o for o in full["outputs"] if o["id"] == output_id)["test_pattern"] == "white"
+
+    back = await api.post(f"/api/mapping/players/{player_id}/screen", headers=headers,
+                          json={"pattern": "none"})
+    assert back.json()["screen"] == "none"
+
+
+async def test_only_admins_use_the_controls(api):
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    # A player's own token is a viewer: it cannot drive other mini PCs.
+    assert (await command(api, token, player_id, "reboot")).status_code == 403

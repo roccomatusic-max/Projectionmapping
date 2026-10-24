@@ -137,7 +137,7 @@ export default function Monitoring({ session }: { session: Session }) {
       <PageHeader
         icon={MonitoringIcon}
         title="Monitoring"
-        subtitle={`${alerts.filter((a) => a.state === 'open').length} open alert(s) · ${enclosures.length} enclosure(s)`}
+        subtitle={`Lamp hours, hours switched on, enclosures and upkeep · ${alerts.filter((a) => a.state === 'open').length} open alert${alerts.filter((a) => a.state === 'open').length === 1 ? '' : 's'}`}
         actions={
           <label className="flex items-center gap-2 text-xs text-slate-400">
             Charts for
@@ -180,7 +180,7 @@ export default function Monitoring({ session }: { session: Session }) {
       <Panel
         icon={TemperatureIcon}
         title="Enclosures"
-        description="Latest reading per sensor, each with its own age. A stale reading is shown as stale, never as current. Monitoring software is not a safety device."
+        description="The newest reading from each sensor and how old it is. Old readings are marked as old. This is not a safety system."
       >
         {enclosures.length === 0 ? (
           <EmptyState title="No enclosures configured" icon={CoverIcon}>
@@ -202,12 +202,12 @@ export default function Monitoring({ session }: { session: Session }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel
           icon={MonitoringIcon}
-          title="Estimated daily operating hours"
+          title="Hours switched on, per day (estimated)"
           description={usage?.note}
         >
           {usageByDay.length === 0 ? (
             <EmptyState title="No usage data yet">
-              Operating hours accumulate as the monitor polls.
+              Hours build up as the projectors are checked while switched on.
             </EmptyState>
           ) : (
             <ResponsiveContainer width="100%" height={220}>

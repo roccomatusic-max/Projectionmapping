@@ -137,6 +137,16 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
   return parsed as T
 }
 
+export type HomeAssistantSetupStatus = {
+  connected: boolean
+  connected_since: string | null
+  last_seen: string | null
+  integration_version: string | null
+  installed_version: string | null
+  server_address: string | null
+  local_only: boolean
+}
+
 export const api = {
   // -- auth ---------------------------------------------------------------
   /** ``remember``: stay signed in for months (the phone remote) rather than a day. */
@@ -302,6 +312,17 @@ export const api = {
   addMaintenance: (body: Record<string, unknown>) =>
     request<MaintenanceRecord>('/maintenance', { method: 'POST', body }),
   maintenanceCsvUrl: () => '/api/maintenance/export.csv',
+
+  // -- Home Assistant -----------------------------------------------------
+  homeAssistantSetup: () => request<HomeAssistantSetupStatus>('/integration/homeassistant/setup'),
+  homeAssistantInstallLine: () =>
+    request<{ line: string; code: string; expires_at: string; server_address: string }>(
+      '/integration/homeassistant/install-line', { method: 'POST' }),
+  homeAssistantKey: () =>
+    request<{ key: string; expires_at: string; server_address: string | null }>(
+      '/integration/homeassistant/key', { method: 'POST' }),
+  homeAssistantDisconnect: () =>
+    request<void>('/integration/homeassistant/key', { method: 'DELETE' }),
 
   // -- system -------------------------------------------------------------
   health: () => request<{ status: string; devices_registered: number }>('/health'),

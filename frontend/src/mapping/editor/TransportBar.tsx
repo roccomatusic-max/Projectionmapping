@@ -38,6 +38,7 @@ export function TransportBar({
     return () => window.clearInterval(timer)
   }, [])
 
+  const held = !!transport?.emergency
   const thisShow = transport?.show_id === show.id
   const status = thisShow && transport ? transport.status : 'stopped'
   const current = thisShow ? transport?.current ?? null : null
@@ -55,15 +56,16 @@ export function TransportBar({
     <div className={classNames('panel flex flex-wrap items-center gap-3', large ? 'p-4' : 'px-4 py-3')}>
       <button
         className={classNames('btn-primary min-w-[9rem] font-semibold', large ? 'w-full px-8 py-6 text-2xl sm:w-auto' : 'px-6 py-3 text-lg')}
-        disabled={!canRun || busy || !next}
+        disabled={!canRun || busy || !next || held}
         onClick={() => onCommand('go')}
-        title={next ? `Next: cue ${nextIndex + 1} ${next.name}` : 'No further cue'}
+        title={held ? 'The emergency stop is on. Clear it in the red bar at the top first.'
+          : next ? `Next: cue ${nextIndex + 1} ${next.name}` : 'No further cue'}
       >
         GO
       </button>
       <div className="flex gap-2">
         {status === 'paused' ? (
-          <button className={classNames('btn-default', large && 'btn-lg')} disabled={!canRun || busy}
+          <button className={classNames('btn-default', large && 'btn-lg')} disabled={!canRun || busy || held}
             onClick={() => onCommand('resume')}>
             Resume
           </button>
@@ -82,7 +84,7 @@ export function TransportBar({
           Blackout
         </button>
       </div>
-      <div className="min-w-0 flex-1">
+      <div className={classNames('min-w-0 flex-1', large && 'basis-full sm:basis-auto')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className={classNames('chip ring-1', STATUS[status].tone)}>{STATUS[status].label}</span>
           {current && (
@@ -94,7 +96,9 @@ export function TransportBar({
           )}
         </div>
         <p className="mt-0.5 truncate text-xs text-slate-500">
-          {otherShowLive
+          {held
+            ? 'GO is held by the emergency stop. Clear it in the red bar at the top first.'
+            : otherShowLive
             ? 'Another show is live; GO here takes over all outputs.'
             : next
               ? `Next: cue ${nextIndex + 1}${next.name ? ` · ${next.name}` : ''}`

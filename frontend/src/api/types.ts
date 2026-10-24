@@ -11,6 +11,7 @@ export type Outcome =
   | 'timeout'
   | 'rejected'
   | 'busy'
+  | 'queued'
   | 'unsupported'
   | 'auth_failed'
   | 'connection_error'
@@ -64,6 +65,31 @@ export interface ProjectorState {
   equipment?: Partial<Record<EquipmentField, Telemetry<unknown>>>
 }
 
+/** One Panasonic temperature sensor (QTM), as read on the last deep poll.
+ *  `celsius` is null when the reply was not understood; `raw` then says
+ *  what the projector sent. */
+export interface TemperatureSensor {
+  key: string
+  label: string
+  celsius: number | null
+  fahrenheit: number | null
+  raw: string
+  unparsed: boolean
+}
+
+/** `equipment.temperature.value` on drivers that read sensors. `condition`
+ *  is the projector's own verdict (PJLink error status), when it gave one. */
+export interface TemperatureReading {
+  sensors: TemperatureSensor[]
+  condition?: string
+}
+
+/** `equipment.fan.value`: the projector's own fan check. No projector
+ *  reports fan speed over the network. */
+export interface FanReading {
+  condition: string
+}
+
 export type EquipmentField =
   | 'manufacturer'
   | 'model'
@@ -95,6 +121,8 @@ export interface Projector {
   lamp_critical_hours: number
   pjlink_port: number | null
   has_password: boolean
+  /** A separate PJLink password is saved (else the control password is used). */
+  has_pjlink_password?: boolean
   created_at: string | null
   state: ProjectorState
 }

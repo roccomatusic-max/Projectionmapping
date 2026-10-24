@@ -195,25 +195,23 @@ documents that someone checked.
 
 ---
 
-## Stage 7 — PJLink (optional but recommended)
+## Stage 7 — Temperatures and fan condition
 
-The Panasonic LAN protocol has no confirmed per-subsystem error query. PJLink
-does: `%1ERST` reports fan, lamp, temperature, cover, filter and "other" as
-ok/warning/error. That is the backbone of useful health monitoring.
+The Panasonic driver reads temperatures with `QTM` and fan, lamp,
+temperature, cover and filter condition with PJLink `%1ERST` on port 4352
+(see PROTOCOL-RESEARCH.md §2.7). Neither has been checked on a real unit yet.
 
-1. Enable PJLink on the projector.
-2. Register the **same physical projector a second time**, with driver
-   `pjlink` and port 4352, named e.g. "House Left (PJLink)".
-3. Poll it and confirm the subsystem chips appear on the detail page.
-
-Run both entries side by side. The Panasonic driver gives you the richer
-control surface; the PJLink entry gives you health reporting neither has
-alone.
-
-> Numeric intake/exhaust temperatures are **not** exposed by either path, and
-> the platform does not invent them. The UI marks temperature as
-> `n/a — not supported by this model`. If you want real numbers, put a sensor
-> in the enclosure and feed it in through the enclosure API.
+1. Make sure PJLink is on in the projector's NETWORK menu.
+2. Open the projector's page in the app, press **Poll now**, and look at
+   **Condition**.
+3. Compare each temperature with the projector's own status page (web
+   control → Projector status, or the on-screen STATUS menu). They should
+   match to the degree.
+4. If a sensor says "not understood", note the raw reply it shows: the
+   reply format needs adjusting in `parse_temperature`.
+5. If Fans shows a note instead of OK, read it: PJLink is off, or the
+   projector has its own PJLink password (fill in **PJLink password** under
+   Edit).
 
 ---
 
@@ -285,9 +283,12 @@ release; do not try it on the show server.
 
 On each Windows mini PC, with the projector as its only or main display:
 
-1. **Install and pair** (minipc/README.md). Expected: the projector shows a
-   six-letter code, the code appears on Mapping → **Players**, and
-   **Approve** with an output makes the projector show that output. If no
+1. **Install and pair** (minipc/README.md: the PowerShell line). Expected:
+   the line either installs the app or explains that Smart App Control is on
+   (turn it off and run it again; record which mini PCs had it on). Then the
+   projector shows a six-letter code, the code appears on Mapping →
+   **Players**, and **Approve** with an output makes the projector show that
+   output. If no
    code ever appears on the Players tab, the mini PC did not find the
    server: check that Windows did not block the Mini PC app in its firewall,
    or give it the address with `--server http://<mac>:8765`.
@@ -319,8 +320,16 @@ On each Windows mini PC, with the projector as its only or main display:
 2. **Edge blend.** Set blends on the overlaps with a white pattern. Expected:
    no brighter band where two projectors overlap. Record the blend widths.
 3. **Masks.** Mask a window. Expected: it stays black, with feathered edges.
-4. **Blackout.** Press blackout on Mapping → Remote and on the phone remote.
+4. **Blackout.** Press blackout on Mapping → Run the show and on the phone remote.
    Expected: every output goes black at once.
+5. **Emergency stop.** With the show playing and every projector on, hold the
+   red Emergency stop button in the top bar for a second. Expected: every
+   output goes black at once, each projector's shutter closes and it turns
+   off, and the window lists every projector with what it did. Press Clear in
+   the red bar, turn the projectors back on and press GO. Repeat from the
+   phone remote, and once while a projector is still warming up (expected:
+   "Turning off when ready", then off by itself). Record how long each
+   projector took to go dark.
 
 ---
 
@@ -333,7 +342,11 @@ On each Windows mini PC, with the projector as its only or main display:
 2. **Calibration** (camera-agent/README.md, Calibrating), at night: each
    projector shows its patterns for about half a minute. Expected: after
    **Correct**, the canvas grid lands straight on the building. Record how
-   far off it is before and after **Map by hand**.
+   far off it is before and after **Map by hand**. Then press **Remove
+   calibration** (top right of the Camera page). Expected: every projector
+   goes back to exactly the shape it had before calibrating, and the Camera
+   page opens on its first step. Also try it while the patterns are still
+   running: the patterns stop within a few seconds and the show comes back.
 3. **People.** Walk in front of the building with a *Spotlight* cue live.
    Expected: the light follows you, nothing lights where nobody is, and two
    people get two lights. Then **Re-learn empty scene** with the area clear.

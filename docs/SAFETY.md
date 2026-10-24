@@ -40,6 +40,34 @@ hard-wired circuit, not an HTTP request.
 
 ---
 
+## The Emergency stop button
+
+The red **Emergency stop** button sits in the top bar of every page and at
+the top of the phone remote. Hold it down for one second (a tap does
+nothing, so a brush of the hand cannot fire it). It then, in this order:
+
+1. stops the show and turns every mini PC output black at once. Nothing is
+   drawn while it is on, not even a test pattern or a camera calibration
+   frame. A mini PC that is not connected goes black as soon as it connects;
+2. stops any automation that is running, and holds scheduled ones (they are
+   logged as "held" and do not run late afterwards);
+3. sends every enabled projector shutter close (when it is on) and power
+   off, ahead of anything else waiting for it. A projector busy warming up
+   is turned off by itself as soon as it accepts; one already off or
+   cooling is left alone, and a power on that was waiting for it is
+   cancelled.
+
+Each projector's answer is shown on its own line. It stays on, through a
+server restart too, until someone presses **Clear** in the red bar. While
+it is on, GO, Resume, automations and camera calibration are refused.
+Clearing it turns nothing back on.
+
+The same limits as the blackout apply: it depends on the network, the
+server and each projector answering, and it can partly fail (and says
+which projector did). It is not a hard-wired emergency stop.
+
+---
+
 ## Concurrent dispatch is not synchronisation
 
 When you command a group, the commands leave the server within a few

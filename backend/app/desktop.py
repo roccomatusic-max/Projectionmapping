@@ -9,7 +9,8 @@ and kept beside it, and the default browser opens on the dashboard.
 
 On a Mac, opening ``Projector Control.app`` instead installs it as a service
 that starts at boot and restarts itself (see app/macservice.py); the service
-then runs this same program with ``--serve``.
+then runs this same program with ``--serve``. The Windows server build does
+the same with a Windows service (``--install``, app/winservice.py).
 
 What this mode is for: a laptop at the show, a single-projector install, or
 evaluating the platform. What it is not: a 24/7 monitor. Alerts, polling
@@ -45,7 +46,11 @@ def data_dir() -> Path:
     override = os.environ.get("PROJECTOR_CONTROL_DATA")
     if override:
         return Path(override).expanduser()
-    if sys.platform == "win32":
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        # The Windows server build: shared with the service, which runs
+        # before anyone signs in (app/winservice.py).
+        base = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData")
+    elif sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
@@ -139,6 +144,22 @@ def open_browser_when_ready(url: str, health_url: str, timeout: float = 30.0) ->
     webbrowser.open(url)
 
 
+#: The running server, so the Windows service can stop it from another thread.
+_server = None
+_stop = threading.Event()
+
+
+def request_stop() -> None:
+    """Ask the server to shut down gracefully (Windows service stop)."""
+    _stop.set()
+    if _server is not None:
+        _server.should_exit = True
+
+
+def stop_requested() -> bool:
+    return _stop.is_set()
+
+
 def first_run_password(folder: Path, database: Path) -> str | None:
     """On the very first start, choose the administrator password.
 
@@ -177,7 +198,15 @@ def reset_admin_password(folder: Path) -> int:
     import asyncio
 
     database = folder / "projector-control.db"
-    if not database.exists():
+    try:
+        found = database.exists()
+        if found:
+            database.open("rb").close()
+    except PermissionError:
+        print(f"This account may not read {folder}. Open PowerShell as administrator "
+              "(right-click Start, then Terminal (Admin)) and run this again.")
+        return 1
+    if not found:
         print(f"No Projector Control database in {folder}.")
         return 1
     os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")
@@ -231,6 +260,16 @@ def self_check(app, host: str, port: int, log: logging.Logger) -> int:
                 healthy = response.status == 200
         except Exception:  # noqa: BLE001 - not up yet
             time.sleep(0.5)
+    if healthy:
+        # The Home Assistant integration ships inside the app (Settings →
+        # Home Assistant installs it from here); a build without it is broken.
+        package = f"http://127.0.0.1:{port}/api/integration/homeassistant/package.tar.gz"
+        try:
+            with urllib.request.urlopen(package, timeout=10) as response:  # noqa: S310
+                healthy = response.read(2) == b"\x1f\x8b"
+        except Exception as exc:  # noqa: BLE001 - reported below
+            log.error("self-check: Home Assistant integration missing (%s)", exc)
+            healthy = False
     server.should_exit = True
     thread.join(timeout=30)
     log.info("self-check: %s", "healthy" if healthy else "FAILED")
@@ -257,24 +296,41 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--serve", action="store_true",
                         help="Mac app: run the server here instead of installing the service")
+    parser.add_argument("--install", action="store_true",
+                        help="Windows server: install or update the Windows service from this copy")
+    parser.add_argument("--windows-service", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check", action="store_true",
                         help="start, confirm the server answers, then exit (for build checks)")
     parser.add_argument("--uninstall", action="store_true",
-                        help="Mac app: stop starting automatically (keeps the app and data)")
+                        help="Mac app and Windows server: stop starting automatically "
+                             "(keeps the app and data)")
     parser.add_argument("--version", action="store_true", help="print the version and exit")
     parser.add_argument("--reset-admin-password", action="store_true",
                         help="give the admin account a new password, print it and exit")
     # Finder may add arguments of its own when it opens an app; ignore them.
-    args, _unknown = parser.parse_known_args(argv)
+    raw = sys.argv[1:] if argv is None else argv
+    args, _unknown = parser.parse_known_args(raw)
 
-    from app import macservice
+    from app import macservice, winservice
     from app.paths import app_version
 
     if args.version:
         print(app_version())
         return 0
+    windows_build = sys.platform == "win32" and winservice.running_folder() is not None
+    if args.windows_service:
+        return winservice.run_service()
     if args.uninstall:
+        if sys.platform == "win32":
+            code = winservice.uninstall()
+            winservice.pause_if_window_closes()
+            return code
         return macservice.uninstall()
+    if args.install and windows_build:
+        return winservice.install(open_browser=not args.no_browser)
+    if windows_build and not raw:
+        # Double-clicked: set up the service, or open the dashboard.
+        return winservice.launch()
 
     folder = Path(args.data_dir).expanduser() if args.data_dir else data_dir()
     if args.reset_admin_password:
@@ -323,8 +379,12 @@ def main(argv: list[str] | None = None) -> int:
     log.info("Projector Control %s", app_version())
     if managed:
         macservice.pid_file(folder).write_text(str(os.getpid()), encoding="utf-8")
-        macservice.keep_awake()
-        log.info("running as the Mac service: starts at boot, restarts if it stops")
+        if sys.platform == "win32":
+            winservice.keep_awake()
+            log.info("running as the Windows service: starts at boot, restarts if it stops")
+        else:
+            macservice.keep_awake()
+            log.info("running as the Mac service: starts at boot, restarts if it stops")
 
     reach = "this computer only" if host == "127.0.0.1" else f"every device on the network ({host})"
     log.info("data folder: %s", folder)
@@ -351,6 +411,10 @@ def main(argv: list[str] | None = None) -> int:
     config = uvicorn.Config(app, host=host, port=port, log_level="info", access_log=False,
                             timeout_graceful_shutdown=10)
     server = uvicorn.Server(config)
+    global _server
+    _server = server
+    if _stop.is_set():  # the Windows service was stopped while starting
+        return 0
     with contextlib.suppress(KeyboardInterrupt):
         server.run()
     log.info("stopped")

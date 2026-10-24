@@ -9,7 +9,9 @@ signs in after that, it:
 - runs the camera when one is plugged in, for calibration and people: a
   depth camera (Intel RealSense, Orbbec, Luxonis OAK) or any webcam, found
   by itself,
-- keeps the screen and the computer awake.
+- keeps the screen and the computer awake,
+- does what the Players page asks of it: restart the output window,
+  restart or shut down the computer.
 
 The first time, the projector shows a pairing code. Approving it on the
 Mapping page, Players tab, pairs this computer and its camera together.
@@ -29,6 +31,7 @@ import os
 import secrets
 import signal
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -40,6 +43,9 @@ from urllib.parse import urlencode
 # The camera half is the camera agent, shipped beside this program.
 HERE = Path(__file__).resolve().parent
 sys.path.insert(1, str(HERE.parent / "camera-agent"))
+
+import psutil  # noqa: E402
+import requests  # noqa: E402
 
 import discovery  # noqa: E402
 from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
@@ -258,6 +264,37 @@ class CameraRunner(threading.Thread):
             self.app.stopping.wait(TICK_SECONDS)
 
 
+# -- the Players page's controls ------------------------------------------------------------
+
+
+def network_card(address: str | None) -> str | None:
+    """The hardware address of the network card holding ``address``, as
+    aa:bb:cc:dd:ee:ff: what the server needs to wake this computer."""
+    if not address:
+        return None
+    for addresses in psutil.net_if_addrs().values():
+        if any(a.family == socket.AF_INET and a.address == address for a in addresses):
+            for a in addresses:
+                if a.family == psutil.AF_LINK:
+                    mac = a.address.replace("-", ":").lower()
+                    if len(mac) == 17 and mac != "00:00:00:00:00:00":
+                        return mac
+    return None
+
+
+def power(action: str) -> None:
+    """Restart ("reboot") or shut down this computer, now (Windows)."""
+    if sys.platform != "win32":
+        log.warning("asked to %s, which only the Windows app does", action)
+        return
+    log.warning("the Players page asked this computer to %s",
+                "restart" if action == "reboot" else "shut down")
+    # /f: the output window would otherwise hold the restart up. The window
+    # is told to skip "restore pages" at every start, so nothing shows later.
+    subprocess.run(["shutdown", "/r" if action == "reboot" else "/s", "/t", "0", "/f"],
+                   check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
 # -- the program --------------------------------------------------------------------------
 
 
@@ -362,6 +399,40 @@ class MiniPC:
         self._lost_since = None
         return True
 
+    # -- the Players page ---------------------------------------------------------------
+
+    def check_in(self) -> list[str]:
+        """Say this app is here; returns what the Players page asked of it.
+
+        Answered only once this computer is paired; an older server without
+        the controls answers 404, and nothing is asked.
+        """
+        if self.server is None or self._lost_since is not None:
+            return []
+        identity = self.config.identity()
+        body = {"device_id": identity["device_id"], "secret": identity["secret"],
+                "power": sys.platform == "win32", "computer": socket.gethostname() or None,
+                "mac": network_card(discovery.local_address())}
+        try:
+            reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
+            if reply.status_code != 200:
+                return []
+            commands = reply.json().get("commands", [])
+        except (requests.RequestException, ValueError, AttributeError) as exc:
+            log.debug("check-in failed: %s", exc)
+            return []
+        return [c for c in commands if isinstance(c, str)]
+
+    def obey(self, commands: list[str]) -> None:
+        for command in commands:
+            if command == "restart_output":
+                log.info("the Players page asked to restart the output")
+                self.restart_requested.set()
+            elif command in ("reboot", "shutdown"):
+                power(command)
+            else:
+                log.info("ignoring %r, which this app does not know", command)
+
     # -- main loop ----------------------------------------------------------------------
 
     def run(self, page: StatusPage) -> None:
@@ -380,6 +451,7 @@ class MiniPC:
             while not self.stopping.is_set():
                 try:
                     reopen = self.follow_server()
+                    self.obey(self.check_in())
                     if kiosk:
                         if self.server and kiosk.secure_origin != self.server:
                             # Opened before the server was known: reopen it so the

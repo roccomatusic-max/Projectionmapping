@@ -1,1 +1,3 @@
 pyinstaller==6.11.1
+# The Windows server runs as a Windows service (app/winservice.py).
+pywin32==308; sys_platform == "win32"

@@ -239,10 +239,39 @@ does not report OSD cursor position".
 Each `Capability` carries a `provenance`. The driver's capability gate
 (`ProjectorDriver._gate()`, applied before any socket I/O) refuses any
 capability whose provenance is `INFERRED_FAMILY` unless the device record has
-`allow_unverified_commands = true`. The refusal is returned as
+`allow_unverified_commands = true`. Queries are exempt: a query only reads,
+and a projector that does not know one answers `ER401` and does nothing else. The refusal is returned as
 `CommandOutcome.UNSUPPORTED`, which is a distinct outcome from a device-side
 rejection, so the logs and the UI never conflate "we chose not to send this"
 with "the projector said no".
+
+### 2.7 Temperatures and fan condition
+
+| Reading | Command | Notes |
+|---|---|---|
+| Intake air temperature | `QTM:0` | `INFERRED_FAMILY` (query, so not gated) |
+| Exhaust air temperature | `QTM:1` | on lamp models this sensor sits by the lamps |
+| Optics module temperature | `QTM:2` | |
+| Fan, lamp, temperature, cover, filter, other condition | PJLink `%1ERST ?` on port 4352 | `STANDARD`; ok / warning / error each |
+
+`QTM` is in Panasonic's control-command list for the PT-D7700 / PT-DW7000 /
+PT-D3500 ("TEMP CHECK", parameter 0 input air, 1 output air, 2 optical
+module, answer `p1p2p3p4/p5p6p7p8` in Celsius / Fahrenheit), and the same
+query is used on current laser models (which add 11 and 12 for the light
+source). It is not in the excerpts of the PT-DZ13K document available here,
+so the driver treats each sensor as optional: a sensor that answers `ER401`
+while the projector is **on** is dropped for that session; one refused in
+standby or a transition is asked again on the next diagnostics poll. A reply
+is accepted only when its two halves agree (F = C × 9/5 + 32); anything else
+is shown raw as "not understood" rather than as a wrong number.
+
+No Panasonic protocol reports fan **speed**. Fan condition comes from PJLink,
+which Panasonic projectors also answer: the Panasonic driver opens a short
+PJLink session on each diagnostics poll (port from the device's PJLink port,
+default 4352; password from its PJLink password, else its control password)
+and reads `%1ERST`. Those findings feed the device's health on every poll. If
+PJLink does not answer, or the password is refused, the driver says so on the
+Condition panel and tries again ten minutes later.
 
 ---
 
@@ -350,6 +379,8 @@ around.
 - Lens calibration and lens home position
 - Lamp runtime per lamp (4 lamps)
 - Lamp control status, lamp on/off status, shutter status, input signal status
+- Intake, exhaust and optics module temperatures in °C and °F (`QTM`, §2.7;
+  documented for sibling models, each sensor dropped if this unit lacks it)
 
 ### Confirmed readable via PJLink (standard, cross-checks the above)
 
@@ -369,12 +400,11 @@ around.
 - Lens memory save/recall
 - Serial number over the Panasonic protocol (PJLink Class 2 `%2SNUM` is used if
   the projector reports class 2)
-- Discrete temperature and fan *readings*. PJLink `%1ERST` gives
-  ok/warning/error per subsystem, which is what the monitoring uses. Numeric
-  intake/exhaust temperatures are **not** exposed as telemetry because no
-  documented query for them could be confirmed; the UI shows the `%1ERST`
-  severity and explicitly marks numeric temperature as unavailable rather than
-  inventing a number.
+- Fan *speed*. No protocol reports it. Fan condition (ok/warning/error) comes
+  from PJLink `%1ERST`, which the Panasonic driver reads on the projector's
+  PJLink port (§2.7).
+- Numeric temperatures on PJLink-only projectors: PJLink gives ok/warning/
+  error only, and the UI says so rather than inventing a number.
 
 ---
 

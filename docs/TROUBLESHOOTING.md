@@ -20,7 +20,7 @@ different and needs a different response.
 | `rejected` | The projector understood and refused it | Wrong parameter, or wrong mode. Check the raw reply. |
 | `busy` | Not acceptable right now (`ERR3`, `ER403`) | Usually a transition in progress. Retry shortly. |
 | `unsupported` | **Not sent.** Model lacks it, or it is gated | See "Why is a control missing" below |
-| `auth_failed` | Credentials rejected (`ERRA`) | Check the web-control administrator password |
+| `auth_failed` | Credentials rejected (`ERRA`), or the projector asks for a password and none is saved | See "The projector is in protect mode" below |
 | `connection_error` | Could not reach the projector | Network, IP, or port |
 | `device_fault` | The projector reported an internal fault | Check the projector's own status display |
 | `parse_error` | Reply arrived but was not understood | Report it — include the raw response |
@@ -28,6 +28,17 @@ different and needs a different response.
 ---
 
 ## Connection problems
+
+### "The projector is in protect mode and asks for a password"
+
+The projector is reachable; its network control password is on and none is
+saved for it here. Panasonic projectors use their web login: press **Edit** on
+the projector, set **Control username** (usually `admin1`) and **Control
+password** (the password for the projector's web page; `panasonic` on older
+models, chosen on first web login on newer ones), save, then **Test
+connection**. Alternatively turn the protection off on the projector: NETWORK →
+NETWORK SECURITY → COMMAND PROTECT → DISABLE (menu names vary a little by
+model). For a PJLink projector, enter its PJLink password as Control password.
 
 ### "No TCP connection to host:port"
 
@@ -103,7 +114,7 @@ it with a new time if you still want it.
 
 ### Connection drops repeatedly
 
-Check queue depth under Settings → Device connections. If it is climbing, the
+Check queue depth under Settings → Technical details → Device connections. If it is climbing, the
 projector is answering slower than it is being polled. Raise that projector's
 poll overrides, or raise `POLL_*` globally.
 

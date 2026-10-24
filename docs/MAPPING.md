@@ -150,6 +150,8 @@ matching how projector configuration is gated.
 | POST | `/maps` | Load a map file (a clashing name gets a number added) |
 | GET | `/transport` | Current transport state |
 | POST | `/transport` | `go`, `goto`, `pause`, `resume`, `stop`, `blackout` |
+| POST | `/api/emergency/stop` | Emergency stop: show black, automations held, every projector off; one result per projector (see [SAFETY.md](SAFETY.md)) |
+| POST | `/api/emergency/clear` | Lift the emergency stop; turns nothing back on |
 | GET | `/clock` | Server time, for the clock-offset estimate |
 | POST | `/outputs/{id}/identify` | Flash the output's name on its windows and players |
 | POST | `/players/hello` | Unauthenticated: a player introduces itself and polls for approval |
@@ -159,7 +161,8 @@ matching how projector configuration is gated.
 | POST | `/players/me` | A player's heartbeat; returns its assignment |
 | POST | `/outputs/{id}/calibrate` | Ask a camera to calibrate this output |
 | POST | `/calibration/step` | Camera only: the pattern every window of the show should show now |
-| PUT · GET · DELETE | `/outputs/{id}/calibration` | The decoded camera → projector map (PUT is camera only) |
+| PUT · GET · DELETE | `/outputs/{id}/calibration` | The decoded camera → projector map (PUT is camera only); DELETE undoes that output's calibration (see below) |
+| POST | `/shows/{id}/remove-calibration` | Undo the show's calibration: every calibrated output back to its slice and warp from before, the camera placement too, and a run in progress stopped |
 | POST | `/shows/{id}/fit-canvas` | Place the canvas inside the projectors' light on the camera photo, and optionally set each output's slice from its light |
 | POST | `/shows/{id}/apply-calibration` | Set calibrated outputs' corner pin and mesh from the camera |
 | PUT | `/cameras/me/snapshot` | Camera only: its current photo |
@@ -186,7 +189,11 @@ http://<main-server>:8765/player
 On a Windows mini PC, the [Mini PC app](../minipc/README.md) does all of
 this: install it once and it finds the server by itself, opens that page as
 a kiosk with media caching on, reopens it if it closes, starts at sign-in,
-and runs a camera plugged into the same computer. The main server has to
+and runs a camera plugged into the same computer. To install it, paste one
+line into PowerShell on the mini PC (the line is in the
+[Mini PC app's guide](../minipc/README.md#install)); it also says so plainly
+when Windows 11's Smart App Control would block the app, and how to turn
+that off. The main server has to
 accept connections from the network for any of it (desktop app:
 `--lan`); the Players tab says when it does not. Under Docker, set
 `ADVERTISE_PORT` to the published HTTP port and use host networking so the
@@ -202,6 +209,29 @@ broadcast reaches the server, or give each mini PC the address with
 
 **Identify** flashes a player's name on its projector, to tell machines
 apart. **Remove** revokes it; it goes back to showing a pairing code.
+
+Each paired mini PC also has its own controls on the Players page:
+
+- what it is doing in words (playing cue 3, a test picture, offline), its
+  resolution, frame rate, clock and drift, whether its media is saved on
+  it, its computer name and network address;
+- **Projector: Show / Grid / White / Black** puts a test picture on that
+  one projector (it is its output's test pattern, so the Editor shows the
+  same; saved maps leave it out) and **Show** goes back to the show;
+- **Info on screen** shows the status overlay on the projector itself;
+- **Restart output** closes and reopens the full-screen window (the Mini
+  PC app does it; with an older app the page reloads instead);
+- **Restart computer** and **Shut down** (Windows Mini PC app, after a
+  confirm box), and **Turn on** for one that is off, by Wake-on-LAN. That
+  works only when the mini PC's BIOS allows Wake-on-LAN, and the server
+  learns its network card from the app while it is on.
+
+The page side of these reaches every player with the server. The Mini PC
+app picks its part up by checking in every few seconds
+(`POST /api/mapping/players/app` with the computer's secret); an app
+installed before these controls existed does not, so Restart computer and
+Shut down say to paste the install line once. Commands are kept in memory
+for 30 seconds only, so nothing happens later out of the blue.
 
 Approval creates a dedicated viewer account for the player, so a player
 can watch the show but cannot run it or change it.
@@ -277,7 +307,7 @@ results name each projector that did not take the command, and the list
 shows the state read back from each one. Operators can run the show;
 viewers can watch it; only administrators can change it.
 
-The same buttons are on **Mapping → Remote** in the full app.
+The same buttons are on **Mapping → Run the show** in the full app.
 
 ## 6. Cameras: calibration and people
 
@@ -314,6 +344,23 @@ there. Where the camera saw no light, a flat-wall homography fitted to all
 decoded cells fills in, carrying the measured curvature a few cells past the
 edge of the light. In a test with the real output window photographed
 through a simulated camera, the corners land within 2 projector pixels.
+
+**Undoing a calibration.** When the camera first uploads a result for an
+output, the server keeps that output's slice and warp as they were, and the
+show's camera placement, with the calibration (`before`; a second run of
+the same output keeps the first one's). **Remove calibration** on the Camera
+tab (`remove-calibration`) puts every calibrated output of the show back to
+that, forgets the calibration and the placement, and so turns off the
+automatic blend the calibration switched on; hand changes made since the
+calibration go with it, and outputs never calibrated are not touched.
+**Remove** on one projector's row (`DELETE /outputs/{id}/calibration`) does
+the same for that output; the placement goes back once no output of the
+show is calibrated. Both also stop a run in progress: the output windows go
+back to the show at once, and the server refuses that output's further
+patterns and result until it is asked to calibrate again, which ends the run
+on the camera (no mini PC update needed). Calibrations made before this
+existed have no `before`: their outputs go back to a flat corner pin, side
+by side as a new show lays them out.
 
 **Cameras** are found by the agent itself (`camera-agent/sources.py`): an
 Intel RealSense, Orbbec or Luxonis OAK depth camera through its maker's SDK,
@@ -431,17 +478,23 @@ picked one has a square handle to size it and a round handle to turn it
 and Turn sliders. Changing a scene in words gives the pins back to a layer of
 the same type.
 
-**Christmas countdown** is a layer type (`countdown`, in
+**Countdown** is a layer type (`countdown`, in
 `frontend/src/mapping/scene/countdown.ts`) that can be added to any scene,
-and a ready-made scene: days until Christmas as a big number with a ribbon,
-holly and a ticking hours/minutes/seconds clock, in four looks (gold and
-holly, frosted, candy cane, marquee lights). New countdowns are an element
+and two ready-made scenes (Christmas countdown, Halloween countdown): days
+until the holiday as a big number with a ribbon and a ticking
+hours/minutes/seconds clock. The look picks the holiday: four Christmas looks
+(gold and holly, frosted, candy cane, marquee lights) and two Halloween looks
+(jack-o'-lantern orange with pumpkins and bats, ghostly green with ghosts and
+bats, both flickering like a candle). Editor → Elements → Add an element offers
+"Christmas countdown" and "Halloween countdown"; switching the look to the
+other holiday also switches the ribbon and glow colours. New countdowns are an element
 placed by hand: one pin, dragged, sized and turned on the preview. Scenes
 saved before that have no pins and stay centred on their "Where" area (Size
 and Height place it). Colour is the ribbon, second colour the glow. It counts by the wall clock: the
 server's time in each computer's own time zone, so a mini PC's time zone must
-be right. On Christmas Eve the number becomes hours, then minutes; on the
-25th it reads "Merry Christmas", and from the 26th it counts to next year.
+be right. On the last day (Christmas Eve, 30 October) the number becomes
+hours, then minutes; on the day it reads "Merry Christmas" or "Happy
+Halloween", and from the next day it counts to next year.
 People make it sparkle more but never fade it. The artwork is painted with
 the 2D canvas only when the number changes (bundled OFL fonts, so every
 player draws the same letters offline); the clock strip is patched in once a
