@@ -9,6 +9,7 @@ import {
   BLENDS,
   CHANGES,
   changeOf,
+  COUNTDOWN_COLORS,
   KIND,
   LAYER_KINDS,
   layerLabel,
@@ -23,7 +24,7 @@ import {
   TARGETS,
 } from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
-import { countdownPinHeight, DESIGN_H, DESIGN_W } from '../scene/countdown'
+import { countdownPinHeight, DESIGN_H, DESIGN_W, holidayOf } from '../scene/countdown'
 import { objectRadius } from '../scene/engine'
 import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
@@ -875,7 +876,12 @@ function LayerCard({
               <label className="block">
                 <span className="label">Style</span>
                 <select className="input py-1 text-sm" value={layer.style} disabled={!canEdit}
-                  onChange={(e) => onChange({ style: e.target.value })}>
+                  onChange={(e) => {
+                    const style = e.target.value
+                    // A countdown switched to another holiday takes that holiday's colours too.
+                    const recolour = layer.type === 'countdown' && holidayOf(style) !== holidayOf(layer.style)
+                    onChange({ style, ...(recolour ? COUNTDOWN_COLORS[style] : {}) })
+                  }}>
                   {kind.styles.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
               </label>

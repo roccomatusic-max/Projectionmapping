@@ -3,7 +3,7 @@ import { EmptyState } from '@/components/ui'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
 import { PeopleTracker } from '../people'
-import { KIND, layerLabel, newLayer, STARTERS } from '../scene/catalog'
+import { COUNTDOWN_COLORS, COUNTDOWN_PRESETS, KIND, layerLabel, newLayer, STARTERS } from '../scene/catalog'
 import type { MappingScene, MediaAsset, ObjectPin, Output, SceneLayer, Show, TransportState } from '../types'
 import { Slider } from './controls'
 import { outputColor } from './panels'
@@ -21,18 +21,20 @@ function starterLook(style: string): Partial<SceneLayer> {
   return Object.fromEntries(Object.entries({ color, color2, change, near, reacts_to }).filter(([, v]) => v != null))
 }
 
-/** What the Add menu offers: each kind of object by itself, and the countdown. */
+/** What the Add menu offers: each kind of object by itself, and a countdown for each holiday. */
 const ADDABLE: Array<{ value: string; label: string; make: () => SceneLayer }> = [
   ...KIND.shapes.styles.map((s) => ({
     value: `shapes:${s.id}`,
     label: s.label,
     make: () => newLayer('shapes', { ...starterLook(s.id), style: s.id, name: s.label, pins: [] }),
   })),
-  {
-    value: 'countdown',
-    label: KIND.countdown.label,
-    make: () => newLayer('countdown', { pins: [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }] }),
-  },
+  ...COUNTDOWN_PRESETS.map((p) => ({
+    value: `countdown:${p.id}`,
+    label: p.label,
+    make: () => newLayer('countdown', {
+      ...COUNTDOWN_COLORS[p.style], style: p.style, name: p.label, pins: [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }],
+    }),
+  })),
 ]
 
 /**
@@ -239,12 +241,14 @@ export function CanvasElements({
               onChange={(e) => e.target.value && void add(e.target.value)}>
               <option value="">Add…</option>
               <optgroup label="Objects that react to people">
-                {ADDABLE.filter((a) => a.value !== 'countdown').map((a) => (
+                {ADDABLE.filter((a) => !a.value.startsWith('countdown:')).map((a) => (
                   <option key={a.value} value={a.value}>{a.label}</option>
                 ))}
               </optgroup>
-              <optgroup label="Other">
-                <option value="countdown">{KIND.countdown.label}</option>
+              <optgroup label="Countdowns">
+                {ADDABLE.filter((a) => a.value.startsWith('countdown:')).map((a) => (
+                  <option key={a.value} value={a.value}>{a.label}</option>
+                ))}
               </optgroup>
             </select>
           </label>

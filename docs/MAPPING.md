@@ -478,17 +478,23 @@ picked one has a square handle to size it and a round handle to turn it
 and Turn sliders. Changing a scene in words gives the pins back to a layer of
 the same type.
 
-**Christmas countdown** is a layer type (`countdown`, in
+**Countdown** is a layer type (`countdown`, in
 `frontend/src/mapping/scene/countdown.ts`) that can be added to any scene,
-and a ready-made scene: days until Christmas as a big number with a ribbon,
-holly and a ticking hours/minutes/seconds clock, in four looks (gold and
-holly, frosted, candy cane, marquee lights). New countdowns are an element
+and two ready-made scenes (Christmas countdown, Halloween countdown): days
+until the holiday as a big number with a ribbon and a ticking
+hours/minutes/seconds clock. The look picks the holiday: four Christmas looks
+(gold and holly, frosted, candy cane, marquee lights) and two Halloween looks
+(jack-o'-lantern orange with pumpkins and bats, ghostly green with ghosts and
+bats, both flickering like a candle). Editor → Elements → Add an element offers
+"Christmas countdown" and "Halloween countdown"; switching the look to the
+other holiday also switches the ribbon and glow colours. New countdowns are an element
 placed by hand: one pin, dragged, sized and turned on the preview. Scenes
 saved before that have no pins and stay centred on their "Where" area (Size
 and Height place it). Colour is the ribbon, second colour the glow. It counts by the wall clock: the
 server's time in each computer's own time zone, so a mini PC's time zone must
-be right. On Christmas Eve the number becomes hours, then minutes; on the
-25th it reads "Merry Christmas", and from the 26th it counts to next year.
+be right. On the last day (Christmas Eve, 30 October) the number becomes
+hours, then minutes; on the day it reads "Merry Christmas" or "Happy
+Halloween", and from the next day it counts to next year.
 People make it sparkle more but never fade it. The artwork is painted with
 the 2D canvas only when the number changes (bundled OFL fonts, so every
 player draws the same letters offline); the clock strip is patched in once a
