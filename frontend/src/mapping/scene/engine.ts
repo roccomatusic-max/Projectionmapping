@@ -63,7 +63,7 @@ export interface SceneItem {
   /** Seconds since the scene's cue started, on the server's clock, so
    *  every output draws the same moment. */
   time: number
-  /** Now on the server's clock, epoch milliseconds (the Christmas countdown). */
+  /** Now on the server's clock, epoch milliseconds (the countdowns). */
   clock?: number
 }
 
