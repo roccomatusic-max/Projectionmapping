@@ -24,6 +24,7 @@ from app.schemas.mapping import (
     MAX_LAYERS,
     AiKey,
     AiStatus,
+    CountdownColors,
     DescribeScene,
     MediaOut,
     ObjectPin,
@@ -181,17 +182,24 @@ async def delete_ai_key(admin: RequireAdmin, session: SessionDep) -> AiStatus:
     return await ai_status(admin)
 
 
-def _keep_placed(layers: list, placed: list[tuple[str, str, list]]) -> None:
-    """Give things placed by hand back to the changed scene: first to a layer
-    of the same type and style, then to the remaining layers of that type in
-    order (objects to objects, a countdown to a countdown)."""
+def _keep_placed(layers: list, placed: list[tuple[str, str, list | None, dict | None]]) -> None:
+    """Give things placed by hand, and a countdown's own part colours, back
+    to the changed scene: first to a layer of the same type and style, then
+    to the remaining layers of that type in order (objects to objects, a
+    countdown to a countdown)."""
+    taken: set[int] = set()
     for match_style in (True, False):
-        for kind, style, pins in list(placed):
-            target = next((layer for layer in layers if layer.type == kind and layer.pins is None
+        for item in list(placed):
+            kind, style, pins, colors = item
+            target = next((layer for layer in layers if layer.type == kind and id(layer) not in taken
                            and (layer.style == style or not match_style)), None)
             if target is not None:
-                target.pins = [ObjectPin.model_validate(pin) for pin in pins]
-                placed.remove((kind, style, pins))
+                taken.add(id(target))
+                if pins is not None:
+                    target.pins = [ObjectPin.model_validate(pin) for pin in pins]
+                if colors:
+                    target.colors = CountdownColors.model_validate(colors)
+                placed.remove(item)
 
 
 @router.post("/scenes/describe", response_model=SceneOut,
@@ -205,7 +213,7 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
     current = None
     scene = None
     pictures: list[dict] = []
-    placed: list[tuple[str, str, list]] = []
+    placed: list[tuple[str, str, list | None, dict | None]] = []
     if payload.scene_id is not None:
         scene = await _load_scene(session, payload.scene_id)
         current = SceneOut.model_validate(scene).model_dump(
@@ -213,12 +221,14 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
         # Claude cannot make pictures; they stay at the bottom, untouched.
         pictures = [layer for layer in current["layers"] if layer["type"] == "picture"]
         current["layers"] = [layer for layer in current["layers"] if layer["type"] != "picture"]
-        # Claude does not see where objects were placed by hand; they are
-        # put back on the new layers afterwards.
+        # Claude does not see where objects were placed by hand, nor a
+        # countdown's own part colours; they are put back on the new layers
+        # afterwards.
         for layer in current["layers"]:
             pins = layer.pop("pins", None)
-            if pins is not None:
-                placed.append((layer["type"], layer["style"], pins))
+            colors = layer.pop("colors", None)
+            if pins is not None or colors:
+                placed.append((layer["type"], layer["style"], pins, colors))
     try:
         result = await scene_ai.describe(payload.prompt, surfaces=surfaces, current=current)
     except scene_ai.SceneAiError as exc:

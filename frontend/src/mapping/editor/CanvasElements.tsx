@@ -6,6 +6,7 @@ import { PeopleTracker } from '../people'
 import { COUNTDOWN_COLORS, COUNTDOWN_PRESETS, KIND, layerLabel, newLayer, STARTERS } from '../scene/catalog'
 import type { MappingScene, MediaAsset, ObjectPin, Output, SceneLayer, Show, TransportState } from '../types'
 import { Slider } from './controls'
+import { CountdownColorPickers } from './CountdownColors'
 import { outputColor } from './panels'
 import { type Backdrop, ScenePreview } from './ScenePreview'
 import { PLACEABLE, placingFor } from './ScenesPanel'
@@ -206,7 +207,7 @@ export function CanvasElements({
     ? null
     : !layer
       ? elements.length
-        ? 'Pick an element below to move it, or add another.'
+        ? 'Pick an element below to move it or change its colours, or add another.'
         : 'Add an element, then click the picture to put it where you want it.'
       : layer.type === 'countdown'
         ? 'Drag the countdown to move it. Pull the square corner to size it and the round handle to turn it.'
@@ -310,7 +311,7 @@ export function CanvasElements({
                           setLayerId(open ? null : l.id)
                           setPinIndex(null)
                         }}>
-                        {open ? 'Done' : 'Move'}
+                        {open ? 'Done' : 'Move and colours'}
                       </button>
                       <button className="btn-ghost px-2 py-0.5 text-xs text-rose-300" onClick={() => remove(l.id)}>
                         Remove
@@ -320,13 +321,20 @@ export function CanvasElements({
                 </div>
                 {open && (
                   <div className="grid gap-3 border-t border-white/[0.06] px-3 py-3 sm:grid-cols-2">
-                    <label className="flex items-center gap-2 text-xs text-slate-400">
-                      Colours
-                      <input type="color" className="h-7 w-12 cursor-pointer rounded bg-transparent" value={l.color}
-                        onChange={(e) => changeLayer(l.id, { color: e.target.value })} />
-                      <input type="color" className="h-7 w-12 cursor-pointer rounded bg-transparent" value={l.color2}
-                        onChange={(e) => changeLayer(l.id, { color2: e.target.value })} />
-                    </label>
+                    {l.type === 'countdown' ? (
+                      <div className="sm:col-span-2">
+                        <CountdownColorPickers layer={l} canEdit={canEdit} withLook
+                          onChange={(patch) => changeLayer(l.id, patch)} />
+                      </div>
+                    ) : (
+                      <label className="flex items-center gap-2 text-xs text-slate-400">
+                        Colours
+                        <input type="color" className="h-7 w-12 cursor-pointer rounded bg-transparent" value={l.color}
+                          onChange={(e) => changeLayer(l.id, { color: e.target.value })} />
+                        <input type="color" className="h-7 w-12 cursor-pointer rounded bg-transparent" value={l.color2}
+                          onChange={(e) => changeLayer(l.id, { color2: e.target.value })} />
+                      </label>
+                    )}
                     {pin && (
                       <>
                         <Slider label="Size of the picked one" min={0.3} max={3} step={0.05} value={pin.size}

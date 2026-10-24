@@ -486,8 +486,16 @@ hours/minutes/seconds clock. The look picks the holiday: four Christmas looks
 (gold and holly, frosted, candy cane, marquee lights) and two Halloween looks
 (jack-o'-lantern orange with pumpkins and bats, ghostly green with ghosts and
 bats, both flickering like a candle). Editor → Elements → Add an element offers
-"Christmas countdown" and "Halloween countdown"; switching the look to the
-other holiday also switches the ribbon and glow colours. New countdowns are an element
+"Christmas countdown" and "Halloween countdown". Each part has its own
+colour picker (Editor → Elements → Move and colours, or the layer's card in
+Scenes): big number, its 3D side, words above the number, banner, words on the
+banner, banner stitching, clock numbers, clock words, decorations (holly,
+snowflakes, peppermints, pumpkins, ghosts, bats, stars) and glow. Every part
+starts as the look's own colour; banner and glow are the layer's `color` and
+`color2`, the rest are kept in the layer's `colors` (a part left empty keeps
+the look's own gradients). Picking a look, or "Reset to preset", sets that
+look's banner and glow and clears the rest. Changing a scene in words keeps a
+countdown's part colours, as it keeps pins. New countdowns are an element
 placed by hand: one pin, dragged, sized and turned on the preview. Scenes
 saved before that have no pins and stay centred on their "Where" area (Size
 and Height place it). Colour is the ribbon, second colour the glow. It counts by the wall clock: the

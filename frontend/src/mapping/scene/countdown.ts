@@ -18,10 +18,14 @@
  * layer's "Where" area for scenes saved before it could be placed. It counts with
  * the server's clock in the computer's own time zone, and turns into
  * "Merry Christmas" on the 25th or "Happy Halloween" on the 31st.
+ *
+ * Each part (the number, its 3D side, the words, the banner's stitching,
+ * the clock, the decorations) can be given its own colour over the look;
+ * a part left alone keeps the look's own colouring.
  */
 
 import type { PersonSpot } from '../people'
-import type { LayerBlend, SceneLayer, SourceRect, Surface, SurfaceKind } from '../types'
+import type { CountdownColors, LayerBlend, SceneLayer, SourceRect, Surface, SurfaceKind } from '../types'
 import { nearOf } from './catalog'
 import { LAYER_VERTEX } from './shaders'
 
@@ -198,12 +202,79 @@ const PALETTES: Record<CountdownStyle, Palette> = {
   },
 }
 
+// -- a colour for each part ------------------------------------------------------------------
+
+export type CountdownPart = keyof CountdownColors
+
+/**
+ * Every part that can have its own colour, in the order the settings list
+ * them. "banner" and "glow" are the layer's two colours; the rest are kept in
+ * the layer's ``colors``.
+ */
+export const COUNTDOWN_PARTS: Array<{ id: CountdownPart | 'banner' | 'glow'; label: string }> = [
+  { id: 'number', label: 'Big number' },
+  { id: 'depth', label: "Number's 3D side" },
+  { id: 'top', label: 'Words above the number' },
+  { id: 'banner', label: 'Banner' },
+  { id: 'caption', label: 'Words on the banner' },
+  { id: 'stitch', label: 'Banner stitching' },
+  { id: 'clock', label: 'Clock numbers' },
+  { id: 'labels', label: 'Clock words' },
+  { id: 'decorations', label: 'Decorations' },
+  { id: 'glow', label: 'Glow' },
+]
+
+/** The colour each part has in a look before anything is picked, to start each colour picker from. */
+export function countdownLookColors(style: string): Record<CountdownPart, string> {
+  const look: CountdownStyle = (COUNTDOWN_STYLES as readonly string[]).includes(style) ? (style as CountdownStyle) : 'gold'
+  const pal = PALETTES[look]
+  const light = lightFor(look)
+  return {
+    number: look === 'candy' ? CANDY_RED : look === 'marquee' ? PALETTES.gold.face[2] : pal.face[2],
+    depth: pal.depth[0],
+    top: pal.trim[1],
+    caption: look === 'frost' || look === 'candy' ? '#e8f1ff' : pal.trim[1],
+    stitch: light,
+    clock: pal.trim[1],
+    labels: light,
+    decorations: DECORATION[look],
+  }
+}
+
+const CANDY_RED = '#d61f2c'
+
+/** The pale colour of the stitching and the clock's words in each look. */
+function lightFor(style: CountdownStyle) {
+  return style === 'frost' ? '#e0f2ff' : style === 'ghostly' ? '#d9ffc2' : '#ffe9a8'
+}
+
+/** The main colour of each look's decorations (holly, snowflakes, peppermints, pumpkins, ghosts). */
+const DECORATION: Record<CountdownStyle, string> = {
+  gold: '#1f7a3a',
+  frost: '#ffffff',
+  candy: CANDY_RED,
+  marquee: '#1f7a3a',
+  pumpkin: '#ea580c',
+  ghostly: '#ffffff',
+}
+
+/** A metallic face gradient, top to bottom, made from one colour like the looks' own. */
+function faceFrom(c: string): string[] {
+  return [shade(c, 0.8), shade(c, 0.45), c, shade(c, -0.4), shade(c, -0.15), shade(c, 0.4), shade(c, 0.7)]
+}
+
+/** Small lettering's gradient from one colour. */
+function trimFrom(c: string): string[] {
+  return [shade(c, 0.6), c, shade(c, -0.35)]
+}
+
 type Ctx = CanvasRenderingContext2D
 
+/** Lighter (k > 0) or darker (k < 0), as #rrggbb. */
 function shade(hex: string, k: number): string {
   const n = parseInt(hex.slice(1), 16)
   const ch = (v: number) => Math.round(Math.max(0, Math.min(255, k >= 0 ? v + (255 - v) * k : v * (1 + k))))
-  return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`
+  return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => ch(v).toString(16).padStart(2, '0')).join('')}`
 }
 
 function rgba(hex: string, a: number): string {
@@ -369,7 +440,9 @@ function peppermint(ctx: Ctx, x: number, y: number, r: number, red: string) {
 }
 
 /** A carved jack-o'-lantern lit from inside. */
-function jackOLantern(ctx: Ctx, x: number, y: number, r: number, glow: string) {
+function jackOLantern(ctx: Ctx, x: number, y: number, r: number, glow: string, body?: string) {
+  // The look's own orange, or the picked colour lighter and darker.
+  const [light, mid, dark] = body ? [shade(body, 0.12), body, shade(body, -0.42)] : ['#ff8c1a', '#ea580c', '#9a3412']
   ctx.save()
   ctx.translate(x, y)
   ctx.shadowColor = 'rgba(0,0,0,0.55)'
@@ -378,9 +451,9 @@ function jackOLantern(ctx: Ctx, x: number, y: number, r: number, glow: string) {
   // Ribs: overlapping ovals, the outer ones darker.
   for (const [ox, w, k] of [[-0.48, 0.62, -0.35], [0.48, 0.62, -0.35], [-0.22, 0.6, -0.12], [0.22, 0.6, -0.12], [0, 0.55, 0]] as const) {
     const g = ctx.createRadialGradient(ox * r - r * 0.15, -r * 0.35, r * 0.05, ox * r, 0, r)
-    g.addColorStop(0, shade('#ff8c1a', 0.35 + k))
-    g.addColorStop(0.6, shade('#ea580c', k))
-    g.addColorStop(1, shade('#9a3412', k - 0.2))
+    g.addColorStop(0, shade(light, 0.35 + k))
+    g.addColorStop(0.6, shade(mid, k))
+    g.addColorStop(1, shade(dark, k - 0.2))
     ctx.fillStyle = g
     ctx.beginPath()
     ctx.ellipse(ox * r, 0, w * r, r * 0.86, 0, 0, Math.PI * 2)
@@ -429,7 +502,7 @@ function jackOLantern(ctx: Ctx, x: number, y: number, r: number, glow: string) {
 }
 
 /** A little ghost with a wavy hem. */
-function ghost(ctx: Ctx, x: number, y: number, r: number, flip: boolean, glow: string) {
+function ghost(ctx: Ctx, x: number, y: number, r: number, flip: boolean, glow: string, body?: string) {
   ctx.save()
   ctx.translate(x, y)
   ctx.scale(flip ? -1 : 1, 1)
@@ -437,9 +510,9 @@ function ghost(ctx: Ctx, x: number, y: number, r: number, flip: boolean, glow: s
   ctx.shadowColor = glow
   ctx.shadowBlur = r * 0.5
   const g = ctx.createLinearGradient(0, -r, 0, r)
-  g.addColorStop(0, '#ffffff')
-  g.addColorStop(0.7, '#eef7ff')
-  g.addColorStop(1, 'rgba(214,232,255,0.75)')
+  g.addColorStop(0, body ? shade(body, 0.6) : '#ffffff')
+  g.addColorStop(0.7, body ?? '#eef7ff')
+  g.addColorStop(1, body ? rgba(shade(body, -0.15), 0.75) : 'rgba(214,232,255,0.75)')
   ctx.fillStyle = g
   ctx.beginPath()
   ctx.moveTo(-r * 0.62, r * 0.9)
@@ -466,11 +539,11 @@ function ghost(ctx: Ctx, x: number, y: number, r: number, flip: boolean, glow: s
 }
 
 /** A bat in silhouette, wings out, rimmed by the glow. */
-function bat(ctx: Ctx, x: number, y: number, r: number, tilt: number, glow: string) {
+function bat(ctx: Ctx, x: number, y: number, r: number, tilt: number, glow: string, body = '#0a0612') {
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(tilt)
-  ctx.fillStyle = '#0a0612'
+  ctx.fillStyle = body
   ctx.shadowColor = glow
   ctx.shadowBlur = r * 0.6
   ctx.beginPath()
@@ -629,6 +702,8 @@ export interface ArtOptions {
   words: { top: string; value: string; caption: string }
   /** The big day itself: the greeting instead of the number. */
   arrived: boolean
+  /** Each part's own colour; a part left out keeps the look's. */
+  colors?: CountdownColors | null
 }
 
 /**
@@ -655,13 +730,19 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
   fxc.textAlign = 'center'
 
   const pal = PALETTES[o.style]
+  const own = o.colors ?? {}
   const holiday = holidayOf(o.style)
   const spooky = holiday === 'halloween'
   // "Merry Christmas" is too thin for bulbs; the marquee look writes it in gold.
   const bulbsOn = o.style === 'marquee' && !o.arrived
-  const face = bulbsOn || o.style !== 'marquee' ? pal.face : PALETTES.gold.face
+  // A picked number colour replaces the face (the marquee's gold rim while its bulbs are on).
+  const numberFace = own.number ? faceFrom(own.number) : null
+  const face = bulbsOn ? pal.face : numberFace ?? (o.style === 'marquee' ? PALETTES.gold.face : pal.face)
+  const depthColors = own.depth ? [own.depth, shade(own.depth, -0.7)] : pal.depth
   const cx = DESIGN_W / 2
-  const trim = vertical(ctx, 0, DESIGN_H, [pal.trim[0], pal.trim[1], pal.trim[2], pal.trim[1]])
+  const trimStops = (t: string[]) => vertical(ctx, 0, DESIGN_H, [t[0], t[1], t[2], t[1]])
+  const trim = trimStops(pal.trim)
+  const topTrim = own.top ? trimStops(trimFrom(own.top)) : trim
   const ribbonY = 728
 
   // A soft halo of the glow colour behind everything, so the artwork reads
@@ -684,7 +765,7 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
     const topWeight = spooky ? '400' : '700'
     const size = fitFont(ctx, o.words.top.toUpperCase(), topFamily, topWeight, spooky ? 70 : 62, 760, 16)
     ctx.font = `${topWeight} ${size}px ${topFamily}`
-    ctx.fillStyle = trim
+    ctx.fillStyle = topTrim
     ctx.shadowColor = rgba(o.glow, 0.8)
     ctx.shadowBlur = 22
     const w = spaced(ctx, o.words.top.toUpperCase(), cx, 150, size * 0.26)
@@ -692,7 +773,7 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
     fxc.font = ctx.font
     fxc.fillStyle = '#f00'
     spaced(fxc, o.words.top.toUpperCase(), cx, 150, size * 0.26)
-    for (const dir of [-1, 1]) flourish(ctx, cx + dir * (w / 2 + 30), 130, 150, dir, trim)
+    for (const dir of [-1, 1]) flourish(ctx, cx + dir * (w / 2 + 30), 130, 150, dir, topTrim)
   }
 
   // -- the hero: the number, or "Merry Christmas" / "Happy Halloween" -----------------
@@ -728,13 +809,13 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
     // Extruded depth: copies stepping back down and to the right.
     for (let i = depth; i >= 1; i--) {
       const t = i / depth
-      ctx.fillStyle = t > 0.95 ? 'rgba(0,0,0,0.75)' : mixHex(pal.depth[0], pal.depth[1], t)
+      ctx.fillStyle = t > 0.95 ? 'rgba(0,0,0,0.75)' : mixHex(depthColors[0], depthColors[1], t)
       ctx.fillText(line.text, cx + i * 0.55, line.y + i)
     }
 
     // The face.
     if (o.style === 'candy') {
-      ctx.fillStyle = candyStripes(ctx, '#d61f2c')
+      ctx.fillStyle = candyStripes(ctx, own.number ?? CANDY_RED)
     } else {
       ctx.fillStyle = vertical(ctx, top, bottom, face)
     }
@@ -742,14 +823,14 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
 
     if (bulbsOn) {
       ctx.lineWidth = 9
-      ctx.strokeStyle = vertical(ctx, top, bottom, PALETTES.gold.face)
+      ctx.strokeStyle = vertical(ctx, top, bottom, numberFace ?? PALETTES.gold.face)
       ctx.strokeText(line.text, cx, line.y)
       bulbs(ctx, fxc, line, cx, o.glow)
     } else {
       // A bright bevel line on the upper edges.
       ctx.save()
       ctx.lineWidth = Math.max(2, line.size * 0.008)
-      ctx.strokeStyle = pal.edge
+      ctx.strokeStyle = own.number ? rgba(shade(own.number, 0.85), 0.85) : pal.edge
       ctx.globalCompositeOperation = 'source-atop'
       ctx.strokeText(line.text, cx - 1.5, line.y - 2)
       ctx.restore()
@@ -761,7 +842,8 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
   }
 
   // -- ribbon and caption ----------------------------------------------------------
-  const band = ribbon(ctx, ribbonY, o.ribbon, rgba(o.style === 'frost' ? '#e0f2ff' : o.style === 'ghostly' ? '#d9ffc2' : '#ffe9a8', 0.55))
+  // Picked stitching is drawn a little stronger, so the colour reads.
+  const band = ribbon(ctx, ribbonY, o.ribbon, own.stitch ? rgba(own.stitch, 0.85) : rgba(lightFor(o.style), 0.55))
   // The ribbon hides the foot of the number, so light must not catch it there.
   fxc.fillStyle = '#000'
   fxc.fill(band)
@@ -771,7 +853,9 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
   ctx.save()
   ctx.fillStyle = 'rgba(0,0,0,0.45)'
   spaced(ctx, caption, cx + 2, ribbonY + capSize * 0.36 + 3, capSize * 0.18)
-  ctx.fillStyle = o.style === 'frost' || o.style === 'candy' ? vertical(ctx, ribbonY - 30, ribbonY + 30, ['#ffffff', '#e8f1ff', '#c9dcf5']) : trim
+  ctx.fillStyle = own.caption
+    ? vertical(ctx, ribbonY - 30, ribbonY + 30, trimFrom(own.caption))
+    : o.style === 'frost' || o.style === 'candy' ? vertical(ctx, ribbonY - 30, ribbonY + 30, ['#ffffff', '#e8f1ff', '#c9dcf5']) : trim
   spaced(ctx, caption, cx, ribbonY + capSize * 0.36, capSize * 0.18)
   ctx.restore()
   fxc.font = ctx.font
@@ -780,21 +864,22 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
 
   // -- ornaments at the ribbon's ends -------------------------------------------------
   const ends: Array<[number, boolean]> = [[cx - 545, false], [cx + 545, true]]
+  const deco = own.decorations ?? undefined
   for (const [x, flip] of ends) {
     if (o.style === 'frost') {
-      snowflake(ctx, x, ribbonY - 6, 78, '#ffffff', rgba(o.glow, 0.9))
-      snowflake(ctx, x + (flip ? 95 : -95), ribbonY - 100, 34, '#e6f3ff', rgba(o.glow, 0.9))
+      snowflake(ctx, x, ribbonY - 6, 78, deco ?? '#ffffff', rgba(o.glow, 0.9))
+      snowflake(ctx, x + (flip ? 95 : -95), ribbonY - 100, 34, deco ? shade(deco, 0.3) : '#e6f3ff', rgba(o.glow, 0.9))
     } else if (o.style === 'candy') {
-      peppermint(ctx, x, ribbonY - 4, 70, '#d61f2c')
-      peppermint(ctx, x + (flip ? 80 : -80), ribbonY - 82, 38, '#d61f2c')
+      peppermint(ctx, x, ribbonY - 4, 70, deco ?? CANDY_RED)
+      peppermint(ctx, x + (flip ? 80 : -80), ribbonY - 82, 38, deco ?? CANDY_RED)
     } else if (o.style === 'pumpkin') {
-      jackOLantern(ctx, x, ribbonY - 10, 82, o.glow)
-      jackOLantern(ctx, x + (flip ? 92 : -92), ribbonY - 104, 40, o.glow)
+      jackOLantern(ctx, x, ribbonY - 10, 82, o.glow, deco)
+      jackOLantern(ctx, x + (flip ? 92 : -92), ribbonY - 104, 40, o.glow, deco)
     } else if (o.style === 'ghostly') {
-      ghost(ctx, x, ribbonY - 20, 82, flip, o.glow)
-      ghost(ctx, x + (flip ? 100 : -100), ribbonY - 130, 40, !flip, o.glow)
+      ghost(ctx, x, ribbonY - 20, 82, flip, o.glow, deco)
+      ghost(ctx, x + (flip ? 100 : -100), ribbonY - 130, 40, !flip, o.glow, deco)
     } else {
-      holly(ctx, x, ribbonY - 4, 0.95, flip, '#1f7a3a')
+      holly(ctx, x, ribbonY - 4, 0.95, flip, deco ?? DECORATION.gold)
     }
   }
 
@@ -803,11 +888,11 @@ export function paintArt(art: HTMLCanvasElement, fx: HTMLCanvasElement, scale: n
     const bats: Array<[number, number, number, number]> = [
       [240, 300, 58, -0.25], [1360, 290, 66, 0.2], [180, 500, 34, 0.15], [1430, 510, 38, -0.2], [170, 140, 28, 0.3], [1440, 130, 30, -0.3],
     ]
-    for (const [x, y, r, tilt] of bats) bat(ctx, x, y, r, tilt, o.glow)
+    for (const [x, y, r, tilt] of bats) bat(ctx, x, y, r, tilt, o.glow, deco)
     return
   }
   // Scattered static stars around the hero; the shader makes some glint.
-  ctx.fillStyle = trim
+  ctx.fillStyle = deco ? trimStops(trimFrom(deco)) : trim
   ctx.shadowColor = rgba(o.glow, 0.9)
   ctx.shadowBlur = 14
   const stars: Array<[number, number, number]> = [
@@ -914,7 +999,14 @@ function bulbs(
 }
 
 /** The ticking "hours : minutes : seconds" strip, painted on its own small canvas. */
-export function paintClock(canvas: HTMLCanvasElement, scale: number, c: Countdown, style: CountdownStyle, glow: string) {
+export function paintClock(
+  canvas: HTMLCanvasElement,
+  scale: number,
+  c: Countdown,
+  style: CountdownStyle,
+  glow: string,
+  colors?: CountdownColors | null,
+) {
   const W = Math.floor(CLOCK.w * scale)
   const H = Math.floor(CLOCK.h * scale)
   if (canvas.width !== W || canvas.height !== H) {
@@ -935,7 +1027,7 @@ export function paintClock(canvas: HTMLCanvasElement, scale: number, c: Countdow
   const cell = 64
   const gap = 250
   const mid = CLOCK.w / 2
-  const fill = vertical(ctx, 10, 100, [pal.trim[0], pal.trim[1], pal.trim[2]])
+  const fill = vertical(ctx, 10, 100, colors?.clock ? trimFrom(colors.clock) : [pal.trim[0], pal.trim[1], pal.trim[2]])
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
   groups.forEach(([digits, label], gi) => {
@@ -948,7 +1040,7 @@ export function paintClock(canvas: HTMLCanvasElement, scale: number, c: Countdow
     ;[...digits].forEach((d, i) => ctx.fillText(d, gx + (i - 0.5) * cell, 96))
     ctx.shadowBlur = 0
     ctx.font = `700 27px ${CAPS}`
-    ctx.fillStyle = rgba(style === 'frost' ? '#e0f0ff' : style === 'ghostly' ? '#e8ffd9' : '#ffe9a8', 0.9)
+    ctx.fillStyle = colors?.labels ? rgba(colors.labels, 0.95) : rgba(style === 'frost' ? '#e0f0ff' : style === 'ghostly' ? '#e8ffd9' : '#ffe9a8', 0.9)
     spaced(ctx, label.toUpperCase(), gx, 142, 4)
     if (gi < 2) {
       ctx.fillStyle = fill
@@ -1263,7 +1355,8 @@ export class CountdownDrawer {
     const scale = Math.min(1.4, Math.max(0.25, Math.ceil((covers / DESIGN_W) * 8) / 8))
     const words = countdownWords(count, holiday)
     const fonts = countdownFontsReady()
-    const artKey = [style, layer.color, layer.color2, words.top, words.value, words.caption, count.arrived, scale, fonts].join('|')
+    const colors = layer.colors ?? null
+    const artKey = [style, layer.color, layer.color2, JSON.stringify(colors), words.top, words.value, words.caption, count.arrived, scale, fonts].join('|')
 
     if (!art) {
       art = {
@@ -1275,7 +1368,7 @@ export class CountdownDrawer {
     }
     art.seenAt = performance.now()
     if (art.key !== artKey) {
-      paintArt(art.art, art.fx, scale, { style, ribbon: layer.color, glow: layer.color2, words, arrived: count.arrived })
+      paintArt(art.art, art.fx, scale, { style, ribbon: layer.color, glow: layer.color2, words, arrived: count.arrived, colors })
       this.upload(art.artTex, art.art, true)
       this.upload(art.fxTex, art.fx, false)
       art.key = artKey
@@ -1284,7 +1377,7 @@ export class CountdownDrawer {
     }
     const clockKey = `${count.hours}:${count.minutes}:${count.seconds}:${count.arrived}`
     if (art.clockKey !== clockKey) {
-      paintClock(art.clock, art.scale, count, style, layer.color2)
+      paintClock(art.clock, art.scale, count, style, layer.color2, colors)
       const x = Math.round(CLOCK.x * art.scale)
       const y = Math.round(CLOCK.y * art.scale)
       const fits = x + art.clock.width <= art.art.width && y + art.clock.height <= art.art.height
