@@ -379,13 +379,17 @@ class ShowOut(ShowSummary):
 
 
 class TransportCommand(BaseModel):
-    action: Literal["go", "goto", "pause", "resume", "stop", "blackout"]
+    action: Literal["go", "goto", "pause", "resume", "stop", "blackout", "scene"]
     show_id: int | None = None
     #: Cue position for ``goto``; ``go`` advances to the next cue.
     cue: int | None = Field(default=None, ge=0)
+    #: For ``scene``: a scene from the library, played alone on every projector.
+    scene_id: int | None = None
+    fade_seconds: float = Field(default=0.0, ge=0, le=30)
 
 
 class TransportCue(BaseModel):
+    #: A scene played on its own (not from a cue) has id -scene_id and position -1.
     id: int
     position: int
     name: str

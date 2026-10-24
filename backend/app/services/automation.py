@@ -10,7 +10,9 @@ An automation is an ordered list of steps. Each step is a dict:
     {"type": "check_online", "target": {...}}
     {"type": "check_faults", "target": {...}, "block_on": ["error"]}
     {"type": "check_enclosure", "enclosure_id": 1}
-    {"type": "scene",        "scene_id": 3}
+    {"type": "scene",        "scene_id": 3}          (a projector preset)
+    {"type": "play_scene",   "mapping_scene_id": 2, "fade_seconds": 2}
+    {"type": "show",         "action": "start" | "stop", "show_id": 1, "cue_id": 7}
     {"type": "notify",       "message": "...", "severity": "info"}
 
 ``target`` is ``{"type": "all" | "group" | "projector", "id": n}``.
@@ -27,6 +29,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.core.events import bus
@@ -39,6 +42,7 @@ from app.db.models import (
     Event,
     Group,
     GroupMember,
+    MappingShow,
     Projector,
     RunStatus,
     Scene,
@@ -434,6 +438,10 @@ class AutomationEngine:
                     return await self._step_check_enclosure(index, step, label)
                 case "scene":
                     return await self._step_scene(index, step, label, user)
+                case "play_scene":
+                    return await self._step_play_scene(index, step, label)
+                case "show":
+                    return await self._step_show(index, step, label)
                 case "notify":
                     bus.publish("automation_notify", {
                         "message": step.get("message", ""),
@@ -643,6 +651,60 @@ class AutomationEngine:
                               f"{outcome['failed']} failure(s)", outcome.get("results"))
         return self._ok(index, label, f"scene '{outcome.get('name')}' activated",
                         outcome.get("results"))
+
+    async def _step_play_scene(self, index: int, step: dict[str, Any],
+                               label: str) -> dict[str, Any]:
+        """Play a scene from Mapping → Scenes on every projector."""
+        from app.services.mapping import TransportError, transport
+
+        scene_id = step.get("mapping_scene_id")
+        if scene_id is None:
+            return self._fail(index, label, "no scene chosen")
+        try:
+            state = await transport.command(
+                "scene", scene_id=int(scene_id),
+                fade_seconds=float(step.get("fade_seconds", 2) or 0))
+        except TransportError as exc:
+            return self._fail(index, label, str(exc))
+        name = state.current.name if state.current else scene_id
+        return self._ok(index, label, f"playing scene '{name}' on every projector")
+
+    async def _step_show(self, index: int, step: dict[str, Any],
+                         label: str) -> dict[str, Any]:
+        """Start a show at one of its cues, or stop whatever is playing."""
+        from app.services.mapping import TransportError, transport
+
+        action = step.get("action", "start")
+        try:
+            if action == "stop":
+                await transport.command("stop")
+                return self._ok(index, label, "show stopped")
+            show_id = step.get("show_id")
+            if show_id is None:
+                return self._fail(index, label, "no show chosen")
+            async with session_scope() as session:
+                show = (await session.execute(
+                    select(MappingShow).where(MappingShow.id == int(show_id))
+                    .options(selectinload(MappingShow.cues))
+                )).scalars().first()
+                if show is None:
+                    return self._fail(index, label, "that show no longer exists")
+                show_name = show.name
+                cue_ids = [cue.id for cue in show.cues]
+            cue_id = step.get("cue_id")
+            if cue_id is None:
+                position = 0
+            elif int(cue_id) in cue_ids:
+                position = cue_ids.index(int(cue_id))
+            else:
+                return self._fail(index, label,
+                                  f"the chosen cue is no longer in '{show_name}'")
+            state = await transport.command("goto", show_id=int(show_id), cue=position)
+        except TransportError as exc:
+            return self._fail(index, label, str(exc))
+        cue_name = state.current.name if state.current else ""
+        return self._ok(index, label, f"'{show_name}' started at cue {position + 1}"
+                                      + (f" ({cue_name})" if cue_name else ""))
 
 
 def _emergency_on() -> bool:

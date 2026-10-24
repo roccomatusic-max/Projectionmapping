@@ -321,7 +321,7 @@ class AutomationIn(BaseModel):
     @classmethod
     def _validate_steps(cls, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         known = {"command", "wait_state", "delay", "check_online", "check_faults",
-                 "check_enclosure", "scene", "notify"}
+                 "check_enclosure", "scene", "play_scene", "show", "notify"}
         for index, step in enumerate(steps):
             kind = step.get("type", "command")
             if kind not in known:

@@ -39,7 +39,8 @@ export function TransportBar({
   }, [])
 
   const held = !!transport?.emergency
-  const thisShow = transport?.show_id === show.id
+  // A scene an automation plays on its own is live on every show; GO then starts this one.
+  const thisShow = transport?.show_id === show.id || (transport?.current?.position ?? 0) < 0
   const status = thisShow && transport ? transport.status : 'stopped'
   const current = thisShow ? transport?.current ?? null : null
   const nextIndex = current ? current.position + 1 : 0
@@ -89,8 +90,7 @@ export function TransportBar({
           <span className={classNames('chip ring-1', STATUS[status].tone)}>{STATUS[status].label}</span>
           {current && (
             <span className="truncate text-sm text-slate-100">
-              Cue {current.position + 1}
-              {current.name ? ` · ${current.name}` : ''}
+              {current.position < 0 ? `Scene · ${current.name}` : `Cue ${current.position + 1}${current.name ? ` · ${current.name}` : ''}`}
               <span className="ml-2 tnum text-slate-400">{formatDuration(elapsed)}</span>
             </span>
           )}

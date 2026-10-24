@@ -4,6 +4,7 @@ import { withDefaults } from './geometry'
 import { type LinkStatus, useLocalChannel } from './live'
 import { type CalibrationFrame, type FrameStats, OutputView } from './OutputView'
 import type { CalibrationStepMessage, Show } from './types'
+import { liveLabel } from './types'
 import { useShowRuntime } from './useShowRuntime'
 
 /** A calibration that stops sending frames (camera gone) ends after this. */
@@ -168,7 +169,7 @@ export function OutputScreen({
         ...frame,
         width,
         height,
-        cue: t?.current ? `${t.current.position + 1} ${t.current.name}` : null,
+        cue: t?.current ? (t.current.position < 0 ? `scene ${t.current.name}` : `${t.current.position + 1} ${t.current.name}`) : null,
         clockMs: c.synced ? Math.round(c.rtt / 2) : null,
         link: l,
         overlay: h,
@@ -254,7 +255,7 @@ export function OutputScreen({
           </p>
           <p>
             {transport ? STATUS_LABEL[transport.status] : '—'}
-            {transport?.current ? ` · cue ${transport.current.position + 1} ${transport.current.name}` : ''}
+            {transport?.current ? ` · ${liveLabel(transport.current)}` : ''}
           </p>
           <p>
             link {link} · clock {clock.synced ? `±${Math.round(clock.rtt / 2)} ms` : 'syncing'} · {stats.fps.toFixed(0)} fps

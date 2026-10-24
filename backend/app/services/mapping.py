@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.events import bus
-from app.db.models import MappingCue, MappingShow, MediaAsset
+from app.db.models import MappingCue, MappingScene, MappingShow, MediaAsset
 from app.db.session import session_scope
 from app.schemas.mapping import EmergencyState, TransportCue, TransportState
 
@@ -55,9 +55,10 @@ class MappingTransport:
     # -- commands ----------------------------------------------------------
 
     async def command(self, action: str, *, show_id: int | None = None,
-                      cue: int | None = None) -> TransportState:
+                      cue: int | None = None, scene_id: int | None = None,
+                      fade_seconds: float = 0.0) -> TransportState:
         async with self._lock:
-            if self._state.emergency is not None and action in ("go", "goto", "resume"):
+            if self._state.emergency is not None and action in ("go", "goto", "resume", "scene"):
                 raise TransportError(EMERGENCY_HELD)
             match action:
                 case "go":
@@ -66,6 +67,10 @@ class MappingTransport:
                     if cue is None:
                         raise TransportError("goto needs a cue position")
                     await self._go(show_id, cue)
+                case "scene":
+                    if scene_id is None:
+                        raise TransportError("scene needs a scene_id")
+                    await self._scene(scene_id, fade_seconds)
                 case "pause":
                     self._pause()
                 case "resume":
@@ -146,6 +151,32 @@ class MappingTransport:
         self._state.paused_position = None
         self._schedule_follow(cue, position, duration, len(cues))
 
+    async def _scene(self, scene_id: int, fade_seconds: float) -> None:
+        """Play one scene on every projector, outside any show's cues.
+
+        It goes out as a cue of its own at position -1 with an id no saved
+        cue has (-scene id), so outputs draw its ``scene_id`` on the whole
+        canvas, and the next GO starts the loaded show from its first cue.
+        """
+        async with session_scope() as session:
+            scene = await session.get(MappingScene, scene_id)
+            if scene is None:
+                raise TransportError("That scene no longer exists. Pick another one.")
+            name = scene.name
+        start = now_ms()
+        fade = max(0.0, min(float(fade_seconds), 30.0))
+        crossfade = (self._state.status == "playing" and self._state.current is not None
+                     and fade > 0)
+        self._cancel_follow()
+        self._state.previous = self._state.current if crossfade else None
+        self._state.fade_started_at_ms = start if crossfade else None
+        self._state.current = TransportCue(
+            id=-scene_id, position=-1, name=name, media_id=None, fit="fill", loop=True,
+            fade_seconds=fade, scene_id=scene_id, started_at_ms=start,
+        )
+        self._state.status = "playing"
+        self._state.paused_position = None
+
     def _pause(self) -> None:
         if self._state.status != "playing" or self._state.current is None:
             raise TransportError("nothing is playing")
@@ -203,6 +234,16 @@ class MappingTransport:
         task, self._follow_task = self._follow_task, None
         if task and not task.done() and task is not asyncio.current_task():
             task.cancel()
+
+
+def describe_live(state: TransportState) -> str:
+    """What is on, for the log: " cue 3" or " scene 'Haunted house'"."""
+    current = state.current
+    if current is None:
+        return ""
+    if current.position < 0:
+        return f" scene {current.name!r}"
+    return f" cue {current.position + 1}"
 
 
 def _cue_out(cue: MappingCue, position: int, started_at_ms: float) -> TransportCue:
