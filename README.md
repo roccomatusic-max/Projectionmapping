@@ -29,8 +29,9 @@ expensive, hard to reach, and the show starts whether or not they came up.
   reach the expected state. Scenes for one-shot actions.
 - **History** — telemetry charts, full command audit log, maintenance records
   with CSV export
-- **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout
-  and projector power, from anywhere through Tailscale (Phone remote page)
+- **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout,
+  projector power and a Tonight tab (tonight's scene group, show time and
+  nights, Start now / Stop), from anywhere through Tailscale (Phone remote page)
 - **Emergency stop** — one press-and-hold button on every page and on the
   phone remote: stops the show, blacks out every mini PC, stops automations
   and turns every projector off, reporting each projector on its own

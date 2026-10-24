@@ -116,7 +116,7 @@ function useTonightData() {
 /* ------------------------------------------------------------------ */
 
 /** Where in tonight's show time we are, in one plain line and a tone. */
-function timeLine(tonight: Tonight, now: Date): { chip: string; tone: Tone; line: string } {
+export function timeLine(tonight: Tonight, now: Date): { chip: string; tone: Tone; line: string } {
   const next = tonight.next_starts_at ? whenText(tonight.next_starts_at, now) : null
   const left = (iso: string | null) => (iso ? spanText(new Date(iso).getTime() - now.getTime()) : '')
   switch (tonight.state) {
@@ -283,7 +283,7 @@ function Metrics() {
   )
 }
 
-function TimesEditor({
+export function TimesEditor({
   tonight,
   shows,
   onCancel,
@@ -589,7 +589,7 @@ function GroupEditor({
 }
 
 /** "House: Pumpkins · Garage: Ghosts", for a group's button. */
-function groupLines(group: SceneGroup, show: Show | undefined, scenes: MappingScene[]): string[] {
+export function groupLines(group: SceneGroup, show: Show | undefined, scenes: MappingScene[]): string[] {
   const sceneName = (id: number | null) => (id == null ? 'No scene' : scenes.find((s) => s.id === id)?.name ?? 'Deleted scene')
   if (!show || show.outputs.length === 0) return [`Every projector: ${sceneName(group.scene_id)}`]
   return [...show.outputs]
