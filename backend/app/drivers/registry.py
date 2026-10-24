@@ -86,7 +86,7 @@ register(DriverInfo(
     display_name=PanasonicPTDZ770Driver.display_name,
     default_port=PanasonicPTDZ770Driver.default_port,
     manufacturer="Panasonic",
-    models=("PT-DZ770", "PT-DW740", "PT-DX810"),
+    models=("PT-DZ770", "PT-DW740", "PT-DX810", "PT-DX810ULK"),
     factory=PanasonicPTDZ770Driver,
 ))
 

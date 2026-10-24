@@ -19,6 +19,7 @@ import contextlib
 import hashlib
 import logging
 import secrets
+import time
 
 from .state import SimPower, SimulatedProjector
 
@@ -177,7 +178,10 @@ class PanasonicSimulator:
                     return "00ER401"  # single-lamp model: no lamp select
                 if param not in ("0", "1", "2", "3"):
                     return "00ER402"
+                if time.monotonic() < self.state.lamp_switch_ends:
+                    return "00ER401"  # still changing over to the last selection
                 self.state.lamp_select = param
+                self.state.lamp_switch_ends = time.monotonic() + self.state.lamp_switch_seconds
                 return "00LPM"
             case "OLP":
                 if param not in ("0", "1"):
@@ -233,8 +237,9 @@ async def main() -> None:  # pragma: no cover - CLI entry point
     parser.add_argument("--lenient-standby", action="store_true",
                         help="Accept shutter and input changes in standby (real units refuse them)")
     parser.add_argument("--fault", choices=["silent", "busy", "drop"], default=None)
-    parser.add_argument("--model", choices=["dz13k", "dz770"], default="dz13k",
-                        help="dz13k: 3-chip, 4 lamps, SDI option; dz770: 1-chip, 2 lamps, S-VIDEO")
+    parser.add_argument("--model", choices=["dz13k", "dz770", "dx810"], default="dz13k",
+                        help="dz13k: 3-chip, 4 lamps, SDI option; dz770: 1-chip, 2 lamps, "
+                             "S-VIDEO; dx810: a PT-DX810ULK, same commands as dz770")
     parser.add_argument("--pjlink-port", type=int, default=None,
                         help="Also answer PJLink on this port (4352 on a real unit), "
                              "for fan and temperature condition")
@@ -243,7 +248,8 @@ async def main() -> None:  # pragma: no cover - CLI entry point
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    factory = SimulatedProjector.dz770 if args.model == "dz770" else SimulatedProjector
+    factory = {"dz770": SimulatedProjector.dz770,
+               "dx810": SimulatedProjector.dx810}.get(args.model, SimulatedProjector)
     state = factory(
         warmup_seconds=args.warmup, cooldown_seconds=args.cooldown,
         password=args.password,

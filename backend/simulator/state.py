@@ -61,6 +61,10 @@ class SimulatedProjector:
     #: Lamp select / lamp power as last commanded (LPM / OLP on dual-lamp models).
     lamp_select: str = "0"
     lamp_power: str = "0"
+    #: How long LPM answers ER401 after a lamp select, as the real unit does
+    #: while it changes lamps. 0 = never.
+    lamp_switch_seconds: float = 0.0
+    lamp_switch_ends: float = 0.0
 
     @classmethod
     def dz770(cls, **overrides) -> SimulatedProjector:
@@ -72,6 +76,14 @@ class SimulatedProjector:
         }
         defaults.update(overrides)
         return cls(**defaults)
+
+    @classmethod
+    def dx810(cls, **overrides) -> SimulatedProjector:
+        """A PT-DX810ULK: the XGA member of the DZ770 family, same commands."""
+        defaults = {"name": "SIM-PT-DX810ULK", "model": "PT-DX810ULK",
+                    "lamp_hours": [1460, 1433]}
+        defaults.update(overrides)
+        return cls.dz770(**defaults)
 
     # -- fault injection, driven by tests and the --fault CLI flag ---------
     #: Drop the connection after this many commands (0 = never).

@@ -199,6 +199,10 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
     TEMPERATURE_SENSORS: tuple[tuple[str, str, str], ...] = TEMPERATURE_SENSORS
     #: Model-specific capabilities appended to the common manifest.
     EXTRA_CAPABILITIES: tuple[Capability, ...] = ()
+    #: Why the lens axes are gated. Overridden per model.
+    LENS_CAVEAT: str = LENS_CAVEAT
+    #: What the operator is told about lens memory. Overridden per model.
+    LENS_MEMORY_NOTE: str = "No lens-memory command could be confirmed for this model."
     #: After PJLink fails to answer, wait this long before trying it again.
     PJLINK_RETRY_SECONDS: float = 600.0
     #: Upper estimate of how long the projector refuses power-on after a
@@ -333,14 +337,14 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
         caps += [
             Capability(name, CapabilityKind.ACTION, FAM,
                        f"Jog {name.split('.')[-1].replace('_', ' ')} (VXX:LNSI{axis})",
-                       disruptive=True, idempotent=False, caveat=LENS_CAVEAT)
+                       disruptive=True, idempotent=False, caveat=cls.LENS_CAVEAT)
             for name, axis in LENS_AXES.items()
         ]
         caps += [
             Capability("lens.memory", CapabilityKind.ACTION, FAM,
                        "Lens memory recall — NOT IMPLEMENTED",
-                       caveat="No lens-memory command could be confirmed for this model. "
-                              "This capability is declared so the UI can say so explicitly."),
+                       # Declared so the UI can say so explicitly.
+                       caveat=cls.LENS_MEMORY_NOTE),
             # --- image adjustments, sibling-documented ---
             Capability("image.freeze", CapabilityKind.SET, FAM, "Freeze (OFZ)",
                        params=("on", "off"), idempotent=False,
@@ -913,8 +917,8 @@ class PanasonicPTDZ13KDriver(PanasonicNTControlDriver):
             if capability == "lens.memory":
                 return CommandResult(
                     capability=capability, outcome=CommandOutcome.UNSUPPORTED,
-                    error="Lens memory is not implemented: no command for it could be "
-                          "confirmed for the PT-DZ13K series.",
+                    error=f"Lens memory is not available on the {self.display_name}. "
+                          f"{self.LENS_MEMORY_NOTE}",
                 )
             try:
                 direction = int(params.get("direction", 0) or 0)
