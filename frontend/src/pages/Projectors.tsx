@@ -278,6 +278,26 @@ export function ProjectorForm({
               </p>
             )}
           </div>
+          {selectedDriver && !selectedDriver.manufacturer.startsWith('Any') && (
+            <div>
+              <label className="label">Model</label>
+              <select
+                className="input"
+                value={form.model}
+                onChange={(e) => set('model', e.target.value)}
+              >
+                {/* Keep a model saved before this list existed selectable. */}
+                {(selectedDriver.models.includes(form.model)
+                  ? selectedDriver.models
+                  : [form.model, ...selectedDriver.models]
+                ).map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="label">Location</label>
             <input
@@ -365,7 +385,7 @@ export function ProjectorForm({
             <span className="mt-0.5 block text-xs text-slate-400">
               Enables lens movement, image adjustments and remote keys, whose exact
               encoding is documented for sibling Panasonic models but not confirmed
-              for the PT-DZ13K. Leave this off until you have checked the commands
+              for this one. Leave this off until you have checked the commands
               against your projector's own manual.
             </span>
           </span>

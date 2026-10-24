@@ -2,7 +2,7 @@
 
 Self-hosted management for a fleet of networked projectors, built around the
 **Panasonic PT-DZ13K** and **PT-DZ770** families (DZ13K/DS12K/DW11K/DZ10K and
-DZ770/DW740/DX810) plus any **PJLink** projector. Runs locally in Docker;
+DZ770/DW740/DX810/DX810ULK) plus any **PJLink** projector. Runs locally in Docker;
 no cloud services.
 
 Built for outdoor architectural projection mapping, where the projectors are

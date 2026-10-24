@@ -275,10 +275,13 @@ Condition panel and tries again ten minutes later.
 
 ---
 
-## 2a. Panasonic PT-DZ770 series (PT-DZ770 / PT-DW740 / PT-DX810)
+## 2a. Panasonic PT-DZ770 series (PT-DZ770 / PT-DW740 / PT-DX810 / PT-DX810ULK)
 
 Panasonic documents these three under one control-command set, and groups
-them as one model family in its own monitoring software. Single-chip DLP,
+them as one model family in its own monitoring software. The PT-DX810ULK is
+the US PT-DX810 sold without a lens (XGA, 1024 × 768); it is controlled
+exactly like the PT-DX810 and is offered as its own model in the Add
+projector form. Single-chip DLP,
 **two** 300 W lamps (2,000 h normal / 3,000 h eco), PJLink class 1, LAN
 command protocol on port 1024 — the same transport as §2.
 
@@ -287,9 +290,18 @@ command protocol on port 1024 — the same transport as §2.
 | Power, shutter, queries | `PON` `POF` `QPW` `OSH` `QSH` `QIN` `Q$S` `QLS` | `VERIFIED_DOC` (family document) |
 | Inputs | `IIS:` `RG1` `RG2` `DVI` `HD1` `VID` `SVD` | mnemonic `VERIFIED_DOC`; codes are Panasonic's standard vocabulary. No SDI, no DIGITAL LINK. A code the unit refuses (`ER401`) is struck through in the UI with the reason. |
 | Lamp runtime | `Q$L:1` `Q$L:2` | `VERIFIED_DOC` |
-| Lamp select | `LPM` (dual / single / lamp 1 / lamp 2) | mnemonic `VERIFIED_DOC`; **value encoding `INFERRED_FAMILY`**, gated |
-| Lamp power | `OLP` (normal / eco) | mnemonic `VERIFIED_DOC`; **value encoding `INFERRED_FAMILY`**, gated |
-| Lens, image, remote keys | as §2.5 | `INFERRED_FAMILY`, gated |
+| Lamp select | `LPM:0` dual, `:1` single, `:2` lamp 1, `:3` lamp 2 | `VERIFIED_DOC` (PT-DX810 command list). `ER401` while the projector is still changing lamps; within two minutes of an accepted `LPM` the driver reports that as BUSY ("still switching lamps"), not as a missing command |
+| Lamp power | `OLP:0` normal, `:1` eco | `VERIFIED_DOC` (same document) |
+| Lens memory | — | None on this family; the UI says "This projector has no lens memory" |
+| Lens, image, remote keys | as §2.5. The command list has a §3.1 lens-control section whose contents could not be read, so the `VXX:LNSI2`–`5` encoding stays unconfirmed. Needs a motorised lens fitted | `INFERRED_FAMILY`, gated |
+| Temperatures | `QTM` is in the command list (§2.201); sensor numbering assumed as §2.7 | `INFERRED_FAMILY` |
+
+Source: Panasonic "Control Commands" for the PT-DZ770/DW740/DX810 series
+(published as `ptdx810u_rs232.pdf`). It also says to wait at least 0.5 s
+between commands, which the driver's 0.6 s command gap covers, and to allow
+10 s for a reply; the driver waits 5 s, so a reply that times out on a real
+unit is the first thing to check if one does. Side-by-side commands answer `ER401` on the DX810;
+the driver does not use them.
 
 The driver (`app/drivers/panasonic_ptdz770.py`) is a subclass of the DZ13K
 driver that overrides the input table, the lamp count and adds the two lamp
@@ -298,8 +310,8 @@ Panasonic model: override the class attributes, declare extra capabilities,
 handle them in `execute_supported_command`, defer the rest to `super()`.
 
 Validate it with the same procedure as the DZ13K
-([HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md)); stage 2 reads two lamps
-instead of four, and stage 6 covers `LPM`/`OLP` before enabling them.
+([HARDWARE-VALIDATION.md](HARDWARE-VALIDATION.md), section "PT-DZ770 family");
+stage 2 reads two lamps instead of four.
 
 ---
 

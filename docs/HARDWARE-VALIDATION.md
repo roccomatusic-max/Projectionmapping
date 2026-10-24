@@ -16,7 +16,9 @@ the cameras and the phone remote.
 
 ## Before you start
 
-- A PT-DZ13K (or DS12K / DW11K / DZ10K) on a network the server can reach.
+- A PT-DZ13K (or DS12K / DW11K / DZ10K), or a PT-DZ770 / DW740 / DX810 /
+  DX810ULK (see [the DZ770 family section](#pt-dz770-family-incl-pt-dx810ulk)),
+  on a network the server can reach.
 - The projector's own **Operating Instructions** and the **Control Commands**
   PDF for your model. Panasonic publishes both; the command PDF is the
   authority for everything below.
@@ -375,6 +377,53 @@ On each Windows mini PC, with the projector as its only or main display:
 
 ---
 
+## PT-DZ770 family (incl. PT-DX810ULK)
+
+The PT-DZ770, PT-DW740, PT-DX810 and PT-DX810ULK (the US DX810 sold without
+a lens) share one Panasonic command list and one driver. Work through stages
+1–7 as above, with these differences.
+
+**Adding it.** Projectors → Add projector → Driver **Panasonic DZ770 /
+DW740 / DX810** → Model **PT-DX810ULK** (or yours). Port 1024.
+Control username `admin1`, Control password = the projector's web login
+password, same as the other Panasonic units.
+
+**Stage 2.** Two lamps: `Q$L:1` and `Q$L:2`.
+
+**Stage 5.** No SDI. The inputs are:
+
+| Input | Code |
+|---|---|
+| RGB 1 (5 BNC) | `RG1` |
+| RGB 2 (D-sub) | `RG2` |
+| DVI-D | `DVI` |
+| HDMI | `HD1` |
+| Video | `VID` |
+| S-Video | `SVD` |
+
+The PT-DX810 command list's table for the DVI and HDMI codes did not survive
+text extraction cleanly; `DVI` and `HD1` are Panasonic's standard codes. If
+either answers `ER402`, note the raw response in the results table.
+
+**Lamp select and lamp power.** `LPM` (0 dual, 1 single, 2 lamp 1, 3 lamp 2)
+and `OLP` (0 normal, 1 eco) are confirmed by the PT-DX810 command list, so
+they are on without "Allow unverified commands". Projector page → **Lamp mode**
+tab. Try **Eco** then **Normal**, then **Lamp 1 only** then **Dual**. The
+projector refuses a second lamp select (`ER401`) while it is still changing
+lamps; the app shows that as "Not right now" with "still switching lamps".
+The projector does not report either setting back, so confirm on its own
+menu.
+
+**Lens.** No lens memory on this family; the **Remote & lens** tab says so.
+Lens jogs are still gated (stage 6) and need a motorised Panasonic lens
+fitted. The ULK ships without a lens.
+
+**Mapping output.** The PT-DX810 is XGA, 1024 × 768. Set the mini PC that
+drives it to 1024 × 768 in Windows display settings (stage 9) so one
+picture pixel is one projector pixel.
+
+---
+
 ## Results table
 
 Fill this in and keep it with the installation notes.
@@ -397,6 +446,7 @@ Fill this in and keep it with the installation notes.
 | 5 | each `IIS:` | | | which boards fitted |
 | 6 | `VXX:LNSI1` (home) | | | |
 | 6 | `VXX:LNSI2` (shift H) | | | stopped on its own? |
+| 6 | `LPM:0`–`LPM:3`, `OLP:0`/`1` (DZ770 family) | | | lamp change seen on the projector menu? |
 | 7 | `%1ERST` | | | |
 | 8 | Service loaded, start at boot | | | time to dashboard: ___ |
 | 8 | Restart after stop, awake, power cut | | | |

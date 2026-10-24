@@ -1039,7 +1039,8 @@ function LensControls({ gate, blocked, onSend }: { gate: Gate; blocked: (capabil
         </button>
       </div>
       <p className="text-2xs text-slate-500">
-        Lens memory is not offered: no lens-memory command could be confirmed for this model.
+        {gate.capability('lens.memory')?.caveat ??
+          'Lens memory is not offered: no lens-memory command could be confirmed for this model.'}
       </p>
     </ControlBlock>
   )
