@@ -38,6 +38,7 @@ from app.api.routes import (
     monitoring,
     projectors,
     system,
+    tonight,
     updates,
     ws,
 )
@@ -55,6 +56,7 @@ from app.services.emergency import emergency as emergency_stop
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
+from app.services.tonight import scheduler as tonight_scheduler
 from app.services.updates import start_auto_updates
 
 logging.basicConfig(
@@ -143,6 +145,7 @@ async def lifespan(_: FastAPI):
     await monitor.start()
     await alerting.start()
     await automation_engine.start()
+    await tonight_scheduler.start()
     await mqtt_publisher.start()
     if settings.advertise_port:
         await discovery.start(port=settings.discovery_port, http_port=settings.advertise_port)
@@ -160,6 +163,7 @@ async def lifespan(_: FastAPI):
         # so nothing is enqueued against a projector we are disconnecting.
         await discovery.stop()
         await automation_engine.stop()
+        await tonight_scheduler.stop()
         await mapping_transport.stop_service()
         await monitor.stop()
         await alerting.stop()
@@ -238,7 +242,7 @@ for router in (
     system.router, auth.router, projectors.router, groups.router,
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
-    mapping_maps.router, updates.router, emergency.router,
+    mapping_maps.router, tonight.router, updates.router, emergency.router,
     ws.router,
 ):
     app.include_router(router, prefix="/api")

@@ -19,7 +19,14 @@ from sqlalchemy import select
 from app.api.deps import RequireAdmin, RequireViewer, SessionDep, write_rate_limit
 from app.api.routes.mapping import _load_show, media_root
 from app.core.events import bus
-from app.db.models import Event, MappingCue, MappingScene, MediaAsset, Severity
+from app.db.models import (
+    Event,
+    MappingCue,
+    MappingScene,
+    MappingSceneGroup,
+    MediaAsset,
+    Severity,
+)
 from app.schemas.mapping import (
     MAX_LAYERS,
     AiKey,
@@ -123,10 +130,11 @@ async def delete_scene(scene_id: int, session: SessionDep, admin: RequireAdmin) 
                       message=f"{admin.username} deleted scene {scene.name}"))
     # Projectors that played it play no scene, as cues that used it do.
     cues = (await session.execute(select(MappingCue))).scalars().all()
-    for cue in cues:
-        if scene_id in (cue.output_scenes or {}).values():
-            cue.output_scenes = {output: (None if used == scene_id else used)
-                                 for output, used in cue.output_scenes.items()}
+    groups = (await session.execute(select(MappingSceneGroup))).scalars().all()
+    for item in [*cues, *groups]:
+        if scene_id in (item.output_scenes or {}).values():
+            item.output_scenes = {output: (None if used == scene_id else used)
+                                  for output, used in item.output_scenes.items()}
     await session.delete(scene)
     await session.commit()
     _changed(scene_id, deleted=True)
