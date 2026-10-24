@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
 import { enterFullscreen, OutputScreen, OVERLAY_EVENT } from './OutputPage'
+import { captureOutput } from './OutputView'
 import { trackingDelayMs } from './people'
 import type { Show } from './types'
 
@@ -17,6 +18,8 @@ import type { Show } from './types'
 const PLAYER_KEY = 'pc.player'
 const HELLO_MS = 3000
 const REPORT_MS = 5000
+/** How often a picture goes to the Dashboard's live view while someone watches it. */
+const PICTURE_MS = 3000
 
 interface Identity {
   device_id: string
@@ -31,6 +34,17 @@ interface Assignment {
   show_id: number | null
   /** Asked from the Players page, each to do once: "reload", "overlay_on", "overlay_off". */
   commands?: string[]
+  /** Someone has the Dashboard's live view open: send copies of the frames drawn. */
+  picture?: boolean
+}
+
+function base64Of(picture: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(picture)
+  })
 }
 
 function obey(commands: string[] | undefined) {
@@ -86,6 +100,7 @@ export default function PlayerPage() {
   const [assignment, setAssignment] = useState<Assignment | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [cache, setCache] = useState<CacheState>({ mode: 'off', bytes: 0, failed: 0 })
+  const [pictureWanted, setPictureWanted] = useState(false)
   const stats = useRef<Record<string, unknown>>({})
 
   useEffect(() => {
@@ -129,6 +144,7 @@ export default function PlayerPage() {
         body: { ...stats.current, cache: cache.mode, cached_bytes: cache.bytes },
       })
       obey(next.commands)
+      setPictureWanted(next.picture === true)
       setAssignment((current) =>
         current &&
         current.output_id === next.output_id &&
@@ -162,6 +178,27 @@ export default function PlayerPage() {
       window.removeEventListener('pc:player-changed', onChange)
     }
   }, [token, report])
+
+  // -- live view -------------------------------------------------------------
+  useEffect(() => {
+    if (!token || !pictureWanted) return
+    let busy = false
+    const send = async () => {
+      if (busy) return
+      busy = true
+      try {
+        const picture = await captureOutput()
+        if (picture) await request('/mapping/players/me/picture', { method: 'POST', body: { image: await base64Of(picture) } })
+      } catch {
+        // A missed picture is not worth a message on the projector.
+      } finally {
+        busy = false
+      }
+    }
+    void send()
+    const timer = window.setInterval(() => void send(), PICTURE_MS)
+    return () => window.clearInterval(timer)
+  }, [token, pictureWanted])
 
   // -- media cache -----------------------------------------------------------
   useEffect(() => {

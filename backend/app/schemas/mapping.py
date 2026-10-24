@@ -553,6 +553,8 @@ class PlayerAssignment(BaseModel):
     show_id: int | None
     #: Things to do once, sent from the Players page ("reload", "overlay_on", "overlay_off").
     commands: list[str] = Field(default_factory=list)
+    #: Someone is watching the Dashboard's live view: send copies of the frames drawn.
+    picture: bool = False
 
 
 PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake"]
@@ -586,6 +588,16 @@ class PlayerAppHello(BaseModel):
 class PlayerAppReply(BaseModel):
     #: "restart_output", "reboot" or "shutdown", each to do once.
     commands: list[str] = Field(default_factory=list)
+
+
+#: A small JPEG, base64: about 20 KB at the size the live view asks for.
+MAX_PICTURE_CHARS = 400_000
+
+
+class PlayerPicture(BaseModel):
+    """A copy of the frame the player page is drawing, for the live view (base64 JPEG)."""
+
+    image: str = Field(min_length=16, max_length=MAX_PICTURE_CHARS)
 
 
 # -- cameras -------------------------------------------------------------------

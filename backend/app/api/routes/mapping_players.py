@@ -25,6 +25,8 @@ restart asked for before the server itself restarted never happens later.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import contextlib
 import hashlib
 import hmac
@@ -34,7 +36,7 @@ import sys
 import time
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, func, select
 
 from app.api.deps import CurrentUser, RequireAdmin, RequireViewer, SessionDep, write_rate_limit
@@ -63,6 +65,7 @@ from app.schemas.mapping import (
     PlayerHello,
     PlayerHelloResponse,
     PlayerOut,
+    PlayerPicture,
     PlayerReport,
     PlayerScreen,
     PlayerUpdate,
@@ -98,6 +101,31 @@ def _now() -> float:
 _queued: dict[tuple[int, str], list[tuple[str, float]]] = {}
 #: When each player's Mini PC app last checked in (_now()).
 _app_seen: dict[int, float] = {}
+
+#: The Dashboard's live view: the latest picture of each mini PC's output,
+#: kept in memory only: (JPEG bytes, when received (_now())). Each player
+#: page sends a copy of the frame it draws; nothing photographs the screen.
+_pictures: dict[int, tuple[bytes, float]] = {}
+#: Pictures are asked for only while someone has the live view open.
+_watched_until = 0.0
+#: How long one look at the live view keeps the pictures coming.
+WATCH_SECONDS = 30.0
+
+
+def _watching() -> bool:
+    return _now() < _watched_until
+
+
+def _jpeg(image: str) -> bytes:
+    try:
+        data = base64.b64decode(image, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The picture is not base64") from None
+    if not data.startswith(b"\xff\xd8"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The picture must be a JPEG")
+    return data
 
 
 def _queue(player_id: int, target: str, action: str) -> None:
@@ -344,6 +372,7 @@ async def delete_player(player_id: int, session: SessionDep, admin: RequireAdmin
     await session.commit()
     for gone in removed:
         _app_seen.pop(gone.id, None)
+        _pictures.pop(gone.id, None)
         for target in ("page", "app"):
             _queued.pop((gone.id, target), None)
         _changed(gone.id)
@@ -488,6 +517,39 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
     return PlayerAppReply(commands=_take(player.id, "app"))
 
 
+@router.post("/me/picture", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def page_picture(payload: PlayerPicture, session: SessionDep, user: CurrentUser) -> None:
+    """A copy of the frame this player page is drawing, for the live view."""
+    player = (await session.execute(
+        select(MappingPlayer).where(MappingPlayer.user_id == user.id)
+    )).scalars().first()
+    if player is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="This account is not a player")
+    _pictures[player.id] = (_jpeg(payload.image), _now())
+
+
+@router.get("/{player_id}/picture", response_model=None,
+            responses={200: {"content": {"image/jpeg": {}}}})
+async def picture(player_id: int, session: SessionDep, _: RequireViewer) -> Response:
+    """The latest picture of what this mini PC is showing, for the live view.
+
+    Asking for it is what makes the mini PCs send pictures, for the next
+    half a minute. ``X-Picture-Age`` is its age in seconds.
+    """
+    global _watched_until
+    await _load(session, player_id)
+    _watched_until = _now() + WATCH_SECONDS
+    held = _pictures.get(player_id)
+    if held is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    data, at = held
+    return Response(content=data, media_type="image/jpeg", headers={
+        "Cache-Control": "no-store",
+        "X-Picture-Age": f"{max(0.0, _now() - at):.1f}",
+    })
+
+
 @router.post("/me", response_model=PlayerAssignment)
 async def report(payload: PlayerReport, request: Request, session: SessionDep,
                  user: CurrentUser) -> PlayerAssignment:
@@ -507,4 +569,5 @@ async def report(payload: PlayerReport, request: Request, session: SessionDep,
     out = await _player_out(session, player)
     return PlayerAssignment(player_id=player.id, name=player.name,
                             output_id=out.output_id, show_id=out.show_id,
-                            commands=_take(player.id, "page") if player.kind != "camera" else [])
+                            commands=_take(player.id, "page") if player.kind != "camera" else [],
+                            picture=_watching() and player.kind != "camera")
