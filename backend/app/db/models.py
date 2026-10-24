@@ -647,3 +647,65 @@ class MappingPlayer(Base):
     report: Mapped[dict] = mapped_column(JSON, default=dict)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MappingSceneGroup(Base):
+    """A named choice of scene for every projector in a show at once.
+
+    "Halloween night" might be pumpkins on the house and ghosts on the
+    garage. Using a group sets those scenes on every cue of its show, so
+    every projector follows it; see services/tonight.py.
+    """
+
+    __tablename__ = "mapping_scene_groups"
+    __table_args__ = (UniqueConstraint("show_id", "name", name="uq_scene_group_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("mapping_shows.id", ondelete="CASCADE"),
+                                         index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    #: The scene for every projector not listed in ``output_scenes``.
+    scene_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_scenes.id", ondelete="SET NULL")
+    )
+    #: {output id: scene id, or None for no scene there}, as on a cue.
+    output_scenes: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ShowPlan(Base):
+    """Tonight's show: which show and scene group, and when it runs.
+
+    One row. The scheduler in services/tonight.py starts the show at
+    ``start_at`` and stops it at ``end_at`` (local times, "HH:MM") on the
+    weekdays in ``days``; an end before the start means after midnight.
+    """
+
+    __tablename__ = "show_plan"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_shows.id", ondelete="SET NULL")
+    )
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_scene_groups.id", ondelete="SET NULL")
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    start_at: Mapped[str | None] = mapped_column(String(5))
+    end_at: Mapped[str | None] = mapped_column(String(5))
+    #: Weekdays it runs, Monday 0 to Sunday 6.
+    days: Mapped[list] = mapped_column(JSON, default=lambda: list(range(7)))
+    #: Turn the show's projectors on at the start and off at the end.
+    power: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: The night (local date of the start, YYYY-MM-DD) last started and ended.
+    last_start_date: Mapped[str | None] = mapped_column(String(10))
+    last_end_date: Mapped[str | None] = mapped_column(String(10))
+    #: What happened the last time it started or stopped, in plain words.
+    last_message: Mapped[str] = mapped_column(Text, default="", server_default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

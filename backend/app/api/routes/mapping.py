@@ -32,6 +32,7 @@ from app.db.models import (
     MappingCue,
     MappingOutput,
     MappingScene,
+    MappingSceneGroup,
     MappingShow,
     MediaAsset,
     Projector,
@@ -447,6 +448,11 @@ async def delete_output(output_id: int, session: SessionDep, _: RequireAdmin) ->
             choices = getattr(cue, field) or {}
             if key in choices:
                 setattr(cue, field, {k: v for k, v in choices.items() if k != key})
+    for group in (await session.execute(
+        select(MappingSceneGroup).where(MappingSceneGroup.show_id == show_id)
+    )).scalars():
+        if key in (group.output_scenes or {}):
+            group.output_scenes = {k: v for k, v in group.output_scenes.items() if k != key}
     await session.delete(output)
     await session.flush()
     remaining = (await session.execute(

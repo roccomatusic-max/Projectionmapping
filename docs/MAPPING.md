@@ -518,6 +518,52 @@ second and the light sweep, glints and chasing bulbs are done in the shader.
 | GET, PUT/DELETE | `/mapping/paint`, `/mapping/paint/key` | OpenAI key status / set / remove |
 | POST | `/mapping/paint` | Admin: repaint a picture; returns the new media |
 
+## 6b. Scene groups and tonight's show (the Dashboard)
+
+The Dashboard opens with **Tonight's show**: what plays tonight, the show
+time, and the numbers that matter in the evening (projectors online,
+faults and warnings, the hottest temperature any projector reports, the
+highest lamp hours, mini PCs connected, the emergency stop, what is playing).
+
+A **scene group** is a name with a scene for every projector of a show,
+for example "Halloween night": pumpkins on the house, ghosts on the garage.
+One click on a group under **Pick tonight's scenes** makes it tonight's group
+and writes it into every cue of its show (each cue's scene and its "Scenes on
+each projector" choices), so every projector follows it at once, mid-cue
+too, through the same path as the Scenes page. Changing tonight's group
+changes the projectors as well. Media is left alone. A new group starts from
+what is set now (the cue playing, else the first cue).
+
+**Show time** (Set show time): a start and end time, the nights it runs, and
+whether to turn the show's projectors on at the start and off at the end
+(the projectors linked to the show's outputs; every projector when none are
+linked). `backend/app/services/tonight.py` checks every 20 seconds, in the
+schedule time zone (SCHEDULE_TIMEZONE, else the computer's own):
+
+- At the start it uses tonight's group, presses GO on cue 1 and turns the
+  projectors on. Once a night: a show stopped by hand is not restarted.
+- A start time already passed while the show time is still on starts the
+  show straight away. That covers setting the time at 6:30 for 6:00, and a
+  server restart (a power cut) during the show time: the show comes back.
+- At the end it stops the show and turns the projectors off, only for a
+  night it started, and only within six hours of the end time.
+- An end time earlier than the start is after midnight.
+- While the emergency stop is on, the start is skipped for that night and
+  nothing is turned on.
+
+Start now and Stop the show do the same by hand (Stop leaves the projectors
+on). What happened last is shown under the time and kept in the log.
+
+| Method | Path | |
+|---|---|---|
+| GET/POST | `/mapping/scene-groups` | List (optionally `?show_id=`), make one (admin) |
+| PATCH/DELETE | `/mapping/scene-groups/{id}` | Admin; changing tonight's group updates the cues |
+| POST | `/mapping/scene-groups/{id}/use` | Operator: tonight's group, set on every cue now |
+| GET/PUT | `/api/tonight` | Tonight's plan and where in it we are (`state`: off, later, running, done, not_tonight); PUT is operator |
+| POST | `/api/tonight/start`, `/api/tonight/stop` | Operator: start or stop now |
+
+Changes go out as `scene_groups` and `tonight` messages.
+
 ## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`

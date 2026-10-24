@@ -9,17 +9,15 @@ import { PhaseBadge } from '@/components/status'
 import { Banner, EmptyState, PageHeader, Panel, Spinner, StatusDot } from '@/components/ui'
 import { FleetBar, type FleetSegmentKind } from '@/components/graphics'
 import { TONE_TEXT } from '@/components/tone'
-import { describeShow, useShowStatus } from '@/components/shell/ShowStatus'
+import { TonightShow } from '@/components/tonight/TonightShow'
 import {
   AddIcon,
   AlertsIcon,
   ChevronIcon,
   DashboardIcon,
   HistoryIcon,
-  MiniPcIcon,
   OkIcon,
   RefreshIcon,
-  RunShowIcon,
   WarningIcon,
 } from '@/components/icons'
 import { classNames, relativeTime } from '@/lib/format'
@@ -162,48 +160,6 @@ function OverviewStrip({
         onClick={() => toggle('attention')}
         title="Projectors that are offline, faulted, warning or past their lamp replacement. Click to show only these."
       />
-    </div>
-  )
-}
-
-/**
- * The mapping show in one row: what is playing and whether the mini PCs are
- * there, each a click from the page that changes it.
- */
-function ShowRow() {
-  const status = useShowStatus()
-  if (!status.ready || status.shows.length === 0) return null
-  const { label, tone, detail } = describeShow(status)
-  const { paired, online, waiting } = status.players
-  const playersTone: Tone = waiting > 0 ? 'busy' : paired === 0 ? 'idle' : online === paired ? 'ok' : 'warn'
-  const playersText =
-    waiting > 0
-      ? `${waiting} mini PC${waiting === 1 ? '' : 's'} waiting to be approved`
-      : paired === 0
-        ? 'No mini PCs paired yet'
-        : online === paired
-          ? `All ${paired} mini PC${paired === 1 ? '' : 's'} connected`
-          : `${online} of ${paired} mini PCs connected`
-  return (
-    <div className="panel flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
-      <Link to="/mapping/run" className="group flex min-w-0 items-center gap-2.5" title="Open Run the show">
-        <RunShowIcon size={18} className="shrink-0 text-slate-400 group-hover:text-sky-300" aria-hidden />
-        <span className="min-w-0">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-slate-100">
-            <StatusDot tone={tone} pulse={tone === 'ok'} /> Show {label.toLowerCase()}
-          </span>
-          <span className="block truncate text-xs text-slate-400">{detail}</span>
-        </span>
-      </Link>
-      <Link to="/mapping/players" className="group flex min-w-0 items-center gap-2.5" title="Open Players">
-        <MiniPcIcon size={18} className="shrink-0 text-slate-400 group-hover:text-sky-300" aria-hidden />
-        <span className={classNames('flex items-center gap-1.5 text-sm', playersTone === 'idle' ? 'text-slate-400' : 'text-slate-200')}>
-          <StatusDot tone={playersTone} /> {playersText}
-        </span>
-      </Link>
-      <Link to="/mapping/run" className="btn-default btn-sm ml-auto hidden sm:inline-flex">
-        Run the show <ChevronIcon size={14} aria-hidden />
-      </Link>
     </div>
   )
 }
@@ -363,7 +319,7 @@ export default function Dashboard({ session }: { session: Session }) {
         }
       />
 
-      <ShowRow />
+      <TonightShow session={session} />
 
       {loading ? (
         <div className="panel p-6">
