@@ -736,6 +736,28 @@ class ObjectPin(BaseModel):
     rotation: float = Field(default=0.0, ge=-180, le=180)
 
 
+class CountdownColors(BaseModel):
+    """A countdown's own colour for each part, picked over its look. A part
+    left empty keeps the look's own colouring; the banner and the glow are
+    the layer's ``color`` and ``color2``."""
+    #: The big number (and the greeting on the day itself).
+    number: str | None = Field(default=None, pattern=_HEX)
+    #: The number's 3D side.
+    depth: str | None = Field(default=None, pattern=_HEX)
+    #: The small words over the number ("Only") and the lines beside them.
+    top: str | None = Field(default=None, pattern=_HEX)
+    #: The words on the banner ("Days until Christmas").
+    caption: str | None = Field(default=None, pattern=_HEX)
+    #: The stitching along the banner's edges.
+    stitch: str | None = Field(default=None, pattern=_HEX)
+    #: The ticking clock's numbers and dots.
+    clock: str | None = Field(default=None, pattern=_HEX)
+    #: The words under the clock ("Hours", "Minutes", "Seconds").
+    labels: str | None = Field(default=None, pattern=_HEX)
+    #: Holly, snowflakes, peppermints, pumpkins, ghosts, bats and stars.
+    decorations: str | None = Field(default=None, pattern=_HEX)
+
+
 class SceneLayer(BaseModel):
     """One layer of a scene. Every type reads the same few dials; what each
     dial means for a type (brush size, how many particles...) is the
@@ -770,6 +792,8 @@ class SceneLayer(BaseModel):
     pins: list[ObjectPin] | None = Field(default=None, max_length=MAX_PINS)
     #: The image a "picture" layer shows (stretched over the whole canvas).
     media_id: int | None = None
+    #: A countdown's colour for each part; None keeps its look's colours.
+    colors: CountdownColors | None = None
 
 
 class SceneBase(BaseModel):

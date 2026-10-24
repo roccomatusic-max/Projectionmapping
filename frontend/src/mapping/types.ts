@@ -342,6 +342,24 @@ export interface SceneLayer {
   pins?: ObjectPin[] | null
   /** The image a "picture" layer shows, stretched over the whole canvas. */
   media_id?: number | null
+  /** A countdown's own colour for each part; missing keeps its look's colours. */
+  colors?: CountdownColors | null
+}
+
+/**
+ * A countdown's colour for each part, picked over its look. A part left out
+ * (or null) keeps the look's own colouring; the banner and the glow are the
+ * layer's ``color`` and ``color2``.
+ */
+export interface CountdownColors {
+  number?: string | null
+  depth?: string | null
+  top?: string | null
+  caption?: string | null
+  stitch?: string | null
+  clock?: string | null
+  labels?: string | null
+  decorations?: string | null
 }
 
 export interface MappingScene {

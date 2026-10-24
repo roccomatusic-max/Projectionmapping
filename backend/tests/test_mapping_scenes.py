@@ -438,6 +438,17 @@ async def test_christmas_countdown_is_a_scene_layer(api):
     assert moved.status_code == 200, moved.text
     assert moved.json()["layers"][0]["pins"] == [{"x": 0.3, "y": 0.6, "size": 1.4, "rotation": -12.0}]
 
+    # Its own colour for each part; parts left out keep the look's.
+    recoloured = await api.patch(f"/api/mapping/scenes/{created.json()['id']}", headers=headers, json={
+        "layers": [{**countdown, "colors": {"number": "#00ff88", "caption": "#ffffff", "decorations": "#123abc"}}]})
+    assert recoloured.status_code == 200, recoloured.text
+    colors = recoloured.json()["layers"][0]["colors"]
+    assert colors["number"] == "#00ff88" and colors["decorations"] == "#123abc"
+    assert colors["depth"] is None and colors["clock"] is None
+    refused = await api.patch(f"/api/mapping/scenes/{created.json()['id']}", headers=headers, json={
+        "layers": [{**countdown, "colors": {"number": "green"}}]})
+    assert refused.status_code == 422
+
     assert "countdown" in scene_ai._catalog_text()
     layers = scene_ai.to_layers([{"type": "countdown", "style": "sparkly", "size": 3, "near": "flee"}])
     assert layers[0].style == "gold" and layers[0].size == 1.0 and layers[0].near == "none"
@@ -450,7 +461,8 @@ async def test_changing_a_scene_keeps_objects_placed_by_hand(api, monkeypatch):
     pins = [{"x": 0.3, "y": 0.8, "size": 1.0, "rotation": 0.0}, {"x": 0.6, "y": 0.8, "size": 2.0, "rotation": 15.0}]
     scene = (await api.post("/api/mapping/scenes", headers=headers, json={
         "name": "Porch pumpkins", "layers": [
-            {"type": "countdown", "style": "gold", "pins": [{"x": 0.7, "y": 0.3, "rotation": 10}]},
+            {"type": "countdown", "style": "gold", "pins": [{"x": 0.7, "y": 0.3, "rotation": 10}],
+             "colors": {"number": "#00ff88", "clock": "#ff00aa"}},
             {"type": "shapes", "style": "pumpkins", "pins": pins}]})).json()
 
     calls: list = []
@@ -478,8 +490,12 @@ async def test_changing_a_scene_keeps_objects_placed_by_hand(api, monkeypatch):
     assert pumpkins["pins"] == pins
     assert countdown["pins"] == [{"x": 0.7, "y": 0.3, "size": 1.0, "rotation": 10.0}]
     assert bats["pins"] is None
-    # Claude is not sent the positions.
+    # The countdown keeps the colours picked for its parts.
+    assert countdown["colors"]["number"] == "#00ff88" and countdown["colors"]["clock"] == "#ff00aa"
+    assert bats["colors"] is None
+    # Claude is not sent the positions or the part colours.
     assert '"pins"' not in calls[-1]["messages"][0]["content"]
+    assert '"colors"' not in calls[-1]["messages"][0]["content"]
 
 
 async def test_a_cue_plays_different_scenes_on_different_projectors(api):

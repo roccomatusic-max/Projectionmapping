@@ -9,7 +9,6 @@ import {
   BLENDS,
   CHANGES,
   changeOf,
-  COUNTDOWN_COLORS,
   KIND,
   LAYER_KINDS,
   layerLabel,
@@ -24,10 +23,11 @@ import {
   TARGETS,
 } from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
-import { countdownPinHeight, DESIGN_H, DESIGN_W, holidayOf } from '../scene/countdown'
+import { countdownPinHeight, DESIGN_H, DESIGN_W } from '../scene/countdown'
 import { objectRadius } from '../scene/engine'
 import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
+import { CountdownColorPickers, countdownLook } from './CountdownColors'
 import { PaintHouse } from './PaintHouse'
 import { ProjectorScenes, sceneOn } from './ProjectorScenes'
 import { type Backdrop, type Drawing, type PeopleSource, ScenePreview, SURFACE_KINDS } from './ScenePreview'
@@ -878,15 +878,19 @@ function LayerCard({
                 <select className="input py-1 text-sm" value={layer.style} disabled={!canEdit}
                   onChange={(e) => {
                     const style = e.target.value
-                    // A countdown switched to another holiday takes that holiday's colours too.
-                    const recolour = layer.type === 'countdown' && holidayOf(style) !== holidayOf(layer.style)
-                    onChange({ style, ...(recolour ? COUNTDOWN_COLORS[style] : {}) })
+                    // A countdown's look is a starting point: it brings its own colours.
+                    onChange(layer.type === 'countdown' ? countdownLook(style) : { style })
                   }}>
                   {kind.styles.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
               </label>
             )}
-            {usesColors && (
+            {layer.type === 'countdown' && (
+              <div className="sm:col-span-2">
+                <CountdownColorPickers layer={layer} canEdit={canEdit} onChange={onChange} />
+              </div>
+            )}
+            {usesColors && layer.type !== 'countdown' && (
               <div className="flex gap-3">
                 <label className="block">
                   <span className="label">Colour</span>
