@@ -89,6 +89,7 @@ jobs:
           if (-not $started) { throw 'the app did not start after the install' }
           # Updating itself: the script the app hands over to installs over
           # the running copy without restarting Windows and starts it again.
+          Set-Location $env:GITHUB_WORKSPACE   # the install line leaves the temp folder current
           $work = Join-Path $env:RUNNER_TEMP 'selfupdate'
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           Copy-Item dist\MiniPC-Setup.exe (Join-Path $work 'MiniPC-Setup-9.9.9.exe')
