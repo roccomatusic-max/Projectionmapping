@@ -23,6 +23,7 @@ import {
   Spinner,
 } from '@/components/ui'
 import { Glyph, type Tone } from '@/components/graphics'
+import TemperatureHistory from '@/components/monitoring/TemperatureHistory'
 import { classNames, formatDateTime, relativeTime } from '@/lib/format'
 import {
   CoverIcon,
@@ -96,9 +97,9 @@ export default function Monitoring({ session }: { session: Session }) {
     // A slower reply for the previously chosen projector must not land last.
     let current = true
     void api
-      .telemetry(selectedProjector, undefined, 30)
+      .telemetry(selectedProjector, undefined, 30, 'lamp')
       .then((result) => {
-        if (current) setLampSeries(result.points.filter((point) => point.metric.startsWith('lamp')))
+        if (current) setLampSeries(result.points)
       })
       .catch(() => undefined)
     return () => {
@@ -137,7 +138,7 @@ export default function Monitoring({ session }: { session: Session }) {
       <PageHeader
         icon={MonitoringIcon}
         title="Monitoring"
-        subtitle={`Lamp hours, hours switched on, enclosures and upkeep · ${alerts.filter((a) => a.state === 'open').length} open alert${alerts.filter((a) => a.state === 'open').length === 1 ? '' : 's'}`}
+        subtitle={`Projector temperatures, lamp hours, hours switched on, enclosures and upkeep · ${alerts.filter((a) => a.state === 'open').length} open alert${alerts.filter((a) => a.state === 'open').length === 1 ? '' : 's'}`}
         actions={
           <label className="flex items-center gap-2 text-xs text-slate-400">
             Charts for
@@ -176,6 +177,11 @@ export default function Monitoring({ session }: { session: Session }) {
         </span>
         <span className="text-xs text-slate-400">Open Alerts →</span>
       </Link>
+
+      <TemperatureHistory
+        projectorId={selectedProjector}
+        projectorName={projectors.length > 1 ? projectors.find((p) => p.id === selectedProjector)?.name : undefined}
+      />
 
       <Panel
         icon={TemperatureIcon}

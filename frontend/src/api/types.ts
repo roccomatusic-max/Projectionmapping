@@ -363,6 +363,48 @@ export interface MaintenanceRecord {
   next_due_at: string | null
 }
 
+export interface TemperatureSample {
+  celsius: number
+  fahrenheit: number
+  recorded_at: string
+}
+
+/** ok, near (within the warning margin), over (at or above the limit), or
+ *  unknown (no recent reading). A sensor without a published limit is ok
+ *  whenever it has a reading. */
+export type TemperatureState = 'ok' | 'near' | 'over' | 'unknown'
+
+export interface TemperatureSensorHistory {
+  key: string
+  label: string
+  limit_celsius: number | null
+  limit_fahrenheit: number | null
+  warn_celsius: number | null
+  latest: TemperatureSample | null
+  latest_is_current: boolean
+  state: TemperatureState
+  hottest: TemperatureSample | null
+  hottest_state: TemperatureState
+}
+
+/** GET /analytics/temperatures: one projector's sensors over a time range.
+ *  Each point holds the hottest °C per sensor key in its slice, or null. */
+export interface TemperatureHistory {
+  projector_id: number
+  hours: number
+  since: string
+  until: string
+  bucket_seconds: number
+  sample_interval_seconds: number
+  retention_days: number
+  sensors: TemperatureSensorHistory[]
+  hottest: (TemperatureSample & { key: string; label: string }) | null
+  condition: string | null
+  note: string | null
+  warnings: string[]
+  points: Array<{ t: number } & Record<string, number | null>>
+}
+
 export interface TelemetryPoint {
   metric: string
   value_num: number | null

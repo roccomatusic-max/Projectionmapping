@@ -440,6 +440,7 @@ async def get_telemetry(
     projector_id: int, session: SessionDep, _: RequireViewer,
     metric: str | None = Query(None), days: int = Query(7, ge=1, le=365),
     limit: int = Query(2000, ge=1, le=20000),
+    prefix: str | None = Query(None, description="Only metrics starting with this, e.g. lamp"),
 ) -> dict:
     since = datetime.now(UTC) - timedelta(days=days)
     query = (select(Telemetry)
@@ -447,6 +448,11 @@ async def get_telemetry(
              .order_by(Telemetry.recorded_at.desc()).limit(limit))
     if metric:
         query = query.where(Telemetry.metric == metric)
+    if prefix:
+        # The newest ``limit`` rows of every metric are mostly online/power
+        # samples (two every 15 s), which crowd out a slow metric such as
+        # lamp hours unless the query asks for it alone.
+        query = query.where(Telemetry.metric.startswith(prefix, autoescape=True))
     rows = (await session.execute(query)).scalars().all()
     return {
         "projector_id": projector_id, "metric": metric, "days": days,

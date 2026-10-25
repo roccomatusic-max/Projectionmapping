@@ -249,8 +249,17 @@ async def test_only_the_operational_tier_writes_power_history(api):  # noqa: F81
     await monitor_module.monitor.persist_status(worker, status, Tier.OPERATIONAL)
     assert await rows() == ["online", "power"]
 
+    # The deep poll also records one temperature sample per sensor.
+    temperatures = ["temp_exhaust", "temp_intake", "temp_optics"]
     await monitor_module.monitor.persist_status(worker, status, Tier.DIAGNOSTICS)
-    assert await rows() == ["health", "online", "power"]
+    assert await rows() == ["health", "online", "power", *temperatures]
+
+    # The maintenance tier adds lamp hours only, not a second temperature set.
+    await monitor_module.monitor.persist_status(worker, status, Tier.MAINTENANCE)
+    lamps = [m for m in await rows() if m.startswith("lamp")]
+    assert lamps
+    assert sorted(set(await rows()) - set(lamps)) == ["health", "online", "power", *temperatures]
+    assert len([m for m in await rows() if m.startswith("temp_")]) == 3
 
     # Every tier still updates the live state the dashboard reads.
     shown = (await api.get(f"/api/projectors/{pid}", headers=headers)).json()

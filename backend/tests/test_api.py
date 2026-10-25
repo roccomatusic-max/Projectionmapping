@@ -729,6 +729,93 @@ async def test_usage_analytics_endpoint(api):
     assert isinstance(body["usage"], list)
 
 
+async def test_temperatures_are_recorded_and_charted(api):
+    """A deep poll stores one sample per sensor; the chart endpoint serves them."""
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    await api.get(f"/api/projectors/{pid}/status?refresh=true", headers=headers)
+
+    rows = (await api.get(f"/api/projectors/{pid}/telemetry?prefix=temp_",
+                          headers=headers)).json()["points"]
+    assert sorted(r["metric"] for r in rows) == ["temp_exhaust", "temp_intake", "temp_optics"]
+
+    response = await api.get(f"/api/analytics/temperatures?projector_id={pid}&hours=1",
+                             headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [s["key"] for s in body["sensors"]] == ["intake", "exhaust", "optics"]
+    intake = body["sensors"][0]
+    assert intake["label"] == "Intake air"
+    assert intake["latest"]["celsius"] == 24.0 and intake["latest"]["fahrenheit"] == 75.2
+    assert intake["state"] == "ok" and intake["limit_celsius"] == 45.0
+    assert body["sensors"][1]["limit_celsius"] is None  # no published exhaust limit
+    assert body["hottest"]["key"] == "exhaust"
+    assert body["warnings"] == []
+    assert len(body["points"]) == 240
+    assert sum(1 for p in body["points"] if p["intake"] is not None) == 1
+
+
+async def test_temperature_warning_near_the_limit(api):
+    from datetime import datetime, timedelta
+
+    from app.db.models import Telemetry
+    from app.db.session import session_scope
+
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    now = datetime.now(UTC)
+    async with session_scope() as session:
+        session.add_all([
+            # Hot an hour ago, normal now: the warning says it was, not is.
+            Telemetry(projector_id=pid, metric="temp_intake", value_num=42.0,
+                      recorded_at=now - timedelta(hours=2)),
+            Telemetry(projector_id=pid, metric="temp_intake", value_num=30.0,
+                      recorded_at=now - timedelta(seconds=30)),
+        ])
+    body = (await api.get(f"/api/analytics/temperatures?projector_id={pid}&hours=12",
+                          headers=headers)).json()
+    intake = body["sensors"][0]
+    assert intake["state"] == "ok" and intake["hottest_state"] == "near"
+    assert intake["hottest"]["celsius"] == 42.0
+    assert len(body["warnings"]) == 1 and "reached 108 °F (42 °C)" in body["warnings"][0]
+
+    async with session_scope() as session:
+        session.add(Telemetry(projector_id=pid, metric="temp_intake", value_num=46.0,
+                              recorded_at=now))
+    body = (await api.get(f"/api/analytics/temperatures?projector_id={pid}&hours=1",
+                          headers=headers)).json()
+    assert body["sensors"][0]["state"] == "over"
+    assert "at or above" in body["warnings"][0]
+
+    missing = await api.get("/api/analytics/temperatures?projector_id=9999", headers=headers)
+    assert missing.status_code == 404
+
+
+async def test_old_temperature_samples_are_pruned_sooner(api):
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.db.models import Telemetry
+    from app.db.session import session_scope
+    from app.services.monitor import monitor
+
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    old = datetime.now(UTC) - timedelta(days=45)
+    async with session_scope() as session:
+        session.add_all([
+            Telemetry(projector_id=pid, metric="temp_intake", value_num=25.0, recorded_at=old),
+            Telemetry(projector_id=pid, metric="power", value_num=1.0, recorded_at=old),
+        ])
+    await monitor._prune()
+    async with session_scope() as session:
+        metrics = (await session.execute(
+            select(Telemetry.metric).where(Telemetry.recorded_at <= old + timedelta(minutes=1))
+        )).scalars().all()
+    assert metrics == ["power"]
+
+
 async def test_unexpected_shutdown_alert_only_when_nobody_asked(api):
     """Observed on→off with no power-off in the log is an alert; a commanded
     power-off is not."""
