@@ -5,8 +5,10 @@ Using one writes it into every cue of the show (the cue's scene and its
 "Scenes on each projector" choices), so the projectors follow it at once,
 mid-cue included, through the same path the Scenes page uses.
 
-The show plan says which show and group play tonight and from when to
-when. The scheduler here checks it every 20 seconds:
+The show plan says which show and group play and from when to when, every
+week; the show calendar (services/show_calendar.py) plans single nights,
+runs of nights and repeats ahead, and wins on the nights it has something
+for. The scheduler here checks both every 20 seconds:
 
 * At the start time it uses the group, presses GO on the first cue and,
   when asked to, turns the show's projectors on. A start time that has
@@ -14,7 +16,10 @@ when. The scheduler here checks it every 20 seconds:
   or the server restarted mid-show) starts the show straight away, so a
   power cut during the evening does not leave the building dark.
 * At the end time it stops the show and, when asked to, turns the
-  projectors off. It only ends a night it started.
+  projectors off. It only ends a show time it started.
+* A night can have more than one show time from the calendar. When one
+  ends exactly as the next starts, the show keeps playing with the next
+  one's scene group and the projectors stay on.
 
 The emergency stop wins: while it is on, a start is skipped (and not tried
 again that night) and nothing is turned on.
@@ -24,8 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -46,6 +50,7 @@ from app.db.models import (
 from app.db.session import session_scope
 from app.drivers import CommandOutcome
 from app.services.mapping import TransportError, transport
+from app.services.show_calendar import Planner, Slot
 
 log = logging.getLogger(__name__)
 
@@ -56,48 +61,6 @@ END_GRACE = timedelta(hours=6)
 
 _TOOK_IT = {CommandOutcome.CONFIRMED.value, CommandOutcome.ACCEPTED.value,
             CommandOutcome.OK.value, CommandOutcome.QUEUED.value}
-
-
-@dataclass(frozen=True)
-class Window:
-    night: date
-    start: datetime
-    end: datetime
-
-
-def _parse(value: str | None) -> time | None:
-    if not value:
-        return None
-    hours, minutes = value.split(":")
-    return time(int(hours), int(minutes))
-
-
-def window_for(plan: ShowPlan, night: date, tz) -> Window | None:
-    """The show time that starts on ``night``, if the plan runs that night."""
-    start_t, end_t = _parse(plan.start_at), _parse(plan.end_at)
-    if start_t is None or end_t is None or night.weekday() not in (plan.days or []):
-        return None
-    start = datetime.combine(night, start_t, tzinfo=tz)
-    end = datetime.combine(night, end_t, tzinfo=tz)
-    if end <= start:
-        end += timedelta(days=1)  # ends after midnight
-    return Window(night, start, end)
-
-
-def current_window(plan: ShowPlan, now: datetime) -> Window | None:
-    for night in (now.date() - timedelta(days=1), now.date()):
-        win = window_for(plan, night, now.tzinfo)
-        if win and win.start <= now < win.end:
-            return win
-    return None
-
-
-def next_start(plan: ShowPlan, now: datetime) -> datetime | None:
-    for offset in range(8):
-        win = window_for(plan, now.date() + timedelta(days=offset), now.tzinfo)
-        if win and win.start > now:
-            return win.start
-    return None
 
 
 def tz_name() -> str:
@@ -125,26 +88,45 @@ async def load_plan(session) -> ShowPlan:
     return plan
 
 
+def _slot_out(slot: Slot, group_names: dict[int, str]) -> dict[str, Any]:
+    return {
+        "key": slot.key,
+        "source": slot.source,
+        "entry_id": slot.entry_id,
+        "title": slot.title,
+        "show_id": slot.show_id,
+        "group_id": slot.group_id,
+        "group_name": group_names.get(slot.group_id or 0),
+        "starts_at": slot.start,
+        "ends_at": slot.end,
+        "power": slot.power,
+    }
+
+
 async def describe(session, now: datetime | None = None) -> dict[str, Any]:
     """Tonight's plan and where in it we are, for the home page."""
     plan = await load_plan(session)
+    planner = await Planner.load(session, plan)
     now = now or datetime.now(settings.tz)
-    show = await session.get(MappingShow, plan.show_id) if plan.show_id else None
-    group = await session.get(MappingSceneGroup, plan.group_id) if plan.group_id else None
-    timed = bool(plan.enabled and plan.start_at and plan.end_at)
-    win = current_window(plan, now) if timed else None
-    today = window_for(plan, now.date(), now.tzinfo) if timed else None
-    if not timed:
-        state = "off"
-    elif win:
-        state = "running"
-    elif today and now < today.start:
-        state = "later"
-    elif today:
-        state = "done"
+    tonight = planner.night(now.date(), now.tzinfo)
+    current = planner.current(now)
+    upcoming = next((s for s in tonight.slots if s.start > now), None)
+    if not planner.anything_planned(now.date()):
+        state, shown = "off", None
+    elif current:
+        state, shown = "running", current
+    elif upcoming:
+        state, shown = "later", upcoming
+    elif tonight.slots:
+        state, shown = "done", tonight.slots[-1]
     else:
-        state = "not_tonight"
-    shown = win or today
+        state, shown = "not_tonight", None
+    show_id = shown.show_id if shown and shown.show_id else plan.show_id
+    group_id = shown.group_id if shown else plan.group_id
+    show = await session.get(MappingShow, show_id) if show_id else None
+    group = await session.get(MappingSceneGroup, group_id) if group_id else None
+    following = planner.next_start(now) if state != "off" else None
+    names = planner.group_names
     return {
         "show_id": show.id if show else None,
         "show_name": show.name if show else None,
@@ -158,10 +140,36 @@ async def describe(session, now: datetime | None = None) -> dict[str, Any]:
         "state": state,
         "starts_at": shown.start if shown else None,
         "ends_at": shown.end if shown else None,
-        "next_starts_at": next_start(plan, now) if timed else None,
+        "next_starts_at": following.start if following else None,
+        "source": shown.source if shown else None,
+        "title": shown.title if shown else None,
+        "entry_id": shown.entry_id if shown else None,
+        "tonight_slots": [_slot_out(slot, names) for slot in tonight.slots],
+        "cancelled_by": (tonight.cancelled_by.title or "No show") if tonight.cancelled_by else None,
+        "next_title": following.title if following else None,
         "last_message": plan.last_message or "",
         "timezone": tz_name(),
     }
+
+
+async def show_time(session, now: datetime | None = None) -> tuple[Slot | None, Slot | None]:
+    """The show time on now, if any, and the next one to start."""
+    plan = await load_plan(session)
+    planner = await Planner.load(session, plan)
+    now = now or datetime.now(settings.tz)
+    return planner.current(now), planner.next_start(now)
+
+
+async def tonights_group_ids(session) -> set[int]:
+    """The scene groups the plan plays now or later today."""
+    plan = await load_plan(session)
+    planner = await Planner.load(session, plan)
+    now = datetime.now(settings.tz)
+    ids = {s.group_id for s in planner.recent(now) if s.end > now and s.group_id}
+    current = planner.current(now)
+    if plan.group_id and (current is None or current.source == "weekly"):
+        ids.add(plan.group_id)
+    return ids
 
 
 def changed() -> None:
@@ -212,16 +220,28 @@ async def _power(ids: list[int], state: str) -> str:
             f"{', '.join(failed)} did not answer.")
 
 
-async def start_show(*, by: str) -> tuple[bool, str]:
-    """Use tonight's group, GO on the first cue, turn the projectors on."""
+async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
+    """Use tonight's group, GO on the first cue, turn the projectors on.
+
+    Without a show time given, it plays the one on now, else the next one
+    later today, else the weekly plan's show and group.
+    """
     if transport.snapshot().emergency is not None:
         return False, "The emergency stop is on, so the show was not started. Clear it first."
     async with session_scope() as session:
         plan = await load_plan(session)
-        if plan.show_id is None:
+        if slot is None:
+            planner = await Planner.load(session, plan)
+            now = datetime.now(settings.tz)
+            slot = planner.current(now) or next(
+                (s for s in planner.slots(now.date(), now.tzinfo) if s.start > now), None)
+        if slot is not None and slot.show_id is not None:
+            show_id, group_id, power = slot.show_id, slot.group_id, slot.power
+        else:
+            show_id, group_id, power = plan.show_id, plan.group_id, plan.power
+        if show_id is None:
             return False, "Pick tonight's scenes first."
-        show_id, power = plan.show_id, plan.power
-        group = await session.get(MappingSceneGroup, plan.group_id) if plan.group_id else None
+        group = await session.get(MappingSceneGroup, group_id) if group_id else None
         if group is not None and group.show_id == show_id:
             await apply_group(session, group)
         ids = await _projector_ids(session, show_id) if power else []
@@ -249,11 +269,11 @@ async def start_show(*, by: str) -> tuple[bool, str]:
     return ok, message
 
 
-async def stop_show(*, by: str, power_off: bool) -> tuple[bool, str]:
+async def stop_show(*, by: str, power_off: bool, show_id: int | None = None) -> tuple[bool, str]:
     """Stop the show; turn its projectors off when asked."""
     async with session_scope() as session:
         plan = await load_plan(session)
-        show_id = plan.show_id
+        show_id = show_id or transport.snapshot().show_id or plan.show_id
         ids = await _projector_ids(session, show_id) if power_off and show_id else []
     parts: list[str] = []
     if transport.snapshot().status in ("playing", "paused"):
@@ -282,9 +302,9 @@ class TonightScheduler:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
-        #: The night this server process started (or found playing); a
+        #: The show time this server process started (or found playing); a
         #: restart forgets it, which is what lets a show resume after one.
-        self._started_night: date | None = None
+        self._started_key: str | None = None
 
     async def start(self) -> None:
         if self._task is not None:
@@ -297,9 +317,9 @@ class TonightScheduler:
         await stop_task(self._task, name="tonight scheduler")
         self._task = None
 
-    def mark_started(self, night: date | None) -> None:
-        """A start by hand during tonight's show time counts as tonight's start."""
-        self._started_night = night
+    def mark_started(self, key: str | None) -> None:
+        """A start by hand during a show time counts as that show time's start."""
+        self._started_key = key
 
     async def _loop(self) -> None:
         while True:
@@ -316,49 +336,51 @@ class TonightScheduler:
         now = now or datetime.now(settings.tz)
         async with session_scope() as session:
             plan = await load_plan(session)
-            if not (plan.enabled and plan.show_id and plan.start_at and plan.end_at):
-                return
-            win = current_window(plan, now)
-            ending = self._due_end(plan, now)
-            last_start = plan.last_start_date
-            show_id, power = plan.show_id, plan.power
+            planner = await Planner.load(session, plan)
+            current = planner.current(now)
+            if current is not None and current.show_id is None:
+                current = None
+            ending = self._due_end(planner, plan, now)
+            last_start = plan.last_start_key
 
-        if win is not None and self._started_night != win.night:
-            night = win.night.isoformat()
+        if current is not None and self._started_key != current.key:
             state = transport.snapshot()
-            self._started_night = win.night
-            if last_start == night and state.show_id == show_id and state.status == "playing":
+            self._started_key = current.key
+            if (last_start == current.key and state.show_id == current.show_id
+                    and state.status == "playing"):
                 return  # already going (started by hand, or before a page reload)
-            await self._mark(start=night)
+            await self._mark(start=current)
             if state.emergency is not None:
                 await _record(
-                    f"Not started at {clock(win.start)} because the emergency stop is on.",
+                    f"Not started at {clock(current.start)} because the emergency stop is on.",
                     severity=Severity.WARNING, kind="tonight_held")
                 return
-            await start_show(by="the schedule")
+            await start_show(by="the schedule", slot=current)
         elif ending is not None:
-            await self._mark(end=ending.night.isoformat())
-            await stop_show(by="the schedule", power_off=power)
+            await self._mark(end=ending)
+            await stop_show(by="the schedule", power_off=ending.power, show_id=ending.show_id)
 
     @staticmethod
-    def _due_end(plan: ShowPlan, now: datetime) -> Window | None:
-        for night in (now.date() - timedelta(days=1), now.date()):
-            win = window_for(plan, night, now.tzinfo)
-            if (win and win.end <= now < win.end + END_GRACE
-                    and plan.last_start_date == night.isoformat()
-                    and plan.last_end_date != night.isoformat()):
-                return win
+    def _due_end(planner: Planner, plan: ShowPlan, now: datetime) -> Slot | None:
+        for slot in planner.recent(now):
+            if (slot.end <= now < slot.end + END_GRACE
+                    and plan.last_start_key == slot.key
+                    and plan.last_end_key != slot.key):
+                return slot
         return None
 
     @staticmethod
-    async def _mark(*, start: str | None = None, end: str | None = None) -> None:
+    async def _mark(*, start: Slot | None = None, end: Slot | None = None) -> None:
         async with session_scope() as session:
             plan = await load_plan(session)
             if start is not None:
-                plan.last_start_date = start
+                plan.last_start_key = start.key
+                plan.last_start_date = start.night.isoformat()
+                plan.last_end_key = None
                 plan.last_end_date = None
             if end is not None:
-                plan.last_end_date = end
+                plan.last_end_key = end.key
+                plan.last_end_date = end.night.isoformat()
             plan.updated_at = datetime.now(UTC)
 
 

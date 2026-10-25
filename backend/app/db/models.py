@@ -704,8 +704,50 @@ class ShowPlan(Base):
     #: The night (local date of the start, YYYY-MM-DD) last started and ended.
     last_start_date: Mapped[str | None] = mapped_column(String(10))
     last_end_date: Mapped[str | None] = mapped_column(String(10))
+    #: Which show time last started and ended: the night and where it came
+    #: from, "2026-10-31:weekly" or "2026-10-31:entry7" (a calendar entry).
+    last_start_key: Mapped[str | None] = mapped_column(String(64))
+    last_end_key: Mapped[str | None] = mapped_column(String(64))
     #: What happened the last time it started or stopped, in plain words.
     last_message: Mapped[str] = mapped_column(Text, default="", server_default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ShowCalendarEntry(Base):
+    """A show planned on the calendar, or a night with no show.
+
+    One date (``start_date`` = ``end_date``), a run of dates, or a repeat
+    with no end (``end_date`` empty), on the weekdays in ``days``. On a
+    night the calendar has something for, the calendar replaces the
+    weekly show time in ``ShowPlan``. See services/show_calendar.py.
+    """
+
+    __tablename__ = "show_calendar"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: "show" plays the show; "off" means no show those nights.
+    kind: Mapped[str] = mapped_column(String(8), default="show")
+    title: Mapped[str] = mapped_column(String(128), default="", server_default="")
+    show_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_shows.id", ondelete="CASCADE"), index=True
+    )
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_scene_groups.id", ondelete="SET NULL")
+    )
+    #: Local dates, "YYYY-MM-DD". No end date means it keeps repeating.
+    start_date: Mapped[str] = mapped_column(String(10))
+    end_date: Mapped[str | None] = mapped_column(String(10))
+    #: Weekdays it runs, Monday 0 to Sunday 6.
+    days: Mapped[list] = mapped_column(JSON, default=lambda: list(range(7)))
+    #: Local times, "HH:MM"; an end before the start means after midnight.
+    start_at: Mapped[str | None] = mapped_column(String(5))
+    end_at: Mapped[str | None] = mapped_column(String(5))
+    #: Turn the show's projectors on at the start and off at the end.
+    power: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str] = mapped_column(Text, default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

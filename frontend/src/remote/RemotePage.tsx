@@ -6,6 +6,7 @@ import { EmergencyBanner, EmergencyStopButton, type UsePower } from '@/component
 import {
   AddToHomeIcon,
   BlackoutIcon,
+  CalendarIcon,
   ChevronDownIcon,
   ClockIcon,
   MoreIcon,
@@ -26,6 +27,7 @@ import { ServerClock, useMappingFeed } from '@/mapping/live'
 import type { Show, ShowSummary, TransportAction, TransportState } from '@/mapping/types'
 import { addHomeScreenTags, onHomeScreen, phoneKind } from './homeScreen'
 import TonightTab from './TonightTab'
+import CalendarTab from './CalendarTab'
 
 /**
  * Show Remote: run the show and switch the projectors from a phone.
@@ -37,7 +39,7 @@ import TonightTab from './TonightTab'
  */
 
 const SHOW_KEY = 'pc.remote.show'
-type Tab = 'show' | 'tonight' | 'projectors'
+type Tab = 'show' | 'tonight' | 'calendar' | 'projectors'
 
 export default function RemotePage() {
   const [session, setSession] = useState<Session | null>(() => getSession())
@@ -99,12 +101,15 @@ function SignedIn({ session, tab, onTab, onSignOut }: {
         {tab === 'show'
           ? <ShowTab session={session} onSignOut={onSignOut} showId={showId} onShowId={setShowId} live={live} />
           : tab === 'tonight'
-            ? <TonightTab session={session} transport={live.transport} />
-            : <ProjectorsTab session={session} />}
+            ? <TonightTab session={session} transport={live.transport} onCalendar={() => onTab('calendar')} />
+            : tab === 'calendar'
+              ? <CalendarTab session={session} />
+              : <ProjectorsTab session={session} />}
       </main>
-      <nav className="grid grid-cols-3 border-t border-white/[0.06] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+      <nav className="grid grid-cols-4 border-t border-white/[0.06] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
         <TabButton active={tab === 'show'} onClick={() => onTab('show')} icon={<SceneIcon size={22} />} label="Show" />
         <TabButton active={tab === 'tonight'} onClick={() => onTab('tonight')} icon={<ClockIcon size={22} />} label="Tonight" />
+        <TabButton active={tab === 'calendar'} onClick={() => onTab('calendar')} icon={<CalendarIcon size={22} />} label="Calendar" />
         <TabButton active={tab === 'projectors'} onClick={() => onTab('projectors')}
           icon={<ProjectorIcon size={22} />} label="Projectors" />
       </nav>

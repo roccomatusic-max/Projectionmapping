@@ -79,6 +79,21 @@ class PlanUpdate(BaseModel):
 PlanState = Literal["off", "later", "running", "done", "not_tonight"]
 
 
+class SlotOut(BaseModel):
+    """One show time on one night."""
+
+    key: str
+    source: Literal["weekly", "calendar"]
+    entry_id: int | None
+    title: str
+    show_id: int | None
+    group_id: int | None
+    group_name: str | None
+    starts_at: datetime
+    ends_at: datetime
+    power: bool
+
+
 class TonightOut(BaseModel):
     show_id: int | None
     show_name: str | None
@@ -95,6 +110,17 @@ class TonightOut(BaseModel):
     ends_at: datetime | None
     #: The next start still to come, which may be a later night.
     next_starts_at: datetime | None
+    #: Where the show time shown comes from: "weekly", "calendar", or None.
+    source: Literal["weekly", "calendar"] | None = None
+    #: Its name, and the calendar entry it comes from.
+    title: str | None = None
+    entry_id: int | None = None
+    #: Every show time today, from the calendar or the weekly show time.
+    tonight_slots: list[SlotOut] = Field(default_factory=list)
+    #: The name of the calendar's "no show" entry keeping tonight dark.
+    cancelled_by: str | None = None
+    #: The name of the next show to start.
+    next_title: str | None = None
     last_message: str
     #: The zone the times are kept in, such as "America/New_York".
     timezone: str

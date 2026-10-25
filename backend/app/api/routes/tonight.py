@@ -121,8 +121,8 @@ async def update_group(group_id: int, payload: SceneGroupUpdate, session: Sessio
     for field, value in changes.items():
         setattr(group, field, value)
     # The group playing tonight changes on the projectors too.
-    plan = await service.load_plan(session)
-    live = plan.group_id == group.id and ("scene_id" in changes or "output_scenes" in changes)
+    live = (("scene_id" in changes or "output_scenes" in changes)
+            and group.id in await service.tonights_group_ids(session))
     if live:
         await service.apply_group(session, group)
     await session.commit()
@@ -209,12 +209,14 @@ async def update_tonight(payload: PlanUpdate, session: SessionDep,
 async def start_tonight(session: SessionDep, user: RequireOperator) -> TonightAction:
     ok, message = await service.start_show(by=user.username)
     if ok:
-        plan = await service.load_plan(session)
-        win = service.current_window(plan, datetime.now(settings.tz))
-        if win is not None:
-            plan.last_start_date = win.night.isoformat()
+        current, _ = await service.show_time(session, datetime.now(settings.tz))
+        if current is not None:
+            plan = await service.load_plan(session)
+            plan.last_start_key = current.key
+            plan.last_start_date = current.night.isoformat()
+            plan.last_end_key = None
             plan.last_end_date = None
-            service.scheduler.mark_started(win.night)
+            service.scheduler.mark_started(current.key)
         await session.commit()
     return TonightAction(ok=ok, message=message, tonight=await _tonight(session))
 
