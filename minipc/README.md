@@ -170,6 +170,18 @@ across the room:
   once a second. It is a copy of the very frame the output draws, made
   only while the status screen is on; nothing photographs the screen.
 
+With a mouse plugged in, the buttons along the bottom work too: **Start
+tonight's show**, **GO · next cue**, **Pause**, **Stop the show**,
+**Blackout**, **Projector on**, **Projector off**, **Restart output** and the
+red **Emergency stop** (hold it for one second). Stop the show and Projector
+off ask for a second press. They act as this mini PC, which may run the show,
+turn its own projector on and off and restart its own output, and nothing
+else; clearing the emergency stop stays on the main server's pages.
+
+If no projector is linked to this mini PC's output, the screen uses the only
+projector when there is just one, and otherwise asks which projector it is,
+with a button for each: one click links it, as Editor → Projectors would.
+
 The projector keeps the output exactly as before, full screen. With no
 monitor, nothing changes. Nothing to set up and no reinstall: the app finds
 the second screen by itself.

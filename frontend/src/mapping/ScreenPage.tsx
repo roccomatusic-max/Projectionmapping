@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
+import { HOLD_MS, useHold } from '@/components/EmergencyStop'
 import type { Projector, TemperatureReading } from '@/api/types'
 import { classNames, formatHours } from '@/lib/format'
 import { activeInput, attentionItems, isLive, lampReadings } from '@/lib/status'
@@ -251,7 +252,12 @@ export default function ScreenPage() {
   const show = usePoll(signedIn && showId != null ? loadShow : null, SHOW_MS).value
   const output = show?.outputs.find((o) => o.id === player?.output_id) ?? null
 
-  const projectorId = output?.projector_id ?? null
+  // An output nobody linked yet: with only one projector there is no doubt which it is.
+  const unlinked = output != null && output.projector_id == null
+  const projectors = usePoll(signedIn && unlinked ? projectorsLoader : null, SHOW_MS).value
+  const onlyProjector = projectors?.length === 1 ? projectors[0].id : null
+  const guessed = unlinked && onlyProjector != null
+  const projectorId = output?.projector_id ?? onlyProjector
   const loadProjector = useCallback(() => request<Projector>(`/projectors/${projectorId}`), [projectorId])
   const projector = usePoll(signedIn && projectorId != null ? loadProjector : null, PROJECTOR_MS).value
 
@@ -260,6 +266,7 @@ export default function ScreenPage() {
   const { picture, tried } = usePicture(signedIn ? playerId : null)
 
   const lost = now - lastAnswer > LOST_MS
+  const { busy, said, press, pressEmergency } = useButtons()
   const name = player?.name ?? me?.name ?? 'Mini PC'
 
   if (!me) {
@@ -363,16 +370,182 @@ export default function ScreenPage() {
         </Card>
 
         <Card title="Projector" className="col-span-2">
-          <ProjectorStatus projector={projector} linked={output != null && projectorId != null} hasOutput={output != null} />
+          <ProjectorStatus projector={projector} linked={output != null && projectorId != null} hasOutput={output != null}
+            guessed={guessed} outputName={output?.name ?? null}
+            choices={unlinked && !guessed ? (projectors ?? []) : []}
+            onLink={(id) => void press('link_projector', { projector_id: id })} />
         </Card>
       </main>
+
+      <Controls
+        status={transportState?.status ?? null}
+        emergency={emergency != null}
+        hasProjector={projectorId != null}
+        busy={busy}
+        said={said}
+        onPress={(action, extra) => void press(action, extra)}
+        onEmergency={() => void pressEmergency()}
+      />
     </Frame>
   )
 }
 
 const transportLoader = () => request<TransportState>('/mapping/transport')
+
+// -- the buttons --------------------------------------------------------------------------
+
+type ScreenAction = 'start_tonight' | 'stop_tonight' | 'go' | 'pause' | 'resume' | 'blackout'
+  | 'power_on' | 'power_off' | 'restart_output' | 'link_projector'
+
+interface ScreenResult {
+  ok: boolean
+  message: string
+}
+
+/** How long an answer stays under the buttons. */
+const SAID_MS = 8000
+
+/**
+ * The buttons send as this mini PC: the server lets its own account run the
+ * show, turn its projector on and off and restart its output, nothing more.
+ */
+function useButtons() {
+  const [busy, setBusy] = useState<ScreenAction | 'emergency' | null>(null)
+  const [said, setSaid] = useState<ScreenResult | null>(null)
+  const timer = useRef<number>()
+  const say = useCallback((result: ScreenResult) => {
+    setSaid(result)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setSaid(null), SAID_MS)
+  }, [])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const send = useCallback(async (which: ScreenAction | 'emergency', call: () => Promise<ScreenResult>) => {
+    setBusy(which)
+    try {
+      say(await call())
+    } catch (err) {
+      say({ ok: false, message: err instanceof Error ? err.message : 'No answer from the main server' })
+    } finally {
+      setBusy(null)
+    }
+  }, [say])
+
+  const press = useCallback(
+    (action: ScreenAction, extra: { projector_id?: number; confirm?: boolean } = {}) =>
+      send(action, () => request<ScreenResult>('/mapping/players/me/control', { method: 'POST', body: { action, ...extra } })),
+    [send],
+  )
+  const pressEmergency = useCallback(
+    () => send('emergency', () => request<ScreenResult>('/mapping/players/me/emergency-stop', { method: 'POST' })),
+    [send],
+  )
+  return { busy, said, press, pressEmergency }
+}
+
+/** Stop the show and Projector off ask for a second press within this long. */
+const ARM_MS = 4000
+
+function Controls({ status, emergency, hasProjector, busy, said, onPress, onEmergency }: {
+  status: string | null
+  emergency: boolean
+  hasProjector: boolean
+  busy: string | null
+  said: ScreenResult | null
+  onPress: (action: ScreenAction, extra?: { confirm?: boolean }) => void
+  onEmergency: () => void
+}) {
+  const [armed, setArmed] = useState<'stop_tonight' | 'power_off' | null>(null)
+  useEffect(() => {
+    if (!armed) return
+    const t = window.setTimeout(() => setArmed(null), ARM_MS)
+    return () => window.clearTimeout(t)
+  }, [armed])
+  const twice = (action: 'stop_tonight' | 'power_off') => {
+    if (armed !== action) return setArmed(action)
+    setArmed(null)
+    onPress(action, { confirm: true })
+  }
+  const { holding, hint, handlers } = useHold(onEmergency, busy === 'emergency')
+  const playing = status === 'playing'
+  const paused = status === 'paused'
+
+  return (
+    <footer className="px-[2vw] pb-[2vh]">
+      <div className="flex items-stretch gap-[0.8vw]">
+        <ScreenButton tone="go" disabled={emergency || busy != null} onClick={() => onPress('start_tonight')}>
+          Start tonight’s show
+        </ScreenButton>
+        <ScreenButton tone="go" disabled={emergency || busy != null} onClick={() => onPress('go')}>
+          GO · next cue
+        </ScreenButton>
+        <ScreenButton disabled={!(playing || paused) || busy != null} onClick={() => onPress(paused ? 'resume' : 'pause')}>
+          {paused ? 'Play again' : 'Pause'}
+        </ScreenButton>
+        <ScreenButton tone={armed === 'stop_tonight' ? 'armed' : undefined} disabled={busy != null} onClick={() => twice('stop_tonight')}>
+          {armed === 'stop_tonight' ? 'Press again to stop' : 'Stop the show'}
+        </ScreenButton>
+        <ScreenButton disabled={busy != null} onClick={() => onPress('blackout')}>
+          Blackout
+        </ScreenButton>
+        <span className="w-[0.8vw] shrink-0" aria-hidden />
+        <ScreenButton disabled={!hasProjector || emergency || busy != null} onClick={() => onPress('power_on')}>
+          Projector on
+        </ScreenButton>
+        <ScreenButton tone={armed === 'power_off' ? 'armed' : undefined} disabled={!hasProjector || busy != null}
+          onClick={() => twice('power_off')}>
+          {armed === 'power_off' ? 'Press again: off' : 'Projector off'}
+        </ScreenButton>
+        <ScreenButton disabled={busy != null} onClick={() => onPress('restart_output')}>
+          Restart output
+        </ScreenButton>
+        <span className="w-[0.8vw] shrink-0" aria-hidden />
+        <button
+          type="button"
+          {...handlers}
+          title="Hold for one second: stops the show, blacks out every mini PC and turns every projector off"
+          className="relative isolate flex-[1.4] select-none overflow-hidden rounded-xl bg-red-600 px-[1vw] py-[1.6vh] text-[2.4vh] font-bold leading-tight text-white ring-1 ring-red-400/50 [touch-action:none] hover:bg-red-500"
+        >
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 -z-10 bg-red-900/70"
+            style={{ width: holding ? '100%' : '0%', transition: holding ? `width ${HOLD_MS}ms linear` : 'width 150ms ease-out' }}
+          />
+          {holding ? 'Keep holding…' : hint ? 'Hold it down' : 'Emergency stop (hold)'}
+        </button>
+      </div>
+      <p className={classNames('mt-[0.6vh] h-[3.2vh] truncate text-[2.2vh] leading-[3.2vh]', said?.ok === false ? 'text-amber-300' : 'text-slate-300')}>
+        {busy ? 'Sending…' : said?.message ?? ''}
+      </p>
+    </footer>
+  )
+}
+
+function ScreenButton({ children, onClick, disabled, tone }: {
+  children: ReactNode
+  onClick: () => void
+  disabled?: boolean
+  tone?: 'go' | 'armed'
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={classNames(
+        'flex-1 rounded-xl px-[0.8vw] py-[1.6vh] text-[2.2vh] font-semibold leading-tight ring-1 transition-colors disabled:cursor-default disabled:opacity-35',
+        tone === 'go' && 'bg-emerald-600 text-white ring-emerald-400/40 enabled:hover:bg-emerald-500',
+        tone === 'armed' && 'bg-amber-500 text-black ring-amber-300 enabled:hover:bg-amber-400',
+        !tone && 'bg-white/[0.08] text-white ring-white/10 enabled:hover:bg-white/[0.14]',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
 const tonightLoader = () => request<Tonight>('/tonight')
 const scenesLoader = () => request<MappingScene[]>('/mapping/scenes')
+const projectorsLoader = () => request<Projector[]>('/projectors')
 
 // -- parts ------------------------------------------------------------------------------
 
@@ -617,15 +790,38 @@ function Fact({ label, children, className }: { label: string; children: ReactNo
   )
 }
 
-function ProjectorStatus({ projector, linked, hasOutput }: { projector: Projector | null; linked: boolean; hasOutput: boolean }) {
+function ProjectorStatus({ projector, linked, hasOutput, guessed, outputName, choices, onLink }: {
+  projector: Projector | null
+  linked: boolean
+  hasOutput: boolean
+  guessed: boolean
+  outputName: string | null
+  choices: Projector[]
+  onLink: (projectorId: number) => void
+}) {
   if (!hasOutput) {
     return <p className="text-[3vh] text-slate-400">Pick an output for this mini PC on Mapping → Players.</p>
   }
   if (!linked) {
     return (
-      <p className="text-[3vh] text-slate-400">
-        No projector is linked to this output. Pick one in Editor → Projectors.
-      </p>
+      <div className="space-y-[1.4vh]">
+        <p className="text-[3vh] text-slate-300">
+          Which projector does {outputName ?? 'this output'} drive?{choices.length ? ' Click it:' : ''}
+        </p>
+        {choices.length > 0 ? (
+          <div className="flex flex-wrap gap-[0.8vw]">
+            {choices.map((p) => (
+              <button key={p.id} type="button" onClick={() => onLink(p.id)}
+                className="rounded-xl bg-sky-600 px-[1.4vw] py-[1.2vh] text-[2.6vh] font-semibold text-white ring-1 ring-sky-400/40 hover:bg-sky-500">
+                {p.name}
+                <span className="ml-[0.6vw] text-[1.9vh] font-normal text-sky-100/80">{p.model}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[2.4vh] text-slate-500">Add the projector on the Projectors page first.</p>
+        )}
+      </div>
     )
   }
   if (!projector) return <p className="text-[3vh] text-slate-500">Loading…</p>
@@ -657,6 +853,11 @@ function ProjectorStatus({ projector, linked, hasOutput }: { projector: Projecto
           {live ? 'Answering' : state.last_seen_at ? 'Not answering' : 'Never reached'}
         </p>
       </div>
+      {guessed && (
+        <p className="text-[2vh] text-slate-500">
+          The only projector there is. Link it to {outputName ?? 'this output'} on the Editor’s Projectors tab to be sure.
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-x-[3vw] gap-y-[1vh]">
         <Fact label="Power" className={live ? power.color : 'text-slate-500'}>

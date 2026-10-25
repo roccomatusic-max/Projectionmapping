@@ -252,8 +252,19 @@ PC (the Dashboard's live view keeps its 3 s for every mini PC). The card's
 **Monitor** line has **Swap screens** and, when Windows mirrors the two
 screens, **Use as second screen**.
 
+The status screen has buttons for someone standing at the projector:
+start or stop tonight's show, GO, pause, blackout, its projector on and off,
+restart its output and the emergency stop. They go to
+`POST /api/mapping/players/me/control` and `/me/emergency-stop`, which only
+the mini PC's own account may call, and only for its own show, projector
+and output. With no projector linked to its output, the screen (and Projector
+on/off) uses the only projector when there is one; otherwise it offers each
+projector as a button that links it to the output, once (`link_projector`
+never replaces a link made in the Editor).
+
 Approval creates a dedicated viewer account for the player, so a player
-can watch the show but cannot run it or change it.
+can watch the show but cannot change it; the status screen's buttons above
+are the only things it can run.
 
 ### Media cache
 

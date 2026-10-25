@@ -49,7 +49,8 @@ export type UsePower = () => (projectorId: number) => string | undefined
 
 // -- the button ---------------------------------------------------------------
 
-function useHold(onFire: () => void, disabled: boolean) {
+/** Press and hold for ``HOLD_MS`` to fire; also used by the mini PC's status screen. */
+export function useHold(onFire: () => void, disabled: boolean) {
   const [holding, setHolding] = useState(false)
   const [hint, setHint] = useState(false)
   const timer = useRef<number>()
