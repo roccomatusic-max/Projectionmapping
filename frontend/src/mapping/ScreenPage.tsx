@@ -473,31 +473,42 @@ function ShowStatus({
 function TonightLine({ tonight, now }: { tonight: Tonight | null; now: number }) {
   if (!tonight) return null
   const date = new Date(now)
-  let when: string | null = null
+  const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const today = tonight.state === 'running' || tonight.state === 'later'
+  // From the weekly show time or the calendar: the times of tonight's show.
+  const when =
+    today && tonight.starts_at && tonight.ends_at
+      ? `${time(tonight.starts_at)} to ${time(tonight.ends_at)}`
+      : today && tonight.start_at
+        ? `${clockText(tonight.start_at)} to ${clockText(tonight.end_at)}`
+        : null
+  const name = today ? tonight.title ?? tonight.group_name : null
   let text: string
   let tone = 'text-slate-300'
-  if (!tonight.enabled) {
-    text = 'No show time set.'
-    tone = 'text-slate-500'
+  if (tonight.state === 'running') {
+    const ends = tonight.ends_at ? new Date(tonight.ends_at).getTime() - now : null
+    text = `On now${ends != null && ends > 0 ? `, ${spanText(ends)} left` : ''}`
+    tone = 'text-emerald-300'
+  } else if (tonight.state === 'later') {
+    const starts = tonight.starts_at ? new Date(tonight.starts_at).getTime() - now : null
+    text = starts != null && starts > 0 ? `Starts in ${spanText(starts)}` : 'Starting'
   } else {
-    when = `${clockText(tonight.start_at)} to ${clockText(tonight.end_at)}`
-    if (tonight.state === 'running') {
-      const ends = tonight.ends_at ? new Date(tonight.ends_at).getTime() - now : null
-      text = `On now${ends != null && ends > 0 ? `, ${spanText(ends)} left` : ''}`
-      tone = 'text-emerald-300'
-    } else if (tonight.state === 'later') {
-      const starts = tonight.starts_at ? new Date(tonight.starts_at).getTime() - now : null
-      text = starts != null && starts > 0 ? `Starts in ${spanText(starts)}` : 'Starting'
-    } else {
-      text = tonight.state === 'done' ? 'Done for tonight.' : 'Not tonight.'
-      if (tonight.next_starts_at) text += ` Next: ${whenText(tonight.next_starts_at, date)}`
-      tone = 'text-slate-400'
+    text = tonight.cancelled_by
+      ? `No show tonight (${tonight.cancelled_by}).`
+      : tonight.state === 'done'
+        ? 'Done for tonight.'
+        : tonight.next_starts_at
+          ? 'No show tonight.'
+          : 'No show time set.'
+    if (tonight.next_starts_at) {
+      text += ` Next: ${whenText(tonight.next_starts_at, date)}${tonight.next_title ? `, ${tonight.next_title}` : ''}`
     }
+    tone = tonight.next_starts_at ? 'text-slate-400' : 'text-slate-500'
   }
   return (
     <div className="mt-auto border-t border-white/[0.06] pt-[1.2vh]">
-      <p className="text-[1.9vh] font-semibold uppercase tracking-[0.2em] text-slate-500">
-        Tonight’s show{tonight.enabled && tonight.group_name ? ` · ${tonight.group_name}` : ''}
+      <p className="truncate text-[1.9vh] font-semibold uppercase tracking-[0.2em] text-slate-500">
+        Tonight’s show{name ? ` · ${name}` : ''}
       </p>
       {when && <p className="truncate text-[3.4vh] font-semibold text-white">{when}</p>}
       <p className={classNames('truncate text-[2.6vh] font-medium', tone)}>{text}</p>
