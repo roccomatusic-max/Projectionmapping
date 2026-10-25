@@ -48,6 +48,7 @@ from app.db.migrate import upgrade_to_head
 from app.db.models import Role, User
 from app.db.session import create_all, engine, session_scope
 from app.paths import static_dir
+from app.services import minipc_updates
 from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
 from app.services.device_manager import manager
@@ -150,15 +151,17 @@ async def lifespan(_: FastAPI):
     if settings.advertise_port:
         await discovery.start(port=settings.discovery_port, http_port=settings.advertise_port)
     auto_updates = start_auto_updates()
+    minipc_update_task = minipc_updates.start()
     log.info("startup complete")
     try:
         yield
     finally:
         log.info("shutting down")
-        if auto_updates:
-            auto_updates.cancel()
-            # gather keeps the task's own cancellation, not one aimed at us.
-            await asyncio.gather(auto_updates, return_exceptions=True)
+        for task in (auto_updates, minipc_update_task):
+            if task:
+                task.cancel()
+                # gather keeps the task's own cancellation, not one aimed at us.
+                await asyncio.gather(task, return_exceptions=True)
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
         await discovery.stop()

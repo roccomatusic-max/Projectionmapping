@@ -124,6 +124,9 @@ class Settings(BaseSettings):
     #: answers mini PCs looking for it (services/discovery.py). The desktop
     #: launcher sets it in --lan mode.
     advertise_port: int | None = None
+    #: Fetch new Mini PC app versions and hand them to the mini PCs, which
+    #: install them by themselves when no show is on (services/minipc_updates.py).
+    minipc_updates: bool = True
     #: UDP port mini PCs broadcast to when looking for the server.
     discovery_port: int = 8765
     #: Only this computer can reach the server (desktop mode without --lan),

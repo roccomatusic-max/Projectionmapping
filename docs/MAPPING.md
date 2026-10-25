@@ -233,6 +233,13 @@ installed before these controls existed does not, so Restart computer and
 Shut down say to paste the install line once. Commands are kept in memory
 for 30 seconds only, so nothing happens later out of the blue.
 
+The same check-in carries the app's version, and the answer carries a newer
+Mini PC app when the server has one and nothing is on: the app updates
+itself from the server, without restarting the computer and without
+closing the output window (`services/minipc_updates.py`,
+`minipc/selfupdate.py`, minipc/README.md "Updates"). Each card shows the
+version, the update state and **Update now**.
+
 Approval creates a dedicated viewer account for the player, so a player
 can watch the show but cannot run it or change it.
 

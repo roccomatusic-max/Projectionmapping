@@ -11,7 +11,9 @@ signs in after that, it:
   by itself,
 - keeps the screen and the computer awake,
 - does what the Players page asks of it: restart the output window,
-  restart or shut down the computer.
+  restart or shut down the computer,
+- updates itself from the main server when no show is on, without
+  restarting the computer or closing the output (selfupdate.py).
 
 The first time, the projector shows a pairing code. Approving it on the
 Mapping page, Players tab, pairs this computer and its camera together.
@@ -49,6 +51,7 @@ import requests  # noqa: E402
 
 import discovery  # noqa: E402
 from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
+from selfupdate import VERSION, SelfUpdate  # noqa: E402
 
 log = logging.getLogger("minipc")
 
@@ -325,6 +328,11 @@ class MiniPC:
         self.stopping = threading.Event()
         self.restart_requested = threading.Event()
         self.on_change = lambda: None
+        #: Ends the program (the tray stops its icon).
+        self.on_quit = lambda: None
+        self.updater = SelfUpdate(folder)
+        #: Quitting to install an update: leave the output window open.
+        self.handing_over = False
 
     # -- what the window and the tray show ----------------------------------
 
@@ -412,16 +420,22 @@ class MiniPC:
         identity = self.config.identity()
         body = {"device_id": identity["device_id"], "secret": identity["secret"],
                 "power": sys.platform == "win32", "computer": socket.gethostname() or None,
-                "mac": network_card(discovery.local_address())}
+                "mac": network_card(discovery.local_address()),
+                "version": self.updater.version, "update": self.updater.report()}
         try:
             reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
             if reply.status_code != 200:
                 return []
-            commands = reply.json().get("commands", [])
+            answer = reply.json()
+            commands = answer.get("commands", [])
+            update = answer.get("update")
         except (requests.RequestException, ValueError, AttributeError) as exc:
             log.debug("check-in failed: %s", exc)
             return []
-        return [c for c in commands if isinstance(c, str)]
+        commands = [c for c in commands if isinstance(c, str)]
+        if isinstance(update, dict) and self.updater.offered(update, self.server):
+            commands.append("install_update")
+        return commands
 
     def obey(self, commands: list[str]) -> None:
         for command in commands:
@@ -430,6 +444,11 @@ class MiniPC:
                 self.restart_requested.set()
             elif command in ("reboot", "shutdown"):
                 power(command)
+            elif command == "install_update":
+                if self.updater.hand_over(self.server):
+                    self.handing_over = True
+                    self.stopping.set()
+                    self.on_quit()
             else:
                 log.info("ignoring %r, which this app does not know", command)
 
@@ -441,6 +460,9 @@ class MiniPC:
         kiosk = None
         if browser:
             kiosk = Kiosk(browser, page.url, self.folder / "browser", self.browser_args)
+            kept = self.updater.take_window()
+            if kept is not None:
+                kiosk.adopt(kept)
         else:
             log.error("no Chrome or Edge on this computer: install Google Chrome")
             self._say("No Chrome or Edge found on this computer")
@@ -466,7 +488,7 @@ class MiniPC:
                     log.exception("unexpected error; carrying on")
                 self.stopping.wait(TICK_SECONDS)
         finally:
-            if kiosk:
+            if kiosk and not self.handing_over:
                 kiosk.stop()
 
 
@@ -514,6 +536,7 @@ def run_tray(app: MiniPC) -> None:
             icon.update_menu()
 
     app.on_change = refresh
+    app.on_quit = icon.stop
     icon.run(setup=lambda i: (setattr(i, "visible", True), refresh()))
 
 
@@ -557,7 +580,7 @@ def self_check() -> int:
             return 1
     log.info("depth camera support: %s", sources.sdk_status())
     icon_image()
-    log.info("self-check passed; browser: %s", find_browser())
+    log.info("self-check passed; version %s; browser: %s", VERSION, find_browser())
     return 0
 
 
@@ -610,7 +633,7 @@ def main(argv: list[str] | None = None) -> int:
         log.info("the Mini PC program is already running")
         return 0
     page.start()
-    log.info("Mini PC %s started (data in %s)", config["name"], folder)
+    log.info("Mini PC %s version %s started (data in %s)", config["name"], VERSION, folder)
     # Stopped by the system: close the output window on the way out.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 

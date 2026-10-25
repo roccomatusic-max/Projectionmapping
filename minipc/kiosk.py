@@ -210,6 +210,18 @@ class Kiosk:
             self.process = None
             self._next_start = self._started_at + MAX_BACKOFF_SECONDS
 
+    def adopt(self, secure_origin: str | None) -> bool:
+        """Keep the window an app that updated itself left open, instead of
+        reopening it: the projector never sees the desktop."""
+        open_now = browsers_on(self.profile)
+        if not open_now:
+            return False
+        self.process = open_now[0]
+        self.secure_origin = secure_origin
+        self._started_at = time.monotonic()
+        log.info("kept the output window that was open before the update")
+        return True
+
     def ensure(self) -> None:
         """Open the window if it is not open; call this regularly."""
         if self.running:

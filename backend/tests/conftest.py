@@ -12,6 +12,7 @@ os.environ.setdefault("POLL_OPERATIONAL", "3600")
 os.environ.setdefault("POLL_DIAGNOSTICS", "3600")
 os.environ.setdefault("POLL_MAINTENANCE", "3600")
 os.environ.setdefault("POWER_VERIFY_DELAY", "0.2")
+os.environ.setdefault("MINIPC_UPDATES", "false")
 os.environ.setdefault("POWER_VERIFY_ATTEMPTS", "5")
 
 import pytest  # noqa: E402

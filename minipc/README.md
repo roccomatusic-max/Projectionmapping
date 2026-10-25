@@ -138,9 +138,35 @@ and set it to the projector's native resolution.
   and an info overlay for its projector. Restart computer and Shut down
   need a Mini PC app installed after these controls arrived: paste the
   install line once.
-- **Updating**: paste the install line again (or run the new MiniPC-Setup.exe
-  over the old one). It does not update by itself.
+- **Updating**: it updates itself, from the main server, when no show is on
+  (see below). Mini PC apps installed before it learned to need the install
+  line pasted once more; the Players page says so on each one that does.
 - **Removing**: Settings → Apps → Mini PC → Uninstall.
+
+## Updates
+
+The main server (Mac app or Windows server, the same code) fetches each new
+Mini PC app from the `minipc-latest` release every 15 minutes, checks it and
+keeps it. Mini PCs get it from the main server, so they need only the local
+network. A mini PC installs it only while nothing is on: no show playing,
+paused or blacked out, no emergency stop, no automation running, no test
+picture on its projector, and not during Tonight's show time or the 30
+minutes before it. One mini PC at a time: the next waits until the first
+is back on the new version, and an update that fails on one is not tried on
+the others by themselves.
+
+Installing **never restarts the computer**. The app downloads the installer
+from the main server, checks its SHA-256, hands over to a small script and
+quits, leaving the output window open: the projector keeps showing the
+player page throughout. The script runs the installer silently with
+`/NORESTART`, the installer starts the new app, and the new app keeps the
+window that is already open. If the install fails, the script starts the
+installed app again and the Players page shows why.
+
+**Mapping → Players** shows each mini PC's app version and whether it is up
+to date, waiting (and why), updating or failed. **Update now** installs it
+at once on that mini PC, unless a show is playing or the emergency stop is
+on.
 
 ## Options
 

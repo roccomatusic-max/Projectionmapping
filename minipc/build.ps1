@@ -18,6 +18,10 @@ minipc\.venv\Scripts\python -m pip install -q --upgrade pip
 minipc\.venv\Scripts\pip install -q -r minipc\requirements-build.txt
 if ($LASTEXITCODE -ne 0) { throw "pip could not install minipc\requirements-build.txt" }
 
+# The app reports it when checking in, which is how it updates itself.
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "version must look like 1.0.42, not $Version" }
+Set-Content -Path minipc\_version.py -Value "VERSION = `"$Version`"" -Encoding ASCII
+
 Write-Host "==> pyinstaller"
 if (Test-Path build) { Remove-Item -Recurse -Force build }
 if (Test-Path dist)  { Remove-Item -Recurse -Force dist }

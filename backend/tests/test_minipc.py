@@ -9,6 +9,7 @@ import asyncio
 import base64
 import json
 import socket
+from types import SimpleNamespace
 
 import pytest
 
@@ -213,8 +214,9 @@ async def test_power_needs_the_new_mini_pc_app(api):
     first = await app_checkin(api)
     assert first["commands"] == []
     listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
-    assert listed["app"] == {"connected": True, "power": True, "computer": "MINIPC-LEFT",
-                             "mac": "aa:bb:cc:dd:ee:01"}
+    assert {k: listed["app"][k] for k in ("connected", "power", "computer", "mac", "version", "update")} == {
+        "connected": True, "power": True, "computer": "MINIPC-LEFT", "mac": "aa:bb:cc:dd:ee:01",
+        "version": None, "update": "old_app"}
 
     restart = await command(api, headers, player_id, "restart_output")
     assert restart.json()["via"] == "app"
@@ -376,3 +378,173 @@ async def test_the_live_view_shows_what_each_mini_pc_puts_out(api):
     await api.delete(f"/api/mapping/players/{player_id}", headers=headers)
     assert (await api.get(f"/api/mapping/players/{player_id}/picture",
                           headers=headers)).status_code == 404
+
+
+# -- the Mini PC app updating itself ------------------------------------------------
+
+
+def fake_release(tmp_path, version="1.0.60", body=b"new installer " * 1000):
+    """A minipc-latest release in a folder, as the server would download it."""
+    import hashlib
+
+    folder = tmp_path / "release"
+    folder.mkdir(exist_ok=True)
+    (folder / "MiniPC-Setup.exe").write_bytes(body)
+    (folder / "minipc-version.json").write_text(json.dumps({
+        "version": version, "sha256": hashlib.sha256(body).hexdigest(), "size": len(body)}))
+    return folder, body
+
+
+@pytest.fixture
+def release(tmp_path, monkeypatch):
+    """The server's mini PC updates, reading the release from local files."""
+    import httpx
+
+    import app.services.minipc_updates as updates
+
+    folder, body = fake_release(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = folder / request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, content=path.read_bytes()) if path.is_file() else httpx.Response(404)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(updates.httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    service = updates.MiniPCUpdates(tmp_path / "minipc-app")
+    monkeypatch.setattr(updates, "_updates", service)
+    return SimpleNamespace(service=service, folder=folder, body=body, module=updates)
+
+
+async def test_the_server_keeps_the_newest_installer_and_checks_it(api, release):
+    await release.service.refresh(force=True)
+    assert release.service.error is None
+    assert release.service.latest.version == "1.0.60"
+    assert release.service.latest.path.read_bytes() == release.body
+    # Kept across a restart of the server, without the internet.
+    again = release.module.MiniPCUpdates(release.service.folder)
+    assert again.latest.version == "1.0.60"
+
+    response = await api.get("/api/mapping/players/app/installer")
+    assert response.status_code == 200
+    assert response.content == release.body
+
+
+async def test_a_damaged_download_is_not_handed_out(api, release):
+    note = json.loads((release.folder / "minipc-version.json").read_text())
+    note["sha256"] = "0" * 64
+    (release.folder / "minipc-version.json").write_text(json.dumps(note))
+    await release.service.refresh(force=True)
+    assert release.service.latest is None
+    assert "checksum" in release.service.error
+    assert (await api.get("/api/mapping/players/app/installer")).status_code == 404
+
+
+async def test_a_mini_pc_updates_itself_only_when_nothing_is_on(api, release, monkeypatch):
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    await release.service.refresh(force=True)
+
+    # A show on: it waits, and says why.
+    busy = "a show is playing"
+    monkeypatch.setattr(release.module, "busy_reason", lambda: _async(busy))
+    reply = await app_checkin(api, version="1.0.50")
+    assert reply["update"] is None
+    app = (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]
+    assert app["update"] == "waiting" and "a show is playing" in app["update_message"]
+    refused = await command(api, headers, player_id, "update")
+    assert refused.status_code == 409 and "show" in refused.json()["detail"]
+
+    # Nothing on: offered; the app downloads it, then is told again to install it.
+    busy = None
+    reply = await app_checkin(api, version="1.0.50")
+    assert reply["update"]["version"] == "1.0.60"
+    assert reply["update"]["sha256"] == release.service.latest.sha256
+    got = await api.get(reply["update"]["url"])
+    assert got.content == release.body
+    reply = await app_checkin(api, version="1.0.50", update={"state": "ready", "version": "1.0.60"})
+    assert reply["update"]["version"] == "1.0.60"
+    app = (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]
+    assert app["update"] == "updating"
+
+    # Back with the new version.
+    reply = await app_checkin(api, version="1.0.60")
+    assert reply["update"] is None
+    app = (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]
+    assert app["update"] == "up_to_date" and app["version"] == "1.0.60"
+    events = (await api.get("/api/events", headers=headers)).json()
+    assert any(e["kind"] == "player_update" and "1.0.60" in e["message"] for e in events)
+
+
+async def test_a_show_starting_holds_an_update_under_way(api, release, monkeypatch):
+    headers = await login(api)
+    await paired(api, headers)
+    await release.service.refresh(force=True)
+    busy = None
+    monkeypatch.setattr(release.module, "busy_reason", lambda: _async(busy))
+    assert (await app_checkin(api, version="1.0.50"))["update"] is not None
+    # Downloaded, but a show started meanwhile: not now.
+    busy = "the show starts soon"
+    reply = await app_checkin(api, version="1.0.50", update={"state": "ready", "version": "1.0.60"})
+    assert reply["update"] is None
+
+
+async def test_a_failed_update_is_not_retried_by_itself(api, release, monkeypatch):
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    await release.service.refresh(force=True)
+    monkeypatch.setattr(release.module, "busy_reason", lambda: _async(None))
+    assert (await app_checkin(api, version="1.0.50"))["update"] is not None
+    reply = await app_checkin(api, version="1.0.50", update={
+        "state": "failed", "version": "1.0.60", "error": "the installer stopped with code 5"})
+    assert reply["update"] is None
+    assert (await app_checkin(api, version="1.0.50"))["update"] is None
+    app = (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]
+    assert app["update"] == "failed" and "code 5" in app["update_message"]
+
+    # Update now tries again.
+    pressed = await command(api, headers, player_id, "update")
+    assert pressed.status_code == 200, pressed.text
+    assert "does not restart" in pressed.json()["message"]
+    assert (await app_checkin(api, version="1.0.50"))["update"]["version"] == "1.0.60"
+
+
+async def test_an_old_app_is_told_to_paste_the_line_once(api, release):
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    await release.service.refresh(force=True)
+    reply = await app_checkin(api)
+    assert reply.get("update") is None
+    refused = await command(api, headers, player_id, "update")
+    assert refused.status_code == 409 and "install line" in refused.json()["detail"]
+
+
+def test_one_mini_pc_at_a_time(tmp_path):
+    from app.services.minipc_updates import MiniPCUpdates, Release
+
+    service = MiniPCUpdates(tmp_path)
+    service.latest = Release("1.0.60", "a" * 64, 10, tmp_path / "x.exe")
+    assert service.check_in(1, "Left", "1.0.50", None, None)[0] is not None
+    offer, _ = service.check_in(2, "Right", "1.0.50", None, None)
+    assert offer is None and "Left is updating first" in service.waiting[2]
+    service.check_in(1, "Left", "1.0.60", None, None)
+    assert service.check_in(2, "Right", "1.0.50", None, None)[0] is not None
+
+
+def test_an_update_that_never_comes_back_counts_as_failed(tmp_path, monkeypatch):
+    import app.services.minipc_updates as updates
+
+    service = updates.MiniPCUpdates(tmp_path)
+    service.latest = updates.Release("1.0.60", "a" * 64, 10, tmp_path / "x.exe")
+    service.check_in(1, "Left", "1.0.50", None, None)
+    service.check_in(1, "Left", "1.0.50", {"state": "ready", "version": "1.0.60"}, None)
+    later = updates.time.monotonic() + updates.UPDATE_SECONDS + 1
+    monkeypatch.setattr(updates.time, "monotonic", lambda: later)
+    _, note = service.check_in(1, "Left", "1.0.50", None, None)
+    assert "did not come back" in note
+    # And the others do not try it by themselves.
+    assert service.check_in(2, "Right", "1.0.50", None, None)[0] is None
+
+
+async def _async(value):
+    return value

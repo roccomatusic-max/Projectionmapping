@@ -71,10 +71,16 @@ export interface Player {
     computer: string | null
     /** Known: it can be turned on over the network. */
     mac: string | null
+    /** The Mini PC app's version; null for apps too old to update themselves. */
+    version?: string | null
+    update?: 'old_app' | 'up_to_date' | 'waiting' | 'updating' | 'failed'
+    /** The newest Mini PC app the server has. */
+    latest?: string | null
+    update_message?: string
   } | null
 }
 
-type PlayerAction = 'restart_output' | 'overlay_on' | 'overlay_off' | 'reboot' | 'shutdown' | 'wake'
+type PlayerAction = 'restart_output' | 'overlay_on' | 'overlay_off' | 'reboot' | 'shutdown' | 'wake' | 'update'
 
 /** What the projector of a mini PC can be switched to from here. */
 const SCREENS: Array<{ id: TestPattern; label: string; hint: string }> = [
@@ -449,6 +455,32 @@ function PlayerControls({
           ))}
         </div>
       </div>
+
+      {appHere && app?.update && (
+        <div className="flex flex-wrap items-start gap-2">
+          <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">App</span>
+          <div className="min-w-0 flex-1 space-y-1.5 text-xs">
+            <p className={classNames(
+              app.update === 'failed' || app.update === 'old_app' ? 'text-amber-200'
+                : app.update === 'updating' ? 'text-sky-200' : 'text-slate-300')}>
+              <span className="tnum text-slate-200">{app.version ? `Version ${app.version}` : 'Older version'}</span>
+              {' · '}
+              {app.update_message}
+            </p>
+            {app.update === 'old_app' && canEdit && (
+              <p className="select-all break-all rounded bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-200">
+                {MINIPC_INSTALL_LINE}
+              </p>
+            )}
+          </div>
+          {(app.update === 'waiting' || app.update === 'failed') && (
+            <button className="btn-primary btn-sm" disabled={!canEdit || busy != null} onClick={() => send('update')}
+              title="Install the newest Mini PC app now. The computer does not restart and the projector keeps its picture.">
+              <RefreshIcon size={12} aria-hidden /> Update now
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-1.5">
         <button className="btn-default btn-sm" disabled={!canEdit || !player.online || busy != null}

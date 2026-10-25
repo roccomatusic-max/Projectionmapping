@@ -18,7 +18,8 @@ picks up its commands with its heartbeat (reload, the status overlay),
 which every installed Mini PC app has. The Mini PC app itself checks in
 every few seconds with the computer's secret (since it learned to) and
 picks up what only it can do: restart the output window, restart or shut
-down the computer. Commands live in memory for a short while only, so a
+down the computer, install a newer Mini PC app (services/minipc_updates.py).
+Commands live in memory for a short while only, so a
 restart asked for before the server itself restarted never happens later.
 """
 
@@ -37,6 +38,7 @@ import time
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select
 
 from app.api.deps import CurrentUser, RequireAdmin, RequireViewer, SessionDep, write_rate_limit
@@ -70,6 +72,7 @@ from app.schemas.mapping import (
     PlayerScreen,
     PlayerUpdate,
 )
+from app.services import minipc_updates
 from app.services.discovery import lan_address, tailscale_address
 
 router = APIRouter(prefix="/mapping/players", tags=["mapping"])
@@ -150,8 +153,10 @@ def _app_info(player: MappingPlayer) -> PlayerApp | None:
     if not isinstance(info, dict) and player.id not in _app_seen:
         return None
     info = info if isinstance(info, dict) else {}
+    version = info.get("version")
     return PlayerApp(connected=app_connected(player), power=bool(info.get("power")),
-                     computer=info.get("computer"), mac=info.get("mac"))
+                     computer=info.get("computer"), mac=info.get("mac"), version=version,
+                     **minipc_updates.get().describe(player.id, version))
 
 
 def wake_on_lan(mac: str, near: str | None = None) -> None:
@@ -373,6 +378,7 @@ async def delete_player(player_id: int, session: SessionDep, admin: RequireAdmin
     for gone in removed:
         _app_seen.pop(gone.id, None)
         _pictures.pop(gone.id, None)
+        minipc_updates.get().forget(gone.id)
         for target in ("page", "app"):
             _queued.pop((gone.id, target), None)
         _changed(gone.id)
@@ -440,6 +446,33 @@ async def command(player_id: int, payload: PlayerCommand, session: SessionDep,
             f"{player.name} is shutting down. Turn it back on with its power button"
             + (" or Turn on here." if info.get("mac") else "."))
 
+    if action == "update":
+        updates = minipc_updates.get()
+        version = info.get("version") if isinstance(info, dict) else None
+        if not app or not version:
+            raise refuse(f"{player.name} runs an older Mini PC app that cannot update itself. "
+                         "Paste the install line into PowerShell on it once; after that it "
+                         "updates by itself." if app or not version else
+                         f"{player.name}'s Mini PC app is not answering. Try Restart computer.")
+        if not updates.needs(version):
+            raise refuse(f"{player.name} already has the newest Mini PC app ({version})."
+                         if updates.latest else
+                         "This server has not got the newest Mini PC app yet: it needs the "
+                         "internet for a moment. " + (updates.error or ""))
+        busy = await minipc_updates.busy_reason()
+        if busy and (busy.startswith("the emergency stop") or busy.startswith("a show is")):
+            raise refuse(f"Not while {busy}: updating restarts the output on {player.name}.")
+        updates.press_update(player.id)
+        session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="player_update",
+                          message=f"{admin.username} asked mini PC {player.name} to update its "
+                                  f"app to {updates.latest.version}"))
+        await session.commit()
+        _changed(player.id)
+        return PlayerCommandResult(
+            via="app",
+            message=f"{player.name} is updating to {updates.latest.version}. The projector keeps "
+                    "the output; the app restarts in about a minute. The computer does not restart.")
+
     if action == "restart_output":
         if app:
             # The app closes and reopens the browser: this also mends a page
@@ -506,15 +539,50 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
         return PlayerAppReply()
     first = player.id not in _app_seen
     _app_seen[player.id] = _now()
-    info = {"power": payload.power, "computer": payload.computer, "mac": payload.mac}
+    info = {"power": payload.power, "computer": payload.computer, "mac": payload.mac,
+            "version": payload.version}
     old = (player.report or {}).get("app")
-    if old != info:
+    updates = minipc_updates.get()
+    before = updates.describe(player.id, payload.version)
+    offer, note = updates.check_in(player.id, player.name, payload.version, payload.update,
+                                   await _update_busy(session, player)
+                                   if updates.needs(payload.version) else None)
+    if note:
+        session.add(Event(projector_id=None, kind="player_update", message=note,
+                          severity=Severity.INFO.value if "updated" in note
+                          else Severity.WARNING.value))
+    if old != info or note:
         # Kept with the report: the network card is needed when it is off.
         player.report = {**(player.report or {}), "app": info}
         await session.commit()
-    if first or old != info:
+    if first or old != info or note or offer or before != updates.describe(player.id, payload.version):
         _changed(player.id)
-    return PlayerAppReply(commands=_take(player.id, "app"))
+    return PlayerAppReply(commands=_take(player.id, "app"), update=offer)
+
+
+async def _update_busy(session, player: MappingPlayer) -> str | None:
+    """Why this mini PC should not update its app right now, or None."""
+    if player.output_id is not None:
+        pattern = await session.scalar(
+            select(MappingOutput.test_pattern).where(MappingOutput.id == player.output_id))
+        if pattern:
+            return "its projector is showing a test picture"
+    return await minipc_updates.busy_reason()
+
+
+@router.get("/app/installer", response_class=FileResponse)
+async def app_installer() -> FileResponse:
+    """The newest Mini PC app's installer, for mini PCs updating themselves.
+
+    Open, like the release it comes from: the app checks its SHA-256, which
+    it got by checking in with its secret.
+    """
+    latest = minipc_updates.get().latest
+    if latest is None or not latest.path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="This server has no Mini PC app to hand out yet")
+    return FileResponse(latest.path, media_type="application/octet-stream",
+                        filename="MiniPC-Setup.exe")
 
 
 @router.post("/me/picture", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
