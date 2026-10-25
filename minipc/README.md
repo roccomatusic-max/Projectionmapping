@@ -9,7 +9,8 @@ and every time the computer signs in it:
 - keeps the show's media on its own disk, so the network only carries the
   small control messages during the show,
 - runs the camera when one is plugged in, for calibration and people,
-- keeps the screen and the computer from going to sleep.
+- keeps the computer on day and night: it never sleeps, hibernates, turns
+  its screen off or locks, also after a show ends (see *Staying on 24/7*).
 
 The first time, the projector shows a six-letter code. Approve it on
 **Mapping → Players** and pick the output. A camera plugged into the mini PC
@@ -125,6 +126,30 @@ touching it.
 
 Plug the projector in as the computer's only display, or as its main one,
 and set it to the projector's native resolution.
+
+### Staying on 24/7
+
+A show ending only blanks the projector: the mini PC keeps running. The app
+sees to that by itself, with nothing to set:
+
+- while it runs, it tells Windows the screen and the computer are in use;
+- when it starts, and every hour after, it sets the power plan in use to
+  never sleep, hibernate, turn the screen off or turn the disk off, turns
+  the screen saver and Dynamic lock off, and puts any of these back if
+  Windows or a person changed them.
+
+None of that needs an administrator. The Players page shows a **Stays on**
+line on each mini PC: green when all is set, or what is still in the way and
+where to change it by hand. One thing only a person can change is
+**Windows Update restarting the computer** to finish an update: it does that
+outside "active hours", which by default end at 5 PM. To keep it from
+restarting during shows, on each mini PC: **Settings → Windows Update →
+Advanced options → Active hours → Manually**, from **12:00 PM** to
+**6:00 AM**. (After such a restart the app comes back by itself, with the
+password-free sign-in above.)
+
+The only things that turn a mini PC off are **Shut down** and **Restart
+computer** on the Players page, and its power button.
 
 ## Everyday use
 

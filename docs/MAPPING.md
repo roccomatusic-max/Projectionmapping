@@ -283,8 +283,10 @@ leaves full screen.
 
 Set the computer's display output to the projector's native resolution; the
 player's status overlay (press H) warns when the window and the output's
-configured resolution differ. Turn off screen sleep and OS updates that
-restart without asking.
+configured resolution differ. On Windows the Mini PC app keeps the computer
+awake around the clock (no sleep, screen off or lock, show or no show; see
+*Staying on 24/7* in minipc/README.md); elsewhere, turn off screen sleep.
+Set Windows Update's active hours so it does not restart during shows.
 
 ### Remote control
 

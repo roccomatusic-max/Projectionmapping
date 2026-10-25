@@ -156,6 +156,7 @@ def _app_info(player: MappingPlayer) -> PlayerApp | None:
     version = info.get("version")
     return PlayerApp(connected=app_connected(player), power=bool(info.get("power")),
                      computer=info.get("computer"), mac=info.get("mac"), version=version,
+                     awake=info.get("awake") if isinstance(info.get("awake"), list) else None,
                      **minipc_updates.get().describe(player.id, version))
 
 
@@ -540,7 +541,7 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
     first = player.id not in _app_seen
     _app_seen[player.id] = _now()
     info = {"power": payload.power, "computer": payload.computer, "mac": payload.mac,
-            "version": payload.version}
+            "version": payload.version, "awake": payload.awake}
     old = (player.report or {}).get("app")
     updates = minipc_updates.get()
     before = updates.describe(player.id, payload.version)

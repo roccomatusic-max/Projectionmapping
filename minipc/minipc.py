@@ -9,7 +9,8 @@ signs in after that, it:
 - runs the camera when one is plugged in, for calibration and people: a
   depth camera (Intel RealSense, Orbbec, Luxonis OAK) or any webcam, found
   by itself,
-- keeps the screen and the computer awake,
+- keeps the computer on day and night: no sleep, no hibernate, no screen
+  turning off, no lock, ever, also after a show ends (stayawake.py),
 - does what the Players page asks of it: restart the output window,
   restart or shut down the computer,
 - updates itself from the main server when no show is on, without
@@ -50,6 +51,7 @@ import psutil  # noqa: E402
 import requests  # noqa: E402
 
 import discovery  # noqa: E402
+import stayawake  # noqa: E402
 from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
 from selfupdate import VERSION, SelfUpdate  # noqa: E402
 
@@ -327,6 +329,9 @@ class MiniPC:
         self._lost_since: float | None = None
         self.stopping = threading.Event()
         self.restart_requested = threading.Event()
+        #: What keeps this computer from staying on 24/7, in words; None
+        #: until checked (stayawake.refresh).
+        self.awake: list[str] | None = None
         self.on_change = lambda: None
         #: Ends the program (the tray stops its icon).
         self.on_quit = lambda: None
@@ -421,7 +426,8 @@ class MiniPC:
         body = {"device_id": identity["device_id"], "secret": identity["secret"],
                 "power": sys.platform == "win32", "computer": socket.gethostname() or None,
                 "mac": network_card(discovery.local_address()),
-                "version": self.updater.version, "update": self.updater.report()}
+                "version": self.updater.version, "update": self.updater.report(),
+                "awake": self.awake}
         try:
             reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
             if reply.status_code != 200:
@@ -454,8 +460,25 @@ class MiniPC:
 
     # -- main loop ----------------------------------------------------------------------
 
+    def stay_on(self) -> None:
+        """Windows' power and lock settings, put right now and every hour."""
+        while not self.stopping.is_set():
+            try:
+                problems = stayawake.refresh()
+            except Exception:  # noqa: BLE001 - never worth stopping the app over
+                log.exception("could not check the power settings")
+                problems = None
+            if problems is not None and problems != self.awake:
+                for problem in problems:
+                    log.warning("staying on 24/7: %s", problem)
+                if not problems:
+                    log.info("this computer stays on 24/7: no sleep, screen off or lock")
+                self.awake = problems
+            self.stopping.wait(stayawake.CHECK_SECONDS)
+
     def run(self, page: StatusPage) -> None:
         keep_awake()
+        threading.Thread(target=self.stay_on, name="stay-on", daemon=True).start()
         browser = self.browser or find_browser()
         kiosk = None
         if browser:
@@ -577,6 +600,12 @@ def self_check() -> int:
         broken = {k: v for k, v in sources.sdk_status().items() if v.startswith("unavailable")}
         if broken:
             log.error("depth camera support missing: %s", broken)
+            return 1
+        # It can set the power plan to never sleep and read it back.
+        log.info("staying on 24/7: %s", stayawake.refresh() or "all set")
+        plan = stayawake.timeouts()
+        if any(value != (0, 0) for value in plan.values()):
+            log.error("the power plan still sleeps or turns something off: %s", plan)
             return 1
     log.info("depth camera support: %s", sources.sdk_status())
     icon_image()
