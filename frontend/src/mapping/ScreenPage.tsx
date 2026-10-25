@@ -161,6 +161,32 @@ function usePicture(playerId: number | null): { picture: Picture | null; tried: 
   return { picture, tried }
 }
 
+/** How often to ask which version the server runs. */
+const VERSION_MS = 60_000
+
+/**
+ * Reload when the server has been updated, so the screen gets the new page:
+ * it stays open day and night and nothing else would ever reload it.
+ */
+function useNewBuild() {
+  useEffect(() => {
+    let first: string | null = null
+    const check = async () => {
+      try {
+        const { version } = (await fetch('/api/health', { cache: 'no-store' }).then((r) => r.json())) as { version?: string }
+        if (!version) return
+        if (first == null) first = version
+        else if (version !== first) window.location.reload()
+      } catch {
+        /* restarting, or the network: next time */
+      }
+    }
+    void check()
+    const timer = window.setInterval(() => void check(), VERSION_MS)
+    return () => window.clearInterval(timer)
+  }, [])
+}
+
 /** Hide the mouse pointer when it has not moved for a few seconds. */
 function useIdleCursor() {
   const [idle, setIdle] = useState(true)
@@ -188,6 +214,7 @@ export default function ScreenPage() {
   const [lastAnswer, setLastAnswer] = useState(() => Date.now())
   const now = useNow()
   const idle = useIdleCursor()
+  useNewBuild()
 
   useEffect(() => {
     document.title = 'Status screen'
