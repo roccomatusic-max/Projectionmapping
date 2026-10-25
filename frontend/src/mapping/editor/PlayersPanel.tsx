@@ -77,6 +77,9 @@ export interface Player {
     /** The newest Mini PC app the server has. */
     latest?: string | null
     update_message?: string
+    /** What keeps its computer from staying on 24/7, in words: empty when
+     *  nothing does, null for apps older than the check. */
+    awake?: string[] | null
   } | null
 }
 
@@ -479,6 +482,23 @@ function PlayerControls({
               <RefreshIcon size={12} aria-hidden /> Update now
             </button>
           )}
+        </div>
+      )}
+
+      {appHere && app?.power && (
+        <div className="flex flex-wrap items-start gap-2">
+          <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">Stays on</span>
+          <div className="min-w-0 flex-1 space-y-1 text-xs">
+            {app.awake == null ? (
+              <p className="text-slate-400">
+                {app.version ? 'Checking…' : 'The next Mini PC app update keeps this computer on day and night.'}
+              </p>
+            ) : app.awake.length === 0 ? (
+              <p className="text-emerald-300">Day and night: it never sleeps, turns its screen off or locks, also after a show.</p>
+            ) : (
+              app.awake.map((problem) => <p key={problem} className="text-amber-200">{problem}</p>)
+            )}
+          </div>
         </div>
       )}
 

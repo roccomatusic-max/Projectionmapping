@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator, model_validator
 
@@ -474,6 +474,9 @@ class PlayerApp(BaseModel):
     latest: str | None = None
     #: The update state in words, for the Players page.
     update_message: str = ""
+    #: What keeps its computer from staying on 24/7, in words: empty when
+    #: nothing does, None for apps that do not check (older than this).
+    awake: list[str] | None = None
 
 
 class PlayerOut(BaseModel):
@@ -597,6 +600,10 @@ class PlayerAppHello(BaseModel):
     #: How its last update went: {"state": "downloading" | "installing" | "failed",
     #: "version": ..., "error": ...}.
     update: dict[str, str | None] | None = None
+    #: What keeps the computer from staying on day and night (sleep, the
+    #: screen turning off, a lock, Windows Update), in words; empty when
+    #: nothing does. Sent by apps that keep Windows awake (minipc/stayawake.py).
+    awake: list[Annotated[str, Field(max_length=500)]] | None = Field(default=None, max_length=8)
 
 
 class PlayerAppUpdate(BaseModel):

@@ -548,3 +548,44 @@ def test_an_update_that_never_comes_back_counts_as_failed(tmp_path, monkeypatch)
 
 async def _async(value):
     return value
+
+
+async def test_the_players_page_says_whether_a_mini_pc_stays_on(api):
+    headers = await login(api)
+    await paired(api, headers)
+
+    await app_checkin(api, version="1.0.70")  # before this app kept Windows awake
+    assert (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]["awake"] is None
+    await app_checkin(api, version="1.0.80", awake=[])
+    assert (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]["awake"] == []
+    warning = "Windows Update may restart this computer between 5 PM and 8 AM to finish an update."
+    await app_checkin(api, version="1.0.80", awake=[warning])
+    assert (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]["awake"] == [warning]
+
+
+async def test_a_show_ending_never_turns_a_mini_pc_off(api):
+    """Only the Shut down and Restart buttons do: the end of a show blanks the output."""
+    from app.services import tonight
+    from tests.test_mapping import make_show
+
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    await app_checkin(api, version="1.0.80", awake=[])
+    show = await make_show(api, headers)
+    saved = await api.put("/api/tonight", headers=headers, json={
+        "show_id": show["id"], "enabled": True, "start_at": "18:00", "end_at": "23:00",
+        "power": True})
+    assert saved.status_code == 200, saved.text
+
+    await tonight.start_show(by="test")
+    # The end of the night, with "turn the projectors off" ticked.
+    await tonight.stop_show(by="test", power_off=True)
+    pressed = await api.post("/api/emergency/stop", headers=headers)
+    assert pressed.status_code == 200, pressed.text
+    await api.post("/api/emergency/clear", headers=headers)
+
+    assert (await app_checkin(api, version="1.0.80", awake=[]))["commands"] == []
+    events = (await api.get("/api/events", headers=headers)).json()
+    assert not [e for e in events if e["kind"] == "player_power"]
+    listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
+    assert listed["id"] == player_id and listed["app"]["connected"]
