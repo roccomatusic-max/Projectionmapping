@@ -37,7 +37,13 @@ Name: "{userprograms}\Mini PC"; Filename: "{app}\MiniPC.exe"
 Name: "{userstartup}\Mini PC"; Filename: "{app}\MiniPC.exe"
 
 [Run]
+; Every 5 minutes Windows starts the app if it is not running (after a crash,
+; or an update that did not bring it back), or restarts it if it is stuck.
+; It keeps the output window that is open. For this user only, no
+; administrator needed. Quit in the tray menu keeps it off.
+Filename: "{sys}\schtasks.exe"; Parameters: "/Create /F /TN ""Mini PC watchdog"" /SC MINUTE /MO 5 /TR ""\""{app}\MiniPC.exe\"" --watchdog"""; Flags: runhidden waituntilterminated
 Filename: "{app}\MiniPC.exe"; Description: "Start Mini PC now"; Flags: nowait postinstall
 
 [UninstallRun]
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN ""Mini PC watchdog"""; Flags: runhidden; RunOnceId: "StopWatchdog"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM MiniPC.exe /F"; Flags: runhidden; RunOnceId: "StopMiniPC"

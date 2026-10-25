@@ -245,6 +245,20 @@ to date, waiting (and why), updating or failed. **Update now** installs it
 at once on that mini PC, unless a show is playing or the emergency stop is
 on.
 
+**The app is never left stopped.** The installer adds a Windows scheduled
+task, "Mini PC watchdog", that runs `MiniPC.exe --watchdog` every 5 minutes.
+It starts the app when it is not running and restarts it when its main loop
+is stuck, keeping the output window that is open. It leaves the app alone
+while an update installs and after **Quit** in the tray menu. The update
+script also waits until the new app answers on its status page and starts
+it again if it does not.
+
+**Get the log** on a mini PC's card asks its app for its log
+(`logs/minipc.log` and the last update's `updates/install-update.log`,
+`updates/install-setup.log` and `updates/result.json`). The app also sends
+it by itself after every update, whether the update worked or not. The card
+then has **Copy** and **Download**.
+
 ## Options
 
 Add them to the Mini PC shortcut (Start menu and Startup folder) after

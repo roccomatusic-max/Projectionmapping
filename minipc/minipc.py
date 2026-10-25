@@ -58,7 +58,7 @@ import discovery  # noqa: E402
 import screens  # noqa: E402
 import stayawake  # noqa: E402
 from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
-from selfupdate import VERSION, SelfUpdate  # noqa: E402
+from selfupdate import VERSION, SelfUpdate, collect_log  # noqa: E402
 
 log = logging.getLogger("minipc")
 
@@ -334,6 +334,10 @@ class MiniPC:
         self._lost_since: float | None = None
         self.stopping = threading.Event()
         self.restart_requested = threading.Event()
+        #: The local status page's port, which the update script waits on.
+        self.status_port = STATUS_PORT
+        #: When the main loop last went round (time.monotonic()).
+        self.ticked = time.monotonic()
         #: What keeps this computer from staying on 24/7, in words; None
         #: until checked (stayawake.refresh).
         self.awake: list[str] | None = None
@@ -357,7 +361,9 @@ class MiniPC:
         return f"{self.server}/player#{urlencode(self.config.identity())}"
 
     def status(self) -> dict:
-        return {"name": self.config["name"], "message": self.message, "player": self.player_url()}
+        return {"name": self.config["name"], "message": self.message, "player": self.player_url(),
+                # For the watchdog: this copy, and whether its main loop still turns.
+                "pid": os.getpid(), "tick_age": round(time.monotonic() - self.ticked, 1)}
 
     def summary(self) -> str:
         where = f"connected to {self.server}" if self.server else self.message.lower()
@@ -434,7 +440,8 @@ class MiniPC:
                 "power": sys.platform == "win32", "computer": socket.gethostname() or None,
                 "mac": network_card(discovery.local_address()),
                 "version": self.updater.version, "update": self.updater.report(),
-                "awake": self.awake, "screens": self.second.report() if self.second else None}
+                "awake": self.awake, "screens": self.second.report() if self.second else None,
+                "watchdog": sys.platform == "win32"}
         try:
             reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
             if reply.status_code != 200:
@@ -446,9 +453,30 @@ class MiniPC:
             log.debug("check-in failed: %s", exc)
             return []
         commands = [c for c in commands if isinstance(c, str)]
+        if self.updater.log_due:
+            self.updater.log_due = False
+            commands.append("send_log:update")
         if isinstance(update, dict) and self.updater.offered(update, self.server):
             commands.append("install_update")
         return commands
+
+    def send_log(self, reason: str = "asked") -> bool:
+        """Send the log to the server, for Get the log on the Players page."""
+        if self.server is None:
+            return False
+        identity = self.config.identity()
+        body = {"device_id": identity["device_id"], "secret": identity["secret"],
+                "reason": reason, "text": collect_log(self.folder)}
+        try:
+            reply = requests.post(f"{self.server}/api/mapping/players/app/log", json=body, timeout=30)
+        except requests.RequestException as exc:
+            log.warning("could not send the log: %s", exc)
+            return False
+        if reply.status_code != 204:
+            log.warning("the server did not take the log: %s", reply.status_code)
+            return False
+        log.info("sent the log to the server (%s)", reason)
+        return True
 
     def obey(self, commands: list[str]) -> None:
         for command in commands:
@@ -463,8 +491,11 @@ class MiniPC:
             elif command == "extend_screens" and self.second:
                 log.info("the Players page asked to use the second screen")
                 self.second.extend()
+            elif command.startswith("send_log"):
+                reason = command.partition(":")[2] or "asked"
+                threading.Thread(target=self.send_log, args=(reason,), name="send-log", daemon=True).start()
             elif command == "install_update":
-                if self.updater.hand_over(self.server):
+                if self.updater.hand_over(self.server, self.status_port):
                     self.handing_over = True
                     self.stopping.set()
                     self.on_quit()
@@ -490,6 +521,7 @@ class MiniPC:
             self.stopping.wait(stayawake.CHECK_SECONDS)
 
     def run(self, page: StatusPage) -> None:
+        self.status_port = getattr(page, "port", STATUS_PORT)
         keep_awake()
         threading.Thread(target=self.stay_on, name="stay-on", daemon=True).start()
         browser = self.browser or find_browser()
@@ -497,7 +529,7 @@ class MiniPC:
         if browser:
             kiosk = Kiosk(browser, page.url, self.folder / "browser", self.browser_args)
             kept = self.updater.take_window()
-            if kept is not None:
+            if not kiosk.adopt_leftover() and kept is not None:
                 kiosk.adopt(kept)
             system = screens.system_screens()
             if system is not None:
@@ -529,6 +561,7 @@ class MiniPC:
                             self.second.tick(kiosk, self.server)
                 except Exception:  # noqa: BLE001 - leaving the loop would close the output for good
                     log.exception("unexpected error; carrying on")
+                self.ticked = time.monotonic()
                 self.stopping.wait(TICK_SECONDS)
         finally:
             if self.second:
@@ -565,6 +598,8 @@ def run_tray(app: MiniPC) -> None:
         os.startfile(app.folder / "logs")  # noqa: S606 - Windows only
 
     def quit_(icon, _item=None) -> None:
+        with contextlib.suppress(OSError):
+            (app.folder / QUIT_MARK).write_text("Quit in the tray menu", encoding="utf-8")
         app.stopping.set()
         icon.stop()
 
@@ -641,6 +676,58 @@ def self_check() -> int:
     return 0
 
 
+#: Left by Quit in the tray menu: the watchdog leaves the app off until it
+#: is started again (at the next sign-in, or from the Start menu).
+QUIT_MARK = "quit-by-hand"
+#: The main loop has not gone round for this long: that copy is stuck.
+STUCK_SECONDS = 120.0
+
+
+def running_copy(port: int) -> dict | None:
+    """The status of the copy of this app already running here, if any."""
+    try:
+        reply = requests.get(f"http://127.0.0.1:{port}/status", timeout=3)
+        status = reply.json() if reply.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        return None
+    return status if isinstance(status, dict) and "name" in status else None
+
+
+def start_detached(command: list[str]) -> None:
+    """Start the app on its own, outside whatever started this (Task Scheduler)."""
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+               "stderr": subprocess.DEVNULL, "close_fds": True}
+    if sys.platform != "win32":
+        subprocess.Popen(command, start_new_session=True, **options)  # noqa: S603
+        return
+    try:
+        subprocess.Popen(command, creationflags=flags | 0x01000000, **options)  # noqa: S603 - breakaway
+    except OSError:
+        subprocess.Popen(command, creationflags=flags, **options)  # noqa: S603
+
+
+def watchdog(folder: Path, port: int) -> int:
+    """Run by Windows every few minutes (installer.iss): start the app if it
+    is not running, or restart it if it is stuck.
+
+    The output window is kept either way (Kiosk.adopt_leftover), so the
+    projector does not blink. Nothing happens while the app is being
+    updated, or after someone chose Quit in the tray menu.
+    """
+    if (folder / QUIT_MARK).exists() or SelfUpdate(folder, read_result=False).installing():
+        return 0
+    status = running_copy(port)
+    if status is not None:
+        if float(status.get("tick_age") or 0) < STUCK_SECONDS:
+            return 0
+        with contextlib.suppress(psutil.Error, TypeError, ValueError):
+            psutil.Process(int(status["pid"])).kill()
+            time.sleep(2)
+    start_detached([sys.executable] + ([] if getattr(sys, "frozen", False) else [str(Path(__file__).resolve())]))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="MiniPC", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -657,6 +744,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--browser-arg", action="append", default=[], help=argparse.SUPPRESS)
     parser.add_argument("--no-tray", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--watchdog", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--write-icon", metavar="PATH", help=argparse.SUPPRESS)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -665,6 +753,8 @@ def main(argv: list[str] | None = None) -> int:
         icon_image(256).save(args.write_icon, sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
         return 0
     folder = Path(args.data_dir).expanduser() if args.data_dir else data_dir()
+    if args.watchdog:
+        return watchdog(folder, args.status_port)
     configure_logging(folder, args.verbose)
     if args.check:
         # A failure goes to the log, which CI prints. Uncaught, the windowed
@@ -694,6 +784,8 @@ def main(argv: list[str] | None = None) -> int:
         log.info("the Mini PC program is already running")
         return 0
     page.start()
+    with contextlib.suppress(OSError):
+        (folder / QUIT_MARK).unlink(missing_ok=True)
     log.info("Mini PC %s version %s started (data in %s)", config["name"], VERSION, folder)
     # Stopped by the system: close the output window on the way out.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

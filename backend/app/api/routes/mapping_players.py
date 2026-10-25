@@ -37,6 +37,7 @@ import socket
 import sys
 import time
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -73,6 +74,8 @@ from app.schemas.mapping import (
     NetworkInfo,
     PlayerApp,
     PlayerAppHello,
+    PlayerAppLog,
+    PlayerAppLogOut,
     PlayerAppReply,
     PlayerAssignment,
     PlayerCommand,
@@ -120,6 +123,8 @@ def _now() -> float:
 
 #: Waiting commands by (player id, "page" or "app"): (action, when asked).
 _queued: dict[tuple[int, str], list[tuple[str, float]]] = {}
+#: The last log each Mini PC app sent (Get the log, or after an update).
+_logs: dict[str, PlayerAppLogOut] = {}
 #: When each player's Mini PC app last checked in (_now()).
 _app_seen: dict[int, float] = {}
 
@@ -190,7 +195,26 @@ def _app_info(player: MappingPlayer) -> PlayerApp | None:
     return PlayerApp(connected=app_connected(player), power=bool(info.get("power")),
                      computer=info.get("computer"), mac=info.get("mac"), version=version,
                      awake=info.get("awake") if isinstance(info.get("awake"), list) else None,
-                     screens=screens, **minipc_updates.get().describe(player.id, version))
+                     screens=screens, watchdog=bool(info.get("watchdog")),
+                     log_at=getattr(_saved_log(player), "received_at", None),
+                     **minipc_updates.get().describe(player.id, version))
+
+
+def _log_path(player: MappingPlayer) -> Path:
+    """By the computer, not the row: a mini PC paired again keeps its log."""
+    name = hashlib.sha256(player.device_id.encode()).hexdigest()[:24]
+    return minipc_updates.get().folder.parent / "minipc-logs" / f"{name}.json"
+
+
+def _saved_log(player: MappingPlayer) -> PlayerAppLogOut | None:
+    """The last log this mini PC sent; kept on disk, so a restart keeps it."""
+    if player.device_id not in _logs:
+        try:
+            _logs[player.device_id] = PlayerAppLogOut.model_validate_json(
+                _log_path(player).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+    return _logs[player.device_id]
 
 
 def wake_on_lan(mac: str, near: str | None = None) -> None:
@@ -411,6 +435,9 @@ async def delete_player(player_id: int, session: SessionDep, admin: RequireAdmin
     await session.commit()
     for gone in removed:
         _app_seen.pop(gone.id, None)
+        _logs.pop(gone.device_id, None)
+        with contextlib.suppress(OSError):
+            _log_path(gone).unlink(missing_ok=True)
         _pictures.pop(gone.id, None)
         _watched_close.pop(gone.id, None)
         minipc_updates.get().forget(gone.id)
@@ -480,6 +507,13 @@ async def command(player_id: int, payload: PlayerCommand, session: SessionDep,
             if action == "reboot" else
             f"{player.name} is shutting down. Turn it back on with its power button"
             + (" or Turn on here." if info.get("mac") else "."))
+
+    if action == "send_log":
+        if not app:
+            raise refuse(f"{player.name}'s Mini PC app is not answering, so it cannot send its log.")
+        _queue(player.id, "app", "send_log")
+        return PlayerCommandResult(via="app", message=f"Asked {player.name} for its log. It arrives "
+                                                     "in a few seconds, below.")
 
     if action == "update":
         updates = minipc_updates.get()
@@ -600,7 +634,8 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
     _app_seen[player.id] = _now()
     info = {"power": payload.power, "computer": payload.computer, "mac": payload.mac,
             "version": payload.version, "awake": payload.awake,
-            "screens": payload.screens.model_dump() if payload.screens else None}
+            "screens": payload.screens.model_dump() if payload.screens else None,
+            "watchdog": payload.watchdog}
     old = (player.report or {}).get("app")
     updates = minipc_updates.get()
     before = updates.describe(player.id, payload.version)
@@ -618,6 +653,42 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
     if first or old != info or note or offer or before != updates.describe(player.id, payload.version):
         _changed(player.id)
     return PlayerAppReply(commands=_take(player.id, "app"), update=offer)
+
+
+async def _app_player(session, device_id: str, secret: str) -> MappingPlayer:
+    """The paired mini PC an app request comes from, by its computer's secret."""
+    player = (await session.execute(
+        select(MappingPlayer).where(MappingPlayer.device_id == device_id)
+    )).scalars().first()
+    if player is None or not player.approved:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not paired")
+    if not hmac.compare_digest(player.secret_hash, _hash(secret)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="This device id is registered with a different secret")
+    return player
+
+
+@router.post("/app/log", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def app_log(payload: PlayerAppLog, session: SessionDep) -> None:
+    """The Mini PC app's log: asked for on the Players page, or sent after an update."""
+    player = await _app_player(session, payload.device_id, payload.secret)
+    saved = PlayerAppLogOut(text=payload.text, reason=payload.reason, received_at=utcnow())
+    _logs[player.device_id] = saved
+    path = _log_path(player)
+    with contextlib.suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(saved.model_dump_json(), encoding="utf-8")
+    _changed(player.id)
+
+
+@router.get("/{player_id}/log", response_model=PlayerAppLogOut)
+async def player_log(player_id: int, session: SessionDep, _: RequireAdmin) -> PlayerAppLogOut:
+    """The last log this mini PC's app sent."""
+    saved = _saved_log(await _load(session, player_id))
+    if saved is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No log from this mini PC yet. Press Get the log.")
+    return saved
 
 
 async def _update_busy(session, player: MappingPlayer) -> str | None:

@@ -245,7 +245,7 @@ async def test_the_app_needs_the_computers_secret(api):
     await paired(api, headers)
     wrong = await api.post("/api/mapping/players/app", json={
         "device_id": PLAYER["device_id"], "secret": "z" * 64})
-    assert wrong.status_code == 403
+    assert wrong.status_code == 403, wrong.text
     unknown = await api.post("/api/mapping/players/app", json={
         "device_id": "mpc-nobody-0000000000000000", "secret": SECRET})
     assert unknown.status_code == 404
@@ -749,3 +749,48 @@ async def test_a_show_ending_never_turns_a_mini_pc_off(api):
     assert not [e for e in events if e["kind"] == "player_power"]
     listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
     assert listed["id"] == player_id and listed["app"]["connected"]
+
+
+@pytest.fixture
+def logs(api, tmp_path, monkeypatch):
+    """Logs kept in this test's own folder (the api fixture reloads the routes)."""
+    import app.api.routes.mapping_players as players
+    monkeypatch.setattr(players, "_log_path", lambda player: tmp_path / "logs" / f"{player.id}.json")
+    players._logs.clear()
+    yield tmp_path / "logs"
+    players._logs.clear()
+
+
+async def test_get_the_log_from_a_mini_pc(api, logs):
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    first = await api.get(f"/api/mapping/players/{player_id}/log", headers=headers)
+    assert first.status_code == 404, first.text
+
+    # Only from its running app.
+    refused = await command(api, headers, player_id, "send_log")
+    assert refused.status_code == 409
+    await app_checkin(api, version="1.0.90", watchdog=True)
+    asked = await command(api, headers, player_id, "send_log")
+    assert asked.status_code == 200, asked.text
+    assert (await app_checkin(api, version="1.0.90", watchdog=True))["commands"] == ["send_log"]
+
+    wrong = await api.post("/api/mapping/players/app/log", json={
+        "device_id": PLAYER["device_id"], "secret": "z" * 64, "text": "x"})
+    assert wrong.status_code == 403, wrong.text
+    sent = await api.post("/api/mapping/players/app/log", json={
+        "device_id": PLAYER["device_id"], "secret": SECRET, "reason": "asked",
+        "text": "===== logs/minipc.log\nstarted"})
+    assert sent.status_code == 204, sent.text
+
+    got = (await api.get(f"/api/mapping/players/{player_id}/log", headers=headers)).json()
+    assert got["text"].endswith("started") and got["reason"] == "asked"
+    app = (await api.get("/api/mapping/players", headers=headers)).json()[0]["app"]
+    assert app["log_at"] and app["watchdog"] is True
+    assert list(logs.iterdir())  # kept for after a server restart
+
+
+async def test_only_admins_read_a_mini_pc_log(api, logs):
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    assert (await api.get(f"/api/mapping/players/{player_id}/log", headers=token)).status_code == 403
