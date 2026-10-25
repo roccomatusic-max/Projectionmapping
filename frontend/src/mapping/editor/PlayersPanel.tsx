@@ -80,10 +80,27 @@ export interface Player {
     /** What keeps its computer from staying on 24/7, in words: empty when
      *  nothing does, null for apps older than the check. */
     awake?: string[] | null
+    /** Its screens, when a monitor can be plugged in beside the projector
+     *  for the status screen; null for apps older than that. */
+    screens?: {
+      state: 'one' | 'on' | 'duplicate' | 'waiting' | 'failed' | 'off'
+      count: number
+      projector: string | null
+      second: string | null
+    } | null
   } | null
 }
 
-type PlayerAction = 'restart_output' | 'overlay_on' | 'overlay_off' | 'reboot' | 'shutdown' | 'wake' | 'update'
+type PlayerAction =
+  | 'restart_output'
+  | 'overlay_on'
+  | 'overlay_off'
+  | 'reboot'
+  | 'shutdown'
+  | 'wake'
+  | 'update'
+  | 'swap_screens'
+  | 'extend_screens'
 
 /** What the projector of a mini PC can be switched to from here. */
 const SCREENS: Array<{ id: TestPattern; label: string; hint: string }> = [
@@ -499,6 +516,50 @@ function PlayerControls({
               app.awake.map((problem) => <p key={problem} className="text-amber-200">{problem}</p>)
             )}
           </div>
+        </div>
+      )}
+
+      {appHere && app?.screens && (
+        <div className="flex flex-wrap items-start gap-2">
+          <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">Monitor</span>
+          <div className="min-w-0 flex-1 space-y-1 text-xs">
+            {app.screens.state === 'on' ? (
+              <>
+                <p className="text-emerald-300">
+                  The monitor ({app.screens.second}) shows the show, the projector and the output.
+                </p>
+                <p className="text-slate-500">Projector: {app.screens.projector}</p>
+              </>
+            ) : app.screens.state === 'duplicate' ? (
+              <p className="text-amber-200">
+                Windows shows the same picture on the monitor and the projector. Press Use as second screen.
+              </p>
+            ) : app.screens.state === 'failed' ? (
+              <p className="text-amber-200">
+                The status screen would not stay on the monitor. Try Swap screens, or Restart computer.
+              </p>
+            ) : app.screens.state === 'waiting' ? (
+              <p className="text-slate-400">Opening the status screen on the monitor…</p>
+            ) : app.screens.state === 'off' ? (
+              <p className="text-slate-400">Turned off on this mini PC.</p>
+            ) : (
+              <p className="text-slate-400">
+                None. Plug a monitor into this mini PC to see the show, its projector and the output beside it.
+              </p>
+            )}
+          </div>
+          {app.screens.count >= 2 && app.screens.state !== 'off' && (
+            <button className="btn-default btn-sm" disabled={!canEdit || busy != null} onClick={() => send('swap_screens')}
+              title="The output is on the wrong screen? Put it on the other one, and the status screen here.">
+              <RefreshIcon size={12} aria-hidden /> Swap screens
+            </button>
+          )}
+          {app.screens.state === 'duplicate' && (
+            <button className="btn-primary btn-sm" disabled={!canEdit || busy != null} onClick={() => send('extend_screens')}
+              title="Show the output on the projector and the status screen on the monitor (Windows: Extend)">
+              Use as second screen
+            </button>
+          )}
         </div>
       )}
 

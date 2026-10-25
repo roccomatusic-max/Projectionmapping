@@ -14,7 +14,10 @@ signs in after that, it:
 - does what the Players page asks of it: restart the output window,
   restart or shut down the computer,
 - updates itself from the main server when no show is on, without
-  restarting the computer or closing the output (selfupdate.py).
+  restarting the computer or closing the output (selfupdate.py),
+- shows the status screen (the show, its projector, a picture of its
+  output) on a monitor plugged in beside the projector, when there is one
+  (screens.py).
 
 The first time, the projector shows a pairing code. Approving it on the
 Mapping page, Players tab, pairs this computer and its camera together.
@@ -22,6 +25,7 @@ Mapping page, Players tab, pairs this computer and its camera together.
     MiniPC.exe                              # normal start
     MiniPC.exe --server http://10.0.0.5:8765   # skip looking for the server
     MiniPC.exe --camera off                 # never use a camera
+    MiniPC.exe --second-screen off          # no status screen on a second monitor
 """
 
 from __future__ import annotations
@@ -51,6 +55,7 @@ import psutil  # noqa: E402
 import requests  # noqa: E402
 
 import discovery  # noqa: E402
+import screens  # noqa: E402
 import stayawake  # noqa: E402
 from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
 from selfupdate import VERSION, SelfUpdate  # noqa: E402
@@ -338,6 +343,8 @@ class MiniPC:
         self.updater = SelfUpdate(folder)
         #: Quitting to install an update: leave the output window open.
         self.handing_over = False
+        #: The status screen on a second monitor (Windows), once running.
+        self.second: screens.SecondScreen | None = None
 
     # -- what the window and the tray show ----------------------------------
 
@@ -427,7 +434,7 @@ class MiniPC:
                 "power": sys.platform == "win32", "computer": socket.gethostname() or None,
                 "mac": network_card(discovery.local_address()),
                 "version": self.updater.version, "update": self.updater.report(),
-                "awake": self.awake}
+                "awake": self.awake, "screens": self.second.report() if self.second else None}
         try:
             reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
             if reply.status_code != 200:
@@ -450,6 +457,12 @@ class MiniPC:
                 self.restart_requested.set()
             elif command in ("reboot", "shutdown"):
                 power(command)
+            elif command == "swap_screens" and self.second:
+                log.info("the Players page asked to swap the screens")
+                self.second.swap()
+            elif command == "extend_screens" and self.second:
+                log.info("the Players page asked to use the second screen")
+                self.second.extend()
             elif command == "install_update":
                 if self.updater.hand_over(self.server):
                     self.handing_over = True
@@ -486,6 +499,11 @@ class MiniPC:
             kept = self.updater.take_window()
             if kept is not None:
                 kiosk.adopt(kept)
+            system = screens.system_screens()
+            if system is not None:
+                status = Kiosk(browser, page.url, self.folder / "screen-browser", self.browser_args)
+                self.second = screens.SecondScreen(self.config, status, system, self.config.identity(),
+                                                   base_args=self.browser_args)
         else:
             log.error("no Chrome or Edge on this computer: install Google Chrome")
             self._say("No Chrome or Edge found on this computer")
@@ -507,10 +525,14 @@ class MiniPC:
                             self.restart_requested.clear()
                             kiosk.restart()
                         kiosk.ensure()
+                        if self.second:
+                            self.second.tick(kiosk, self.server)
                 except Exception:  # noqa: BLE001 - leaving the loop would close the output for good
                     log.exception("unexpected error; carrying on")
                 self.stopping.wait(TICK_SECONDS)
         finally:
+            if self.second:
+                self.second.close()
             if kiosk and not self.handing_over:
                 kiosk.stop()
 
@@ -607,6 +629,12 @@ def self_check() -> int:
         if any(value != (0, 0) for value in plan.values()):
             log.error("the power plan still sleeps or turns something off: %s", plan)
             return 1
+        # It can read the screens and find a window on one.
+        system = screens.WindowsScreens()
+        found = system.screens()
+        log.info("screens: %s; mirrored: %s; this window's screen: %s",
+                 [f"{s.source} {s.describe()}{' main' if s.primary else ''}" for s in found] or "none",
+                 system.mirrored(), system.window_screen({os.getpid()}))
     log.info("depth camera support: %s", sources.sdk_status())
     icon_image()
     log.info("self-check passed; version %s; browser: %s", VERSION, find_browser())
@@ -620,6 +648,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name", help="how this computer is listed on the Players tab, kept from now on")
     parser.add_argument("--camera",
                         help="auto, off, realsense, orbbec, oak, webcam, webcam:N or sim, kept from now on")
+    parser.add_argument("--second-screen", choices=["auto", "off"],
+                        help="the status screen on a monitor beside the projector, kept from now on")
     parser.add_argument("--data-dir", help="where the settings and logs are kept")
     parser.add_argument("--discovery-port", type=int, default=discovery.DEFAULT_PORT, help=argparse.SUPPRESS)
     parser.add_argument("--status-port", type=int, default=STATUS_PORT, help=argparse.SUPPRESS)
@@ -652,6 +682,8 @@ def main(argv: list[str] | None = None) -> int:
         config["name"] = args.name
     if args.camera:
         config["camera"] = args.camera
+    if args.second_screen:
+        config["second_screen"] = args.second_screen
 
     try:
         page_port = args.status_port

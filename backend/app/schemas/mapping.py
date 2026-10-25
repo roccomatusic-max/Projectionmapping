@@ -455,6 +455,25 @@ class PlayerHelloResponse(BaseModel):
     access_token: str | None = None
 
 
+class PlayerScreens(BaseModel):
+    """A mini PC's screens, as its app sees them (minipc/screens.py).
+
+    A monitor plugged in beside the projector shows the status screen
+    (``/player/screen``): the show, the projector and the output.
+    """
+
+    #: "one": only the projector; "on": the status screen is showing on the
+    #: other screen; "duplicate": Windows shows the same picture on both;
+    #: "waiting": the output window is not open yet; "failed": the status
+    #: window would not stay on the other screen; "off": turned off.
+    state: Literal["one", "on", "duplicate", "waiting", "failed", "off"]
+    #: Screens Windows has (two mirrored screens count as one).
+    count: int = Field(default=1, ge=0, le=16)
+    #: Each screen in a few words, "1920 × 1200, on the left".
+    projector: str | None = Field(default=None, max_length=80)
+    second: str | None = Field(default=None, max_length=80)
+
+
 class PlayerApp(BaseModel):
     """What the Mini PC app on a player's computer last said about itself."""
 
@@ -477,6 +496,9 @@ class PlayerApp(BaseModel):
     #: What keeps its computer from staying on 24/7, in words: empty when
     #: nothing does, None for apps that do not check (older than this).
     awake: list[str] | None = None
+    #: Its second screen (a monitor beside the projector) and what is on it;
+    #: None for apps older than the status screen.
+    screens: PlayerScreens | None = None
 
 
 class PlayerOut(BaseModel):
@@ -566,10 +588,14 @@ class PlayerAssignment(BaseModel):
     commands: list[str] = Field(default_factory=list)
     #: Someone is watching the Dashboard's live view: send copies of the frames drawn.
     picture: bool = False
+    #: How often and how wide: faster and larger while the status screen on
+    #: this mini PC's own second monitor is showing them.
+    picture_ms: int = 3000
+    picture_width: int = 480
 
 
 PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake",
-                       "update"]
+                       "update", "swap_screens", "extend_screens"]
 
 
 class PlayerCommand(BaseModel):
@@ -604,6 +630,8 @@ class PlayerAppHello(BaseModel):
     #: screen turning off, a lock, Windows Update), in words; empty when
     #: nothing does. Sent by apps that keep Windows awake (minipc/stayawake.py).
     awake: list[Annotated[str, Field(max_length=500)]] | None = Field(default=None, max_length=8)
+    #: Its screens and the status screen on the second one (minipc/screens.py).
+    screens: PlayerScreens | None = None
 
 
 class PlayerAppUpdate(BaseModel):

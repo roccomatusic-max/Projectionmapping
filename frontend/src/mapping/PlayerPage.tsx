@@ -18,8 +18,10 @@ import type { Show } from './types'
 const PLAYER_KEY = 'pc.player'
 const HELLO_MS = 3000
 const REPORT_MS = 5000
-/** How often a picture goes to the Dashboard's live view while someone watches it. */
+/** How often a picture goes to the Dashboard's live view while someone watches it,
+ *  unless the server asks for another pace (the status screen beside the projector). */
 const PICTURE_MS = 3000
+const PICTURE_WIDTH = 480
 
 interface Identity {
   device_id: string
@@ -36,6 +38,10 @@ interface Assignment {
   commands?: string[]
   /** Someone has the Dashboard's live view open: send copies of the frames drawn. */
   picture?: boolean
+  /** How often and how wide: faster and larger while this mini PC's own
+   *  status screen, on a monitor beside the projector, shows them. */
+  picture_ms?: number
+  picture_width?: number
 }
 
 function base64Of(picture: Blob): Promise<string> {
@@ -101,6 +107,7 @@ export default function PlayerPage() {
   const [problem, setProblem] = useState<string | null>(null)
   const [cache, setCache] = useState<CacheState>({ mode: 'off', bytes: 0, failed: 0 })
   const [pictureWanted, setPictureWanted] = useState(false)
+  const [picturePace, setPicturePace] = useState({ ms: PICTURE_MS, width: PICTURE_WIDTH })
   const stats = useRef<Record<string, unknown>>({})
 
   useEffect(() => {
@@ -145,6 +152,9 @@ export default function PlayerPage() {
       })
       obey(next.commands)
       setPictureWanted(next.picture === true)
+      const ms = Math.max(500, next.picture_ms ?? PICTURE_MS)
+      const width = Math.min(1920, Math.max(160, next.picture_width ?? PICTURE_WIDTH))
+      setPicturePace((pace) => (pace.ms === ms && pace.width === width ? pace : { ms, width }))
       setAssignment((current) =>
         current &&
         current.output_id === next.output_id &&
@@ -187,7 +197,7 @@ export default function PlayerPage() {
       if (busy) return
       busy = true
       try {
-        const picture = await captureOutput()
+        const picture = await captureOutput(picturePace.width)
         if (picture) await request('/mapping/players/me/picture', { method: 'POST', body: { image: await base64Of(picture) } })
       } catch {
         // A missed picture is not worth a message on the projector.
@@ -196,9 +206,9 @@ export default function PlayerPage() {
       }
     }
     void send()
-    const timer = window.setInterval(() => void send(), PICTURE_MS)
+    const timer = window.setInterval(() => void send(), picturePace.ms)
     return () => window.clearInterval(timer)
-  }, [token, pictureWanted])
+  }, [token, pictureWanted, picturePace])
 
   // -- media cache -----------------------------------------------------------
   useEffect(() => {
