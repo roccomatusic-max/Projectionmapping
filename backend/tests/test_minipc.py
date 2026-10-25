@@ -405,6 +405,99 @@ async def test_the_status_screen_beside_the_projector_gets_its_own_pictures_fast
     assert (beat["picture"], beat["picture_ms"], beat["picture_width"]) == (True, 3000, 480)
 
 
+async def screen_button(api, token, action: str, **extra):
+    return await api.post("/api/mapping/players/me/control", headers=token,
+                          json={"action": action, **extra})
+
+
+async def test_the_status_screen_finds_the_only_projector_and_can_link_one(api):
+    from tests.test_api import add_projector
+
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    show = (await api.post("/api/mapping/shows", headers=headers, json={"name": "House"})).json()
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Garage door"})).json()
+    await api.patch(f"/api/mapping/players/{player_id}", headers=headers,
+                    json={"output_id": output["id"]})
+
+    import app.api.routes.mapping_players as players
+    from app.db.models import MappingPlayer
+    from app.db.session import session_scope
+
+    async def projector_for():
+        async with session_scope() as session:
+            return await players.screen_projector(session, await session.get(MappingPlayer, player_id))
+
+    assert await projector_for() == (None, False)
+    first = await add_projector(api, headers, name="Garage")
+    assert await projector_for() == (first, True)  # nothing linked, only one: that one
+    second = await add_projector(api, headers, name="Porch")
+    assert await projector_for() == (None, False)  # two: no guessing
+
+    # Picked on the status screen, it is linked for good.
+    linked = await screen_button(api, token, "link_projector", projector_id=second)
+    assert linked.json() == {"ok": True, "message": "Garage door now drives Porch."}
+    assert await projector_for() == (second, False)
+    full = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert full["outputs"][0]["projector_id"] == second
+    # It never changes a link someone made in the Editor.
+    again = await screen_button(api, token, "link_projector", projector_id=first)
+    assert again.json()["ok"] is False and await projector_for() == (second, False)
+
+
+async def test_the_status_screen_buttons_run_the_show_and_its_projector(api):
+    from tests.test_api import add_projector
+
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    show = (await api.post("/api/mapping/shows", headers=headers, json={"name": "House"})).json()
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Garage door"})).json()
+    await api.post(f"/api/mapping/shows/{show['id']}/cues", headers=headers, json={"name": "Welcome"})
+    pid = await add_projector(api, headers, name="Garage")
+    await api.patch(f"/api/mapping/outputs/{output['id']}", headers=headers, json={"projector_id": pid})
+    await api.patch(f"/api/mapping/players/{player_id}", headers=headers,
+                    json={"output_id": output["id"]})
+
+    go = await screen_button(api, token, "go")
+    assert go.json()["ok"] is True, go.text
+    state = (await api.get("/api/mapping/transport", headers=headers)).json()
+    assert (state["status"], state["show_id"]) == ("playing", show["id"])
+    assert (await screen_button(api, token, "blackout")).json()["ok"] is True
+    assert (await api.get("/api/mapping/transport", headers=headers)).json()["status"] == "blackout"
+
+    on = await screen_button(api, token, "power_on")
+    assert on.json()["ok"] is True, on.text
+    assert api.sim.state.power.value in ("on", "warming")
+    # Off asks twice.
+    first = await screen_button(api, token, "power_off")
+    assert first.json() == {"ok": False, "message": "Press Projector off again to turn it off."}
+    off = await screen_button(api, token, "power_off", confirm=True)
+    assert off.json()["ok"] is True, off.text
+
+    assert (await screen_button(api, token, "restart_output")).json()["ok"] is True
+    beat = (await api.post("/api/mapping/players/me", headers=token, json={})).json()
+    assert beat["commands"] == ["reload"]
+
+    stopped = await api.post("/api/mapping/players/me/emergency-stop", headers=token)
+    assert stopped.status_code == 200, stopped.text
+    assert (await api.get("/api/mapping/transport", headers=headers)).json()["emergency"] is not None
+    held = await screen_button(api, token, "go")
+    assert held.json()["ok"] is False
+
+
+async def test_only_the_mini_pc_itself_has_status_screen_buttons(api):
+    headers = await login(api)
+    # A person's account, even an admin's, uses the usual pages.
+    assert (await screen_button(api, headers, "go")).status_code == 403
+    assert (await api.post("/api/mapping/players/me/emergency-stop", headers=headers)).status_code == 403
+    # A mini PC waiting to be approved has none either.
+    waiting = await hello(api, PLAYER)
+    token = {"Authorization": f"Bearer {waiting['access_token']}"} if waiting.get("access_token") else {}
+    assert (await screen_button(api, token, "go")).status_code in (401, 403)
+
+
 SCREENS = {"state": "on", "count": 2, "projector": "1920 × 1200, on the left",
            "second": "1920 × 1080, on the right"}
 

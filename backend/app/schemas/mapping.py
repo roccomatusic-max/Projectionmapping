@@ -602,6 +602,25 @@ class PlayerCommand(BaseModel):
     action: PlayerAction
 
 
+ScreenAction = Literal["start_tonight", "stop_tonight", "go", "pause", "resume", "blackout",
+                       "power_on", "power_off", "restart_output", "link_projector"]
+
+
+class ScreenControl(BaseModel):
+    """A button on the status screen of a mini PC's own monitor."""
+
+    action: ScreenAction
+    #: For ``link_projector``: the projector its output drives.
+    projector_id: int | None = None
+    #: Power off asks twice, like everywhere else.
+    confirm: bool = False
+
+
+class ScreenControlResult(BaseModel):
+    ok: bool
+    message: str
+
+
 class PlayerCommandResult(BaseModel):
     #: What it was handed to: the Mini PC app, the player page, or the network.
     via: Literal["app", "page", "network"]

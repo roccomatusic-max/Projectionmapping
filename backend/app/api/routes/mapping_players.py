@@ -37,13 +37,23 @@ import socket
 import sys
 import time
 from datetime import timedelta
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select
 
-from app.api.deps import CurrentUser, RequireAdmin, RequireViewer, SessionDep, write_rate_limit
+from app.api.deps import (
+    CurrentUser,
+    RequireAdmin,
+    RequireViewer,
+    SessionDep,
+    command_rate_limit,
+    write_rate_limit,
+)
 from app.api.routes.mapping import _output_out, _touch
+from app.api.routes.projectors import _dispatch
+from app.api.routes.tonight import start_tonight, stop_tonight
 from app.config import settings
 from app.core.events import bus
 from app.core.security import create_access_token, hash_password
@@ -51,12 +61,14 @@ from app.db.models import (
     Event,
     MappingOutput,
     MappingPlayer,
+    Projector,
     Role,
     Severity,
     User,
     as_utc,
     utcnow,
 )
+from app.drivers import CommandOutcome
 from app.schemas.mapping import (
     NetworkInfo,
     PlayerApp,
@@ -73,9 +85,13 @@ from app.schemas.mapping import (
     PlayerScreen,
     PlayerScreens,
     PlayerUpdate,
+    ScreenControl,
+    ScreenControlResult,
 )
 from app.services import minipc_updates
 from app.services.discovery import lan_address, tailscale_address
+from app.services.emergency import emergency
+from app.services.mapping import TransportError, transport
 
 router = APIRouter(prefix="/mapping/players", tags=["mapping"])
 
@@ -639,6 +655,124 @@ async def page_picture(payload: PlayerPicture, session: SessionDep, user: Curren
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="This account is not a player")
     _pictures[player.id] = (_jpeg(payload.image), _now())
+
+
+async def _own_player(session, user: User) -> MappingPlayer:
+    """The approved mini PC this account belongs to, for its status screen's buttons."""
+    player = (await session.execute(
+        select(MappingPlayer).where(MappingPlayer.user_id == user.id)
+    )).scalars().first()
+    if player is None or (player.kind or "player") != "player" or not player.approved:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only a paired mini PC's own status screen has these buttons")
+    return player
+
+
+async def screen_projector(session, player: MappingPlayer) -> tuple[int | None, bool]:
+    """The projector this mini PC drives, and whether that is a guess.
+
+    Its output's linked projector; with none linked and only one projector
+    on the server, that one (the status screen says so).
+    """
+    output = await session.get(MappingOutput, player.output_id) if player.output_id else None
+    if output is None:
+        return None, False
+    if output.projector_id is not None:
+        return output.projector_id, False
+    ids = (await session.execute(select(Projector.id).limit(2))).scalars().all()
+    return (ids[0], True) if len(ids) == 1 else (None, False)
+
+
+@router.post("/me/emergency-stop", response_model=ScreenControlResult)
+async def screen_emergency_stop(session: SessionDep, user: CurrentUser) -> ScreenControlResult:
+    """The emergency stop on a mini PC's status screen. No rate limit, like the others."""
+    player = await _own_player(session, user)
+    await emergency.press(username=f"{player.name} (status screen)", user_id=user.id,
+                          source="minipc")
+    return ScreenControlResult(ok=True, message="Emergency stop is on: the show is stopped, every "
+                                                "mini PC is black and the projectors are turning off.")
+
+
+@router.post("/me/control", response_model=ScreenControlResult,
+             dependencies=[Depends(command_rate_limit)])
+async def screen_control(payload: ScreenControl, session: SessionDep,
+                         user: CurrentUser) -> ScreenControlResult:
+    """A button on the status screen of the mini PC's own monitor.
+
+    Only for that mini PC's account, and only for its show, its projector
+    and its own output: it stands beside them.
+    """
+    player = await _own_player(session, user)
+    by = f"{player.name} (status screen)"
+    action = payload.action
+
+    if action in ("start_tonight", "stop_tonight"):
+        acting = SimpleNamespace(id=user.id, username=by)
+        result = await (start_tonight if action == "start_tonight" else stop_tonight)(session, acting)
+        return ScreenControlResult(ok=result.ok, message=result.message)
+
+    if action in ("go", "pause", "resume", "blackout"):
+        show_id = None
+        if action == "go" and transport.snapshot().show_id is None:
+            show_id = (await _player_out(session, player)).show_id
+        try:
+            await transport.command(action, show_id=show_id)
+        except TransportError as exc:
+            return ScreenControlResult(ok=False, message=str(exc))
+        session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="show_transport",
+                          message=f"{by}: {action}"))
+        await session.commit()
+        words = {"go": "Next cue.", "pause": "Paused.", "resume": "Playing again.",
+                 "blackout": "Blacked out. Press GO to start again."}
+        return ScreenControlResult(ok=True, message=words[action])
+
+    if action == "restart_output":
+        if app_connected(player):
+            _queue(player.id, "app", "restart_output")
+        else:
+            _queue(player.id, "page", "reload")
+            _changed(player.id)
+        return ScreenControlResult(ok=True, message="Restarting the output. The projector goes "
+                                                    "dark for a few seconds.")
+
+    output = await session.get(MappingOutput, player.output_id) if player.output_id else None
+    if action == "link_projector":
+        if output is None:
+            return ScreenControlResult(ok=False, message="Pick an output for this mini PC on "
+                                                         "Mapping → Players first.")
+        if output.projector_id is not None:
+            return ScreenControlResult(ok=False, message="This output already has a projector. "
+                                                         "Change it in the Editor.")
+        projector = await session.get(Projector, payload.projector_id) if payload.projector_id else None
+        if projector is None:
+            return ScreenControlResult(ok=False, message="That projector is gone.")
+        output.projector_id = projector.id
+        session.add(Event(projector_id=projector.id, severity=Severity.INFO.value,
+                          kind="mapping_output",
+                          message=f"{by} linked {output.name} to {projector.name}"))
+        await session.commit()
+        await session.refresh(output)
+        _touch(output.show_id, kind="mapping_output",
+               payload={"output": _output_out(output).model_dump(mode="json")})
+        return ScreenControlResult(ok=True, message=f"{output.name} now drives {projector.name}.")
+
+    # power_on / power_off
+    projector_id, _guessed = await screen_projector(session, player)
+    if projector_id is None:
+        return ScreenControlResult(ok=False, message="No projector is linked to this output yet.")
+    state = "on" if action == "power_on" else "off"
+    if state == "off" and not payload.confirm:
+        return ScreenControlResult(ok=False, message="Press Projector off again to turn it off.")
+    result = await _dispatch(projector_id, "power.set", {"state": state},
+                             SimpleNamespace(id=user.id, username=by), source="minipc")
+    outcome = CommandOutcome(result.outcome)
+    if outcome is CommandOutcome.QUEUED:
+        return ScreenControlResult(ok=True, message=f"The projector is cooling down; it turns {state} "
+                                                    "by itself as soon as it can.")
+    if outcome.is_success:
+        return ScreenControlResult(ok=True, message=f"Turning the projector {state}.")
+    return ScreenControlResult(ok=False, message=f"The projector did not turn {state}: "
+                                                 f"{result.error or outcome.value.replace('_', ' ')}.")
 
 
 @router.get("/{player_id}/picture", response_model=None,
