@@ -161,6 +161,32 @@ function usePicture(playerId: number | null): { picture: Picture | null; tried: 
   return { picture, tried }
 }
 
+/** How often to ask which version the server runs. */
+const VERSION_MS = 60_000
+
+/**
+ * Reload when the server has been updated, so the screen gets the new page:
+ * it stays open day and night and nothing else would ever reload it.
+ */
+function useNewBuild() {
+  useEffect(() => {
+    let first: string | null = null
+    const check = async () => {
+      try {
+        const { version } = (await fetch('/api/health', { cache: 'no-store' }).then((r) => r.json())) as { version?: string }
+        if (!version) return
+        if (first == null) first = version
+        else if (version !== first) window.location.reload()
+      } catch {
+        /* restarting, or the network: next time */
+      }
+    }
+    void check()
+    const timer = window.setInterval(() => void check(), VERSION_MS)
+    return () => window.clearInterval(timer)
+  }, [])
+}
+
 /** Hide the mouse pointer when it has not moved for a few seconds. */
 function useIdleCursor() {
   const [idle, setIdle] = useState(true)
@@ -188,6 +214,7 @@ export default function ScreenPage() {
   const [lastAnswer, setLastAnswer] = useState(() => Date.now())
   const now = useNow()
   const idle = useIdleCursor()
+  useNewBuild()
 
   useEffect(() => {
     document.title = 'Status screen'
@@ -273,8 +300,8 @@ export default function ScreenPage() {
     return (
       <Frame idle={idle}>
         <Centered>
-          <p className="text-[5vh] font-semibold text-white">Status screen</p>
-          <p className="max-w-[60vw] text-[2.6vh] text-slate-400">
+          <p className="text-[length:calc(var(--u)*5)] font-semibold text-white">Status screen</p>
+          <p className="max-w-[60vw] text-[length:calc(var(--u)*2.6)] text-slate-400">
             The Mini PC app opens this by itself on a monitor plugged in beside the projector.
           </p>
         </Centered>
@@ -286,14 +313,14 @@ export default function ScreenPage() {
     return (
       <Frame idle={idle}>
         <Centered>
-          <p className="text-[5vh] font-semibold text-white">{name}</p>
+          <p className="text-[length:calc(var(--u)*5)] font-semibold text-white">{name}</p>
           {code ? (
             <>
-              <p className="text-[2.8vh] text-slate-400">Waiting to be approved on Mapping → Players with the code</p>
-              <p className="font-mono text-[12vh] font-semibold tracking-[0.15em] text-white">{code}</p>
+              <p className="text-[length:calc(var(--u)*2.8)] text-slate-400">Waiting to be approved on Mapping → Players with the code</p>
+              <p className="font-mono text-[length:calc(var(--u)*12)] font-semibold tracking-[0.15em] text-white">{code}</p>
             </>
           ) : (
-            <p className="text-[2.8vh] text-amber-300">Looking for the main server…</p>
+            <p className="text-[length:calc(var(--u)*2.8)] text-amber-300">Looking for the main server…</p>
           )}
         </Centered>
       </Frame>
@@ -307,39 +334,43 @@ export default function ScreenPage() {
   return (
     <Frame idle={idle}>
       {emergency && (
-        <div className="flex items-center justify-between gap-[2vw] bg-red-600 px-[2vw] py-[1.4vh] text-white">
-          <span className="text-[4.2vh] font-bold uppercase tracking-wide">Emergency stop is on</span>
-          <span className="text-[2.4vh]">
+        <div className="flex items-center justify-between gap-[2vw] bg-red-600 px-[2vw] py-[calc(var(--u)*1.4)] text-white">
+          <span className="text-[length:calc(var(--u)*4.2)] font-bold uppercase tracking-wide">Emergency stop is on</span>
+          <span className="text-[length:calc(var(--u)*2.4)]">
             Pressed {new Date(emergency.at_ms - offset).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
             {emergency.by ? ` by ${emergency.by}` : ''} · everything is black until someone presses Clear
           </span>
         </div>
       )}
       {lost && (
-        <div className="bg-amber-500 px-[2vw] py-[1vh] text-[2.6vh] font-semibold text-black">
+        <div className="bg-amber-500 px-[2vw] py-[calc(var(--u)*1)] text-[length:calc(var(--u)*2.6)] font-semibold text-black">
           Cannot reach the main server. Showing what it last said.
         </div>
       )}
 
-      <header className="flex items-baseline justify-between gap-[2vw] px-[2vw] pb-[1vh] pt-[2vh]">
+      <header className="flex items-baseline justify-between gap-[2vw] px-[2vw] pb-[calc(var(--u)*1)] pt-[calc(var(--u)*2)]">
         <div className="min-w-0">
-          <p className="truncate text-[4vh] font-semibold text-white">{name}</p>
-          <p className="truncate text-[2.2vh] text-slate-400">
+          <p className="truncate text-[length:calc(var(--u)*4)] font-semibold text-white">{name}</p>
+          <p className="truncate text-[length:calc(var(--u)*2.2)] text-slate-400">
             {output ? `Plays “${output.name}”` : 'No output picked'}
             {show ? ` of ${show.name}` : ''}
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="tnum text-[5.5vh] font-semibold leading-none text-white">
+          <p className="tnum text-[length:calc(var(--u)*5.5)] font-semibold leading-none text-white">
             {new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
           </p>
-          <p className="text-[2vh] text-slate-500">
+          <p className="text-[length:calc(var(--u)*2)] text-slate-500">
             {new Date(now).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
           </p>
         </div>
       </header>
 
-      <main className={classNames('grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] grid-rows-[minmax(0,1fr)_auto] gap-[1.6vh] px-[2vw] pb-[2vh]', lost && 'opacity-60')}>
+      <main className={classNames(
+        'grid min-h-0 flex-1 gap-[calc(var(--u)*1.4)] px-[2vw] pb-[calc(var(--u)*1.2)]',
+        'grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] landscape:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] landscape:grid-rows-[auto_minmax(0,1fr)]',
+        lost && 'opacity-60',
+      )}>
         <Card title="Show">
           <ShowStatus
             transport={transportState}
@@ -350,14 +381,14 @@ export default function ScreenPage() {
             mine={showId}
           />
           {testPicture && (
-            <p className="mt-[1.4vh] rounded-lg bg-amber-500/15 px-[1vw] py-[0.8vh] text-[2.4vh] text-amber-200">
+            <p className="mt-[calc(var(--u)*1.4)] rounded-lg bg-amber-500/15 px-[1vw] py-[calc(var(--u)*0.8)] text-[length:calc(var(--u)*2.4)] text-amber-200">
               The projector shows a test picture ({testPicture}) instead of the show. Change it on Mapping → Players.
             </p>
           )}
           <TonightLine tonight={tonight} now={now} />
         </Card>
 
-        <Card title="What the projector gets" className="row-span-1">
+        <Card title="What the projector gets" className="landscape:col-start-2 landscape:row-span-2 landscape:row-start-1">
           <OutputPicture
             picture={picture}
             tried={tried}
@@ -369,7 +400,7 @@ export default function ScreenPage() {
           <PlayerFacts player={player} />
         </Card>
 
-        <Card title="Projector" className="col-span-2">
+        <Card title="Projector" className="landscape:col-start-1 landscape:row-start-2">
           <ProjectorStatus projector={projector} linked={output != null && projectorId != null} hasOutput={output != null}
             guessed={guessed} outputName={output?.name ?? null}
             choices={unlinked && !guessed ? (projectors ?? []) : []}
@@ -471,40 +502,40 @@ function Controls({ status, emergency, hasProjector, busy, said, onPress, onEmer
   const paused = status === 'paused'
 
   return (
-    <footer className="px-[2vw] pb-[2vh]">
-      <div className="flex items-stretch gap-[0.8vw]">
+    <footer className="px-[2vw] pb-[calc(var(--u)*2)]">
+      <div className="flex flex-wrap items-stretch gap-[0.8vw] gap-y-[calc(var(--u)*1)] portrait:[&>*]:basis-[22%]">
         <ScreenButton tone="go" disabled={emergency || busy != null} onClick={() => onPress('start_tonight')}>
-          Start tonight’s show
+          Start tonight
         </ScreenButton>
         <ScreenButton tone="go" disabled={emergency || busy != null} onClick={() => onPress('go')}>
-          GO · next cue
+          GO next cue
         </ScreenButton>
         <ScreenButton disabled={!(playing || paused) || busy != null} onClick={() => onPress(paused ? 'resume' : 'pause')}>
           {paused ? 'Play again' : 'Pause'}
         </ScreenButton>
         <ScreenButton tone={armed === 'stop_tonight' ? 'armed' : undefined} disabled={busy != null} onClick={() => twice('stop_tonight')}>
-          {armed === 'stop_tonight' ? 'Press again to stop' : 'Stop the show'}
+          {armed === 'stop_tonight' ? 'Again to stop' : 'Stop show'}
         </ScreenButton>
         <ScreenButton disabled={busy != null} onClick={() => onPress('blackout')}>
           Blackout
         </ScreenButton>
-        <span className="w-[0.8vw] shrink-0" aria-hidden />
+        <span className="w-[0.8vw] shrink-0 portrait:hidden" aria-hidden />
         <ScreenButton disabled={!hasProjector || emergency || busy != null} onClick={() => onPress('power_on')}>
           Projector on
         </ScreenButton>
         <ScreenButton tone={armed === 'power_off' ? 'armed' : undefined} disabled={!hasProjector || busy != null}
           onClick={() => twice('power_off')}>
-          {armed === 'power_off' ? 'Press again: off' : 'Projector off'}
+          {armed === 'power_off' ? 'Again: off' : 'Projector off'}
         </ScreenButton>
         <ScreenButton disabled={busy != null} onClick={() => onPress('restart_output')}>
           Restart output
         </ScreenButton>
-        <span className="w-[0.8vw] shrink-0" aria-hidden />
+        <span className="w-[0.8vw] shrink-0 portrait:hidden" aria-hidden />
         <button
           type="button"
           {...handlers}
           title="Hold for one second: stops the show, blacks out every mini PC and turns every projector off"
-          className="relative isolate flex-[1.4] select-none overflow-hidden rounded-xl bg-red-600 px-[1vw] py-[1.6vh] text-[2.4vh] font-bold leading-tight text-white ring-1 ring-red-400/50 [touch-action:none] hover:bg-red-500"
+          className="relative isolate flex-[1.4] select-none overflow-hidden rounded-xl bg-red-600 px-[1vw] py-[calc(var(--u)*1.6)] text-[length:calc(var(--u)*2.4)] font-bold leading-tight text-white ring-1 ring-red-400/50 [touch-action:none] hover:bg-red-500"
         >
           <span
             aria-hidden
@@ -514,7 +545,7 @@ function Controls({ status, emergency, hasProjector, busy, said, onPress, onEmer
           {holding ? 'Keep holding…' : hint ? 'Hold it down' : 'Emergency stop (hold)'}
         </button>
       </div>
-      <p className={classNames('mt-[0.6vh] h-[3.2vh] truncate text-[2.2vh] leading-[3.2vh]', said?.ok === false ? 'text-amber-300' : 'text-slate-300')}>
+      <p className={classNames('mt-[calc(var(--u)*0.6)] h-[calc(var(--u)*3.2)] truncate text-[length:calc(var(--u)*2.2)] leading-[calc(var(--u)*3.2)]', said?.ok === false ? 'text-amber-300' : 'text-slate-300')}>
         {busy ? 'Sending…' : said?.message ?? ''}
       </p>
     </footer>
@@ -533,7 +564,7 @@ function ScreenButton({ children, onClick, disabled, tone }: {
       onClick={onClick}
       disabled={disabled}
       className={classNames(
-        'flex-1 rounded-xl px-[0.8vw] py-[1.6vh] text-[2.2vh] font-semibold leading-tight ring-1 transition-colors disabled:cursor-default disabled:opacity-35',
+        'flex-1 rounded-xl px-[0.8vw] py-[calc(var(--u)*1.4)] text-[length:calc(var(--u)*2.2)] font-semibold leading-tight ring-1 transition-colors disabled:cursor-default disabled:opacity-35',
         tone === 'go' && 'bg-emerald-600 text-white ring-emerald-400/40 enabled:hover:bg-emerald-500',
         tone === 'armed' && 'bg-amber-500 text-black ring-amber-300 enabled:hover:bg-amber-400',
         !tone && 'bg-white/[0.08] text-white ring-white/10 enabled:hover:bg-white/[0.14]',
@@ -551,20 +582,20 @@ const projectorsLoader = () => request<Projector[]>('/projectors')
 
 function Frame({ children, idle }: { children: ReactNode; idle: boolean }) {
   return (
-    <div className={classNames('fixed inset-0 flex flex-col overflow-hidden bg-[#05070b] text-slate-200', idle && 'cursor-none')}>
+    <div className={classNames('fixed inset-0 flex flex-col overflow-hidden bg-[#05070b] text-slate-200 [--u:min(1vh,0.5625vw)]', idle && 'cursor-none')}>
       {children}
     </div>
   )
 }
 
 function Centered({ children }: { children: ReactNode }) {
-  return <div className="flex flex-1 flex-col items-center justify-center gap-[2vh] text-center">{children}</div>
+  return <div className="flex flex-1 flex-col items-center justify-center gap-[calc(var(--u)*2)] text-center">{children}</div>
 }
 
 function Card({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
   return (
-    <section className={classNames('flex min-h-0 flex-col rounded-2xl bg-white/[0.04] px-[1.6vw] py-[1.6vh] ring-1 ring-white/[0.06]', className)}>
-      <h2 className="mb-[1vh] text-[1.9vh] font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</h2>
+    <section className={classNames('flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl bg-white/[0.04] px-[1.4vw] py-[calc(var(--u)*1.4)] ring-1 ring-white/[0.06]', className)}>
+      <h2 className="mb-[calc(var(--u)*1)] text-[length:calc(var(--u)*1.9)] font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</h2>
       {children}
     </section>
   )
@@ -600,7 +631,7 @@ function ShowStatus({
   now: number
   mine: number | null
 }) {
-  if (!transport) return <p className="text-[3vh] text-slate-500">Loading…</p>
+  if (!transport) return <p className="text-[length:calc(var(--u)*3)] text-slate-500">Loading…</p>
   const emergency = transport.emergency != null
   const word = emergency ? { text: 'Held', color: 'text-red-300', dot: 'bg-red-500' } : STATUS_WORD[transport.status] ?? STATUS_WORD.stopped
   const cue = transport.current
@@ -617,27 +648,27 @@ function ShowStatus({
         : null
 
   return (
-    <div className="space-y-[1.2vh]">
-      <p className={classNames('flex items-center gap-[1vw] text-[9vh] font-bold leading-none', word.color)}>
-        <span className={classNames('inline-block h-[4.5vh] w-[4.5vh] shrink-0 rounded-full', word.dot, transport.status === 'playing' && !emergency && 'animate-pulse')} />
+    <div className="space-y-[calc(var(--u)*1.2)]">
+      <p className={classNames('flex min-w-0 items-center gap-[1vw] whitespace-nowrap text-[length:calc(var(--u)*6)] font-bold leading-none', word.color)}>
+        <span className={classNames('inline-block h-[calc(var(--u)*3)] w-[calc(var(--u)*3)] shrink-0 rounded-full', word.dot, transport.status === 'playing' && !emergency && 'animate-pulse')} />
         {word.text}
       </p>
       {cue && transport.status !== 'stopped' ? (
         <div>
-          <p className="truncate text-[4.4vh] font-semibold text-white">
+          <p className="truncate text-[length:calc(var(--u)*4.4)] font-semibold text-white">
             {cue.position < 0 ? 'Scene' : `Cue ${cue.position + 1}${cueCount ? ` of ${cueCount}` : ''}`}
             {cue.name ? ` · ${cue.name}` : ''}
           </p>
-          <p className="text-[2.8vh] text-slate-400">
+          <p className="truncate text-[length:calc(var(--u)*2.6)] text-slate-400">
             {scene ? `${scene} on this projector` : 'No scene on this projector'}
             {playingTime != null ? ` · ${elapsedText(playingTime)} in` : ''}
           </p>
         </div>
       ) : (
-        <p className="text-[3.2vh] text-slate-400">Nothing is playing.</p>
+        <p className="text-[length:calc(var(--u)*3.2)] text-slate-400">Nothing is playing.</p>
       )}
       {otherShow && (
-        <p className="text-[2.4vh] text-amber-200">Another show is playing; this projector belongs to a different one.</p>
+        <p className="text-[length:calc(var(--u)*2.4)] text-amber-200">Another show is playing; this projector belongs to a different one.</p>
       )}
     </div>
   )
@@ -679,12 +710,14 @@ function TonightLine({ tonight, now }: { tonight: Tonight | null; now: number })
     tone = tonight.next_starts_at ? 'text-slate-400' : 'text-slate-500'
   }
   return (
-    <div className="mt-auto border-t border-white/[0.06] pt-[1.2vh]">
-      <p className="truncate text-[1.9vh] font-semibold uppercase tracking-[0.2em] text-slate-500">
+    <div className="mt-[calc(var(--u)*1.4)] border-t border-white/[0.06] pt-[calc(var(--u)*1.2)]">
+      <p className="truncate text-[length:calc(var(--u)*1.9)] font-semibold uppercase tracking-[0.2em] text-slate-500">
         Tonight’s show{name ? ` · ${name}` : ''}
       </p>
-      {when && <p className="truncate text-[3.4vh] font-semibold text-white">{when}</p>}
-      <p className={classNames('truncate text-[2.6vh] font-medium', tone)}>{text}</p>
+      <p className="truncate text-[length:calc(var(--u)*2.8)] font-medium">
+        {when && <span className="font-semibold text-white">{when} · </span>}
+        <span className={tone}>{text}</span>
+      </p>
     </div>
   )
 }
@@ -731,7 +764,7 @@ function OutputPicture({
         {(note || emergency) && (
           <span
             className={classNames(
-              'absolute inset-x-0 bottom-0 px-[1vw] py-[0.6vh] text-center text-[2.2vh]',
+              'absolute inset-x-0 bottom-0 px-[1vw] py-[calc(var(--u)*0.6)] text-center text-[length:calc(var(--u)*2.2)]',
               !online || emergency ? 'bg-red-950/80 text-red-100' : 'bg-black/70 text-slate-300',
             )}
           >
@@ -754,7 +787,7 @@ function PlayerFacts({ player }: { player: Player | null }) {
         report.link && report.link !== 'open' ? 'live link down' : null,
       ].filter(Boolean)
     : ['not answering']
-  return <p className="tnum mt-[1vh] truncate text-[2.2vh] text-slate-400">{facts.join(' · ')}</p>
+  return <p className="tnum mt-[calc(var(--u)*1)] truncate text-[length:calc(var(--u)*2.2)] text-slate-400">{facts.join(' · ')}</p>
 }
 
 const POWER: Record<string, { text: string; color: string }> = {
@@ -783,9 +816,9 @@ function conditionLook(severity: string | undefined): { text: string; className:
 
 function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div className="shrink-0">
-      <p className="text-[1.9vh] text-slate-500">{label}</p>
-      <p className={classNames('whitespace-nowrap text-[3.8vh] font-semibold leading-tight', className ?? 'text-white')}>{children}</p>
+    <div className="min-w-0">
+      <p className="truncate text-[length:calc(var(--u)*1.8)] text-slate-500">{label}</p>
+      <p className={classNames('truncate text-[length:calc(var(--u)*3.2)] font-semibold leading-tight', className ?? 'text-white')}>{children}</p>
     </div>
   )
 }
@@ -800,31 +833,31 @@ function ProjectorStatus({ projector, linked, hasOutput, guessed, outputName, ch
   onLink: (projectorId: number) => void
 }) {
   if (!hasOutput) {
-    return <p className="text-[3vh] text-slate-400">Pick an output for this mini PC on Mapping → Players.</p>
+    return <p className="text-[length:calc(var(--u)*3)] text-slate-400">Pick an output for this mini PC on Mapping → Players.</p>
   }
   if (!linked) {
     return (
-      <div className="space-y-[1.4vh]">
-        <p className="text-[3vh] text-slate-300">
+      <div className="space-y-[calc(var(--u)*1.4)]">
+        <p className="text-[length:calc(var(--u)*3)] text-slate-300">
           Which projector does {outputName ?? 'this output'} drive?{choices.length ? ' Click it:' : ''}
         </p>
         {choices.length > 0 ? (
           <div className="flex flex-wrap gap-[0.8vw]">
             {choices.map((p) => (
               <button key={p.id} type="button" onClick={() => onLink(p.id)}
-                className="rounded-xl bg-sky-600 px-[1.4vw] py-[1.2vh] text-[2.6vh] font-semibold text-white ring-1 ring-sky-400/40 hover:bg-sky-500">
+                className="rounded-xl bg-sky-600 px-[1.4vw] py-[calc(var(--u)*1.2)] text-[length:calc(var(--u)*2.6)] font-semibold text-white ring-1 ring-sky-400/40 hover:bg-sky-500">
                 {p.name}
-                <span className="ml-[0.6vw] text-[1.9vh] font-normal text-sky-100/80">{p.model}</span>
+                <span className="ml-[0.6vw] text-[length:calc(var(--u)*1.9)] font-normal text-sky-100/80">{p.model}</span>
               </button>
             ))}
           </div>
         ) : (
-          <p className="text-[2.4vh] text-slate-500">Add the projector on the Projectors page first.</p>
+          <p className="text-[length:calc(var(--u)*2.4)] text-slate-500">Add the projector on the Projectors page first.</p>
         )}
       </div>
     )
   }
-  if (!projector) return <p className="text-[3vh] text-slate-500">Loading…</p>
+  if (!projector) return <p className="text-[length:calc(var(--u)*3)] text-slate-500">Loading…</p>
 
   const live = isLive(projector)
   const { state } = projector
@@ -841,25 +874,25 @@ function ProjectorStatus({ projector, linked, hasOutput, guessed, outputName, ch
   const problems = attentionItems(projector).filter((item) => item.severity !== 'notice')
 
   return (
-    <div className="space-y-[1.4vh]">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-[2vw]">
-        <p className="truncate text-[3.4vh] font-semibold text-white">
+    <div className="space-y-[calc(var(--u)*1.4)]">
+      <div className="flex items-baseline justify-between gap-x-[1.6vw]">
+        <p className="min-w-0 truncate text-[length:calc(var(--u)*3.2)] font-semibold text-white">
           {projector.name}
-          <span className="ml-[1vw] text-[2.2vh] font-normal text-slate-500">
+          <span className="ml-[0.8vw] text-[length:calc(var(--u)*2)] font-normal text-slate-500">
             {projector.manufacturer} {projector.model} · {projector.host}
           </span>
         </p>
-        <p className={classNames('text-[2.8vh] font-semibold', live ? 'text-emerald-300' : 'text-red-300')}>
+        <p className={classNames('shrink-0 text-[length:calc(var(--u)*2.6)] font-semibold', live ? 'text-emerald-300' : 'text-red-300')}>
           {live ? 'Answering' : state.last_seen_at ? 'Not answering' : 'Never reached'}
         </p>
       </div>
       {guessed && (
-        <p className="text-[2vh] text-slate-500">
+        <p className="text-[length:calc(var(--u)*2)] text-slate-500">
           The only projector there is. Link it to {outputName ?? 'this output'} on the Editor’s Projectors tab to be sure.
         </p>
       )}
 
-      <div className="flex flex-wrap gap-x-[3vw] gap-y-[1vh]">
+      <div className="grid grid-cols-4 gap-x-[1.2vw] gap-y-[calc(var(--u)*1)]">
         <Fact label="Power" className={live ? power.color : 'text-slate-500'}>
           {live ? power.text : '—'}
         </Fact>
@@ -870,48 +903,59 @@ function ProjectorStatus({ projector, linked, hasOutput, guessed, outputName, ch
           {input.text}
         </Fact>
         {lampHours != null && (
-          <Fact label={lamps.length > 1 ? `Lamp hours (most of ${lamps.length})` : 'Lamp hours'}
+          <Fact label="Lamp hours"
             className={lampHours >= projector.lamp_critical_hours ? 'text-red-300' : lampHours >= projector.lamp_warn_hours ? 'text-yellow-200' : 'text-white'}>
             {formatHours(lampHours)}
           </Fact>
         )}
         {temperatures.map((sensor) => (
           <Fact key={sensor.key} label={sensor.label}>
-            {sensor.celsius} °C
-            <span className="ml-[0.6vw] text-[2.4vh] font-normal text-slate-400">{sensor.fahrenheit} °F</span>
+            {sensor.fahrenheit} °F
           </Fact>
         ))}
       </div>
 
-      {erst ? (
-        <div className="flex flex-wrap gap-[0.8vw]">
-          {CONDITIONS.map((c) => {
-            const look = conditionLook(erst[c.key])
-            return (
-              <span key={c.key} className={classNames('rounded-lg px-[1vw] py-[0.6vh] text-[2.6vh] font-medium', look.className)}>
-                {c.label} {look.text}
-              </span>
-            )
-          })}
-        </div>
-      ) : (
-        <p className="text-[2.2vh] text-slate-500">
-          Fans, filter and cover are not reported: turn PJLink on in the projector’s network menu.
-        </p>
-      )}
-
-      {problems.length > 0 ? (
-        <ul className="space-y-[0.4vh]">
-          {problems.slice(0, 4).map((item) => (
-            <li key={item.text} className={classNames('text-[3vh] font-medium', item.severity === 'critical' ? 'text-red-300' : 'text-yellow-200')}>
-              {item.text}
-              {item.detail && <span className="ml-[0.8vw] text-[2.2vh] font-normal text-slate-400">{item.detail}</span>}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        live && <p className="text-[2.6vh] text-emerald-300">No errors or warnings.</p>
-      )}
+      {(() => {
+        // Only what needs a look, so a healthy projector takes one line.
+        const flagged = erst ? CONDITIONS.filter((c) => erst[c.key] && erst[c.key] !== 'ok') : []
+        return (
+          <>
+            {flagged.length > 0 && (
+              <div className="flex flex-wrap gap-[0.6vw]">
+                {flagged.map((c) => {
+                  const look = conditionLook(erst![c.key])
+                  return (
+                    <span key={c.key} className={classNames('rounded-lg px-[0.8vw] py-[calc(var(--u)*0.4)] text-[length:calc(var(--u)*2.2)] font-medium', look.className)}>
+                      {c.label} {look.text}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            {problems.length > 0 ? (
+              <ul className="space-y-[calc(var(--u)*0.4)]">
+                {problems.slice(0, 3).map((item) => (
+                  <li key={item.text} className={classNames('truncate text-[length:calc(var(--u)*2.6)] font-medium', item.severity === 'critical' ? 'text-red-300' : 'text-yellow-200')}>
+                    {item.text}
+                    {item.detail && <span className="ml-[0.8vw] text-[length:calc(var(--u)*2.2)] font-normal text-slate-400">{item.detail}</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              live && (
+                <p className="truncate text-[length:calc(var(--u)*2.6)] text-emerald-300">
+                  {erst && flagged.length === 0 ? 'All checks OK. ' : ''}No errors or warnings.
+                </p>
+              )
+            )}
+            {!erst && (
+              <p className="truncate text-[length:calc(var(--u)*2)] text-slate-500">
+                Fans, filter and cover are not reported: turn PJLink on in the projector’s network menu.
+              </p>
+            )}
+          </>
+        )
+      })()}
     </div>
   )
 }
