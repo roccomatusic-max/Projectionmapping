@@ -34,6 +34,7 @@ DEVICE = {"device_id": "mpc-e2e0000000000000000000001", "secret": "e" * 64}
 
 checkins: list[tuple[float, dict]] = []
 downloads: list[float] = []
+logs: list[dict] = []
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -56,6 +57,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.path == "/api/mapping/players/app/log":
+            logs.append(body)
+            self.send_response(204)
+            self.end_headers()
+            return
         if self.path != "/api/mapping/players/app":
             self._send(404, b"{}")
             return
@@ -75,6 +81,17 @@ def processes() -> list[str]:
     out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq MiniPC.exe", "/FO", "CSV", "/NH"],
                          capture_output=True, text=True, check=False).stdout
     return [line.split(",")[1].strip('"') for line in out.splitlines() if line.startswith('"MiniPC')]
+
+
+def browser_pids() -> set[int]:
+    """The output window's browser (not its helpers), on the app's own profile."""
+    out = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*ProjectionMapping MiniPC*browser*'"
+         " -and $_.CommandLine -notlike '*--type=*' -and $_.CommandLine -notlike '*screen-browser*' }"
+         " | ForEach-Object { $_.ProcessId }"],
+        capture_output=True, text=True, check=False).stdout
+    return {int(x) for x in out.split() if x.strip().isdigit()}
 
 
 def wait(what: str, check, seconds: float) -> None:
@@ -132,8 +149,45 @@ def main() -> None:
         if len(checkins) - before < 5:
             raise SystemExit(f"FAILED: only {len(checkins) - before} check-ins in 30 s after the update")
         print("ok: the new app keeps checking in", flush=True)
+        wait("it sends its log after the update", lambda: any(b.get("reason") == "update" for b in logs), 30)
+        sent = next(b["text"] for b in logs if b.get("reason") == "update")
+        for part in ("logs/minipc.log", "updates/install-update.log", "updates/install-setup.log"):
+            if part not in sent:
+                raise SystemExit(f"FAILED: the log it sent has no {part}")
+        print(sent[-3000:], flush=True)
+
+        # The watchdog Windows runs every 5 minutes is there...
+        query = subprocess.run(["schtasks", "/Query", "/TN", "Mini PC watchdog", "/V", "/FO", "LIST"],
+                               capture_output=True, text=True, check=False)
+        print(query.stdout, flush=True)
+        if query.returncode != 0 or "--watchdog" not in query.stdout:
+            raise SystemExit("FAILED: the watchdog task is missing")
+        # ...leaves a running app alone...
+        running = processes()
+        subprocess.run([str(APP), "--watchdog"], check=True, timeout=60)
+        time.sleep(5)
+        if processes() != running:
+            raise SystemExit(f"FAILED: the watchdog touched a running app: {running} -> {processes()}")
+        # ...and brings a crashed one back, keeping the output window open.
+        window = browser_pids()
+        print(f"output window: {window}", flush=True)
+        if not window:
+            raise SystemExit("FAILED: no output window found")
+        subprocess.run(["taskkill", "/IM", "MiniPC.exe", "/F"], capture_output=True, check=False)
+        wait("the app is gone", lambda: not processes(), 30)
+        crashed = time.monotonic()
+        subprocess.run([str(APP), "--watchdog"], check=True, timeout=60)
+        wait("the watchdog brings the app back and it checks in",
+             lambda: any(at > crashed + 1 for at, _ in checkins), 90)
+        time.sleep(10)
+        if not window <= browser_pids():
+            raise SystemExit(f"FAILED: the output window was reopened: {window} -> {browser_pids()}")
+        print("ok: the output window stayed open throughout", flush=True)
     finally:
         show_logs()
+        uninstall = APP.parent / "unins000.exe"
+        if uninstall.exists():
+            subprocess.run([str(uninstall), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], check=False)
         subprocess.run(["taskkill", "/IM", "MiniPC.exe", "/F"], capture_output=True, check=False)
         server.shutdown()
 

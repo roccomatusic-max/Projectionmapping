@@ -60,6 +60,7 @@ Windows Server 2022 and 2025 machines for every change
 | Rollback within 2 minutes | yes | yes | CI installs a broken build and sees the old one come back |
 | Install again over an existing one | open a newer download | paste the line again | CI |
 | Hands new Mini PC app versions to the mini PCs (Players → App) | yes | yes, same code | unit tests (shared); the mini PC side's install script runs in the Mini PC CI |
+| Mini PC logs on the Players page (Get the log, sent after every update) | yes, kept in `minipc-logs/` beside `minipc-app/` | yes, same code and folder | unit tests (shared); the Mini PC CI checks a real update sends it |
 | Stop starting by itself | `--uninstall` | `--uninstall` (also removes firewall rules and the Start menu entry) | CI |
 | Logs | `logs/projector-control.log`, `logs/service.log` | the same, plus `updates/watch-update.log` | CI prints them when a check fails |
 | Get to the dashboard on the server | open the app | Start → Projector Control | CI checks the entry exists |

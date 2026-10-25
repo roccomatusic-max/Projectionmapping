@@ -485,6 +485,10 @@ class PlayerApp(BaseModel):
     computer: str | None = None
     #: Its network card's hardware address, for turning it on over the network.
     mac: str | None = None
+    #: Windows starts the app again by itself if it stops (the watchdog).
+    watchdog: bool = False
+    #: When this server last got its log (Get the log), if ever.
+    log_at: datetime | None = None
     #: The Mini PC app's version; None for apps too old to update themselves.
     version: str | None = None
     #: old_app, up_to_date, waiting, updating or failed.
@@ -595,7 +599,7 @@ class PlayerAssignment(BaseModel):
 
 
 PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake",
-                       "update", "swap_screens", "extend_screens"]
+                       "update", "swap_screens", "extend_screens", "send_log"]
 
 
 class PlayerCommand(BaseModel):
@@ -651,6 +655,28 @@ class PlayerAppHello(BaseModel):
     awake: list[Annotated[str, Field(max_length=500)]] | None = Field(default=None, max_length=8)
     #: Its screens and the status screen on the second one (minipc/screens.py).
     screens: PlayerScreens | None = None
+    #: Windows starts the app again by itself if it stops (installer.iss).
+    watchdog: bool = False
+
+
+#: The tail of a Mini PC app's logs it sends: plenty for a day's story.
+MAX_APP_LOG_CHARS = 600_000
+
+
+class PlayerAppLog(BaseModel):
+    """The Mini PC app sending its log, asked for or after an update."""
+
+    device_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    secret: str = Field(min_length=32, max_length=128)
+    #: "asked" (Get the log on the Players page) or "update" (after an update).
+    reason: str = Field(default="asked", max_length=40)
+    text: str = Field(max_length=MAX_APP_LOG_CHARS)
+
+
+class PlayerAppLogOut(BaseModel):
+    text: str
+    reason: str
+    received_at: datetime
 
 
 class PlayerAppUpdate(BaseModel):

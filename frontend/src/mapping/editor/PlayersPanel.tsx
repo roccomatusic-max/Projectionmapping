@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { request } from '@/api/client'
 import {
   BlackoutIcon,
+  CopyIcon,
   InfoIcon,
+  LogsIcon,
   OsdIcon,
   PowerIcon,
   RefreshIcon,
@@ -71,6 +73,10 @@ export interface Player {
     computer: string | null
     /** Known: it can be turned on over the network. */
     mac: string | null
+    /** Windows starts the app again by itself if it stops. */
+    watchdog?: boolean
+    /** When the server last got this app's log (Get the log). */
+    log_at?: string | null
     /** The Mini PC app's version; null for apps too old to update themselves. */
     version?: string | null
     update?: 'old_app' | 'up_to_date' | 'waiting' | 'updating' | 'failed'
@@ -98,7 +104,7 @@ type PlayerAction =
   | 'reboot'
   | 'shutdown'
   | 'wake'
-  | 'update'
+  | 'update' | 'send_log'
   | 'swap_screens'
   | 'extend_screens'
 
@@ -387,6 +393,29 @@ function PlayerControls({
       return null
     })
 
+  const fetchLog = () =>
+    request<{ text: string; reason: string; received_at: string }>(`/mapping/players/${player.id}/log`)
+
+  const copyLog = () =>
+    run('copy-log', async () => {
+      const { text } = await fetchLog()
+      await copyText(text)
+      return 'The log is copied. Paste it wherever you need it.'
+    })
+
+  const downloadLog = () =>
+    run('download-log', async () => {
+      const { text, received_at } = await fetchLog()
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+      link.download = `${player.name.replace(/[^\w-]+/g, '-')}-log-${received_at.slice(0, 16).replace(/[:T]/g, '-')}.txt`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 10000)
+      return null
+    })
+
   const identify = () =>
     run('identify', async () => {
       await request(`/mapping/players/${player.id}/identify`, { method: 'POST' })
@@ -423,11 +452,18 @@ function PlayerControls({
 
   const off = !canEdit || !reachable
   const needsApp = reachable && !canPower
+  // Heard from a Mini PC app that updates itself before, but not now: it
+  // has stopped (the output window it left keeps the picture), not old.
+  const appStopped = !appHere && !!app?.version
   const powerReason = !reachable
     ? 'It is offline.'
-    : !appHere
-      ? 'This mini PC runs an older Mini PC app. Paste the install line into PowerShell on it once to update it.'
-      : 'Only the Windows Mini PC app can restart or shut down its computer.'
+    : appStopped
+      ? app?.watchdog
+        ? 'The Mini PC app on it is not answering right now. Windows starts it again by itself within 5 minutes; the projector keeps its picture.'
+        : 'The Mini PC app on it has stopped; the projector keeps its picture. Paste the install line into PowerShell on it once to start it again (after that, Windows restarts it by itself if it ever stops).'
+      : !appHere
+        ? 'This mini PC runs an older Mini PC app. Paste the install line into PowerShell on it once to update it.'
+        : 'Only the Windows Mini PC app can restart or shut down its computer.'
 
   return (
     <div className="mt-2 space-y-2.5">
@@ -581,6 +617,11 @@ function PlayerControls({
           title="Close and reopen the full-screen output on this mini PC. Use it when the picture is stuck.">
           <RefreshIcon size={12} aria-hidden /> Restart output
         </button>
+        <button className="btn-default btn-sm" disabled={!canEdit || !appHere || !app?.version || busy != null}
+          onClick={() => send('send_log')}
+          title={appHere && app?.version ? "Have the Mini PC app send its log here, to copy or download" : 'Needs the newest Mini PC app, running'}>
+          <LogsIcon size={12} aria-hidden /> Get the log
+        </button>
         <button className="btn-default btn-sm" disabled={off || !canPower || busy != null}
           onClick={() => setConfirm('reboot')} title={canPower ? 'Restart the whole mini PC' : powerReason}>
           <RefreshIcon size={12} aria-hidden /> Restart computer
@@ -605,12 +646,27 @@ function PlayerControls({
           <InfoIcon size={13} className="mt-px shrink-0 text-slate-500" aria-hidden />
           <div className="min-w-0 space-y-1.5">
             <p>Restart computer and Shut down need: {powerReason}</p>
-            {!appHere && (
+            {!appHere && !(appStopped && app?.watchdog) && (
               <p className="select-all break-all rounded bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-200">
                 {MINIPC_INSTALL_LINE}
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {app?.log_at && canEdit && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="w-20 shrink-0 text-slate-400">Log</span>
+          <span className="text-slate-300">
+            Sent {new Date(app.log_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </span>
+          <button className="btn-default btn-sm" disabled={busy != null} onClick={copyLog}>
+            <CopyIcon size={12} aria-hidden /> Copy
+          </button>
+          <button className="btn-default btn-sm" disabled={busy != null} onClick={downloadLog}>
+            Download
+          </button>
         </div>
       )}
 
@@ -640,4 +696,22 @@ function PlayerControls({
       />
     </div>
   )
+}
+
+/** Copy to the clipboard, also on a plain-HTTP address where the Clipboard API is missing. */
+async function copyText(text: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.appendChild(area)
+  area.select()
+  const ok = document.execCommand('copy')
+  area.remove()
+  if (!ok) throw new Error('This browser would not copy it. Use Download instead.')
 }

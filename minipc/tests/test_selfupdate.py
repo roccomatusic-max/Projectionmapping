@@ -178,3 +178,67 @@ def test_the_new_app_takes_over_the_open_window(tmp_path):
         assert other.poll() is None
     finally:
         other.kill()
+
+
+def test_a_restarted_app_keeps_a_window_that_shows_the_show(tmp_path):
+    import subprocess
+
+    import kiosk
+
+    profile = tmp_path / "profile"
+    showing = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)",
+                                f"--user-data-dir={profile}",
+                                "--unsafely-treat-insecure-origin-as-secure=http://10.0.0.5:8765"])
+    try:
+        window = kiosk.Kiosk(sys.executable, "http://x/", profile)
+        assert window.adopt_leftover()
+        assert window.process.pid == showing.pid and window.secure_origin == "http://10.0.0.5:8765"
+    finally:
+        showing.kill()
+    waiting = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)",
+                                f"--user-data-dir={profile}"])
+    try:
+        # Still on the local waiting page: reopened as before, not kept.
+        assert not kiosk.Kiosk(sys.executable, "http://x/", profile).adopt_leftover()
+    finally:
+        waiting.kill()
+
+
+def test_the_watchdog_starts_the_app_only_when_it_is_not_running(tmp_path, monkeypatch):
+    started = []
+    monkeypatch.setattr(minipc, "start_detached", lambda command: started.append(command))
+    monkeypatch.setattr(minipc, "running_copy", lambda port: {"name": "x", "pid": 1, "tick_age": 2.0})
+    assert minipc.watchdog(tmp_path, 1) == 0 and started == []
+
+    monkeypatch.setattr(minipc, "running_copy", lambda port: None)
+    minipc.watchdog(tmp_path, 1)
+    assert len(started) == 1
+
+    # Not while an update installs, nor after Quit in the tray menu.
+    (tmp_path / "updates").mkdir()
+    (tmp_path / "updates" / "installing").write_text("1.0.90")
+    minipc.watchdog(tmp_path, 1)
+    assert len(started) == 1
+    (tmp_path / "updates" / "installing").unlink()
+    (tmp_path / minipc.QUIT_MARK).write_text("quit")
+    minipc.watchdog(tmp_path, 1)
+    assert len(started) == 1
+
+
+def test_the_watchdog_restarts_a_stuck_app(tmp_path, monkeypatch):
+    killed, started = [], []
+    monkeypatch.setattr(minipc, "running_copy",
+                        lambda port: {"name": "x", "pid": 4321, "tick_age": minipc.STUCK_SECONDS + 5})
+    monkeypatch.setattr(minipc.psutil, "Process", lambda pid: type("P", (), {"kill": lambda self: killed.append(pid)})())
+    monkeypatch.setattr(minipc.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(minipc, "start_detached", lambda command: started.append(command))
+    minipc.watchdog(tmp_path, 1)
+    assert killed == [4321] and len(started) == 1
+
+
+def test_starting_clears_an_unfinished_install_mark(tmp_path):
+    (tmp_path / "updates").mkdir()
+    (tmp_path / "updates" / "installing").write_text("1.0.90")
+    assert selfupdate.SelfUpdate(tmp_path, read_result=False).installing()
+    selfupdate.SelfUpdate(tmp_path)  # the app starting
+    assert not selfupdate.SelfUpdate(tmp_path, read_result=False).installing()
