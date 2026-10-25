@@ -15,6 +15,7 @@ import Alerts from '@/pages/Alerts'
 import Logs from '@/pages/Logs'
 import Settings from '@/pages/Settings'
 import PhoneRemote from '@/pages/PhoneRemote'
+import Calendar from '@/pages/Calendar'
 // Monitoring pulls in the charting library; keep it out of the initial
 // bundle so the dashboard loads fast on a tablet over site wifi.
 const Monitoring = lazy(() => import('@/pages/Monitoring'))
@@ -97,6 +98,7 @@ export default function App() {
                 }
               />
             ))}
+            <Route path="/calendar" element={<Calendar session={session} />} />
             <Route path="/automation" element={<Automation session={session} />} />
             <Route path="/alerts" element={<Alerts session={session} />} />
             <Route

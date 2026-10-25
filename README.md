@@ -30,8 +30,13 @@ expensive, hard to reach, and the show starts whether or not they came up.
 - **History** — telemetry charts, full command audit log, maintenance records
   with CSV export
 - **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout,
-  projector power and a Tonight tab (tonight's scene group, show time and
-  nights, Start now / Stop), from anywhere through Tailscale (Phone remote page)
+  projector power, a Tonight tab (tonight's scene group, show time and
+  nights, Start now / Stop) and a Calendar tab, from anywhere through
+  Tailscale (Phone remote page)
+- **Show calendar** — plan shows ahead on a month, week or list: one night,
+  several nights or every week, each with a scene group and start and end
+  times, or nights with no show; the show starts and stops by itself
+  ([MAPPING.md §6c](docs/MAPPING.md))
 - **Emergency stop** — one press-and-hold button on every page and on the
   phone remote: stops the show, blacks out every mini PC, stops automations
   and turns every projector off, reporting each projector on its own

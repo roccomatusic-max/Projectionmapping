@@ -587,6 +587,57 @@ on that browser.
 
 Changes go out as `scene_groups` and `tonight` messages.
 
+## 6c. The show calendar (Calendar page)
+
+**Calendar** (left menu, Mapping show section; the phone remote's Calendar
+tab) plans shows ahead. Each entry is:
+
+- **Play a show** or **No show**.
+- **When**: one night, several nights (first and last night, and which
+  weekdays), or every week (weekdays from a date, with an optional last
+  night).
+- For a show: a scene group (or "keep the scenes the cues have"), a start
+  and end time (an end before the start is after midnight), and whether to
+  turn the projectors on and off. An optional name and note.
+
+Which show times a night has (`backend/app/services/show_calendar.py`):
+
+- If the calendar has anything for the night, the calendar decides and the
+  weekly show time (Set show time on the Dashboard) is not used that night.
+  On other nights the weekly show time plays as before.
+- The more specific entry wins: one night beats a run of nights, a run
+  beats a repeat with no end. Equally specific: the newest wins.
+- A "No show" entry cancels every less specific show that night ("No shows
+  Nov 2 to 8" plus "Party on Nov 5" still plays the party).
+- A show that would overlap a winning show that night is left out; the
+  Calendar page says so under that night.
+
+The same scheduler (services/tonight.py) plays them: at each show time's
+start it uses that entry's scene group, presses GO and turns the
+projectors on; at its end it stops and turns them off. Show times are
+remembered by key ("2026-10-31:entry7", "2026-10-31:weekly"), so a night
+can have several. When one ends exactly as the next starts the show keeps
+playing with the next group and the projectors stay on. Power-cut catch-up,
+the six-hour end grace and the emergency stop work as for the weekly time.
+Tonight's show on the Dashboard and the phone's Tonight tab show what the
+calendar plans today ("From the calendar: Halloween, 5:00 PM to 11:30 PM",
+or "The calendar says no show tonight"), and the next show by name. The
+mini PC app holds its updates around calendar show times too.
+
+The page has Month, Week and List views (List first on a phone), a colour per
+scene group, the night picked with its details, and "Everything planned"
+with the weekly show time and every entry (past ones folded away).
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/calendar?start=YYYY-MM-DD&days=42` | Viewer: each night's show times (`slots`, with `state` done/running/later), the "no show" entry keeping it dark, shows left out and why, and every entry; up to 124 days |
+| GET/POST | `/api/calendar/entries` | List; add one (operator) |
+| PUT/DELETE | `/api/calendar/entries/{id}` | Operator: change (whole entry) or take off |
+
+`/api/tonight` also returns `source` (weekly or calendar), `title`,
+`entry_id`, `tonight_slots`, `cancelled_by` and `next_title`. Changes go out
+as `calendar` and `tonight` messages.
+
 ## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`

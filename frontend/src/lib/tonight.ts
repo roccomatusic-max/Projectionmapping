@@ -31,8 +31,33 @@ export interface Tonight {
   starts_at: string | null
   ends_at: string | null
   next_starts_at: string | null
+  /** Where tonight's show time comes from: the weekly show time or the calendar. */
+  source: 'weekly' | 'calendar' | null
+  /** Its name, and the calendar entry it comes from. */
+  title: string | null
+  entry_id: number | null
+  /** Every show time today. */
+  tonight_slots: Slot[]
+  /** The calendar's "no show" entry keeping tonight dark. */
+  cancelled_by: string | null
+  /** The name of the next show to start. */
+  next_title: string | null
   last_message: string
   timezone: string
+}
+
+/** One show time on one night. Mirrors SlotOut in backend/app/schemas/tonight.py. */
+export interface Slot {
+  key: string
+  source: 'weekly' | 'calendar'
+  entry_id: number | null
+  title: string
+  show_id: number | null
+  group_id: number | null
+  group_name: string | null
+  starts_at: string
+  ends_at: string
+  power: boolean
 }
 
 export interface PlanChanges {
@@ -96,7 +121,14 @@ export function whenText(iso: string | null, now = new Date()): string {
   const tomorrow = new Date(now)
   tomorrow.setDate(now.getDate() + 1)
   if (date.toDateString() === tomorrow.toDateString()) return `tomorrow ${time}`
-  return `${date.toLocaleDateString([], { weekday: 'long' })} ${time}`
+  // Within the week the weekday says it; further out it needs the date.
+  if (date.getTime() - now.getTime() < 6 * 86_400_000) return `${date.toLocaleDateString([], { weekday: 'long' })} ${time}`
+  return `${date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`
+}
+
+/** "6:30 PM", from an ISO time. */
+export function timeOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 /** A span of time in plain words: "2 h 15 min", "45 min", "under a minute". */

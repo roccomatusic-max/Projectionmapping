@@ -9,6 +9,7 @@
 import {
   AlertsIcon,
   AutomationIcon,
+  CalendarIcon,
   CameraIcon,
   ControlIcon,
   DashboardIcon,
@@ -65,6 +66,13 @@ export const NAV: NavSection[] = [
         icon: RunShowIcon,
         hint: 'GO, pause, stop, blackout and the cue list.',
         keywords: 'go play pause stop blackout cues remote transport',
+      },
+      {
+        to: '/calendar',
+        label: 'Calendar',
+        icon: CalendarIcon,
+        hint: 'Plan shows ahead: which scene group plays on which nights, and when.',
+        keywords: 'schedule scheduling plan planner dates month week holiday no show tonight',
       },
       {
         to: '/mapping/editor',

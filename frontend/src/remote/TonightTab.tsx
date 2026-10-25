@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@/api/client'
-import { CheckIcon, ClockIcon, RunShowIcon, StopIcon } from '@/components/icons'
-import { TimesEditor, groupLines, timeLine } from '@/components/tonight/TonightShow'
+import { CalendarIcon, CheckIcon, ClockIcon, RunShowIcon, StopIcon } from '@/components/icons'
+import { TimesEditor, calendarLines, groupLines, timeLine, usedText } from '@/components/tonight/TonightShow'
 import { TONE_DOT, TONE_TEXT, type Tone } from '@/components/tone'
 import { classNames } from '@/lib/format'
 import { clockText, describeDays, tonightApi, type SceneGroup, type Tonight } from '@/lib/tonight'
@@ -19,7 +19,12 @@ function errorText(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
 }
 
-export default function TonightTab({ session, transport }: { session: Session; transport: TransportState | null }) {
+export default function TonightTab({ session, transport, onCalendar }: {
+  session: Session
+  transport: TransportState | null
+  /** Opens the Calendar tab. */
+  onCalendar?: () => void
+}) {
   const canRun = session.role === 'admin' || session.role === 'operator'
   const [tonight, setTonight] = useState<Tonight | null>(null)
   const [groups, setGroups] = useState<SceneGroup[]>([])
@@ -103,12 +108,9 @@ export default function TonightTab({ session, transport }: { session: Session; t
     })
   const useGroup = (group: SceneGroup) =>
     act(`group-${group.id}`, async () => {
-      setTonight(await tonightApi.useGroup(group.id))
-      const live = transport?.show_id === group.show_id && transport?.status === 'playing'
-      setNotice({
-        tone: 'ok',
-        text: live ? `Every projector is now playing ${group.name}.` : `${group.name} is set for tonight. Every projector will play it when the show starts.`,
-      })
+      const next = await tonightApi.useGroup(group.id)
+      setTonight(next)
+      setNotice(usedText(group, next, transport))
     })
 
   const now = new Date()
@@ -117,6 +119,8 @@ export default function TonightTab({ session, transport }: { session: Session; t
   const playingTonight =
     !!tonight?.show_id && transport?.show_id === tonight.show_id && (transport.status === 'playing' || transport.status === 'paused')
   const multipleShows = shows.length > 1
+  // Tonight is planned by the calendar (a show, or no show), not the weekly time.
+  const onCalendarTonight = !!tonight && (tonight.tonight_slots.some((s) => s.source === 'calendar') || !!tonight.cancelled_by)
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 pb-6 pt-3">
@@ -142,7 +146,12 @@ export default function TonightTab({ session, transport }: { session: Session; t
             {tonight.group_name ?? (groups.length ? 'Pick tonight’s scenes below' : 'No scene group yet')}
           </p>
           <div className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[15px]">
-            {tonight.enabled && tonight.start_at ? (
+            {calendarLines(tonight).map((line, i) => (
+              <p key={line} className={i === 0 ? 'font-medium text-sky-200' : 'text-slate-200'}>
+                {line}
+              </p>
+            ))}
+            {tonight.enabled && tonight.start_at && !onCalendarTonight ? (
               <>
                 <p className="text-slate-200">
                   {clockText(tonight.start_at)} to {clockText(tonight.end_at)}
@@ -201,6 +210,14 @@ export default function TonightTab({ session, transport }: { session: Session; t
             <ClockIcon size={20} aria-hidden /> {tonight.enabled ? 'Change time' : 'Set time'}
           </button>
         </div>
+      )}
+      {onCalendar && (
+        <button
+          className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-panel-900 text-[15px] font-medium text-slate-200 ring-1 ring-white/[0.06] active:scale-[0.98]"
+          onClick={onCalendar}
+        >
+          <CalendarIcon size={18} aria-hidden /> Plan shows on the calendar
+        </button>
       )}
       {!canRun && <p className="text-center text-sm text-slate-500">Your account can see tonight&apos;s show but not change it.</p>}
 

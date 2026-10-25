@@ -329,7 +329,7 @@ async def busy_reason() -> str | None:
     from app.db.models import AutomationRun
     from app.db.session import session_scope
     from app.services.mapping import transport
-    from app.services.tonight import current_window, load_plan, next_start
+    from app.services.tonight import show_time
 
     state = transport.snapshot()
     if state.emergency is not None:
@@ -339,14 +339,12 @@ async def busy_reason() -> str | None:
     async with session_scope() as session:
         running = await session.scalar(
             select(func.count()).select_from(AutomationRun).where(AutomationRun.status == "running"))
-        plan = await load_plan(session)
-        if plan.enabled and plan.show_id is not None:
-            now = datetime.now(settings.tz)
-            if current_window(plan, now):
-                return "it is show time"
-            start = next_start(plan, now)
-            if start is not None and start - now < SHOW_MARGIN:
-                return "the show starts soon"
+        now = datetime.now(settings.tz)
+        current, following = await show_time(session, now)
+        if current is not None and current.show_id is not None:
+            return "it is show time"
+        if following is not None and following.start - now < SHOW_MARGIN:
+            return "the show starts soon"
     if running:
         return "an automation is running"
     return None

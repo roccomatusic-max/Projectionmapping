@@ -37,6 +37,7 @@ from app.api.routes import (
     mapping_scenes,
     monitoring,
     projectors,
+    show_calendar,
     system,
     tonight,
     updates,
@@ -245,7 +246,7 @@ for router in (
     system.router, auth.router, projectors.router, groups.router,
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
-    mapping_maps.router, tonight.router, updates.router, emergency.router,
+    mapping_maps.router, tonight.router, show_calendar.router, updates.router, emergency.router,
     ws.router,
 ):
     app.include_router(router, prefix="/api")

@@ -20,8 +20,8 @@ from app.paths import alembic_dir
 
 MAPPING_TABLES = {"media_assets", "mapping_shows", "mapping_outputs", "mapping_cues",
                   "mapping_players", "mapping_scenes", "mapping_maps",
-                  "mapping_scene_groups", "show_plan"}
-HEAD_REVISION = "d3f7b1a9c5e2"
+                  "mapping_scene_groups", "show_plan", "show_calendar"}
+HEAD_REVISION = "f6a2c8e4b1d7"
 
 
 def test_classification():
