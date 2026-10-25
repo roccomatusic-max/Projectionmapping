@@ -10,7 +10,10 @@ and every time the computer signs in it:
   small control messages during the show,
 - runs the camera when one is plugged in, for calibration and people,
 - keeps the computer on day and night: it never sleeps, hibernates, turns
-  its screen off or locks, also after a show ends (see *Staying on 24/7*).
+  its screen off or locks, also after a show ends (see *Staying on 24/7*),
+- shows the status screen on a monitor plugged in beside the projector:
+  the show, the projector and a picture of the output (see *A monitor
+  beside the projector*).
 
 The first time, the projector shows a six-letter code. Approve it on
 **Mapping → Players** and pick the output. A camera plugged into the mini PC
@@ -151,6 +154,43 @@ password-free sign-in above.)
 The only things that turn a mini PC off are **Shut down** and **Restart
 computer** on the Players page, and its power button.
 
+### A monitor beside the projector
+
+Plug a monitor into the mini PC (any free HDMI or DisplayPort) and, within a
+few seconds, it shows the **status screen**, large enough to read from
+across the room:
+
+- the show: playing, paused or stopped, the cue and how long it has been
+  on, the scene on this projector, and Tonight's show times;
+- the emergency stop, in red across the top, while it is on;
+- the projector this mini PC drives: answering or not, power, shutter,
+  input, lamp hours, temperatures, fans, lamp, filter and cover, and any
+  errors or warnings;
+- a picture of what this mini PC is putting out to the projector, about
+  once a second. It is a copy of the very frame the output draws, made
+  only while the status screen is on; nothing photographs the screen.
+
+The projector keeps the output exactly as before, full screen. With no
+monitor, nothing changes. Nothing to set up and no reinstall: the app finds
+the second screen by itself.
+
+Which screen is the projector: the one the output was on when the monitor
+was first plugged in. The app remembers it, so after a restart, or the
+projector being turned off and on, the output goes back to the projector.
+The status screen is never left on the projector: if it ever lands there,
+it is closed at once.
+
+The Players page has a **Monitor** line on each mini PC saying what its
+monitor shows, with:
+
+- **Swap screens**, when the output is on the monitor and the status screen
+  on the projector: it puts each on the other screen;
+- **Use as second screen**, when Windows shows the same picture on both
+  (Duplicate): it switches Windows to Extend, like Windows key + P.
+
+To turn the status screen off on one mini PC, add `--second-screen off` to
+its shortcut (see Options).
+
 ## Everyday use
 
 - **To reach the desktop**: press the Windows key, click the Mini PC icon by
@@ -204,6 +244,7 @@ Add them to the Mini PC shortcut (Start menu and Startup folder) after
 | `--name "Left tower"` | How this computer is listed on the Players tab (default: its computer name) |
 | `--camera off` | Never use a camera. Also `realsense`, `orbbec`, `oak`, `webcam`, `webcam:0`, `webcam:1`; default `auto` (a depth camera if one is plugged in, otherwise a webcam) |
 | `--browser "C:\path\to\chrome.exe"` | Chrome or Edge somewhere unusual. Default: Chrome if installed, otherwise Edge |
+| `--second-screen off` | No status screen on a monitor beside the projector. `--second-screen auto` turns it back on |
 
 Settings and logs are in `%LOCALAPPDATA%\ProjectionMapping MiniPC`
 (**Open the log folder** in the tray menu). `config.json` there holds this

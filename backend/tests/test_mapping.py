@@ -392,7 +392,8 @@ async def test_player_pairing_flow(api):
     assert assignment.status_code == 200, assignment.text
     assert assignment.json() == {"player_id": first["player_id"], "name": "Left mini PC",
                                  "output_id": output["id"], "show_id": show["id"],
-                                 "commands": [], "picture": False}
+                                 "commands": [], "picture": False, "picture_ms": 3000,
+                                 "picture_width": 480}
     listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
     assert listed["online"] is True
     assert listed["report"]["fps"] == 60

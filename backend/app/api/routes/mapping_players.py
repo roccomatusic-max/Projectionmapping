@@ -18,7 +18,8 @@ picks up its commands with its heartbeat (reload, the status overlay),
 which every installed Mini PC app has. The Mini PC app itself checks in
 every few seconds with the computer's secret (since it learned to) and
 picks up what only it can do: restart the output window, restart or shut
-down the computer, install a newer Mini PC app (services/minipc_updates.py).
+down the computer, install a newer Mini PC app (services/minipc_updates.py),
+swap which screen is the projector when a monitor is plugged in beside it.
 Commands live in memory for a short while only, so a
 restart asked for before the server itself restarted never happens later.
 """
@@ -70,6 +71,7 @@ from app.schemas.mapping import (
     PlayerPicture,
     PlayerReport,
     PlayerScreen,
+    PlayerScreens,
     PlayerUpdate,
 )
 from app.services import minipc_updates
@@ -113,10 +115,21 @@ _pictures: dict[int, tuple[bytes, float]] = {}
 _watched_until = 0.0
 #: How long one look at the live view keeps the pictures coming.
 WATCH_SECONDS = 30.0
+#: The status screen on a mini PC's own second monitor (/player/screen)
+#: watches that one mini PC's pictures, day and night: by player id, until
+#: when. It asks for them faster and larger than the Dashboard, and never
+#: makes the other mini PCs send theirs.
+_watched_close: dict[int, float] = {}
+CLOSE_PICTURE_MS = 1000
+CLOSE_PICTURE_WIDTH = 960
 
 
 def _watching() -> bool:
     return _now() < _watched_until
+
+
+def _watched_closely(player_id: int) -> bool:
+    return _now() < _watched_close.get(player_id, 0.0)
 
 
 def _jpeg(image: str) -> bytes:
@@ -154,10 +167,14 @@ def _app_info(player: MappingPlayer) -> PlayerApp | None:
         return None
     info = info if isinstance(info, dict) else {}
     version = info.get("version")
+    screens = None
+    if isinstance(info.get("screens"), dict):
+        with contextlib.suppress(ValueError):
+            screens = PlayerScreens(**info["screens"])
     return PlayerApp(connected=app_connected(player), power=bool(info.get("power")),
                      computer=info.get("computer"), mac=info.get("mac"), version=version,
                      awake=info.get("awake") if isinstance(info.get("awake"), list) else None,
-                     **minipc_updates.get().describe(player.id, version))
+                     screens=screens, **minipc_updates.get().describe(player.id, version))
 
 
 def wake_on_lan(mac: str, near: str | None = None) -> None:
@@ -379,6 +396,7 @@ async def delete_player(player_id: int, session: SessionDep, admin: RequireAdmin
     for gone in removed:
         _app_seen.pop(gone.id, None)
         _pictures.pop(gone.id, None)
+        _watched_close.pop(gone.id, None)
         minipc_updates.get().forget(gone.id)
         for target in ("page", "app"):
             _queued.pop((gone.id, target), None)
@@ -474,6 +492,30 @@ async def command(player_id: int, payload: PlayerCommand, session: SessionDep,
             message=f"{player.name} is updating to {updates.latest.version}. The projector keeps "
                     "the output; the app restarts in about a minute. The computer does not restart.")
 
+    if action in ("swap_screens", "extend_screens"):
+        screens = (info.get("screens") if isinstance(info, dict) else None) or {}
+        if not app or not screens:
+            raise refuse(f"{player.name} runs an older Mini PC app without the status screen. It "
+                         "gets it with its next update, by itself.")
+        if action == "swap_screens" and screens.get("count", 1) < 2:
+            raise refuse(f"{player.name} has only one screen: plug a monitor in beside the "
+                         "projector first.")
+        if action == "extend_screens" and screens.get("state") != "duplicate":
+            raise refuse(f"{player.name}'s screens already show different pictures.")
+        _queue(player.id, "app", action)
+        word = ("swap its screens" if action == "swap_screens"
+                else "use its monitor as a second screen")
+        session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="player_screens",
+                          message=f"{admin.username} asked mini PC {player.name} to {word}"))
+        await session.commit()
+        return PlayerCommandResult(
+            via="app",
+            message=f"Swapping the screens on {player.name}: the output moves to the other "
+                    "screen and the status screen to this one, in a few seconds."
+            if action == "swap_screens" else
+            f"{player.name} now shows the status screen on its monitor and the output on the "
+            "projector. Both screens go dark for a moment.")
+
     if action == "restart_output":
         if app:
             # The app closes and reopens the browser: this also mends a page
@@ -541,7 +583,8 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
     first = player.id not in _app_seen
     _app_seen[player.id] = _now()
     info = {"power": payload.power, "computer": payload.computer, "mac": payload.mac,
-            "version": payload.version, "awake": payload.awake}
+            "version": payload.version, "awake": payload.awake,
+            "screens": payload.screens.model_dump() if payload.screens else None}
     old = (player.report or {}).get("app")
     updates = minipc_updates.get()
     before = updates.describe(player.id, payload.version)
@@ -600,15 +643,19 @@ async def page_picture(payload: PlayerPicture, session: SessionDep, user: Curren
 
 @router.get("/{player_id}/picture", response_model=None,
             responses={200: {"content": {"image/jpeg": {}}}})
-async def picture(player_id: int, session: SessionDep, _: RequireViewer) -> Response:
+async def picture(player_id: int, session: SessionDep, user: RequireViewer) -> Response:
     """The latest picture of what this mini PC is showing, for the live view.
 
     Asking for it is what makes the mini PCs send pictures, for the next
-    half a minute. ``X-Picture-Age`` is its age in seconds.
+    half a minute. ``X-Picture-Age`` is its age in seconds. Asked by the
+    mini PC itself (its status screen), only that one sends, more often.
     """
     global _watched_until
-    await _load(session, player_id)
-    _watched_until = _now() + WATCH_SECONDS
+    player = await _load(session, player_id)
+    if player.user_id is not None and player.user_id == user.id:
+        _watched_close[player_id] = _now() + WATCH_SECONDS
+    else:
+        _watched_until = _now() + WATCH_SECONDS
     held = _pictures.get(player_id)
     if held is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -636,7 +683,10 @@ async def report(payload: PlayerReport, request: Request, session: SessionDep,
                      **({"address": address} if address else {})}
     await session.commit()
     out = await _player_out(session, player)
+    close = _watched_closely(player.id)
     return PlayerAssignment(player_id=player.id, name=player.name,
                             output_id=out.output_id, show_id=out.show_id,
                             commands=_take(player.id, "page") if player.kind != "camera" else [],
-                            picture=_watching() and player.kind != "camera")
+                            picture=(_watching() or close) and player.kind != "camera",
+                            picture_ms=CLOSE_PICTURE_MS if close else 3000,
+                            picture_width=CLOSE_PICTURE_WIDTH if close else 480)

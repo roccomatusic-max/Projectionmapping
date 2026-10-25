@@ -240,6 +240,18 @@ closing the output window (`services/minipc_updates.py`,
 `minipc/selfupdate.py`, minipc/README.md "Updates"). Each card shows the
 version, the update state and **Update now**.
 
+A monitor plugged into a mini PC beside its projector shows the **status
+screen**, `/player/screen`: the show and cue, Tonight's show, the emergency
+stop, the projector this mini PC drives (power, temperatures, lamp, fan,
+filter and cover checks, errors) and a picture of its own output. The Mini
+PC app opens it in a second kiosk window on the screen that is not the
+projector, and only when there is one (`minipc/screens.py`); the page signs
+in as the mini PC, like its player page. Asked for by its own mini PC, the
+output picture comes about once a second at 960 px, and only from that mini
+PC (the Dashboard's live view keeps its 3 s for every mini PC). The card's
+**Monitor** line has **Swap screens** and, when Windows mirrors the two
+screens, **Use as second screen**.
+
 Approval creates a dedicated viewer account for the player, so a player
 can watch the show but cannot run it or change it.
 

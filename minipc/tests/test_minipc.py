@@ -519,6 +519,21 @@ def test_check_in_sends_the_identity_and_returns_the_commands(tmp_path, monkeypa
     assert url == "http://10.0.0.5:8765/api/mapping/players/app"
     assert body["device_id"] == app.config["device_id"] and body["secret"] == app.config["secret"]
     assert body["mac"] == "aa:bb:cc:dd:ee:01"
+    assert body["screens"] is None  # no status screen here (not Windows)
+
+    app.second = SimpleNamespace(report=lambda: {"state": "on", "count": 2, "projector": "1920 × 1200",
+                                                 "second": "1920 × 1080"})
+    app.check_in()
+    assert sent[-1][1]["screens"]["state"] == "on"
+
+
+def test_the_players_page_can_swap_the_screens(tmp_path):
+    app = minipc.MiniPC(minipc.Config(tmp_path / "config.json"), tmp_path)
+    app.obey(["swap_screens", "extend_screens"])  # nothing to swap: ignored
+    asked = []
+    app.second = SimpleNamespace(swap=lambda: asked.append("swap"), extend=lambda: asked.append("extend"))
+    app.obey(["swap_screens", "extend_screens"])
+    assert asked == ["swap", "extend"]
 
 
 def test_check_in_quietly_asks_nothing_of_an_older_or_missing_server(tmp_path, monkeypatch):

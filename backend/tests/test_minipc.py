@@ -156,11 +156,13 @@ def _forget_commands():
     players._app_seen.clear()
     players._pictures.clear()
     players._watched_until = 0.0
+    players._watched_close.clear()
     yield
     players._queued.clear()
     players._app_seen.clear()
     players._pictures.clear()
     players._watched_until = 0.0
+    players._watched_close.clear()
 
 
 async def paired(api, headers) -> tuple[int, dict]:
@@ -378,6 +380,71 @@ async def test_the_live_view_shows_what_each_mini_pc_puts_out(api):
     await api.delete(f"/api/mapping/players/{player_id}", headers=headers)
     assert (await api.get(f"/api/mapping/players/{player_id}/picture",
                           headers=headers)).status_code == 404
+
+
+async def test_the_status_screen_beside_the_projector_gets_its_own_pictures_faster(api):
+    """The second monitor on a mini PC shows its own output, every second."""
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+
+    # The status screen signs in as its own mini PC and asks for its picture.
+    asked = await api.get(f"/api/mapping/players/{player_id}/picture", headers=token)
+    assert asked.status_code == 204
+    beat = (await api.post("/api/mapping/players/me", headers=token, json={})).json()
+    assert beat["picture"] is True
+    assert (beat["picture_ms"], beat["picture_width"]) == (1000, 960)
+
+    # It does not make every other mini PC send pictures day and night.
+    import app.api.routes.mapping_players as players
+    assert not players._watching()
+
+    # The Dashboard looking keeps the usual pace for the others.
+    players._watched_close.clear()
+    await api.get(f"/api/mapping/players/{player_id}/picture", headers=headers)
+    beat = (await api.post("/api/mapping/players/me", headers=token, json={})).json()
+    assert (beat["picture"], beat["picture_ms"], beat["picture_width"]) == (True, 3000, 480)
+
+
+SCREENS = {"state": "on", "count": 2, "projector": "1920 × 1200, on the left",
+           "second": "1920 × 1080, on the right"}
+
+
+async def test_the_players_page_shows_the_second_screen_and_swaps_it(api):
+    headers = await login(api)
+    player_id, _token = await paired(api, headers)
+
+    await app_checkin(api, version="1.0.76", awake=[])  # before the status screen
+    listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
+    assert listed["app"]["screens"] is None
+    refused = await command(api, headers, player_id, "swap_screens")
+    assert refused.status_code == 409 and "next update" in refused.json()["detail"]
+
+    await app_checkin(api, version="1.0.80", awake=[], screens={**SCREENS, "state": "one", "count": 1,
+                                                                "second": None})
+    refused = await command(api, headers, player_id, "swap_screens")
+    assert refused.status_code == 409 and "only one screen" in refused.json()["detail"]
+    refused = await command(api, headers, player_id, "extend_screens")
+    assert refused.status_code == 409
+
+    await app_checkin(api, version="1.0.80", awake=[], screens=SCREENS)
+    listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
+    assert listed["app"]["screens"] == SCREENS
+    swapped = await command(api, headers, player_id, "swap_screens")
+    assert swapped.status_code == 200, swapped.text
+    assert swapped.json()["via"] == "app"
+    assert (await app_checkin(api, version="1.0.80", screens=SCREENS))["commands"] == ["swap_screens"]
+
+    # Windows showing the same picture on both: one button makes it a second screen.
+    mirrored = {"state": "duplicate", "count": 1, "projector": "1920 × 1200", "second": None}
+    await app_checkin(api, version="1.0.80", screens=mirrored)
+    extended = await command(api, headers, player_id, "extend_screens")
+    assert extended.status_code == 200, extended.text
+    assert (await app_checkin(api, version="1.0.80", screens=mirrored))["commands"] == ["extend_screens"]
+
+    # Nonsense from an app is refused, not stored.
+    bad = await api.post("/api/mapping/players/app", json={
+        "device_id": PLAYER["device_id"], "secret": SECRET, "screens": {"state": "sideways"}})
+    assert bad.status_code == 422
 
 
 # -- the Mini PC app updating itself ------------------------------------------------

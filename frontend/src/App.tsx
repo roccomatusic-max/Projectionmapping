@@ -24,6 +24,7 @@ const Monitoring = lazy(() => import('@/pages/Monitoring'))
 const Mapping = lazy(() => import('@/pages/Mapping'))
 const OutputPage = lazy(() => import('@/mapping/OutputPage'))
 const PlayerPage = lazy(() => import('@/mapping/PlayerPage'))
+const ScreenPage = lazy(() => import('@/mapping/ScreenPage'))
 const RemotePage = lazy(() => import('@/remote/RemotePage'))
 
 export default function App() {
@@ -41,6 +42,15 @@ export default function App() {
     clearSession()
     setSession(null)
   }, [])
+
+  // The status screen on a monitor beside the projector signs in as its mini PC.
+  if (location.pathname === '/player/screen') {
+    return (
+      <Suspense fallback={null}>
+        <ScreenPage />
+      </Suspense>
+    )
+  }
 
   // A player pairs itself and holds its own token; it never sees the login.
   if (location.pathname === '/player') {
