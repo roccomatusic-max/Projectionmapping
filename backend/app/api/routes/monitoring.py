@@ -254,3 +254,176 @@ async def usage_analytics(
         "usage": sorted(series, key=lambda r: (r["projector_id"], r["day"])),
         "faults": [{"projector_id": r.projector_id, "count": r.count} for r in fault_rows],
     }
+
+
+#: Points per sensor on the temperature chart, whatever the range.
+TEMPERATURE_CHART_POINTS = 240
+
+
+def _fahrenheit(celsius: float) -> float:
+    return round(celsius * 9 / 5 + 32, 1)
+
+
+def _reading(celsius: float, at: datetime) -> dict:
+    return {"celsius": round(celsius, 1), "fahrenheit": _fahrenheit(celsius),
+            "recorded_at": as_utc(at)}
+
+
+def _temperature_state(celsius: float | None, limit: float | None) -> str:
+    if celsius is None:
+        return "unknown"
+    if limit is None:
+        return "ok"
+    if celsius >= limit:
+        return "over"
+    if celsius >= limit - settings.temperature_warn_margin_c:
+        return "near"
+    return "ok"
+
+
+@router.get("/analytics/temperatures")
+async def temperature_history(
+    session: SessionDep, _: RequireViewer,
+    projector_id: int = Query(...),
+    hours: int = Query(12, ge=1, le=24 * 7),
+) -> dict:
+    """One projector's sensor temperatures over the last ``hours``.
+
+    The chart gets at most :data:`TEMPERATURE_CHART_POINTS` points per
+    sensor. Each point is the hottest sample in its slice of time, so a
+    short spike is never averaged away. Slices with no sample (projector
+    unplugged, or not answering) are null, so the line shows the gap.
+    """
+    from app.db.models import Telemetry
+    from app.drivers.panasonic_ptdz13k import TEMPERATURE_SENSORS
+    from app.services.monitor import TEMPERATURE_METRIC_PREFIX
+
+    projector = await session.get(Projector, projector_id)
+    if projector is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projector not found")
+    state = await session.get(ProjectorState, projector_id)
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=hours)
+
+    rows = (await session.execute(
+        select(Telemetry.metric, Telemetry.value_num, Telemetry.recorded_at)
+        .where(Telemetry.projector_id == projector_id,
+               Telemetry.metric.startswith(TEMPERATURE_METRIC_PREFIX, autoescape=True),
+               Telemetry.recorded_at >= since)
+        .order_by(Telemetry.recorded_at)
+    )).all()
+
+    labels = {key: label for _, key, label in TEMPERATURE_SENSORS}
+    limits = {"intake": settings.temperature_intake_limit_c}
+    bucket_seconds = hours * 3600 / TEMPERATURE_CHART_POINTS
+    buckets: list[dict[str, float | None]] = [{} for _ in range(TEMPERATURE_CHART_POINTS)]
+    hottest: dict[str, tuple[float, datetime]] = {}
+    seen: list[str] = []
+    for metric, value, at in rows:
+        if value is None:
+            continue
+        key = metric[len(TEMPERATURE_METRIC_PREFIX):]
+        if key not in seen:
+            seen.append(key)
+        at = as_utc(at)
+        index = min(int((at - since).total_seconds() // bucket_seconds),
+                    TEMPERATURE_CHART_POINTS - 1)
+        bucket = buckets[max(index, 0)]
+        if bucket.get(key) is None or value > bucket[key]:
+            bucket[key] = value
+        if key not in hottest or value > hottest[key][0]:
+            hottest[key] = (value, at)
+
+    # The newest reading of each sensor, even when it is older than the range.
+    order = [key for _, key, _ in TEMPERATURE_SENSORS]
+    latest_rows = {}
+    for key in order + [k for k in seen if k not in order]:
+        row = (await session.execute(
+            select(Telemetry.value_num, Telemetry.recorded_at)
+            .where(Telemetry.projector_id == projector_id,
+                   Telemetry.metric == f"{TEMPERATURE_METRIC_PREFIX}{key}")
+            .order_by(Telemetry.recorded_at.desc()).limit(1)
+        )).first()
+        if row is not None and row.value_num is not None:
+            latest_rows[key] = row
+    keys = list(latest_rows)
+
+    fresh_within = timedelta(seconds=max(settings.poll_diagnostics * 3, 180))
+    sensors = []
+    for key in keys:
+        limit = limits.get(key)
+        latest = latest_rows.get(key)
+        peak = hottest.get(key)
+        latest_at = as_utc(latest.recorded_at) if latest else None
+        sensors.append({
+            "key": key,
+            "label": labels.get(key, key.replace("_", " ").capitalize()),
+            "limit_celsius": limit,
+            "limit_fahrenheit": _fahrenheit(limit) if limit is not None else None,
+            "warn_celsius": (limit - settings.temperature_warn_margin_c
+                             if limit is not None else None),
+            "latest": _reading(latest.value_num, latest.recorded_at) if latest else None,
+            "latest_is_current": bool(latest_at and now - latest_at <= fresh_within),
+            "state": (_temperature_state(latest.value_num, limit)
+                      if latest and now - latest_at <= fresh_within else "unknown"),
+            "hottest": _reading(*peak) if peak else None,
+            "hottest_state": _temperature_state(peak[0] if peak else None, limit),
+        })
+
+    overall = None
+    for sensor in sensors:
+        peak = sensor["hottest"]
+        if peak and (overall is None or peak["celsius"] > overall["celsius"]):
+            overall = {**peak, "key": sensor["key"], "label": sensor["label"]}
+
+    # What the projector itself says about its temperature (PJLink ERST),
+    # and why there may be no numbers at all.
+    equipment = ((state.extra or {}).get("equipment") or {}) if state else {}
+    reported = equipment.get("temperature") or {}
+    value = reported.get("value") if isinstance(reported.get("value"), dict) else {}
+    condition = value.get("condition")
+    if condition is None and state and isinstance(state.error_status, dict):
+        erst = state.error_status.get("value")
+        if isinstance(erst, dict):
+            condition = erst.get("temperature")
+
+    def both(celsius: float) -> str:
+        return f"{_fahrenheit(celsius):.0f} °F ({celsius:g} °C)"
+
+    warnings = []
+    for sensor in sensors:
+        limit = sensor["limit_celsius"]
+        if sensor["state"] in ("near", "over") and sensor["latest"]:
+            word = "at or above" if sensor["state"] == "over" else "close to"
+            warnings.append(
+                f"{sensor['label']} is {both(sensor['latest']['celsius'])}, {word} the "
+                f"projector's limit of {both(limit)}."
+            )
+        elif sensor["hottest_state"] in ("near", "over") and sensor["hottest"]:
+            warnings.append(
+                f"{sensor['label']} reached {both(sensor['hottest']['celsius'])} in this "
+                f"time, close to the projector's limit of {both(limit)}. It is cooler now."
+            )
+    if condition in ("warning", "error"):
+        warnings.insert(0, "The projector itself reports a temperature "
+                           f"{'fault' if condition == 'error' else 'warning'}.")
+
+    return {
+        "projector_id": projector_id,
+        "hours": hours,
+        "since": since,
+        "until": now,
+        "bucket_seconds": round(bucket_seconds),
+        "sample_interval_seconds": settings.poll_diagnostics,
+        "retention_days": settings.temperature_retention_days,
+        "sensors": sensors,
+        "hottest": overall,
+        "condition": condition,
+        "note": reported.get("note") if not sensors else None,
+        "warnings": warnings,
+        "points": [
+            {"t": int((since + timedelta(seconds=bucket_seconds * (i + 0.5))).timestamp() * 1000),
+             **{key: (round(b[key], 1) if b.get(key) is not None else None) for key in keys}}
+            for i, b in enumerate(buckets)
+        ],
+    }

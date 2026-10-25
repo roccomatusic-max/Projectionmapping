@@ -214,6 +214,17 @@ temperature, cover and filter condition with PJLink `%1ERST` on port 4352
 5. If Fans shows a note instead of OK, read it: PJLink is off, or the
    projector has its own PJLink password (fill in **PJLink password** under
    Edit).
+6. Leave the projector on for a few minutes, then open **Health →
+   Monitoring**: **Projector temperatures** should show one line per sensor
+   for that projector. Every diagnostics poll (once a minute) stores one
+   sample per sensor as `temp_<sensor>` telemetry rows, kept for
+   `TEMPERATURE_RETENTION_DAYS` (30). The intake air limit is
+   `TEMPERATURE_INTAKE_LIMIT_C` (45 °C, the operating temperature on the
+   PT-DZ13K and PT-DZ770 spec sheets; set 40 if the projector runs in high
+   altitude mode) and the page warns from
+   `TEMPERATURE_WARN_MARGIN_C` (5 °C) below it. Exhaust air and the optics
+   module have no published limit; the projector's own PJLink temperature
+   condition covers those.
 
 ---
 

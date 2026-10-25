@@ -135,8 +135,22 @@ class Settings(BaseSettings):
 
     # -- retention ---------------------------------------------------------
     telemetry_retention_days: int = 365
+    #: Projector temperature samples (one per sensor per diagnostics poll,
+    #: about 4,300 rows a day per projector) are kept this long. The
+    #: Monitoring chart goes back a week at most.
+    temperature_retention_days: int = 30
     command_log_retention_days: int = 180
     event_retention_days: int = 365
+
+    # -- projector temperatures ----------------------------------------------
+    #: Highest room (intake air) temperature the Panasonic projectors are
+    #: rated for: the PT-DZ13K and PT-DZ770 spec sheets list an operating
+    #: temperature of 0-45 °C (0-40 °C in high altitude mode). Exhaust air
+    #: and the optics module have no published limit; for those the
+    #: projector's own temperature warning (PJLink) is what counts.
+    temperature_intake_limit_c: float = 45.0
+    #: Monitoring warns when a sensor is this close to its limit.
+    temperature_warn_margin_c: float = 5.0
 
     @field_validator("cors_origins", "alert_email_to", mode="before")
     @classmethod

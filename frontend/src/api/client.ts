@@ -19,6 +19,7 @@ import type {
   Role,
   Scene,
   TelemetryPoint,
+  TemperatureHistory,
 } from './types'
 
 const TOKEN_KEY = 'pc.token'
@@ -220,9 +221,9 @@ export const api = {
     }),
 
   // -- history ------------------------------------------------------------
-  telemetry: (id: number, metric?: string, days = 7) =>
+  telemetry: (id: number, metric?: string, days = 7, prefix?: string) =>
     request<{ points: TelemetryPoint[] }>(
-      `/projectors/${id}/telemetry?days=${days}${metric ? `&metric=${metric}` : ''}`,
+      `/projectors/${id}/telemetry?days=${days}${metric ? `&metric=${metric}` : ''}${prefix ? `&prefix=${encodeURIComponent(prefix)}` : ''}`,
     ),
   commandHistory: (id: number, limit = 100) =>
     request<{ commands: CommandLogRow[] }>(`/projectors/${id}/commands?limit=${limit}`),
@@ -272,6 +273,8 @@ export const api = {
       usage: Array<{ projector_id: number; day: string; estimated_on_hours: number }>
       faults: Array<{ projector_id: number; count: number }>
     }>(`/analytics/usage?days=${days}`),
+  temperatures: (projectorId: number, hours: number) =>
+    request<TemperatureHistory>(`/analytics/temperatures?projector_id=${projectorId}&hours=${hours}`),
 
   // -- automation ---------------------------------------------------------
   listAutomations: () => request<Automation[]>('/automations'),
