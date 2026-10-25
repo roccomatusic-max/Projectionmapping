@@ -112,6 +112,10 @@ jobs:
           if (Test-Path "$app\MiniPC.exe") { throw 'the uninstaller left MiniPC.exe behind' }
           Get-Process chrome, msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           $global:LASTEXITCODE = 0
+      - name: A mini PC updates itself from the main server and comes back
+        shell: pwsh
+        timeout-minutes: 10
+        run: python minipc/tests/windows_selfupdate_e2e.py dist/MiniPC-Setup.exe "1.0.${{ github.run_number }}"
       - uses: actions/upload-artifact@v4
         with:
           name: MiniPC-Setup
