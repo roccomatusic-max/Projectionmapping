@@ -24,6 +24,7 @@ import {
 } from '@/components/ui'
 import { Glyph, type Tone } from '@/components/graphics'
 import TemperatureHistory from '@/components/monitoring/TemperatureHistory'
+import { ChartTooltip } from '@/components/monitoring/ChartTooltip'
 import { HeaterChart } from '@/components/heater/HeaterChart'
 import { HeaterStatus, useHeaters } from '@/components/heater/HeaterStatus'
 import { classNames, formatDateTime, relativeTime } from '@/lib/format'
@@ -260,12 +261,14 @@ export default function Monitoring({ session }: { session: Session }) {
                 <XAxis dataKey="day" {...CHART_AXIS} tickLine={false} />
                 <YAxis {...CHART_AXIS} tickLine={false} axisLine={false} unit="h" />
                 <Tooltip
-                  contentStyle={{
-                    background: '#141820',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
+                  content={
+                    <ChartTooltip
+                      format={(value, key) => [
+                        `${value.toLocaleString()} h`,
+                        key.replace(/^lamp(\d+)_hours$/, 'Lamp $1'),
+                      ]}
+                    />
+                  }
                 />
                 {lampMetrics.map((metric, index) => (
                   <Line

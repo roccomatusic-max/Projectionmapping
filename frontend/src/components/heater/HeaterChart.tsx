@@ -17,6 +17,7 @@ import {
   YAxis,
 } from 'recharts'
 import { Banner, Panel, Spinner } from '@/components/ui'
+import { ChartTooltip } from '@/components/monitoring/ChartTooltip'
 import { HeaterIcon } from '@/components/icons'
 import { classNames } from '@/lib/format'
 import { heaterApi, toF, type Heater, type HeaterHistory } from '@/lib/heater'
@@ -129,13 +130,17 @@ export function HeaterChart({ heater }: { heater: Heater }) {
               <YAxis yAxisId="temp" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} unit="°F" width={52} domain={[low, high]} allowDecimals={false} />
               <YAxis yAxisId="on" orientation="right" hide domain={[0, 1]} />
               <Tooltip
-                labelFormatter={(ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-                formatter={(value: number, key: string) =>
-                  key === 'on'
-                    ? [value >= 0.99 ? 'on' : value <= 0.01 ? 'off' : `on ${Math.round(value * 100)}% of the time`, 'Heater']
-                    : [`${Math.round(value)} °F`, key === 'inside' ? 'Inside the box' : 'Outside']
+                content={
+                  <ChartTooltip
+                    title={(ms) => new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+                    format={(value, key) =>
+                      key === 'on'
+                        ? [value >= 0.99 ? 'on' : value <= 0.01 ? 'off' : `on ${Math.round(value * 100)}% of the time`, 'Heater']
+                        : [`${Math.round(value)} °F`, key === 'inside' ? 'Inside the box' : 'Outside']
+                    }
+                    last={['on']}
+                  />
                 }
-                contentStyle={{ background: '#141820', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, fontSize: 12 }}
               />
               <Area yAxisId="on" type="stepAfter" dataKey="on" stroke="none" fill={HEAT} fillOpacity={0.22} isAnimationActive={false} />
               <ReferenceLine yAxisId="temp" y={onLine} stroke={INSIDE} strokeDasharray="4 4" strokeOpacity={0.6}
