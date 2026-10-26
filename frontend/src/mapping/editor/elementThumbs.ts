@@ -106,7 +106,16 @@ function stamp(ctx: CanvasRenderingContext2D, style: string, layer: SceneLayer, 
   ctx.restore()
 }
 
-const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish'])
+const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees'])
+/** Small things that come many at a time: shown as a scatter. */
+const SCATTER = new Set(['snowfall', 'leaves', 'petals', 'confetti', 'falling-hearts', 'clovers', 'fireflies', 'rising-bubbles'])
+/** Ones that float up: three of them. */
+const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons'])
+
+function hash(n: number) {
+  const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453
+  return s - Math.floor(s)
+}
 
 function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: number) {
   const style = layer.style
@@ -126,9 +135,48 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     }
     return
   }
-  if (style === 'balloons') {
-    ;[[0.3, 0.55, 0], [0.5, 0.42, 1], [0.7, 0.58, 2]].forEach(([x, y, i]) =>
-      stamp(ctx, style, layer, 'main', i, W * x, H * y + Math.sin(time * 2 + i) * H * 0.03, H * 0.8))
+  if (RISERS.has(style)) {
+    // Balloons keep a colour each; lanterns flicker and jellyfish pulse.
+    const big = style === 'hot-air-balloons' ? 0.62 : style === 'balloons' ? 0.8 : 0.6
+    ;[[0.27, 0.55, 0], [0.5, 0.42, 1], [0.73, 0.58, 2]].forEach(([x, y, i]) =>
+      stamp(ctx, style, layer, 'main', style === 'balloons' || style === 'hot-air-balloons' ? i : f + i * 3,
+        W * x, H * y - ((time * 0.04 + i * 0.1) % 0.2) * H * 0.3, H * big))
+    return
+  }
+  if (SCATTER.has(style)) {
+    const frames = main.frames
+    const many = style === 'fireflies' ? 18 : 14
+    const big = { leaves: 0.2, 'falling-hearts': 0.18, clovers: 0.17, 'rising-bubbles': 0.2, fireflies: 0.13 }[style] ?? 0.13
+    for (let i = 0; i < many; i++) {
+      const fall = style === 'fireflies' ? Math.sin(time + i) * 0.03 : ((time * 0.06 + hash(i + 9)) % 1) * (style === 'rising-bubbles' ? -1 : 1)
+      const y = ((hash(i + 3) + fall) % 1 + 1) % 1
+      ctx.save()
+      ctx.globalAlpha = style === 'fireflies' ? 0.3 + 0.7 * Math.pow(Math.max(0, Math.sin(time * 2 + i * 7)), 2) : 1
+      const x = W * (0.06 + 0.88 * hash(i)) + Math.sin(time + i) * W * 0.02
+      ctx.translate(x, H * (0.05 + 0.9 * y))
+      ctx.rotate(style === 'fireflies' || style === 'rising-bubbles' ? 0 : time * (0.5 + hash(i + 5)) + i)
+      stamp(ctx, style, layer, 'main', Math.floor(hash(i + 7) * frames), 0, 0, H * big * (0.75 + 0.5 * hash(i + 1)))
+      ctx.restore()
+    }
+    return
+  }
+  if (style === 'hanging-spiders') {
+    ;[[0.25, 0.45], [0.52, 0.7], [0.78, 0.38]].forEach(([x, len], i) => {
+      const y = H * (len + Math.sin(time * 0.8 + i * 2) * 0.05)
+      ctx.fillStyle = 'rgba(255,255,255,0.7)'
+      ctx.fillRect(W * x - 1, 0, 2, y - H * 0.1)
+      stamp(ctx, style, layer, 'main', f + i * 3, W * x, y, H * 0.32)
+    })
+    return
+  }
+  if (style === 'dragon') {
+    stamp(ctx, style, layer, 'main', f, W * 0.4, H * 0.5, H * 0.95)
+    stamp(ctx, style, layer, 'fire', Math.floor(time * 12), W * 0.84, H * 0.47, H * 0.28)
+    return
+  }
+  if (style === 'ducklings') {
+    stamp(ctx, style, layer, 'main', f, W * 0.72, H * 0.58, H * 0.5)
+    ;[0.48, 0.33, 0.18].forEach((x, i) => stamp(ctx, style, layer, 'baby', f + i * 2, W * x, H * 0.7, H * 0.25))
     return
   }
   if (FLOCKS.has(style)) {

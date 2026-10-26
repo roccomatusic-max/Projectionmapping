@@ -18,7 +18,7 @@ import { moverWalks } from './movers'
 
 export type Occasion =
   | 'halloween' | 'thanksgiving' | 'christmas' | 'winter' | 'new-year' | 'valentines' | 'st-patricks' | 'easter'
-  | 'spring' | 'fourth-of-july' | 'summer' | 'autumn' | 'birthday' | 'party' | 'hanukkah' | 'diwali' | 'sea'
+  | 'spring' | 'fourth-of-july' | 'summer' | 'autumn' | 'birthday' | 'party' | 'hanukkah' | 'diwali' | 'lunar-new-year' | 'sea'
   | 'driveway' | 'any'
 
 export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = [
@@ -38,6 +38,7 @@ export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = 
   { id: 'party', label: 'Parties', words: 'celebrate celebration fun' },
   { id: 'hanukkah', label: 'Hanukkah', words: 'chanukah' },
   { id: 'diwali', label: 'Diwali', words: 'festival of lights' },
+  { id: 'lunar-new-year', label: 'Lunar New Year', words: 'chinese new year spring festival zodiac' },
   { id: 'sea', label: 'Under the sea', words: 'ocean water underwater' },
   { id: 'driveway', label: 'On the driveway', words: 'ground path floor' },
   { id: 'any', label: 'Any time', words: '' },
@@ -98,7 +99,7 @@ const SHAPE_TAGS: Record<string, [Occasion[], string]> = {
   butterflies: [['spring', 'summer'], 'garden'],
   bunnies: [['easter', 'spring'], 'rabbit'],
   balloons: [['birthday', 'party'], ''],
-  lanterns: [['party', 'any'], 'chinese lunar paper'],
+  lanterns: [['party', 'lunar-new-year', 'any'], 'chinese lunar paper'],
   diyas: [['diwali'], 'lamp oil flame'],
   'star-of-david': [['hanukkah'], 'jewish'],
   fireworks: [['new-year', 'fourth-of-july', 'party'], 'bursts'],
@@ -179,6 +180,29 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   balloons: [['birthday', 'party', 'any'], 'float floating'],
   butterflies: [['spring', 'summer'], 'monarch garden'],
   fish: [['sea', 'summer'], 'clownfish swimming school'],
+  snowfall: [['winter', 'christmas'], 'snow snowflakes flakes falling let it snow'],
+  leaves: [['autumn', 'thanksgiving', 'halloween'], 'fall falling maple oak leaf'],
+  petals: [['spring', 'valentines', 'easter'], 'cherry blossom sakura flowers falling pink'],
+  confetti: [['new-year', 'birthday', 'party'], 'celebrate falling streamers'],
+  'falling-hearts': [['valentines'], 'love hearts falling'],
+  clovers: [['st-patricks'], 'shamrock four leaf clover luck falling'],
+  'hanging-spiders': [['halloween'], 'spider web thread drop creepy scary'],
+  lanterns: [['diwali', 'lunar-new-year', 'new-year', 'any'], 'sky lanterns paper floating wish light'],
+  jellyfish: [['sea', 'summer'], 'jelly glowing ocean'],
+  'rising-bubbles': [['sea', 'party', 'summer', 'birthday'], 'bubbles soap pop'],
+  'hot-air-balloons': [['summer', 'any', 'birthday'], 'balloon ride sky'],
+  fireflies: [['summer', 'spring'], 'lightning bugs glow night'],
+  bees: [['spring', 'summer'], 'bumblebee buzz honey garden'],
+  dragon: [['halloween', 'lunar-new-year', 'any'], 'fire breathing dragon fantasy'],
+  owls: [['halloween', 'autumn'], 'owl hoot night bird'],
+  angels: [['christmas'], 'angel trumpet halo heavenly nativity'],
+  sharks: [['sea', 'summer'], 'shark jaws fin ocean'],
+  'sea-turtles': [['sea', 'summer'], 'turtle ocean swim'],
+  mummies: [['halloween'], 'mummy egypt bandages monster'],
+  'gingerbread-men': [['christmas'], 'gingerbread cookie run catch me'],
+  'toy-soldiers': [['christmas'], 'nutcracker toy soldier march salute'],
+  dinosaurs: [['any', 'birthday'], 't rex dinosaur roar kids'],
+  ducklings: [['spring', 'easter'], 'duck ducklings quack mother babies'],
 }
 
 const INFO_TAGS: Record<string, [Occasion[], string]> = {
@@ -190,6 +214,10 @@ const INFO_TAGS: Record<string, [Occasion[], string]> = {
   moon: [['halloween', 'any'], 'moon phase full moon night sky'],
   holiday: [['any', 'thanksgiving', 'christmas', 'valentines', 'st-patricks', 'easter', 'fourth-of-july', 'halloween'], 'next holiday countdown days until'],
   'new-year': [['new-year'], 'countdown midnight new years eve'],
+  menorah: [['hanukkah'], 'menorah candles chanukah lights tonight night'],
+  advent: [['christmas'], 'advent calendar doors december countdown'],
+  'lunar-new-year': [['lunar-new-year'], 'chinese new year zodiac animal countdown spring festival'],
+  showtimes: [['any', 'halloween', 'christmas'], 'show times tonight schedule start when next show visitors'],
 }
 
 // -- versions of one drawing with their own colours ----------------------------------------------

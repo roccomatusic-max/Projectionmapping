@@ -63,3 +63,16 @@ async def test_a_scene_of_new_elements_saves(api):
     assert created.status_code == 201, created.text
     assert [layer["style"] for layer in created.json()["layers"]] == [
         "witch", "black-cats", "cauldrons", "moon", "holiday"]
+
+
+def test_batch_two_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "hanging-spiders", "near": "follow"},
+        {"type": "movers", "style": "dragon"},
+        {"type": "movers", "style": "ducklings"},
+        {"type": "movers", "style": "snowfall", "near": "flee"},
+        {"type": "info", "style": "menorah"},
+        {"type": "info", "style": "showtimes"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "hanging-spiders", "dragon", "ducklings", "snowfall", "menorah", "showtimes"]

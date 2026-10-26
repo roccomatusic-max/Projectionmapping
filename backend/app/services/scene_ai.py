@@ -170,11 +170,27 @@ CATALOG: dict[str, dict] = {
                  "and turkeys call out; cupid and eagles fly over the roof; butterflies "
                  "and fish are flocks; rockets are fireworks that go up from the bottom "
                  "of the house and burst in color and color2 (blend add); balloons float "
-                 "up and away",
+                 "up and away; snowfall (big snowflakes), leaves, petals (cherry "
+                 "blossom), confetti, falling-hearts and clovers (shamrocks) fall down the "
+                 "house and part round people (near flee); hanging-spiders hang from the "
+                 "roofline on threads and drop down to people (near follow); lanterns "
+                 "(sky lanterns), jellyfish, rising-bubbles (pop near people: near hide) "
+                 "and hot-air-balloons float up; fireflies drift and blink and gather "
+                 "round people (near follow, blend add); bees are a flock that follows "
+                 "people; dragon flies over the roof and breathes fire at people; owls "
+                 "(hoot), angels, sharks and sea-turtles fly or swim over the roof; "
+                 "mummies, gingerbread-men (run away), toy-soldiers (salute near people), "
+                 "dinosaurs (roar) and ducklings (a duck and her ducklings in a line) walk "
+                 "along the bottom",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
-                   "rockets", "balloons", "butterflies", "fish"],
+                   "rockets", "balloons", "butterflies", "fish", "snowfall", "leaves",
+                   "petals", "confetti", "falling-hearts", "clovers", "hanging-spiders",
+                   "lanterns", "jellyfish", "rising-bubbles", "hot-air-balloons",
+                   "fireflies", "bees", "dragon", "owls", "angels", "sharks",
+                   "sea-turtles", "mummies", "gingerbread-men", "toy-soldiers",
+                   "dinosaurs", "ducklings"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
@@ -199,9 +215,12 @@ CATALOG: dict[str, dict] = {
                  "days counts the days until a date; message is a scrolling light-up "
                  "message board; clock is the time now; moon is tonight's moon phase; "
                  "holiday counts the days to the next holiday by itself; new-year counts "
-                 "down to New Year (to the second on New Year's Eve)",
+                 "down to New Year (to the second on New Year's Eve); menorah lights "
+                 "tonight's Hanukkah candles; advent is an Advent calendar; "
+                 "lunar-new-year counts down to Lunar New Year; showtimes tells people "
+                 "when tonight's show starts and ends",
         "styles": ["santa", "weather", "days", "message", "clock", "moon", "holiday",
-                   "new-year"],
+                   "new-year", "menorah", "advent", "lunar-new-year", "showtimes"],
         "dials": "size: how big; speed: how fast light sweeps (message: scroll speed); "
                  "amount: sparkle",
         "nears": ["none", "light", "grow", "jump"],
