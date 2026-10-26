@@ -51,8 +51,9 @@ CATALOG: dict[str, dict] = {
     },
     "trails": {
         "about": "people paint light as they walk; it fades over time",
-        "styles": ["paint", "smoke", "neon"],
+        "styles": ["paint", "smoke", "neon", "footprints"],
         "dials": "size: brush size; amount: brightness; fade: how long trails last; speed: smoke drift",
+        "notes": "footprints leaves glowing footsteps where people walk; for the ground",
     },
     "particles": {
         "about": "many small glowing particles reacting to people",
@@ -89,14 +90,19 @@ CATALOG: dict[str, dict] = {
                    "presents", "trees", "bells", "candles", "shamrocks", "eggs", "flowers",
                    "butterflies", "bunnies", "balloons", "lanterns", "diyas",
                    "star-of-david", "fireworks", "fish", "bubbles", "leaves", "moons",
-                   "notes", "snowmen", "coins"],
+                   "notes", "snowmen", "coins", "footprints", "welcome-mat",
+                   "runway-arrows", "crawling-spiders"],
         "dials": "size: object size (bigger means fewer fit); amount: how many; speed: "
                  "how fast they move and change",
         "notes": "pumpkins are carved jack-o'-lanterns; eyes always watch the nearest "
                  "person; fireworks keep bursting by themselves; colours: most use color, "
                  "with color2 for details (stems, ribbons, spots, flames); stars, hearts, "
                  "eggs and notes alternate color and color2; gumdrops, ornaments, "
-                 "presents and balloons are multicoloured; use blend normal",
+                 "presents and balloons are multicoloured; footprints, welcome-mat, "
+                 "runway-arrows and crawling-spiders are drawn flat for the ground (a "
+                 "driveway; spiders hang from a thread, crawling-spiders do not): welcome-mat "
+                 "reads WELCOME, runway-arrows point up the canvas like a landing strip; "
+                 "use blend normal",
         "motions": MOTIONS,
         "changes": CHANGES,
         "nears": NEARS,
@@ -179,7 +185,8 @@ add), "normal" (paints over what is below, needed for materials, shadows and \
 reveal);
 - color and color2 as #rrggbb;
 - target: where it is drawn: "everywhere", "building" (all traced parts), \
-"walls", "roof", "windows", "doors", or "outside" (around the building);
+"walls", "roof", "windows", "doors", "outside" (around the building), or \
+"ground" (a driveway or path traced as a ground part, seen from above);
 - reacts_to: what makes the whole layer stronger: "presence" (someone is \
 there), "movement" (people moving), "count" (more people), "closeness" \
 (people near), or "always"; reaction 0-1 is how much that matters (0 = \
@@ -231,7 +238,7 @@ _LAYER_SCHEMA = {
         "amount": {"type": "number"},
         "fade": {"type": "number"},
         "target": {"type": "string", "enum": ["everywhere", "building", "walls", "roof",
-                                              "windows", "doors", "outside"]},
+                                              "windows", "doors", "outside", "ground"]},
         "reacts_to": {"type": "string",
                       "enum": ["presence", "movement", "count", "closeness", "always"]},
         "reaction": {"type": "number"},
@@ -414,7 +421,7 @@ def to_layers(raw: list) -> list[SceneLayer]:
             amount=_clamp(item.get("amount")),
             fade=_clamp(item.get("fade")),
             target=item.get("target") if item.get("target") in (
-                "everywhere", "building", "walls", "roof", "windows", "doors", "outside"
+                "everywhere", "building", "walls", "roof", "windows", "doors", "outside", "ground"
             ) else "everywhere",
             reacts_to=item.get("reacts_to") if item.get("reacts_to") in (
                 "presence", "movement", "count", "closeness", "always"

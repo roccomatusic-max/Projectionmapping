@@ -8,7 +8,8 @@
  * "Describe a scene" (backend/app/services/scene_ai.py).
  */
 
-import type { Change, LayerBlend, LayerTarget, LayerType, Motion, NearAction, ReactsTo, SceneLayer } from '../types'
+import type { Change, LayerBlend, LayerTarget, LayerType, Motion, NearAction, ReactsTo, SceneLayer, Surface } from '../types'
+import { targetBox } from './masks'
 
 export type Dial = 'size' | 'speed' | 'amount' | 'fade'
 
@@ -114,6 +115,7 @@ export const LAYER_KINDS: LayerKind[] = [
       { id: 'paint', label: 'Paint' },
       { id: 'smoke', label: 'Smoke' },
       { id: 'neon', label: 'Neon' },
+      { id: 'footprints', label: 'Footprints' },
     ],
     dials: { size: 'Brush', amount: 'Brightness', fade: 'Lasts', speed: 'Drift' },
     defaults: { blend: 'add', color: '#a78bfa', color2: '#f472b6', size: 0.4, amount: 0.7, fade: 0.6 },
@@ -211,6 +213,11 @@ export const LAYER_KINDS: LayerKind[] = [
       { id: 'notes', label: 'Music notes' },
       { id: 'snowmen', label: 'Snowmen' },
       { id: 'coins', label: 'Gold coins' },
+      // Drawn flat, for a driveway or path seen from above.
+      { id: 'footprints', label: 'Footprints' },
+      { id: 'welcome-mat', label: 'Welcome mat' },
+      { id: 'runway-arrows', label: 'Landing strip arrows' },
+      { id: 'crawling-spiders', label: 'Crawling spiders' },
     ],
     dials: { size: 'Size', amount: 'How many', speed: 'Speed' },
     motions: ALL_MOTIONS,
@@ -421,6 +428,7 @@ export const TARGETS: Array<{ id: LayerTarget; label: string }> = [
   { id: 'windows', label: 'Windows' },
   { id: 'doors', label: 'Doors' },
   { id: 'outside', label: 'Around the building' },
+  { id: 'ground', label: 'Driveway or ground' },
 ]
 
 export const REACTIONS: Array<{ id: ReactsTo; label: string; hint: string }> = [
@@ -492,13 +500,18 @@ export function layerLabel(layer: SceneLayer) {
 export interface Starter {
   name: string
   /** Heading the starter is listed under. */
-  occasion: 'Winter holidays' | 'Through the year' | 'Celebrations' | 'Just for fun'
+  occasion: 'Winter holidays' | 'Through the year' | 'Celebrations' | 'Just for fun' | 'On the driveway'
   description: string
   layers: Array<Partial<SceneLayer> & { type: LayerType }>
+  /** Its layers' pins are fractions of each layer's "Where" area (a welcome
+   *  mat in the middle of the driveway), placed when the scene is made. */
+  placed?: boolean
 }
 
 type L = Partial<SceneLayer> & { type: LayerType }
 const objects = (style: string, patch: Partial<SceneLayer>): L => ({ type: 'shapes', style, motion: 'none', change: 'none', ...patch })
+/** One pin, as a fraction of the layer's "Where" area (see Starter.placed). */
+const at = (x: number, y: number, size = 1, rotation = 0) => ({ x, y, size, rotation })
 const sparks = (color: string, color2: string): L => ({
   type: 'particles', name: 'Sparkles from people', style: 'sparks', color, color2, amount: 0.4,
   reacts_to: 'movement', reaction: 0.6,
@@ -743,4 +756,81 @@ export const STARTERS: Starter[] = [
       { type: 'glow', name: 'Halo', style: 'halo', color: '#a78bfa', color2: '#22d3ee', amount: 0.3, size: 0.7 },
     ],
   },
+  // -- on the driveway (a projector on the roof pointing down) -------------------------
+  {
+    name: 'Spiders on the driveway',
+    occasion: 'On the driveway',
+    description: 'Spiders crawl across the driveway and scatter from people, glowing footprints follow everyone who walks up, and a few jack-o’-lanterns flicker.',
+    layers: [
+      objects('crawling-spiders', { name: 'Spiders', target: 'ground', color: '#a855f7', color2: '#ef4444', size: 0.3, amount: 0.35, speed: 0.35, motion: 'drift', near: 'flee', reach: 0.6 }),
+      { type: 'trails', name: 'Footprints', style: 'footprints', target: 'ground', color: '#a3e635', color2: '#22c55e', size: 0.5, fade: 0.8 },
+      objects('pumpkins', { name: 'Jack-o’-lanterns', target: 'ground', color: '#f97316', color2: '#65a30d', size: 0.35, amount: 0.12, change: 'flicker', near: 'light' }),
+    ],
+  },
+  {
+    name: 'Ghostly footprints',
+    occasion: 'On the driveway',
+    description: 'Footprints of someone invisible walk across the driveway by themselves, and everyone who walks up leaves glowing footprints of their own.',
+    layers: [
+      objects('footprints', { name: 'Ghost footprints', target: 'ground', color: '#bae6fd', color2: '#ffffff', size: 0.5, amount: 0.3, speed: 0.4, change: 'blink', near: 'hide' }),
+      { type: 'trails', name: 'Your footprints', style: 'footprints', target: 'ground', color: '#38bdf8', color2: '#a5f3fc', size: 0.5, fade: 0.8 },
+    ],
+  },
+  {
+    name: 'Welcome mat',
+    occasion: 'On the driveway',
+    placed: true,
+    description: 'A big WELCOME mat in the middle of the driveway that lights up as people step on it, warm lights along the edges, and leaves that blow away from feet.',
+    layers: [
+      objects('welcome-mat', { name: 'Welcome mat', target: 'ground', color: '#c2410c', color2: '#fde68a', size: 1, near: 'light', pins: [at(0.5, 0.5, 2.2)] }),
+      { type: 'lights', name: 'Edge lights', style: 'steady', target: 'ground', color: '#fdba74', color2: '#fde68a', size: 0.5, near: 'light' },
+      objects('leaves', { name: 'Leaves', target: 'ground', color: '#ea580c', color2: '#facc15', size: 0.25, amount: 0.25, motion: 'sway', near: 'flee' }),
+    ],
+  },
+  {
+    name: 'Path of lights',
+    occasion: 'On the driveway',
+    description: 'Lights along both sides of the driveway (or a path traced as a ground part) that brighten as people walk past, a warm glow around each person and fireflies.',
+    layers: [
+      { type: 'lights', name: 'Path lights', style: 'twinkle', target: 'ground', color: '#fff7e0', color2: '#fde68a', size: 0.55, amount: 0.45, speed: 0.3, near: 'light', reach: 0.6 },
+      { type: 'glow', name: 'Warm glow', style: 'soft', color: '#ffd27a', color2: '#ff6a3d', size: 0.4, amount: 0.5 },
+      { type: 'particles', name: 'Fireflies', style: 'fireflies', color: '#fde68a', color2: '#fb923c', amount: 0.3, size: 0.25, reacts_to: 'always' },
+    ],
+  },
+  {
+    name: 'Santa’s landing strip',
+    occasion: 'On the driveway',
+    placed: true,
+    description: 'Runway lights chase along the edges of the driveway, glowing arrows down the middle show Santa where to land, and snow drifts away from people.',
+    layers: [
+      { type: 'lights', name: 'Runway lights', style: 'chase', target: 'ground', color: '#ffffff', color2: '#60a5fa', size: 0.5, amount: 0.4, speed: 0.6, near: 'colour' },
+      objects('runway-arrows', { name: 'Landing arrows', target: 'ground', color: '#60a5fa', color2: '#ffffff', size: 0.6, speed: 0.5, near: 'light',
+        pins: [at(0.5, 0.2), at(0.5, 0.4), at(0.5, 0.6), at(0.5, 0.8)] }),
+      objects('stars', { name: 'Stars', target: 'ground', color: '#fde047', color2: '#fff7c2', size: 0.2, amount: 0.15, change: 'twinkle', near: 'grow' }),
+      { type: 'falling', name: 'Snow', style: 'snow', amount: 0.35, speed: 0.25, near: 'flee' },
+    ],
+  },
 ]
+
+/**
+ * A starter's layers, ready to save. Pins of a ``placed`` starter are moved
+ * from fractions of each layer's "Where" area onto the canvas, and sized
+ * with it, so a welcome mat lands in the middle of the traced driveway.
+ */
+export function starterLayers(starter: Starter, surfaces: Surface[]): SceneLayer[] {
+  return starter.layers.map((l) => {
+    const layer = normaliseLayer(l)
+    if (!starter.placed || !layer.pins?.length) return layer
+    const box = targetBox(layer.target, surfaces)
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+    return {
+      ...layer,
+      pins: layer.pins.map((pin) => ({
+        ...pin,
+        x: clamp(box.x + pin.x * box.w, 0, 1),
+        y: clamp(box.y + pin.y * box.h, 0, 1),
+        size: clamp(pin.size * box.h, 0.3, 3),
+      })),
+    }
+  })
+}

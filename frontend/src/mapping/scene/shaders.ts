@@ -516,6 +516,29 @@ void main() {
     float r = s.z * mix(0.15, 1.4, uDial.x);
     float d = sdSegment(p, a, b);
     float f = exp(-d * d / (r * r * 0.35)) * s.w;
+    if (uStyle == 3) {
+      // Footprints: a left or right foot stamped twice a second while the
+      // person walks, pointing the way they go, left on the ground to fade.
+      float pace = uTime * 2.0 + float(i) * 0.37;
+      float speed = length(m.xy);
+      f = 0.0;
+      if (speed > 0.02 && fract(pace) < uDt * 2.0 + 0.001) {
+        vec2 fwd = m.xy / speed;
+        vec2 side = vec2(-fwd.y, fwd.x);
+        float foot = mod(floor(pace), 2.0) < 1.0 ? -1.0 : 1.0;
+        float len = s.z * mix(0.5, 1.6, uDial.x);
+        vec2 o = p - (b + side * foot * len * 0.32);
+        vec2 l = vec2(dot(o, side) * foot, -dot(o, fwd)) / len;
+        float sole = length((l - vec2(0.0, -0.1)) / vec2(0.24, 0.36)) - 1.0;
+        float heel = length((l - vec2(0.0, 0.36)) / vec2(0.18, 0.2)) - 1.0;
+        float toes = 1e9;
+        for (int t = 0; t < 5; t++) {
+          float ft = float(t);
+          toes = min(toes, length(l - vec2(-0.16 + ft * 0.08, -0.58 + abs(ft - 1.0) * 0.03)) - mix(0.07, 0.045, ft / 4.0));
+        }
+        f = (min(min(sole, heel), toes) < 0.0 ? 1.0 : 0.0) * s.w;
+      }
+    }
     vec3 c = uStyle == 2
       ? mix(uColor, uColor2, 0.5 + 0.5 * sin(uTime * 1.5 + m.w * 6.28))
       : mix(uColor, uColor2, clamp(length(m.xy) * 2.0, 0.0, 1.0));
@@ -523,7 +546,8 @@ void main() {
   }
   // New paint goes over the old (premultiplied "over"), so a trail keeps
   // its colour instead of piling up to white where people linger.
-  float k = clamp(add.a * min(1.0, uDt * 15.0), 0.0, 1.0);
+  // Footprints are stamped whole in one frame; brushes build up over several.
+  float k = clamp(add.a * (uStyle == 3 ? 1.0 : min(1.0, uDt * 15.0)), 0.0, 1.0);
   vec3 paint = add.rgb / max(add.a, 1e-3);
   outColor = vec4(prev.rgb * (1.0 - k) + paint * k, prev.a * (1.0 - k) + k);
 }`
@@ -1069,7 +1093,7 @@ void main() {
     sd = min(min(wing, body), ears);
     c = uColor * (0.8 + 0.3 * (0.5 - p.y));
     if (length(vec2(abs(q.x) - 0.08, q.y + 0.08)) < 0.05) c = uColor2 * 1.5;
-  } else if (uStyle == S_SPIDERS) {
+  } else if (uStyle == S_SPIDERS || uStyle == S_CRAWLING_SPIDERS) {
     float body = length(q - vec2(0.0, 0.2)) - 0.33;
     float head = length(q - vec2(0.0, -0.18)) - 0.18;
     vec2 pm = vec2(abs(q.x), q.y);
@@ -1082,7 +1106,8 @@ void main() {
       legs = min(legs, min(sdSegment(pm, vec2(0.15, y0 + 0.1), knee), sdSegment(pm, knee, foot)));
     }
     legs -= 0.04;
-    float thread = sdSegment(q, vec2(0.0, -0.3), vec2(0.0, -1.5)) - 0.015;
+    // Crawling ones walk on the ground, without the thread they hang from.
+    float thread = uStyle == S_CRAWLING_SPIDERS ? 1e9 : sdSegment(q, vec2(0.0, -0.3), vec2(0.0, -1.5)) - 0.015;
     sd = min(min(body, head), min(legs, thread));
     if (thread < min(min(body, head), legs)) c = vec3(0.6);
     if (length(vec2(abs(q.x) - 0.07, q.y + 0.2)) < 0.045) c = uColor2 * 1.5;
@@ -1281,6 +1306,62 @@ void main() {
     if (r > 0.66) c *= 0.8;
     if (abs(r - 0.5) < 0.03) c *= 1.25;
     c += 0.5 * smoothstep(0.1, 0.0, abs(q.x + q.y - 0.6 * sin(vPhase))) * step(r, 0.8);
+  } else if (uStyle == S_FOOTPRINTS) {
+    // A left and a right footprint, stepping: each glows in turn.
+    float step2 = fract(vPhase * 0.25);
+    sd = 1e9;
+    float lit = 0.0;
+    for (int f = 0; f < 2; f++) {
+      float side = f == 0 ? -1.0 : 1.0;
+      vec2 p = vec2((q.x - side * 0.32) * side, q.y - side * 0.2) / 0.95;
+      float foot = min(min(sdEl(p - vec2(0.0, -0.08), vec2(0.25, 0.38)), sdEl(p - vec2(0.0, 0.4), vec2(0.19, 0.21))),
+                       min(min(length(p - vec2(-0.16, -0.6)) - 0.085, length(p - vec2(-0.04, -0.64)) - 0.07),
+                           min(length(p - vec2(0.07, -0.61)) - 0.06, length(p - vec2(0.16, -0.55)) - 0.05)));
+      foot *= 0.95;
+      if (foot < sd) { sd = foot; lit = f == 0 ? step(step2, 0.5) : step(0.5, step2); }
+    }
+    c = mix(uColor, uColor2, lit * 0.6) * mix(0.7, 1.25, lit);
+    ec = uColor;
+    ea = exp(-max(sd, 0.0) * 12.0) * 0.25 * lit;
+  } else if (uStyle == S_WELCOME_MAT) {
+    // A doormat with a border and WELCOME across it, wider than tall.
+    float mat = sdBox(q, vec2(0.95, 0.55)) - 0.04;
+    sd = mat;
+    c = uColor * (0.75 + 0.35 * hash(floor(q * 40.0) + vSeed));
+    float border = abs(sdBox(q, vec2(0.82, 0.43))) - 0.025;
+    float word = 1e9;
+    for (int i = 0; i < 7; i++) {
+      vec2 p = (q - vec2(-0.615 + float(i) * 0.205, 0.0)) / vec2(0.07, 0.13);
+      float d;
+      if (i == 0) {
+        d = min(min(sdSegment(p, vec2(-1.0, -1.0), vec2(-0.5, 1.0)), sdSegment(p, vec2(-0.5, 1.0), vec2(0.0, -0.2))),
+                min(sdSegment(p, vec2(0.0, -0.2), vec2(0.5, 1.0)), sdSegment(p, vec2(0.5, 1.0), vec2(1.0, -1.0))));
+      } else if (i == 1 || i == 6) {
+        d = min(min(sdSegment(p, vec2(-1.0, -1.0), vec2(-1.0, 1.0)), sdSegment(p, vec2(-1.0, -1.0), vec2(1.0, -1.0))),
+                min(sdSegment(p, vec2(-1.0, 0.0), vec2(0.6, 0.0)), sdSegment(p, vec2(-1.0, 1.0), vec2(1.0, 1.0))));
+      } else if (i == 2) {
+        d = min(sdSegment(p, vec2(-1.0, -1.0), vec2(-1.0, 1.0)), sdSegment(p, vec2(-1.0, 1.0), vec2(1.0, 1.0)));
+      } else if (i == 3) {
+        d = min(min(sdSegment(p, vec2(1.0, -1.0), vec2(-1.0, -1.0)), sdSegment(p, vec2(-1.0, -1.0), vec2(-1.0, 1.0))),
+                sdSegment(p, vec2(-1.0, 1.0), vec2(1.0, 1.0)));
+      } else if (i == 4) {
+        d = abs(sdBox(p, vec2(1.0)));
+      } else {
+        d = min(min(sdSegment(p, vec2(-1.0, 1.0), vec2(-1.0, -1.0)), sdSegment(p, vec2(-1.0, -1.0), vec2(0.0, 0.2))),
+                min(sdSegment(p, vec2(0.0, 0.2), vec2(1.0, -1.0)), sdSegment(p, vec2(1.0, -1.0), vec2(1.0, 1.0))));
+      }
+      // Back from letter units to the object's square (the smaller scale).
+      word = min(word, d * 0.07 - 0.022);
+    }
+    if (min(border, word) < 0.0 && mat < 0.0) c = uColor2 * 1.15;
+  } else if (uStyle == S_RUNWAY_ARROWS) {
+    // A glowing chevron pointing up the picture, like a landing strip.
+    vec2 p = vec2(abs(q.x), q.y);
+    sd = sdSegment(p, vec2(0.0, -0.45), vec2(0.65, 0.3)) - 0.13;
+    float sweep = 0.5 + 0.5 * sin(vPhase * 3.0 - q.y * 3.0);
+    c = mix(uColor, uColor2, sweep) * (0.9 + 0.5 * sweep);
+    ec = uColor;
+    ea = exp(-max(sd, 0.0) * 8.0) * 0.35;
   }
 
   c = mix(c, uColor2, vTint * 0.85) * vBright;

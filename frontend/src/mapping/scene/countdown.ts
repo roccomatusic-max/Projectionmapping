@@ -1063,6 +1063,7 @@ const TARGET_KINDS: Record<string, SurfaceKind[]> = {
   roof: ['roof'],
   windows: ['window'],
   doors: ['door'],
+  ground: ['ground'],
 }
 
 /** The artwork's rectangle in canvas fractions: fitted into the "Where" area, Size and Height applied. */

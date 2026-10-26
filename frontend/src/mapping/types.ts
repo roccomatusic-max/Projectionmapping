@@ -278,7 +278,8 @@ export interface ApplyResult {
 
 // -- scenes --------------------------------------------------------------------
 
-export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other'
+/** "ground" is a driveway, path or lawn seen from above, not part of the building. */
+export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other' | 'ground'
 
 /** One part of the building traced on the canvas. */
 /** Where a true square has to be drawn on the canvas to look square on a house part (scene/flat.ts). */
@@ -306,7 +307,7 @@ export type LayerType =
   | 'countdown'
 
 export type ReactsTo = 'presence' | 'movement' | 'count' | 'closeness' | 'always'
-export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside'
+export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside' | 'ground'
 export type LayerBlend = 'normal' | 'add' | 'screen'
 /** How an object moves by itself. */
 export type Motion = 'none' | 'bob' | 'sway' | 'spin' | 'drift' | 'bounce' | 'orbit' | 'rise' | 'flutter'

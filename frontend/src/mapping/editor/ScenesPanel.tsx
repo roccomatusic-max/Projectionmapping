@@ -17,9 +17,9 @@ import {
   NEARS,
   nearOf,
   newLayer,
-  normaliseLayer,
   REACTIONS,
   STARTERS,
+  starterLayers,
   TARGETS,
 } from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
@@ -807,7 +807,7 @@ export function ScenesPanel({
                         key={starter.name}
                         className="rounded-md bg-panel-850 px-3 py-2 text-left ring-1 ring-white/5 hover:bg-panel-800 disabled:opacity-50"
                         disabled={busy != null}
-                        onClick={() => void startFrom(starter.name, starter.description, starter.layers.map(normaliseLayer))}
+                        onClick={() => void startFrom(starter.name, starter.description, starterLayers(starter, surfaces))}
                       >
                         <span className="block text-sm text-slate-100">{starter.name}</span>
                         <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500">{starter.description}</span>

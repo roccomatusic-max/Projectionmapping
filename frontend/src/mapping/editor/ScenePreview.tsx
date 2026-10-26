@@ -22,6 +22,7 @@ export const SURFACE_KINDS: Array<{ id: SurfaceKind; label: string; color: strin
   { id: 'window', label: 'Window', color: '#fbbf24' },
   { id: 'door', label: 'Door', color: '#4ade80' },
   { id: 'other', label: 'Other', color: '#a78bfa' },
+  { id: 'ground', label: 'Driveway or ground', color: '#fb923c' },
 ]
 
 const KIND_COLOR = Object.fromEntries(SURFACE_KINDS.map((k) => [k.id, k.color])) as Record<SurfaceKind, string>

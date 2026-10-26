@@ -324,7 +324,9 @@ class FitResult(BaseModel):
     sliced: list[int] = Field(default_factory=list)
 
 
-SurfaceKind = Literal["wall", "roof", "window", "door", "other"]
+#: "ground" is a driveway, path or lawn seen from above: not part of the
+#: building, so "Whole building" leaves it out.
+SurfaceKind = Literal["wall", "roof", "window", "door", "other", "ground"]
 
 #: Traced building parts per show.
 MAX_SURFACES = 64
@@ -860,7 +862,9 @@ LayerType = Literal[
 #: there are, how close they come, or nothing (always at full strength).
 ReactsTo = Literal["presence", "movement", "count", "closeness", "always"]
 #: Which traced surfaces a layer is drawn on; "everywhere" ignores them.
-LayerTarget = Literal["everywhere", "building", "walls", "roof", "windows", "doors", "outside"]
+LayerTarget = Literal[
+    "everywhere", "building", "walls", "roof", "windows", "doors", "outside", "ground"
+]
 LayerBlend = Literal["normal", "add", "screen"]
 #: How an object moves by itself, changes by itself, and what it does when a
 #: person comes near (see frontend/src/mapping/scene/catalog.ts).
