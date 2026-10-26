@@ -44,7 +44,7 @@ const SECTIONS: Array<{ id: Section; slug: string; label: string; icon: LucideIc
   { id: 'show', slug: 'editor', label: 'Editor', icon: EditorIcon,
     hint: 'Build the show: cues and media, where each projector lands on the picture, warp and blends.' },
   { id: 'scenes', slug: 'scenes', label: 'Scenes', icon: ScenesIcon,
-    hint: 'Light effects that react to people. Make one here, then add it to a cue.' },
+    hint: 'Make a scene step by step: pick the projector it goes on, pick how it looks, then put it on the house.' },
   { id: 'camera', slug: 'camera', label: 'Camera', icon: CameraIcon,
     hint: 'Let the camera line every projector up with the building, and see who it tracks.' },
   { id: 'players', slug: 'players', label: 'Players', icon: MiniPcIcon,
@@ -461,6 +461,7 @@ export default function Mapping({ session }: { session: Session }) {
               clock={clock}
               cameraPeople={runtime.people}
               canEdit={canEdit}
+              transport={transport}
               onError={setError}
               reloadScenes={runtime.reloadScenes}
               reloadMedia={reloadMedia}
@@ -563,7 +564,7 @@ export default function Mapping({ session }: { session: Session }) {
               {part === 'elements' && (
                 <>
                   <Panel title="Media and elements"
-                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects, a flying sleigh, the Santa tracker or a countdown here and drag them into place.">
+                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects, a flying sleigh, the Santa tracker or a countdown here and drag them into place. To make a new scene for one projector, use Scenes → Make a scene.">
                     <CanvasElements show={show} outputs={outputs} scenes={scenes} media={media} clock={clock}
                       transport={transport} canEdit={canEdit} reloadScenes={runtime.reloadScenes}
                       onShowChanged={() => runtime.refresh()} onError={setError} />
@@ -673,7 +674,7 @@ function CueHelp() {
     <InfoTip label="What do the cue settings do?" text="What these do">
       <span className="block"><b>Media</b>: the video or picture this cue shows. Black shows nothing.</span>
       <span className="mt-1 block"><b>Fill / Fit / Stretch</b>: Fill covers the whole picture and may crop; Fit shows it all with black edges; Stretch pulls it to the picture's shape.</span>
-      <span className="mt-1 block"><b>Scene</b>: reactive light drawn on top (made on the Scenes tab).</span>
+      <span className="mt-1 block"><b>Scene</b>: reactive light drawn on top (Scenes → Make a scene puts one on a projector for you).</span>
       <span className="mt-1 block"><b>Loop</b>: start the video again when it ends.</span>
       <span className="mt-1 block"><b>Fade</b>: seconds to blend from the previous cue into this one.</span>
       <span className="mt-1 block"><b>Auto</b>: move to the next cue by itself after this many seconds. Empty waits for GO.</span>

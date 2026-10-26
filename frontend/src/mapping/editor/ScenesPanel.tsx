@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { ConfirmDialog, EmptyState, Modal, Panel, SectionBar } from '@/components/ui'
+import { useSearchParams } from 'react-router-dom'
+import { ConfirmDialog, EmptyState, Panel, SectionBar } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
@@ -18,8 +18,6 @@ import {
   nearOf,
   newLayer,
   REACTIONS,
-  STARTERS,
-  starterLayers,
   styleLook,
   TARGETS,
 } from '../scene/catalog'
@@ -29,11 +27,12 @@ import { objectRadius } from '../scene/engine'
 import { startingSquare } from '../scene/flat'
 import { BOARD, infoPinHeight, infoStyle } from '../scene/info'
 import { moverHeight } from '../scene/movers'
-import type { AiStatus, LayerType, MappingScene, MediaAsset, Point, SceneLayer, Show, Surface, SurfaceKind } from '../types'
+import type { AiStatus, LayerType, MappingScene, MediaAsset, Point, SceneLayer, Show, Surface, SurfaceKind, TransportState } from '../types'
 import { Slider } from './controls'
 import { CornerPicker } from './CornerPicker'
 import { CountdownColorPickers, countdownLook } from './CountdownColors'
 import { HousePhotoPanel } from './HousePhoto'
+import { MakeScene } from './MakeScene'
 import { InfoFields } from './InfoFields'
 import { PaintHouse } from './PaintHouse'
 import { ProjectorScenes, sceneOn } from './ProjectorScenes'
@@ -49,12 +48,13 @@ const FLAT_TEST_MS = 10 * 60 * 1000
 const FLAT_SEND_MS = 600
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
 
-type ScenePart = 'edit' | 'photo' | 'house' | 'projectors' | 'paint'
+type ScenePart = 'make' | 'edit' | 'photo' | 'house' | 'projectors' | 'paint'
 
 /** The Scenes tab, one part at a time; the preview stays beside the part that needs it. */
 export const SCENE_PARTS: Array<{ id: ScenePart; label: string; hint: string }> = [
-  { id: 'edit', label: 'Make and change scenes', hint: 'Your scenes, their layers, and a live preview' },
-  { id: 'projectors', label: 'Scenes on each projector', hint: 'A different scene, or none, on one projector in a cue' },
+  { id: 'make', label: 'Make a scene', hint: 'Step by step: pick the projector, pick how it looks, put things in place, put it on the house' },
+  { id: 'edit', label: 'Change a scene', hint: 'Every setting of your scenes, their layers, and a live preview' },
+  { id: 'projectors', label: 'Cue by cue', hint: 'A different scene, or none, on one projector in one cue' },
   { id: 'photo', label: 'Start from a photo', hint: 'Snap the house; Claude finds the walls, roof, windows and doors, and a scene decorates them' },
   { id: 'house', label: 'House parts', hint: 'Trace the walls, roof, windows and doors so scenes can decorate each one' },
   { id: 'paint', label: 'Paint the house (Beta)', hint: 'An AI repaints a photo of your house as you describe it' },
@@ -99,6 +99,7 @@ export function ScenesPanel({
   clock,
   cameraPeople,
   canEdit,
+  transport,
   onError,
   reloadScenes,
   reloadMedia,
@@ -110,15 +111,22 @@ export function ScenesPanel({
   clock: ServerClock
   cameraPeople: PeopleTracker
   canEdit: boolean
+  transport: TransportState | null
   onError: (message: string | null) => void
   reloadScenes: () => Promise<void>
   reloadMedia: () => Promise<unknown>
   onShowChanged: () => Promise<void> | void
 }) {
   const [search, setSearch] = useSearchParams()
-  const part: ScenePart = SCENE_PARTS.find((p) => p.id === search.get('part'))?.id ?? 'edit'
-  const setPart = (id: ScenePart) => setSearch(id === 'edit' ? {} : { part: id }, { replace: true })
-  const [starting, setStarting] = useState(false)
+  const part: ScenePart = SCENE_PARTS.find((p) => p.id === search.get('part'))?.id ?? 'make'
+  const setPart = (id: ScenePart) => setSearch(id === 'make' ? {} : { part: id }, { replace: true })
+  // "Put it on a projector" opens Make a scene with the scene (and maybe a projector) picked.
+  const startWith = useMemo(() => ({
+    sceneId: Number(search.get('scene')) || null,
+    outputId: Number(search.get('projector')) || null,
+  }), [search])
+  const putOnProjector = (target: MappingScene) => setSearch({ scene: String(target.id) }, { replace: true })
+  const startNew = () => setPart('make')
   const [selectedId, setSelectedId] = useState<number | null>(() => Number(localStorage.getItem(SCENE_KEY)) || null)
   const [drafts, setDrafts] = useState<Map<number, MappingScene>>(new Map())
   const [ai, setAi] = useState<AiStatus | null>(null)
@@ -366,15 +374,31 @@ export function ScenesPanel({
   const inShow = (target: MappingScene) =>
     show.cues.some((c) => show.outputs.some((o) => sceneOn(c, o.id) === target.id) || c.scene_id === target.id)
 
-  const startFrom = async (name: string, description: string, layers: SceneLayer[]) => {
-    setStarting(false)
-    await create(name, description, layers)
-    setPart('edit')
-  }
-
   return (
     <div className="space-y-4">
       <SectionBar label="Scenes sections" value={part} onChange={setPart} sections={SCENE_PARTS.filter((p) => p.id !== 'paint' || canEdit)} />
+
+      {part === 'make' && (
+        <MakeScene
+          show={{ ...show, surfaces }}
+          scenes={list}
+          media={media}
+          clock={clock}
+          cameraPeople={cameraPeople}
+          canEdit={canEdit}
+          ai={ai}
+          transport={transport}
+          hasHousePhoto={hasHousePhoto}
+          startWith={startWith}
+          onError={onError}
+          reloadScenes={reloadScenes}
+          onShowChanged={onShowChanged}
+          onOpenScene={(id) => {
+            setSelectedId(id)
+            setPart('edit')
+          }}
+        />
+      )}
 
       {part === 'projectors' && (
         <ProjectorScenes show={show} scenes={list} canEdit={canEdit} onChanged={onShowChanged} onError={onError} />
@@ -393,7 +417,7 @@ export function ScenesPanel({
             setPart('edit')
             void describe(prompt, null)
           }}
-          onStartNew={() => setStarting(true)}
+          onStartNew={startNew}
           reloadMedia={reloadMedia}
           onError={onError}
         />
@@ -419,10 +443,10 @@ export function ScenesPanel({
                 )}
                 <Panel
                   title="Your scenes"
-                  description="Pick one to change it and see it in the preview. Add to cues makes it play when GO reaches it."
+                  description="Pick one to change every setting it has. To put one on a projector, press Put it on a projector."
                   action={
                     canEdit ? (
-                      <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={() => setStarting(true)}>
+                      <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={startNew}>
                         New scene
                       </button>
                     ) : undefined
@@ -433,7 +457,7 @@ export function ScenesPanel({
                       title="No scenes yet"
                       action={
                         canEdit ? (
-                          <button className="btn-primary" onClick={() => setStarting(true)}>
+                          <button className="btn-primary" onClick={startNew}>
                             Start a new scene
                           </button>
                         ) : undefined
@@ -468,7 +492,12 @@ export function ScenesPanel({
                     action={
                       canEdit ? (
                         <div className="flex gap-2">
-                          <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={() => void addToCues(scene)}>
+                          <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={() => putOnProjector(scene)}
+                            title="Pick a projector and put this scene on it, tonight and in every cue">
+                            Put it on a projector
+                          </button>
+                          <button className="btn-ghost px-2 py-1 text-xs" disabled={busy != null} onClick={() => void addToCues(scene)}
+                            title="Add a new cue at the end of the cue list that plays this scene">
                             Add to cues
                           </button>
                           <button className="btn-ghost px-2 py-1 text-xs" disabled={busy != null}
@@ -839,63 +868,6 @@ export function ScenesPanel({
         </div>
       )}
 
-      <Modal open={starting} label="Start a new scene" onClose={() => setStarting(false)} size="lg">
-        <div className="space-y-4 p-5">
-          <div>
-            <h3 className="text-base font-semibold text-slate-50">Start a new scene</h3>
-            <p className="mt-1 text-sm text-slate-400">Pick a ready-made one to change as you like, or start blank.</p>
-          </div>
-          {ai?.available ? (
-            <div className="rounded-md bg-panel-850 p-3 ring-1 ring-white/5">
-              <p className="mb-2 text-sm font-medium text-slate-200">Describe it in words</p>
-              <DescribeBox
-                placeholder="A Christmas scene that turns my house into a gingerbread house, with snow, and sparkles that follow people"
-                busy={busy === 'describe'}
-                disabled={busy != null}
-                action="Create scene"
-                compact
-                onSubmit={(prompt) => {
-                  setStarting(false)
-                  setPart('edit')
-                  void describe(prompt, null)
-                }}
-              />
-            </div>
-          ) : ai ? (
-            <p className="text-xs text-slate-500">
-              To describe scenes in plain words instead, add an Anthropic API key in{' '}
-              <Link className="text-sky-300 hover:underline" to="/settings?part=ai">Settings → AI keys</Link>. Everything else works without one.
-            </p>
-          ) : null}
-          <div className="space-y-3">
-              {[...new Set(STARTERS.map((s) => s.occasion))].map((occasion) => (
-                <div key={occasion}>
-                  <p className="mb-1 mt-2 text-[11px] uppercase tracking-wide text-slate-500">{occasion}</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {STARTERS.filter((s) => s.occasion === occasion).map((starter) => (
-                      <button
-                        key={starter.name}
-                        className="rounded-md bg-panel-850 px-3 py-2 text-left ring-1 ring-white/5 hover:bg-panel-800 disabled:opacity-50"
-                        disabled={busy != null}
-                        onClick={() => void startFrom(starter.name, starter.description, starterLayers(starter, surfaces))}
-                      >
-                        <span className="block text-sm text-slate-100">{starter.name}</span>
-                        <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500">{starter.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-          </div>
-          <div className="flex justify-between gap-2 border-t border-white/[0.06] pt-3">
-            <button className="btn-default" disabled={busy != null} onClick={() => void startFrom('New scene', '', [])}>
-              Blank scene
-            </button>
-            <button className="btn-ghost" onClick={() => setStarting(false)}>Cancel</button>
-          </div>
-        </div>
-      </Modal>
-
       <ConfirmDialog
         open={confirmDelete != null}
         title="Delete scene"
@@ -963,7 +935,7 @@ function DescribeBox({
   )
 }
 
-function LayerCard({
+export function LayerCard({
   layer,
   media,
   open,
