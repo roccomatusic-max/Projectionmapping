@@ -93,7 +93,10 @@ CATALOG: dict[str, dict] = {
                    "star-of-david", "fireworks", "fish", "bubbles", "leaves", "moons",
                    "notes", "snowmen", "coins", "footprints", "welcome-mat",
                    "runway-arrows", "crawling-spiders", "gingerbread", "stockings", "wreaths",
-                   "santa-hats", "reindeer", "poinsettias", "holly", "mittens", "turkeys"],
+                   "santa-hats", "reindeer", "poinsettias", "holly", "mittens", "turkeys",
+                   "candy-corn", "skulls", "tombstones", "cauldrons", "witch-hats", "acorns",
+                   "pies", "party-hats", "champagne", "flags", "cupcakes", "chicks",
+                   "pots-of-gold", "rainbows"],
         "dials": "size: object size (bigger means fewer fit); amount: how many; speed: "
                  "how fast they move and change",
         "notes": "pumpkins are carved jack-o'-lanterns; eyes always watch the nearest "
@@ -104,7 +107,10 @@ CATALOG: dict[str, dict] = {
                  "runway-arrows and crawling-spiders are drawn flat for the ground (a "
                  "driveway; spiders hang from a thread, crawling-spiders do not): welcome-mat "
                  "reads WELCOME, runway-arrows point up the canvas like a landing strip; "
-                 "use blend normal",
+                 "skulls' eyes glow in color2; cauldrons bubble a brew in color over a fire "
+                 "in color2; flags are the stars and stripes waving (color the stripes, "
+                 "color2 the corner); cupcakes have a lit candle; rainbows and pots-of-gold "
+                 "are for St Patrick's Day; use blend normal",
         "motions": MOTIONS,
         "changes": CHANGES,
         "nears": NEARS,
@@ -156,9 +162,19 @@ CATALOG: dict[str, dict] = {
                  "sleigh is Santa's sleigh and reindeer flying over the roofline; train "
                  "is a toy train of presents along the bottom; birds and bats are "
                  "flocks that scatter from people; elves and penguins walk along the "
-                 "bottom; shooting-stars streak across the sky; ghosts float around",
+                 "bottom; shooting-stars streak across the sky; ghosts float around; "
+                 "witch flies over the roof on her broom and cackles at people; ufo hovers "
+                 "and beams light down on whoever is under it (near follow); skeletons, "
+                 "zombies, black-cats, turkeys, leprechauns and bunnies (hopping) walk "
+                 "along the bottom, skeletons and leprechauns dance near people, zombies "
+                 "and turkeys call out; cupid and eagles fly over the roof; butterflies "
+                 "and fish are flocks; rockets are fireworks that go up from the bottom "
+                 "of the house and burst in color and color2 (blend add); balloons float "
+                 "up and away",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
-                   "shooting-stars", "ghosts"],
+                   "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
+                   "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
+                   "rockets", "balloons", "butterflies", "fish"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
@@ -181,8 +197,11 @@ CATALOG: dict[str, dict] = {
                  "Santa's sleigh, his next stop and presents delivered on Christmas "
                  "Eve, a countdown to takeoff before); weather is the current weather; "
                  "days counts the days until a date; message is a scrolling light-up "
-                 "message board",
-        "styles": ["santa", "weather", "days", "message"],
+                 "message board; clock is the time now; moon is tonight's moon phase; "
+                 "holiday counts the days to the next holiday by itself; new-year counts "
+                 "down to New Year (to the second on New Year's Eve)",
+        "styles": ["santa", "weather", "days", "message", "clock", "moon", "holiday",
+                   "new-year"],
         "dials": "size: how big; speed: how fast light sweeps (message: scroll speed); "
                  "amount: sparkle",
         "nears": ["none", "light", "grow", "jump"],

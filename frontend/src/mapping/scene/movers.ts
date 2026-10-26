@@ -1,7 +1,10 @@
 /**
  * Flying and walking elements: Santa's sleigh and reindeer, a Christmas
  * train, flocks of birds or bats, elves, penguins, shooting stars and
- * ghosts that travel over the house.
+ * ghosts that travel over the house; a witch on her broom, a UFO that
+ * beams people up, skeletons, zombies, black cats, turkeys, Cupid,
+ * leprechauns, a hopping Easter bunny, eagles, butterflies and fish;
+ * firework rockets that go up and burst, and balloons that float away.
  *
  * Each follows a path: the points placed by hand on the preview (a line
  * through them, in order), or, with fewer than two, a path of its own:
@@ -24,13 +27,18 @@ import { nearOf } from './catalog'
 import { SPRITE_ROWS, type SpriteRow } from './sprites'
 
 // New styles go at the end, after the ones saved scenes already use.
-export const MOVER_STYLES = ['sleigh', 'train', 'birds', 'bats', 'elves', 'penguins', 'shooting-stars', 'ghosts'] as const
+export const MOVER_STYLES = [
+  'sleigh', 'train', 'birds', 'bats', 'elves', 'penguins', 'shooting-stars', 'ghosts',
+  'witch', 'ufo', 'skeletons', 'zombies', 'black-cats', 'turkeys', 'cupid', 'leprechauns', 'bunnies', 'eagles',
+  'rockets', 'balloons', 'butterflies', 'fish',
+] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
-type Motion = 'flyer' | 'flock' | 'walker' | 'train' | 'streak'
+type Motion = 'flyer' | 'flock' | 'walker' | 'train' | 'streak' | 'rocket' | 'rise'
 
-const STYLE: Record<MoverStyle, { motion: Motion; ground: boolean; height: number }> = {
-  sleigh: { motion: 'flyer', ground: false, height: 1 },
+/** How each travels; trail leaves sparkles behind, hop goes in bounds. */
+const STYLE: Record<MoverStyle, { motion: Motion; ground: boolean; height: number; trail?: boolean; hop?: boolean }> = {
+  sleigh: { motion: 'flyer', ground: false, height: 1, trail: true },
   train: { motion: 'train', ground: true, height: 0.8 },
   birds: { motion: 'flock', ground: false, height: 0.3 },
   bats: { motion: 'flock', ground: false, height: 0.3 },
@@ -38,6 +46,31 @@ const STYLE: Record<MoverStyle, { motion: Motion; ground: boolean; height: numbe
   penguins: { motion: 'walker', ground: true, height: 0.7 },
   'shooting-stars': { motion: 'streak', ground: false, height: 0.22 },
   ghosts: { motion: 'flyer', ground: false, height: 0.7 },
+  witch: { motion: 'flyer', ground: false, height: 0.85, trail: true },
+  ufo: { motion: 'flyer', ground: false, height: 0.7 },
+  skeletons: { motion: 'walker', ground: true, height: 0.95 },
+  zombies: { motion: 'walker', ground: true, height: 0.95 },
+  'black-cats': { motion: 'walker', ground: true, height: 0.6 },
+  turkeys: { motion: 'walker', ground: true, height: 0.7 },
+  cupid: { motion: 'flyer', ground: false, height: 0.6 },
+  leprechauns: { motion: 'walker', ground: true, height: 0.85 },
+  bunnies: { motion: 'walker', ground: true, height: 0.6, hop: true },
+  eagles: { motion: 'flyer', ground: false, height: 0.6 },
+  // Rockets go up from the bottom of the house and burst; balloons float up from it.
+  rockets: { motion: 'rocket', ground: true, height: 0.22 },
+  balloons: { motion: 'rise', ground: true, height: 0.75 },
+  butterflies: { motion: 'flock', ground: false, height: 0.28 },
+  fish: { motion: 'flock', ground: false, height: 0.3 },
+}
+
+/** Width over height of a style's main picture. */
+function ratioOf(style: MoverStyle): number {
+  const main = SPRITE_ROWS[style][0]
+  return main.w / main.h
+}
+
+function hasRow(style: MoverStyle, id: string): boolean {
+  return SPRITE_ROWS[style].some((r) => r.id === id)
 }
 
 export function moverStyle(style: string): MoverStyle {
@@ -258,6 +291,23 @@ function heading(dx: number, dy: number, limit: number): { angle: number; flip: 
   return { angle: Math.max(-limit, Math.min(limit, a)), flip }
 }
 
+/** A speech bubble over one ("Ho ho ho!"), showing as someone comes near. */
+function bubble(s: Sprite, size: number, flip: boolean, k: number): Sprite {
+  const bh = size * 0.32
+  return {
+    x: s.x + (flip ? 1 : -1) * s.hw * 0.3,
+    y: s.y - s.hh - bh * 0.7,
+    hw: (bh * 360) / 140,
+    hh: bh,
+    angle: 0,
+    flip: false,
+    alpha: s.alpha * smoothstep(0.2, 0.5, k),
+    glow: 0,
+    row: 'bubble',
+    frame: 0,
+  }
+}
+
 /** What one does when someone comes near; flocks scatter by themselves (below). */
 function react(s: Sprite, action: string, near: Near, t: number, ph: number, reach: number) {
   const k = near.k
@@ -306,15 +356,18 @@ export function moverSprites(f: MoverFrame): Sprite[] {
   const out: Sprite[] = []
   const ends = (s: number) => (drawn ? smoothstep(0, 0.08, s) * smoothstep(0, 0.08, L - s) : 1)
   const motion = STYLE[style].motion
+  // Each style keeps its own spacing, so a witch and a UFO do not fly on top of each other.
+  const own = MOVER_STYLES.indexOf(style) * 0.37
 
   if (motion === 'flyer') {
     const v = 0.04 + 0.4 * layer.speed
     const gap = drawn ? 0.5 : 0.2
     const lap = L + gap
     const n = style === 'sleigh' ? 1 : 1 + Math.round(layer.amount * 5)
-    const ratio = style === 'sleigh' ? 4 : 200 / 240
+    const ratio = ratioOf(style)
+    const floaty = style === 'ghosts' ? 0.25 : style === 'ufo' ? 0.18 : 0.07
     for (let i = 0; i < n; i++) {
-      const s = (((t * v + (i * lap) / n) % lap) + lap) % lap
+      const s = (((t * v + (i * lap) / n + own * lap) % lap) + lap) % lap
       if (s > L) continue
       const p = path.at(s)
       const size = H * p.size
@@ -322,7 +375,7 @@ export function moverSprites(f: MoverFrame): Sprite[] {
       const { angle, flip } = heading(p.dx, p.dy, style === 'sleigh' ? 0.4 : 0.15)
       const sprite: Sprite = {
         x: p.x,
-        y: p.y + Math.sin(t * (style === 'ghosts' ? 1.6 : 2.6) + ph * 6) * size * (style === 'ghosts' ? 0.25 : 0.07),
+        y: p.y + Math.sin(t * (floaty > 0.1 ? 1.6 : 2.6) + ph * 6) * size * floaty,
         hw: (size * ratio) / 2,
         hh: size / 2,
         angle,
@@ -330,11 +383,19 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         alpha: ends(s) * (style === 'ghosts' ? 0.75 + 0.25 * Math.sin(t * 2.3 + ph * 9) : 1),
         glow: 0,
         row: 'main',
-        frame: Math.floor((t * (style === 'ghosts' ? 6 : 9) + ph * 8) % 8),
+        frame: Math.floor(t * (style === 'ghosts' ? 6 : style === 'ufo' ? 4 : 9) + ph * 8),
       }
       const near = nearAt(sprite.x, sprite.y, sprite.hh, people, reach, aspect)
       react(sprite, action, near, t, ph * 6, reach)
-      if (style === 'sleigh') {
+      if (style === 'ufo' && near.k > 0.15) {
+        // A beam of light down onto whoever is under it.
+        const bh = size * 2.4
+        out.push({
+          x: sprite.x, y: sprite.y + sprite.hh * 0.45 + bh / 2, hw: (bh * 200) / 300 / 2, hh: bh / 2,
+          angle: 0, flip: false, alpha: sprite.alpha * smoothstep(0.15, 0.5, near.k), glow: 0, row: 'beam', frame: 0,
+        })
+      }
+      if (STYLE[style].trail) {
         // A trail of sparkles from the runners, longer with Trail turned up.
         const count = Math.round(6 + layer.fade * 18)
         for (let k = 1; k <= count; k++) {
@@ -356,26 +417,10 @@ export function moverSprites(f: MoverFrame): Sprite[] {
             frame: Math.floor(t * 10 + k) % 4,
           })
         }
-        out.push(sprite)
-        // Santa calls out to whoever comes near.
-        if (near.k > 0.2) {
-          const bh = size * 0.32
-          out.push({
-            x: sprite.x + (flip ? 1 : -1) * sprite.hw * 0.3,
-            y: sprite.y - sprite.hh - bh * 0.7,
-            hw: (bh * 360) / 140,
-            hh: bh,
-            angle: 0,
-            flip: false,
-            alpha: sprite.alpha * smoothstep(0.2, 0.5, near.k),
-            glow: 0,
-            row: 'bubble',
-            frame: 0,
-          })
-        }
-      } else {
-        out.push(sprite)
       }
+      out.push(sprite)
+      // Santa (or the witch) calls out to whoever comes near.
+      if (hasRow(style, 'bubble') && near.k > 0.2) out.push(bubble(sprite, size, flip, near.k))
     }
     return out
   }
@@ -431,9 +476,11 @@ export function moverSprites(f: MoverFrame): Sprite[] {
   if (motion === 'walker') {
     const v = 0.025 + 0.12 * layer.speed
     const n = 1 + Math.round(layer.amount * 7)
-    const ratio = style === 'elves' ? 176 / 288 : 192 / 256
+    const ratio = ratioOf(style)
+    const hop = STYLE[style].hop
+    const waves = hasRow(style, 'wave')
     for (let i = 0; i < n; i++) {
-      const ph = hash(i * 5.3 + 2)
+      const ph = hash(i * 5.3 + 2 + own * 10)
       const u = t * v * (0.85 + 0.3 * ph) + (i / n) * 2 * L + ph * L * 0.3
       const m = ((u % (2 * L)) + 2 * L) % (2 * L)
       const forward = m < L
@@ -441,23 +488,26 @@ export function moverSprites(f: MoverFrame): Sprite[] {
       const p = path.at(s)
       const size = H * p.size
       const near = nearAt(p.x, p.y - size / 2, size / 2, people, reach, aspect)
-      const stride = size * 0.55
+      const stride = size * (hop ? 1.1 : 0.55)
       const excited = (action === 'dance' || action === 'jump') && near.k > 0.35
+      const step = (((u / stride) % 1) + 1) % 1
       const sprite: Sprite = {
         x: p.x,
-        y: p.y - size / 2,
+        // Hoppers go in bounds, up off the ground and down again.
+        y: p.y - size / 2 - (hop ? Math.sin(step * Math.PI) * size * 0.45 : 0),
         hw: (size * ratio) / 2,
         hh: size / 2,
         angle: 0,
         flip: forward ? p.dx < 0 : p.dx > 0,
         alpha: 1,
         glow: 0,
-        row: style === 'elves' && excited ? 'wave' : 'main',
-        frame: style === 'elves' && excited ? Math.floor(t * 8 + ph * 4) % 4 : Math.floor(((u / stride) % 1) * 8),
+        row: waves && excited ? 'wave' : 'main',
+        frame: waves && excited ? Math.floor(t * 8 + ph * 4) : Math.floor(step * 8),
       }
-      // Walkers jump for joy rather than shake.
-      react(sprite, action === 'dance' ? 'jump' : action, near, t, ph * 6, reach)
+      // Walkers jump for joy rather than shake; the ones that can dance do that instead.
+      react(sprite, action === 'dance' ? (waves ? 'none' : 'jump') : action, near, t, ph * 6, reach)
       out.push(sprite)
+      if (hasRow(style, 'bubble') && near.k > 0.2) out.push(bubble(sprite, size, sprite.flip, near.k))
     }
     return out
   }
@@ -522,6 +572,117 @@ export function moverSprites(f: MoverFrame): Sprite[] {
     if (engine) {
       react(engine, action, near, t, 0, reach)
       out.push(engine)
+    }
+    return out
+  }
+
+  if (motion === 'rocket') {
+    // Each goes up from the bottom of the house (or along the drawn path) and bursts.
+    const n = 1 + Math.round(layer.amount * 5)
+    const rh = H
+    const rw = rh * (160 / 48)
+    const sparks = 16 + Math.round(layer.fade * 20)
+    for (let i = 0; i < n; i++) {
+      const period = (2.6 + hash(i * 3.1) * 2.6) / (0.4 + 1.2 * layer.speed)
+      const u = (t + hash(i * 7.7) * period) / period
+      const cycle = Math.floor(u)
+      const q = u - cycle
+      const seed = cycle * 17.3 + i * 5.1
+      const climb = 0.32
+      let x0: number
+      let y0: number
+      let x1: number
+      let y1: number
+      if (drawn) {
+        const a = path.at(0)
+        const b = path.at(L)
+        ;[x0, y0, x1, y1] = [a.x, a.y, b.x, b.y]
+      } else {
+        const base = path.at(hash(seed) * L)
+        x0 = base.x
+        y0 = base.y
+        x1 = x0 + (hash(seed + 1) - 0.5) * 0.15
+        y1 = Math.max(0.08, y0 - 0.45 - hash(seed + 2) * 0.3)
+      }
+      if (q < climb) {
+        const k = q / climb
+        const e = 1 - (1 - k) * (1 - k)
+        let x = x0 + (x1 - x0) * e
+        let y = y0 + (y1 - y0) * e
+        let dx = x1 - x0
+        let dy = y1 - y0
+        if (drawn) {
+          const p = path.at(e * L)
+          ;({ x, y, dx, dy } = p)
+        }
+        const len = Math.hypot(dx, dy) || 1
+        const { angle, flip } = heading(dx / len, dy / len, Math.PI)
+        const shell: Sprite = {
+          x: x - (dx / len) * rw * 0.35, y: y - (dy / len) * rw * 0.35, hw: rw / 2, hh: rh / 2,
+          angle, flip, alpha: smoothstep(0, 0.1, k), glow: 0, row: 'main', frame: 0,
+        }
+        react(shell, action, nearAt(x, y, rh, people, reach, aspect), t, i, reach)
+        out.push(shell)
+        continue
+      }
+      // The burst: sparks fly out, slow down, drift down and fade.
+      const k = (q - climb) / (1 - climb)
+      const near = nearAt(x1, y1, H * 3, people, reach, aspect)
+      const big = 1 + (action === 'grow' ? 0.8 : 0.35) * near.k
+      const radius = H * (2.2 + hash(seed + 3) * 1.6) * big * (1 - Math.pow(1 - Math.min(1, k * 1.6), 3))
+      const fade = 1 - smoothstep(0.45, 1, k)
+      const rows = ['spark1', 'spark2', 'spark3']
+      const look = Math.floor(hash(seed + 4) * 3)
+      // An outer ring and an inner one in another colour, each spark with a short tail.
+      for (const [ring, count, row] of [[1, sparks, rows[look]], [0.55, Math.round(sparks * 0.6), rows[(look + 1) % 3]]] as const) {
+        for (let j = 0; j < count; j++) {
+          const a = (j / count) * Math.PI * 2 + hash(seed + j + ring) * 0.25
+          const sr = H * 0.3 * (1 - k * 0.5) * (action === 'light' ? 1 + 0.6 * near.k : 1)
+          for (let m = 0; m < 3; m++) {
+            const r = radius * ring * (1 - m * 0.09)
+            out.push({
+              x: x1 + Math.cos(a) * r,
+              y: y1 + Math.sin(a) * r + k * k * H * 1.4,
+              hw: sr * (1 - m * 0.3), hh: sr * (1 - m * 0.3), angle: 0, flip: false,
+              alpha: fade * (1 - m * 0.35) * (0.75 + 0.25 * Math.sin(t * 20 + j)),
+              glow: near.k,
+              row, frame: 0,
+            })
+          }
+        }
+      }
+    }
+    return out
+  }
+
+  if (motion === 'rise') {
+    // Balloons float up from the bottom of the house, swaying, and away off the top.
+    const n = 1 + Math.round(layer.amount * 9)
+    const ratio = ratioOf(style)
+    for (let i = 0; i < n; i++) {
+      const period = (7 + hash(i * 2.3) * 5) / (0.3 + 1.4 * layer.speed)
+      const u = (t + hash(i * 9.1) * period) / period
+      const cycle = Math.floor(u)
+      const q = u - cycle
+      const seed = cycle * 11.7 + i * 3.3
+      const size = H * (0.8 + 0.4 * hash(seed + 5))
+      let x: number
+      let y: number
+      if (drawn) {
+        const p = path.at(q * L)
+        x = p.x
+        y = p.y
+      } else {
+        const base = path.at(hash(seed) * L)
+        x = base.x + Math.sin(t * 0.8 + i * 2) * size * 0.3
+        y = base.y - size * 0.4 - q * (base.y + size * 1.5)
+      }
+      const sprite: Sprite = {
+        x, y, hw: (size * ratio) / 2, hh: size / 2, angle: Math.sin(t * 1.1 + i) * 0.12, flip: false,
+        alpha: smoothstep(0, 0.06, q) * (1 - smoothstep(0.92, 1, q)), glow: 0, row: 'main', frame: i,
+      }
+      react(sprite, action, nearAt(x, y, size / 2, people, reach, aspect), t, i, reach)
+      out.push(sprite)
     }
     return out
   }

@@ -1,7 +1,7 @@
 """scene playlists
 
 Revision ID: a9d4e7c2b6f1
-Revises: a3d9f2c7e1b4
+Revises: a9d4e6b2c8f1
 Create Date: 2026-10-26 16:30:00.000000
 
 Playlists of scene groups that take turns through the night at set times,
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 
 revision = 'a9d4e7c2b6f1'
-down_revision = 'a3d9f2c7e1b4'
+down_revision = 'a9d4e6b2c8f1'
 branch_labels = None
 depends_on = None
 

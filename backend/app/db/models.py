@@ -875,3 +875,71 @@ class WeatherPlace(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class ShowNight(Base):
+    """One show time as it happened, for the Show history page.
+
+    Written by services/show_history.py as the show plays: when it started
+    and ended, who started it, the cues and scenes it went through, and the
+    problems on the way. ``stats`` is filled when it ends (hours each
+    projector was on, the hottest readings, problems from the event log),
+    so the history outlives the temperature samples it was made from.
+    Names are copied in, so deleting a show or group keeps its history.
+    """
+
+    __tablename__ = "show_nights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: Local date the show time belongs to, "YYYY-MM-DD" (a show past
+    #: midnight belongs to the night it started).
+    night: Mapped[str] = mapped_column(String(10), index=True)
+    #: The planned show time's key ("2026-10-31:weekly"), None when by hand.
+    key: Mapped[str | None] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(128), default="", server_default="")
+    #: "weekly", "calendar", "hand" or "earlier" (rebuilt from the event log).
+    source: Mapped[str] = mapped_column(String(16), default="hand", server_default="hand")
+    show_id: Mapped[int | None] = mapped_column(Integer)
+    show_name: Mapped[str] = mapped_column(String(128), default="", server_default="")
+    group_name: Mapped[str | None] = mapped_column(String(128))
+    planned_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    planned_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Last time the server saw it playing; the end if the server stops.
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_by: Mapped[str | None] = mapped_column(String(64))
+    ended_by: Mapped[str | None] = mapped_column(String(64))
+    #: "running", "played", "missed" (a planned show that never started) or
+    #: "failed" (asked to start, and could not).
+    outcome: Mapped[str] = mapped_column(String(16), default="running", server_default="running")
+    message: Mapped[str] = mapped_column(Text, default="", server_default="")
+    #: [{"at", "kind", "label"}]: cues, scenes, stops and restarts.
+    timeline: Mapped[list] = mapped_column(JSON, default=list)
+    #: Problems the recorder saw itself (a mini PC dropping off).
+    problems: Mapped[list] = mapped_column(JSON, default=list)
+    stats: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class HistorySettings(Base):
+    """The energy report's prices and watts. One row.
+
+    ``watts`` maps a projector id to the watts it draws when on; a
+    projector not listed uses its model's figure from the spec sheet.
+    ``started_at`` is when the server began keeping show history.
+    """
+
+    __tablename__ = "history_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    price_per_kwh: Mapped[float] = mapped_column(Float, default=0.17)
+    currency: Mapped[str] = mapped_column(String(8), default="$", server_default="$")
+    watts: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

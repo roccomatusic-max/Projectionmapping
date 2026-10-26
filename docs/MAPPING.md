@@ -628,7 +628,7 @@ until the holiday as a big number with a ribbon and a ticking
 hours/minutes/seconds clock. The look picks the holiday: four Christmas looks
 (gold and holly, frosted, candy cane, marquee lights) and two Halloween looks
 (jack-o'-lantern orange with pumpkins and bats, ghostly green with ghosts and
-bats, both flickering like a candle). Editor → Elements → Add an element offers
+bats, both flickering like a candle). Editor → Elements → Find an element offers
 "Christmas countdown" and "Halloween countdown". Each part has its own
 colour picker (Editor → Elements → Move and colours, or the layer's card in
 Scenes): big number, its 3D side, words above the number, banner, words on the
@@ -686,6 +686,43 @@ bottom of the picture.
 - **Message board**: a light-up bulb board scrolling the layer's `text` (up to
   200 characters). The phone remote's Show tab lists every message board with
   a box to change the words (admins).
+
+**The element library** (`frontend/src/mapping/scene/library.ts`, the
+"Find an element…" button under Editor → Elements, a search box rather than a
+list): every element on its own, with a moving picture, searchable by name,
+by holiday (Halloween, Thanksgiving, Christmas, New Year's, Valentine's,
+St Patrick's, Easter, Fourth of July, birthdays and more) and by kind (flies,
+walks, objects, live info, countdowns, snow). Typing searches every holiday;
+the chip for the season now is picked when it opens. An entry is a layer
+type, a style and a starting look (colours, how many, what people do to it);
+some styles appear more than once only where a different look means a
+different thing (blue jays and doves, holiday-coloured fireworks). The
+pictures of flying and walking ones are their sprites drawn on a 2D canvas;
+the rest are drawn by the real scene engine on one shared hidden WebGL canvas
+and copied out. A scene holds at most 12 layers; the library says so when it
+is full. Each element does something with people or shows real data:
+
+- Flying and walking: a witch on her broomstick (cat on the broom, "Hee hee
+  hee!" near people), a UFO that follows people and beams them up, dancing
+  skeletons (wave when someone is near), shuffling zombies ("Braaains!"),
+  prowling black cats (glowing outline, so they show on a dark house),
+  strutting turkeys ("Gobble gobble!"), Cupid, dancing leprechauns, hopping
+  Easter bunnies, bald eagles, firework rockets that launch from the ground
+  and burst in two rings (bigger and brighter near people), balloons that
+  float up, butterflies and a school of fish that scatter.
+- Objects: candy corn, skulls, tombstones, cauldrons, witch hats, acorns,
+  pies, party hats, champagne glasses, flags, cupcakes, chicks, pots of gold
+  and rainbows.
+- Live info: a clock (blinking colon), tonight's moon phase worked out from
+  the date (how much is lit, next full moon), days until the next holiday
+  (it moves on to the next by itself, with the greeting on the day) and a
+  New Year's countdown (hours, minutes and seconds on New Year's Eve).
+
+Ready-made scenes added with them: Witching hour, Graveyard dance, Alien
+visit, Thanksgiving parade, New Year's Eve countdown, Fourth of July
+fireworks, Leprechaun's gold, Easter bunny hop, Cupid's arrows and Birthday
+balloons. "Describe a scene" knows every new style; a test checks its list
+matches the Editor's.
 
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
@@ -818,7 +855,58 @@ with the weekly show time and every entry (past ones folded away).
 `entry_id`, `tonight_slots`, `cancelled_by` and `next_title`. Changes go out
 as `calendar` and `tonight` messages.
 
-## 6d. Scene playlists (Dashboard, Playlists)
+## 6d. Show history, energy report and season wrap-up (Health → Show history)
+
+Every show time is written down (`backend/app/services/show_history.py`,
+table `show_nights`). The recorder listens to the show transport: the moment
+the show plays, by the show time, Start now, GO on Run the show, the phone,
+Home Assistant or an automation, a record opens; each cue and scene it goes
+through is noted; it closes when the show stops, blacks out or the
+emergency stop is pressed. Tonight's show adds the show time's name, its
+planned times, the scene group and who started and stopped it. A show that
+starts again within 15 minutes (a blackout by mistake, a server restart
+mid-show) carries on the same record. A planned show time that ends with no
+show is recorded as "Did not play" (with the emergency stop as the reason
+when it held the show), and a start that failed as "Could not start".
+
+While the show plays the recorder checks the show's mini PCs every 30
+seconds: one out of touch for a minute is a problem ("lost its connection
+at 7:57 PM, came back after 3 minutes"). When the record closes, the hours
+each projector was on, the hottest temperature of each sensor and the
+problems in the event log (projector stopped answering, switched off by
+itself, projector warnings, emergency stop, automation failed, intake close
+to its limit) are worked out and kept with the record, since temperature
+samples are pruned after 30 days.
+
+Hours on come from the power samples of the operational poll, counted per
+hour: the share of samples that said on, times the part of the hour the
+samples cover (so late polls and a server that was off do not skew it).
+Energy is hours × watts: 1,000 W for the PT-DZ13K series and 830 W for
+the DZ770 / DW740 / DX810 (Panasonic spec sheets, 120 V), 500 W for other
+makes until set; price $0.17 per kWh until set. Both are set on the Energy
+tab (table `history_settings`). Weeks run Monday to Sunday; hours before 6
+AM count on the night before.
+
+Seasons: Halloween (September 1 to October 31), Christmas (November 15 to
+January 6), and any named run of nights on the calendar. For 21 days after
+a season with shows ends, the Show history page and Tonight's show say so
+and link the wrap-up: nights with a show, hours, problems, energy and cost,
+the hottest night (air intake), longest show, nights that did not play,
+what played most, and every show as a strip. Shows under 10 minutes (a
+test) are listed but not counted as nights. On first start the last 30
+days of Tonight's show log lines are turned into records.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/history/nights?days=60` | Viewer: every show time, newest first, with timeline, problems, hours, temperatures, kWh and cost |
+| GET | `/api/history/energy?weeks=8` | Viewer: hours, kWh and cost per projector per week, per night, totals |
+| PUT | `/api/history/energy/settings` | Operator: price per kWh, currency sign, watts per projector |
+| GET | `/api/history/seasons` | Viewer: seasons with shows, and the one that just finished |
+| GET | `/api/history/wrapup?start=&end=&name=` | Viewer: the wrap-up for any run of nights (up to 400) |
+
+Changes go out as `show_history` messages.
+
+## 6e. Scene playlists (Dashboard, Playlists)
 
 A playlist is scene groups taking turns through the night: "Spooky from
 6:45 PM, Pumpkins from 8:00 PM, Quiet from 9:30 PM", each step with a fade
