@@ -380,6 +380,7 @@ export function ScenesPanel({
 
       {part === 'make' && (
         <MakeScene
+          key={show.id}
           show={{ ...show, surfaces }}
           scenes={list}
           media={media}
