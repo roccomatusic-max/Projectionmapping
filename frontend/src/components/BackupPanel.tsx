@@ -75,6 +75,7 @@ const CONTENT_WORDS: Array<[string, string, string]> = [
   ['shows', 'show', 'shows'],
   ['scenes', 'scene', 'scenes'],
   ['scene_groups', 'scene group', 'scene groups'],
+  ['playlists', 'playlist', 'playlists'],
   ['saved_maps', 'saved map', 'saved maps'],
   ['calendar', 'calendar entry', 'calendar entries'],
   ['players', 'mini PC', 'mini PCs'],
