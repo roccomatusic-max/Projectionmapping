@@ -267,6 +267,59 @@ async def test_a_show_the_schedule_could_not_start_is_sent(api, sent):
     await api.post("/api/emergency/clear", headers=headers)
     started = (await api.post("/api/tonight/start", headers=headers)).json()
     assert started["ok"] is True, started
+    await asyncio.sleep(0.2)  # the "Show started" note comes through the bus
     await _settled()
-    assert sent[-1]["json"]["title"] == "All clear"
-    assert sent[-1]["json"]["message"] == "Tonight's show is playing"
+    assert {"title": "All clear", "message": "Tonight's show is playing"} in [
+        {k: s["json"][k] for k in ("title", "message")} for s in sent]
+
+
+async def test_the_show_starting_and_stopping_is_sent(api, sent):
+    from app.services import tonight as service
+
+    headers = await login(api)
+    await _ntfy_on(api, headers)
+    show = await make_show(api, headers, name="Halloween")
+    for _ in range(2):
+        await api.post(f"/api/mapping/shows/{show['id']}/cues", headers=headers, json={})
+
+    async def transport(action, **body):
+        done = await api.post("/api/mapping/transport", headers=headers,
+                              json={"action": action, **body})
+        assert done.status_code == 200, done.text
+        await asyncio.sleep(0.2)  # the alerting service hears it from the bus
+        await _settled()
+
+    await transport("go", show_id=show["id"])
+    assert [s["json"]["title"] for s in sent] == ["Show started"]
+    assert sent[0]["json"]["message"].startswith("Halloween started at ")
+    assert sent[0]["json"]["message"].endswith(", playing cue 1.")
+    # The next cue, pausing and resuming are not news.
+    await transport("go")
+    await transport("pause")
+    await transport("resume")
+    assert len(sent) == 1
+
+    await transport("stop")
+    assert sent[-1]["json"]["title"] == "Show stopped"
+    assert "Halloween stopped at " in sent[-1]["json"]["message"]
+    assert "after 0 min" in sent[-1]["json"]["message"]
+
+    # Tonight's show says who; the emergency stop says so.
+    await api.put("/api/tonight", headers=headers, json={"show_id": show["id"]})
+    ok, _ = await service.start_show(by="the schedule")
+    assert ok
+    await asyncio.sleep(0.2)
+    await _settled()
+    assert " by the schedule, playing cue 1." in sent[-1]["json"]["message"]
+    assert (await api.post("/api/emergency/stop", headers=headers)).status_code == 200
+    await asyncio.sleep(0.2)
+    await _settled()
+    assert "stopped at" in sent[-1]["json"]["message"]
+    assert "by the emergency stop" in sent[-1]["json"]["message"]
+
+    # Turned off, nothing more is sent.
+    await api.post("/api/emergency/clear", headers=headers)
+    await api.put("/api/phone-alerts", headers=headers, json={"topics": {"showtime": False}})
+    count = len(sent)
+    await transport("go", show_id=show["id"])
+    assert len(sent) == count

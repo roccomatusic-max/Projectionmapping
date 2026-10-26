@@ -11,6 +11,7 @@ const TOPICS: Array<{ id: PhoneAlertTopic; label: string; hint: string }> = [
   { id: 'offline', label: 'A projector stops answering or turns itself off', hint: 'Unplugged, a tripped breaker, or a shutdown nobody asked for.' },
   { id: 'minipc', label: 'A mini PC goes offline', hint: 'Its output has not reported for 3 minutes, so its projector may show nothing.' },
   { id: 'show', label: 'The show does not start on time', hint: 'Also when projectors do not turn on with it, or an automation fails.' },
+  { id: 'showtime', label: 'The show starts and stops', hint: 'When it started, what is playing, and how long it ran. GO to the next cue, Pause and Resume are not sent.' },
   { id: 'other', label: 'Other projector faults', hint: 'Fan, filter, lamp and other warnings the projector reports.' },
 ]
 

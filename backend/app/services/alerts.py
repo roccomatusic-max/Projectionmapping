@@ -39,7 +39,8 @@ log = logging.getLogger(__name__)
 
 #: The bus messages _handle acts on; the only ones the service subscribes to.
 HANDLED = ("projector_offline", "projector_online", "projector_state", "command_unverified",
-           "command_verified", "power_changed", "automation_failed", "enclosure_reading")
+           "command_verified", "power_changed", "automation_failed", "enclosure_reading",
+           "mapping_transport")
 
 _RANK = {Severity.INFO.value: 0, Severity.WARNING.value: 1, Severity.CRITICAL.value: 2}
 
@@ -66,6 +67,13 @@ def _when(at: datetime, now: datetime) -> str:
     return f"at {clock}" if local.date() == today.date() else f"on {local:%a} at {clock}"
 
 
+def _duration(span: timedelta) -> str:
+    """ "3 h 15 min", or "12 min"."""
+    minutes = max(int(span.total_seconds() // 60), 0)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
 def _fahrenheit(celsius: float) -> str:
     return f"{celsius * 9 / 5 + 32:.0f} °F ({celsius:.0f} °C)"
 
@@ -85,6 +93,11 @@ class AlertingService:
         #: Mini PCs told to restart or shut down from the Players page: by
         #: player id, until when their silence is expected.
         self._expected_away: dict[int, datetime] = {}
+        #: The show is playing or paused (as last heard), since when, and who
+        #: last asked for a start or stop through Tonight's show, until when.
+        self._show_running = False
+        self._show_since: datetime | None = None
+        self._show_by: tuple[str, datetime] | None = None
 
     async def start(self) -> None:
         if self._running:
@@ -177,6 +190,8 @@ class AlertingService:
                 )
             case "enclosure_reading":
                 await self._evaluate_enclosure(payload)
+            case "mapping_transport":
+                await self._show_changed(payload)
 
     async def _evaluate_power_change(self, projector_id: int | None, name: str,
                                      payload: dict[str, Any]) -> None:
@@ -516,6 +531,56 @@ class AlertingService:
         if resolved:
             bus.publish("alert_resolved", {"dedupe_key": dedupe_key, "message": message})
             phone.all_clear(dedupe_key=dedupe_key, message=message)
+
+    # -- the show starting and stopping ------------------------------------
+
+    def note_show_command(self, by: str) -> None:
+        """Tonight's show is about to start or stop it: say who, on the phone."""
+        self._show_by = (by, datetime.now(UTC) + timedelta(seconds=10))
+
+    async def _show_changed(self, payload: dict[str, Any]) -> None:
+        """Tell the phone when the show starts and when it stops.
+
+        Started means playing or paused after being stopped (or blacked
+        out); moving to the next cue, pausing and resuming are not news.
+        """
+        from app.db.models import MappingShow
+        from app.schemas.mapping import TransportState
+        from app.services.mapping import describe_live
+
+        state = TransportState.model_validate(payload)
+        running = state.status in ("playing", "paused")
+        if running == self._show_running:
+            return
+        self._show_running = running
+        now = datetime.now(UTC)
+        by, self._show_by = self._show_by, None
+        who = f" by {by[0]}" if by and now <= by[1] else ""
+        name = "The show"
+        if state.show_id is not None:
+            async with session_scope() as session:
+                show = await session.get(MappingShow, state.show_id)
+                if show is not None:
+                    name = show.name
+        clock = _when(now, now)
+        if running:
+            self._show_since = now
+            live = describe_live(state).strip()
+            phone.show_event(title="Show started",
+                             message=f"{name} started {clock}{who}"
+                                     + (f", playing {live}." if live else "."),
+                             tag="clapper")
+            return
+        since, self._show_since = self._show_since, None
+        if state.emergency is not None:
+            how = " by the emergency stop"
+        elif state.status == "blackout":
+            how = f" (blackout){who}"
+        else:
+            how = who
+        took = f" after {_duration(now - since)}" if since else ""
+        phone.show_event(title="Show stopped", message=f"{name} stopped {clock}{how}{took}.",
+                         tag="checkered_flag")
 
     # -- mini PCs ------------------------------------------------------------
 
