@@ -89,3 +89,16 @@ def test_batch_three_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "zombie-hands", "hatching-eggs", "beach-balls", "dolphins", "kites", "lion-dance"]
+
+
+def test_batch_four_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "crows", "near": "flee"},
+        {"type": "movers", "style": "sledders", "near": "jump"},
+        {"type": "movers", "style": "jingle-bells", "near": "dance"},
+        {"type": "movers", "style": "parachute-presents", "near": "follow"},
+        {"type": "movers", "style": "hens"},
+        {"type": "movers", "style": "koi", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "crows", "sledders", "jingle-bells", "parachute-presents", "hens", "koi"]
