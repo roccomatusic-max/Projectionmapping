@@ -69,6 +69,7 @@ Windows Server 2022 and 2025 machines for every change
 | Get to the dashboard on the server | open the app | Start → Projector Control | CI checks the entry exists |
 | After a power cut | Energy setting | BIOS "Restore on AC power loss" | documented |
 | Tonight's show times (Dashboard) | the Mac's time zone | the Windows clock's time zone | the same code; unit tests (shared) |
+| Show history, energy report, season wrap-up (Health → Show history) | yes, in the server's database | yes, same code and database | unit tests (shared) |
 
 Not tried anywhere yet, on either system: a real reboot of the server, and
 the whole path with real mini PCs, phones and projectors on the Windows

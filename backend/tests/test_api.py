@@ -47,11 +47,13 @@ async def api(panasonic_sim, monkeypatch):
     import app.services.minipc_updates as minipc_updates_module
     import app.services.monitor as monitor_module
     import app.services.setup_guide as setup_guide_module
+    import app.services.show_history as show_history_module
     import app.services.tonight as tonight_module
     import app.services.walkthrough as walkthrough_module
     for module in (audit_module, monitor_module, alerts_module, automation_module,
-                   mapping_module, emergency_module, tonight_module, minipc_updates_module,
-                   heater_module, setup_guide_module, backups_module, walkthrough_module):
+                   mapping_module, emergency_module, show_history_module, tonight_module,
+                   minipc_updates_module, heater_module, setup_guide_module, backups_module,
+                   walkthrough_module):
         importlib.reload(module)
     import app.api.deps as deps_module
     import app.api.routes.auth as auth_routes
@@ -69,6 +71,7 @@ async def api(panasonic_sim, monkeypatch):
     import app.api.routes.monitoring as monitoring_routes
     import app.api.routes.phone_alerts as phone_alert_routes
     import app.api.routes.projectors as projector_routes
+    import app.api.routes.show_history as history_routes
     import app.api.routes.system as system_routes
     import app.api.routes.tonight as tonight_routes
     import app.api.routes.updates as update_routes
@@ -79,7 +82,7 @@ async def api(panasonic_sim, monkeypatch):
                    automation_routes, enclosure_routes, integration_routes,
                    mapping_routes, player_routes, camera_routes, scene_routes, ws_routes, system_routes,
                    update_routes, emergency_routes, tonight_routes, phone_alert_routes,
-                   heater_routes, backup_routes, walkthrough_routes):
+                   heater_routes, backup_routes, walkthrough_routes, history_routes):
         importlib.reload(module)
     import app.main as main_module
     importlib.reload(main_module)

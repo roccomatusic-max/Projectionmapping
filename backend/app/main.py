@@ -41,6 +41,7 @@ from app.api.routes import (
     phone_alerts,
     projectors,
     show_calendar,
+    show_history,
     system,
     tonight,
     updates,
@@ -64,6 +65,7 @@ from app.services.heater import service as heater_service
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
+from app.services.show_history import recorder as history_recorder
 from app.services.tonight import scheduler as tonight_scheduler
 from app.services.updates import start_auto_updates
 from app.services.walkthrough import walkthrough as walk_the_yard
@@ -161,6 +163,7 @@ async def lifespan(_: FastAPI):
     await monitor.start()
     await alerting.start()
     await automation_engine.start()
+    await history_recorder.start()
     await tonight_scheduler.start()
     await heater_service.start()
     await mqtt_publisher.start()
@@ -187,6 +190,7 @@ async def lifespan(_: FastAPI):
         await tonight_scheduler.stop()
         await walk_the_yard.stop_service()
         await heater_service.stop()
+        await history_recorder.stop()
         await mapping_transport.stop_service()
         await monitor.stop()
         await alerting.stop()
@@ -266,7 +270,8 @@ for router in (
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
     mapping_maps.router, tonight.router, show_calendar.router, updates.router, emergency.router,
-    phone_alerts.router, heaters.router, backups.router, walkthrough.router, ws.router,
+    phone_alerts.router, heaters.router, backups.router, walkthrough.router, show_history.router,
+    ws.router,
 ):
     app.include_router(router, prefix="/api")
 

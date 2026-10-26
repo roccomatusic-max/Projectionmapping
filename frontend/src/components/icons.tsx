@@ -47,6 +47,7 @@ export {
   ArrowLeft as BackIcon,
   Cable as HdmiIcon,
   CalendarClock as AutomationIcon,
+  CalendarCheck as ShowHistoryIcon,
   CalendarDays as CalendarIcon,
   Check as CheckIcon,
   ChevronRight as ChevronIcon,
