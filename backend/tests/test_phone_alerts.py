@@ -31,6 +31,7 @@ def sent(monkeypatch, tmp_path):
     monkeypatch.setattr(phone_alerts.PhoneAlerts, "path",
                         staticmethod(lambda: tmp_path / phone_alerts.FILENAME))
     phone_alerts.phone.sent_keys.clear()
+    phone_alerts.phone._tasks.clear()  # an earlier test's event loop is gone
     phone_alerts.phone.last = None
     return calls
 
