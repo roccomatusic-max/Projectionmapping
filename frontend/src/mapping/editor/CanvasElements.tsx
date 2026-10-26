@@ -26,7 +26,7 @@ function starterLook(style: string): Partial<SceneLayer> {
 type Group = 'objects' | 'movers' | 'info' | 'countdown' | 'snow'
 
 /** What the Add menu offers: each kind of object by itself, things that fly or walk, live info boards, snow, and a countdown for each holiday. */
-const ADDABLE: Array<{ value: string; label: string; group: Group; make: () => SceneLayer }> = [
+export const ADDABLE: Array<{ value: string; label: string; group: Group; make: () => SceneLayer }> = [
   ...KIND.shapes.styles.map((s) => ({
     value: `shapes:${s.id}`,
     label: s.label,

@@ -493,6 +493,21 @@ wall and approximate further out.
 **Mapping → Scenes** builds designs that react to people, and plays them as
 cues like media (a cue's **Scene** draws over its media, or over black).
 
+**Make a scene** (the first part of the Scenes page, `editor/MakeScene.tsx`)
+is the direct way in, four steps: (1) pick the projector (or every
+projector) and, when house parts are traced, the part of the house; the
+preview dims everything that projector does not light and outlines the part;
+(2) pick a ready-made scene, describe one in words, reuse one of yours, or
+start empty; ready-made scenes are fitted to that spot (layers spread over an
+area go on the chosen part, things put in a spot move inside the projector's
+box); (3) put things in place on the preview; (4) one button puts it there:
+every cue of the show gets the scene on that projector (`output_scenes`, or
+`scene_id` for every projector; a show with no cues gets one), and so do the
+ticked scene groups, tonight's ticked by default, because a scene group sets
+every cue when tonight's show starts. **Change a scene** keeps every setting;
+its "Put it on a projector" opens Make a scene with that scene picked.
+**Cue by cue** is the per-cue, per-projector table.
+
 - **A scene is a stack of layers**, bottom first, stored in a global library
   (`mapping_scenes`). Each layer is one of 18 types with a style, two colours,
   four dials (size, speed, amount, fade, each 0–1; what each means is in

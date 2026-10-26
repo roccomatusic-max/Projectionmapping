@@ -818,9 +818,15 @@ export function TonightShow({ session }: { session: Session }) {
             </div>
           </div>
           {canEdit && (
-            <button className="btn-default btn-sm" onClick={() => setEditor({ group: null })}>
-              <AddIcon size={14} aria-hidden /> New scene group
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <Link className="btn-default btn-sm" to="/mapping/scenes"
+                title="Make a new scene, pick the projector it goes on, and put it in tonight's show">
+                <ScenesIcon size={14} aria-hidden /> Make a scene
+              </Link>
+              <button className="btn-default btn-sm" onClick={() => setEditor({ group: null })}>
+                <AddIcon size={14} aria-hidden /> New scene group
+              </button>
+            </div>
           )}
         </header>
         {visibleGroups.length === 0 ? (
