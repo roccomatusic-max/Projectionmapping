@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { Session } from '@/api/client'
 import { CalendarIcon, CheckIcon, ClockIcon, RunShowIcon, StopIcon } from '@/components/icons'
 import { TimesEditor, calendarLines, groupLines, timeLine, usedText } from '@/components/tonight/TonightShow'
@@ -19,11 +19,13 @@ function errorText(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
 }
 
-export default function TonightTab({ session, transport, onCalendar }: {
+export default function TonightTab({ session, transport, onCalendar, walk }: {
   session: Session
   transport: TransportState | null
   /** Opens the Calendar tab. */
   onCalendar?: () => void
+  /** When the projectors were last checked, and Walk the yard (WalkTheYard.tsx). */
+  walk?: ReactNode
 }) {
   const canRun = session.role === 'admin' || session.role === 'operator'
   const [tonight, setTonight] = useState<Tonight | null>(null)
@@ -219,6 +221,7 @@ export default function TonightTab({ session, transport, onCalendar }: {
           <CalendarIcon size={18} aria-hidden /> Plan shows on the calendar
         </button>
       )}
+      {walk}
       {!canRun && <p className="text-center text-sm text-slate-500">Your account can see tonight&apos;s show but not change it.</p>}
 
       {editing && tonight && (

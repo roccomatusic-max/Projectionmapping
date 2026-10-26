@@ -55,9 +55,12 @@ Windows Server 2022 and 2025 machines for every change
 | Tailscale link on the Phone remote page | Mac download | Windows download | CI checks the server reports Windows to that page |
 | Settings → App updates | yes | yes, same panel | CI shows it with the right version |
 | Settings → Home Assistant (integration bundled in the app, install line, key) | yes | yes, same files and endpoints | both builds' `--check` downloads the bundled integration; Home Assistant itself tested on Linux CI only |
+| Settings → Phone alerts (ntfy or Pushover; `phone-alerts.json` in the data folder) | yes | yes, same code and file; outbound HTTPS only, no firewall change | unit tests (shared) |
 | Install updates by themselves | on, quiet rules, every 15 min | same code | unit tests (shared) |
 | Check now → Install, then refresh | swaps the bundle, launchd restarts | stages the new copy; a watcher stops the service, swaps, starts | CI installs a newer build through the panel's API |
 | Rollback within 2 minutes | yes | yes | CI installs a broken build and sees the old one come back |
+| Settings → Backup: back up, nightly backups, restore, setup guide | yes; restarts through launchd's KeepAlive | yes, same code; restarts through the service's recovery settings | CI backs up, restores and sees the service come back with the backup (`desktop/ci/check_backup.py`, also run on the built Mac app) |
+| Backups kept in | `~/Library/Application Support/ProjectorControl/backups` | `C:\ProgramData\ProjectorControl\backups` | CI |
 | Install again over an existing one | open a newer download | paste the line again | CI |
 | Hands new Mini PC app versions to the mini PCs (Players → App) | yes | yes, same code | unit tests (shared); the mini PC side's install script runs in the Mini PC CI |
 | Mini PC logs on the Players page (Get the log, sent after every update) | yes, kept in `minipc-logs/` beside `minipc-app/` | yes, same code and folder | unit tests (shared); the Mini PC CI checks a real update sends it |

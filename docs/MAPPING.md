@@ -96,9 +96,16 @@ from the editor on a computer with several display outputs. It renders with WebG
 
 Editing is live. The editor and the output window exchange changes through a
 `BroadcastChannel` while a handle is being dragged, so the projector image
-follows the mouse with no server round-trip, and the change is saved to the
-server a moment later. Output windows on another computer pick the saved
-change up over the WebSocket feed.
+follows the mouse with no server round-trip. Players on other computers (the
+mini PCs) follow too, show running or not: while a corner, mesh point, mask
+or blend moves, the editor posts each position to
+`POST /outputs/{id}/live` (about 25 a second, one request at a time, newer
+positions replacing ones not yet sent), which relays it as a
+`mapping_output` message with `"live": true` and writes nothing. A quarter
+second after the last change the editor saves it with `PATCH /outputs/{id}`
+through the same queue, so no live position can land after the save. The
+renderer is never rebuilt for a geometry change, so the picture moves
+without a flash.
 
 ### Placing windows on displays
 
@@ -142,6 +149,7 @@ matching how projector configuration is gated.
 | GET/POST | `/shows` | |
 | GET/PATCH/DELETE | `/shows/{id}` | GET returns outputs and cues |
 | POST | `/shows/{id}/outputs` · PATCH/DELETE `/outputs/{id}` | |
+| POST | `/outputs/{id}/live` | Geometry on the move: relayed to every player as `mapping_output` with `"live": true`, not saved |
 | POST | `/shows/{id}/cues` · PATCH/DELETE `/cues/{id}` · PUT `/shows/{id}/cue-order` | |
 | GET | `/maps` | Saved maps (summaries) |
 | POST | `/shows/{id}/save-map` | Save the show's mapping as a named map (`replace` overwrites one of the same name) |
@@ -341,6 +349,42 @@ viewers can watch it; only administrators can change it.
 
 The same buttons are on **Mapping → Run the show** in the full app.
 
+### Walk the yard: checking every projector from the phone
+
+**Walk the yard** (Show Remote → Tonight or Projectors tab) checks every
+mini PC's projector in turn before a show. The projector being checked shows
+its ID test picture (its output's name, a crosshair, TL/TR/BL/BR corners and
+five focus stars over the canvas grid) and every other projector on the walk
+goes black, so the lit one cannot be mistaken. The phone shows that
+projector's mini PC (connected or not), power, shutter, hottest sensor, lamp
+hours and any fault, with Turn it on / Open the shutter when needed, and a
+Grid and name / All white switch. **Looks good** lights the next one;
+**Something's wrong** asks what (blurry, off target, too dark, wrong
+projector lit up, nothing showing, something else, a note). Previous and
+Skip for now move around the walk. When every projector is answered, each
+output gets back the test picture it had before (normally the show) and the
+walk is saved as an event (`walkthrough`, a warning when one needs a look).
+The Dashboard's Tonight's show has a **Last checked** tile and the phone
+shows "Last checked Today 5:40 PM · all 3 looked good".
+
+A walk never gets in the way of a show (services/walkthrough.py). Starting
+one while a show plays is refused unless the phone confirms stopping it; the
+show starting by any means, the emergency stop, End walk, or 20 minutes
+without a tap end it where it is and put every picture back. The outputs'
+earlier pictures are saved with the walk's start (`walkthrough_started`
+event), so a server restart mid-walk puts them back at start-up too. A mini
+PC whose projector shows a test picture does not update its app, so none
+updates during a walk.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/walkthrough` | Viewer: the walk going on (`active`) and the last one (`last`) |
+| POST | `/api/walkthrough/start` | Operator: `{stop_show}`; picks up a walk already going on |
+| POST | `/api/walkthrough/answer` | Operator: `{index, result: good/wrong, problems, note}` |
+| POST | `/api/walkthrough/go` | Operator: `{index}`, light another stop |
+| POST | `/api/walkthrough/picture` | Operator: `{picture: id/white}` |
+| POST | `/api/walkthrough/stop` | Operator: end it now |
+
 ## 6. Cameras: calibration and people
 
 A camera pointed at the building runs a small program,
@@ -449,8 +493,23 @@ wall and approximate further out.
 **Mapping → Scenes** builds designs that react to people, and plays them as
 cues like media (a cue's **Scene** draws over its media, or over black).
 
+**Make a scene** (the first part of the Scenes page, `editor/MakeScene.tsx`)
+is the direct way in, four steps: (1) pick the projector (or every
+projector) and, when house parts are traced, the part of the house; the
+preview dims everything that projector does not light and outlines the part;
+(2) pick a ready-made scene, describe one in words, reuse one of yours, or
+start empty; ready-made scenes are fitted to that spot (layers spread over an
+area go on the chosen part, things put in a spot move inside the projector's
+box); (3) put things in place on the preview; (4) one button puts it there:
+every cue of the show gets the scene on that projector (`output_scenes`, or
+`scene_id` for every projector; a show with no cues gets one), and so do the
+ticked scene groups, tonight's ticked by default, because a scene group sets
+every cue when tonight's show starts. **Change a scene** keeps every setting;
+its "Put it on a projector" opens Make a scene with that scene picked.
+**Cue by cue** is the per-cue, per-projector table.
+
 - **A scene is a stack of layers**, bottom first, stored in a global library
-  (`mapping_scenes`). Each layer is one of 15 types with a style, two colours,
+  (`mapping_scenes`). Each layer is one of 18 types with a style, two colours,
   four dials (size, speed, amount, fade, each 0–1; what each means is in
   `frontend/src/mapping/scene/catalog.ts`), a mix (add light, soft light,
   paint over), where it goes and what it reacts to.
@@ -466,6 +525,36 @@ cues like media (a cue's **Scene** draws over its media, or over black).
 - **House parts** are traced on each show's canvas (`shows.surfaces`: walls,
   roof, windows, doors, other), so a layer can decorate just the roof or just
   the windows. Untraced, everything covers the whole picture.
+- **Straightened parts** (a roof sloping away from the projector): a part can
+  carry `flat.corners`, four canvas points where a true square has to be drawn
+  to look square on that part from the street. Objects and countdowns whose
+  centre is on the part keep their place but are drawn through that
+  perspective (`scene/flat.ts`, the objects and countdown shaders), so they
+  are not stretched. The corners are dragged on Scenes → House parts →
+  Straighten, or with the mouse on a mini PC's status screen
+  (`POST /mapping/players/me/flat`), while a checkerboard square with a
+  circle shows on the projectors (`flat.test_until`, server clock).
+- **The driveway** (a projector on the roof pointing down): a house part of
+  kind `ground` ("Driveway or ground") is not part of the building, so
+  "Whole building" leaves it out and "Around the building" may cover it;
+  layers reach it with the target `ground`. Ground objects are drawn flat:
+  footprints, a WELCOME mat, landing strip arrows and crawling spiders (no
+  thread), and trails have a footprints style that stamps a left and right
+  foot twice a second along each person's way. Starters under "On the
+  driveway": Spiders on the driveway, Ghostly footprints, Welcome mat, Path
+  of lights, Santa's landing strip. A starter marked `placed` gives its pins
+  as fractions of the layer's area, put on the traced driveway when the
+  scene is made (`starterLayers`).
+- **Fitting a picture to the ground**: without a camera, the projector's
+  own corner pin is what straightens the driveway: dragged until the canvas
+  grid shows true squares on the ground, everything drawn on its slice is
+  flat on the driveway. The mini PC's status screen has "Fit the picture to
+  the ground" (`POST /mapping/players/me/warp`, only its own output's
+  corners; the grid shows while fitting, never while a show plays, and goes
+  off on Done, after ten minutes untouched or when the screen closes), with
+  Turn left, Turn right, Upside down and Mirror, so the picture's top faces
+  the house and reads the right way up from the street. The Editor's
+  Warp tab has the same turn buttons (`turnCorners`).
 - **Ready-made scenes**: Gingerbread house, Haunted house, Winter lights,
   Underwater, Party, Shadow play.
 - **Trying without a camera**: the preview walks made-up people across the
@@ -490,6 +579,28 @@ media stays at full resolution; the output HUD shows the level.
 one. Claude (`claude-opus-5-5`, structured JSON output) chooses from the same
 catalog; the answer is validated like any saved scene. Picture layers are
 kept as they are when a scene is changed in words.
+
+**Start from a photo** (Scenes → Start from a photo): take or pick a photo of
+the house (on a phone the file picker opens the camera), or use the camera's
+photo. It is kept in the media library as "House photo.jpg" (up to 2048 px).
+With an Anthropic key, Claude (`claude-opus-5-5`, image input, structured JSON
+output) outlines every wall, roof face, window, door and "other" part in the
+photo's pixels (`POST /mapping/house-photo/trace`, nothing saved); the answer
+is clamped onto the photo, parts with fewer than three points or no area are
+dropped, and the person picks "Use these parts" (replace) or "Add them".
+Without a key the same photo can be traced by hand. Four corners say where
+the canvas's corners are on the photo (default: the photo's own corners; the
+camera's corners for a camera photo); a homography takes parts from the photo
+to the canvas and back. The parts are ordinary house parts (`shows.surfaces`),
+drawn on the photo: dragging a corner keeps every part where it is on the
+photo and moves it on the canvas, saved four times a second, so a playing
+scene follows on the house. A part's `flat.corners`, when present, move with
+it. The photo and its corners are kept per show in
+`house-photos/<show id>.json` beside the media folder (`GET/PUT/DELETE
+/mapping/shows/{id}/house-photo`); deleting the photo from the library
+forgets them. "Make a scene for these parts" sends a theme and Claude's
+one-line description of the house to Describe a scene; the preview's backdrop
+"Your photo of the house, lined up" shows the scene on the straightened photo.
 
 **Paint the house (Beta)** (optional): with an OpenAI API key (Settings, or
 `OPENAI_API_KEY`), a photo of the building lined up with the canvas is
@@ -540,6 +651,49 @@ the 2D canvas only when the number changes (bundled OFL fonts, so every
 player draws the same letters offline); the clock strip is patched in once a
 second and the light sweep, glints and chasing bulbs are done in the shader.
 
+**Things that fly or walk** (`movers`, `frontend/src/mapping/scene/movers.ts`
+and `sprites.ts`): Santa's sleigh and reindeer (Rudolph's nose glows, a
+sparkle trail, "Ho ho ho!" when someone is near), a toy train of presents
+along a line with steam, flocks of birds and bats that scatter from people,
+walking elves (they wave) and penguins, shooting stars and floating ghosts.
+With no pins it picks a path of its own: flyers loop over the roofline (or the
+top of the picture), walkers and the train go along the bottom. Two or more
+pins are a path drawn by hand, in order (a smooth curve through them; each
+pin's size makes it bigger or smaller there). Positions come from the cue's
+time on the server clock, so every projector draws the sleigh in the same
+place and it crosses from one projector to the next. The artwork is painted
+once into a sprite sheet; each frame is up to 64 quads in one draw.
+
+**Snow on ledges** (`snowcap`, `snowcap.ts`): lumpy snow piles up on the
+roughly level edges of the traced windows, doors or roof over the first minute
+of the cue (Speed) and melts where people stand. Untraced, it lies along the
+bottom of the picture.
+
+**Live info boards** (`info`, `info.ts`), one pin each like a countdown:
+- **Santa tracker** (`santa.ts`, `worldmap.ts`): a world map (Natural Earth
+  land, public domain) with Santa's route and sleigh, where he is, his next
+  stop, presents delivered, and when he reaches this house. It is worked out
+  on each computer from a built-in timetable of about 80 cities, each visited
+  around local midnight on Christmas Eve, so it needs no internet. Before
+  takeoff (about 09:30 UTC on 24 December) it counts down; after landing it says he
+  is home.
+- **Weather**: now, feels like, high and low for a town or ZIP code (layer
+  `text`; empty means where the server is). The outputs ask the server
+  (`GET /mapping/weather`, `services/weather_board.py`), which asks Open-Meteo (free, no key) at most every
+  10 minutes per place and keeps the last reading if the internet drops.
+- **Days until**: days until a date that comes round every year (layer `text`
+  is the name, `date` is `YYYY-MM-DD`).
+- **Message board**: a light-up bulb board scrolling the layer's `text` (up to
+  200 characters). The phone remote's Show tab lists every message board with
+  a box to change the words (admins).
+
+More Christmas decorations for the objects layer: gingerbread people,
+stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
+turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,
+snow on the sills, shooting stars, the Santa tracker and the sleigh), North
+Pole express, Santa's workshop, Christmas message board, Winter birds,
+Haunted night flight and Thanksgiving.
+
 | Method | Path | |
 |---|---|---|
 | GET/POST | `/mapping/scenes` | The scene library |
@@ -549,6 +703,9 @@ second and the light sweep, glints and chasing bulbs are done in the shader.
 | GET, PUT/DELETE | `/mapping/ai`, `/mapping/ai/key` | Anthropic key status / set / remove |
 | GET, PUT/DELETE | `/mapping/paint`, `/mapping/paint/key` | OpenAI key status / set / remove |
 | POST | `/mapping/paint` | Admin: repaint a picture; returns the new media |
+| POST | `/mapping/house-photo/trace` | Admin: Claude's outline of the house's parts on a photo |
+| GET, PUT/DELETE | `/mapping/shows/{id}/house-photo` | The show's photo of the house and its four corners |
+| GET | `/mapping/weather?place=` | The weather now for a Weather board (cached 10 min) |
 
 ## 6b. Scene groups and tonight's show (the Dashboard)
 

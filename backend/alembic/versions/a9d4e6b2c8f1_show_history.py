@@ -1,7 +1,7 @@
 """show history
 
 Revision ID: a9d4e6b2c8f1
-Revises: f6a2c8e4b1d7
+Revises: a3d9f2c7e1b4
 Create Date: 2026-10-26 16:30:00.000000
 
 A row for every show time: when it started and ended, what played, the
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 
 revision = 'a9d4e6b2c8f1'
-down_revision = 'f6a2c8e4b1d7'
+down_revision = 'a3d9f2c7e1b4'
 branch_labels = None
 depends_on = None
 

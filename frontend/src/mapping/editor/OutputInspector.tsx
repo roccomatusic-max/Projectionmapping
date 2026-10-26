@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Projector } from '@/api/types'
 import { blendsByItself } from '../blendmap'
-import { defaultBlend, defaultColor, defaultWarp, emptyMesh, resampleMesh } from '../geometry'
+import { defaultBlend, defaultColor, defaultWarp, emptyMesh, resampleMesh, type Turn, turnCorners } from '../geometry'
 import type { ServerClock } from '../live'
 import type { Playback } from '../playback'
 import type { BlendEdge, Mask, Output, Show, TestPattern } from '../types'
@@ -22,6 +22,13 @@ const PATTERNS: Array<{ value: TestPattern; label: string; title: string }> = [
 ]
 
 const MESH_SIZES = [0, 3, 4, 5, 7, 9]
+
+const TURNS: Array<{ id: Turn; label: string; title: string }> = [
+  { id: 'left', label: 'Turn left', title: 'A quarter turn anticlockwise' },
+  { id: 'right', label: 'Turn right', title: 'A quarter turn clockwise' },
+  { id: 'over', label: 'Upside down', title: 'Half a turn' },
+  { id: 'mirror', label: 'Mirror', title: 'Swap left and right' },
+]
 
 export function OutputInspector({
   show,
@@ -90,6 +97,12 @@ export function OutputInspector({
           onChange={onChange}
           onSelectMask={setSelectedMask}
         />
+        {canEdit && (
+          <p className="mt-2 text-xs text-slate-400">
+            Live: the projector follows every corner, mesh point, mask and blend as you move it, even while the
+            show plays. It is saved when you let go.
+          </p>
+        )}
       </div>
 
       <div className="min-w-0 space-y-4">
@@ -164,6 +177,26 @@ export function OutputInspector({
               >
                 Flatten mesh
               </button>
+            </div>
+            <div>
+              <span className="label">Turn the picture</span>
+              <div className="flex flex-wrap gap-2">
+                {TURNS.map((t) => (
+                  <button
+                    key={t.id}
+                    className="btn-default text-xs"
+                    disabled={!canEdit}
+                    title={t.title}
+                    onClick={() => onChange({ warp: { ...output.warp, corners: turnCorners(output.warp.corners, t.id) } })}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">
+                For a projector pointing down at a driveway: turn the picture until its top faces the house, so it reads
+                the right way up from the street.
+              </p>
             </div>
           </div>
         )}

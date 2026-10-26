@@ -8,7 +8,8 @@
  * "Describe a scene" (backend/app/services/scene_ai.py).
  */
 
-import type { Change, LayerBlend, LayerTarget, LayerType, Motion, NearAction, ReactsTo, SceneLayer } from '../types'
+import type { Change, LayerBlend, LayerTarget, LayerType, Motion, NearAction, ReactsTo, SceneLayer, Surface } from '../types'
+import { targetBox } from './masks'
 
 export type Dial = 'size' | 'speed' | 'amount' | 'fade'
 
@@ -114,6 +115,7 @@ export const LAYER_KINDS: LayerKind[] = [
       { id: 'paint', label: 'Paint' },
       { id: 'smoke', label: 'Smoke' },
       { id: 'neon', label: 'Neon' },
+      { id: 'footprints', label: 'Footprints' },
     ],
     dials: { size: 'Brush', amount: 'Brightness', fade: 'Lasts', speed: 'Drift' },
     defaults: { blend: 'add', color: '#a78bfa', color2: '#f472b6', size: 0.4, amount: 0.7, fade: 0.6 },
@@ -211,6 +213,21 @@ export const LAYER_KINDS: LayerKind[] = [
       { id: 'notes', label: 'Music notes' },
       { id: 'snowmen', label: 'Snowmen' },
       { id: 'coins', label: 'Gold coins' },
+      // Drawn flat, for a driveway or path seen from above.
+      { id: 'footprints', label: 'Footprints' },
+      { id: 'welcome-mat', label: 'Welcome mat' },
+      { id: 'runway-arrows', label: 'Landing strip arrows' },
+      { id: 'crawling-spiders', label: 'Crawling spiders' },
+      // Christmas and Thanksgiving.
+      { id: 'gingerbread', label: 'Gingerbread men' },
+      { id: 'stockings', label: 'Stockings' },
+      { id: 'wreaths', label: 'Wreaths' },
+      { id: 'santa-hats', label: 'Santa hats' },
+      { id: 'reindeer', label: 'Reindeer (Rudolph’s nose glows)' },
+      { id: 'poinsettias', label: 'Poinsettias' },
+      { id: 'holly', label: 'Holly' },
+      { id: 'mittens', label: 'Mittens' },
+      { id: 'turkeys', label: 'Turkeys' },
     ],
     dials: { size: 'Size', amount: 'How many', speed: 'Speed' },
     motions: ALL_MOTIONS,
@@ -295,6 +312,62 @@ export const LAYER_KINDS: LayerKind[] = [
     changes: AREA_CHANGES,
     nears: AREA_NEARS,
     defaults: { blend: 'add', color: '#67e8f9', color2: '#f0abfc', size: 0.35, amount: 0.6, reacts_to: 'always', reach: 0.5 },
+  },
+  {
+    type: 'movers',
+    label: 'Flying and walking',
+    about: 'Santa’s sleigh, a train, flocks of birds or bats, elves, penguins, shooting stars or ghosts that travel along a path: over the roofline and along the house by themselves, or along the points you click on the preview',
+    group: 'objects',
+    // New styles go at the end (movers.ts lists them in this order).
+    styles: [
+      { id: 'sleigh', label: 'Santa’s sleigh and reindeer' },
+      { id: 'train', label: 'Christmas train' },
+      { id: 'birds', label: 'Flock of birds' },
+      { id: 'bats', label: 'Flock of bats' },
+      { id: 'elves', label: 'Walking elves' },
+      { id: 'penguins', label: 'Waddling penguins' },
+      { id: 'shooting-stars', label: 'Shooting stars' },
+      { id: 'ghosts', label: 'Flying ghosts' },
+    ],
+    dials: { size: 'Size', speed: 'Speed', amount: 'How many', fade: 'Sparkle trail and steam' },
+    nears: ['none', 'light', 'grow', 'flee', 'follow', 'jump', 'dance', 'hide', 'appear'],
+    defaults: {
+      blend: 'normal', color: '#c8102e', color2: '#f5c451', size: 0.4, speed: 0.35, amount: 0.4, fade: 0.6,
+      reacts_to: 'always', near: 'light', reach: 0.5,
+    },
+  },
+  {
+    type: 'snowcap',
+    label: 'Snow on ledges',
+    about: 'Snow that settles on the window sills, on top of the frames and along the roof, and melts where people come near (trace the house parts first)',
+    group: 'objects',
+    styles: [{ id: 'soft', label: 'Soft snow' }],
+    dials: { size: 'Depth', amount: 'How much', speed: 'How fast it settles' },
+    nears: ['none', 'hide', 'light', 'colour'],
+    defaults: {
+      blend: 'normal', color: '#ffffff', color2: '#9cc3ef', size: 0.5, amount: 0.5, speed: 0.5,
+      target: 'windows', reacts_to: 'always', near: 'hide', reach: 0.4,
+    },
+  },
+  {
+    type: 'info',
+    label: 'Live info',
+    about: 'A board that shows something real: the Santa tracker, the weather now, days until a date, or a message board. Drag it, size it and turn it on the preview',
+    group: 'objects',
+    // New boards go at the end (info.ts lists them in this order).
+    styles: [
+      { id: 'santa', label: 'Santa tracker' },
+      { id: 'weather', label: 'Weather now' },
+      { id: 'days', label: 'Days until a date' },
+      { id: 'message', label: 'Message board' },
+    ],
+    dials: { size: 'Size', fade: 'Height', speed: 'Shine and scroll speed', amount: 'Sparkle' },
+    nears: ['none', 'light', 'grow', 'jump'],
+    defaults: {
+      blend: 'normal', color: '#0b1d3a', color2: '#f5c451', size: 0.6, fade: 0.5, speed: 0.4, amount: 0.5,
+      target: 'building', reacts_to: 'always', near: 'light', reach: 0.5,
+      pins: [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }],
+    },
   },
   // -- backdrops (not in the Add menu) ------------------------------------------------
   {
@@ -388,6 +461,37 @@ export const COUNTDOWN_COLORS: Record<string, { color: string; color2: string }>
   ghostly: { color: '#111827', color2: '#84cc16' },
 }
 
+/** How each flying or walking style looks and reacts when picked, so a sleigh is not coloured like a bat. */
+export const MOVER_LOOKS: Record<string, Partial<SceneLayer>> = {
+  sleigh: { color: '#c8102e', color2: '#f5c451', near: 'light', blend: 'normal' },
+  train: { color: '#b91c1c', color2: '#166534', near: 'jump', blend: 'normal' },
+  birds: { color: '#dc2626', color2: '#f59e0b', near: 'flee', blend: 'normal' },
+  bats: { color: '#2e1065', color2: '#a3e635', near: 'flee', blend: 'normal' },
+  elves: { color: '#15803d', color2: '#dc2626', near: 'dance', blend: 'normal' },
+  penguins: { color: '#dc2626', color2: '#f59e0b', near: 'jump', blend: 'normal' },
+  'shooting-stars': { color: '#fff7c2', color2: '#93c5fd', near: 'light', blend: 'add' },
+  ghosts: { color: '#f1f5f9', color2: '#22d3ee', near: 'hide', blend: 'normal' },
+}
+
+/** Each live info board's colours (the message board: the words, then the frame) and what it starts with. */
+export const INFO_LOOKS: Record<string, Partial<SceneLayer>> = {
+  santa: { color: '#0b1d3a', color2: '#f5c451' },
+  weather: { color: '#0b1d3a', color2: '#93c5fd', text: '' },
+  days: { color: '#3b0a12', color2: '#f5c451', text: 'New Year’s Day', date: `${new Date().getFullYear() + 1}-01-01` },
+  message: { color: '#ffb02e', color2: '#f5c451', text: 'Merry Christmas from our house!' },
+}
+
+/** The style's own look when a flying, walking or info element's style is changed. */
+export function styleLook(layer: SceneLayer, style: string): Partial<SceneLayer> {
+  if (layer.type === 'movers') return { style, ...MOVER_LOOKS[style] }
+  if (layer.type === 'info') {
+    // Keep words typed for this kind of board; a new kind brings its own.
+    const { text, date, ...look } = INFO_LOOKS[style] ?? {}
+    return { style, ...look, ...(layer.style === style ? {} : { text: text ?? null, date: date ?? null }) }
+  }
+  return { style }
+}
+
 /** The countdowns the Add menus offer, one per holiday. */
 export const COUNTDOWN_PRESETS: Array<{ id: string; label: string; style: string }> = [
   { id: 'christmas', label: 'Christmas countdown', style: 'gold' },
@@ -421,6 +525,7 @@ export const TARGETS: Array<{ id: LayerTarget; label: string }> = [
   { id: 'windows', label: 'Windows' },
   { id: 'doors', label: 'Doors' },
   { id: 'outside', label: 'Around the building' },
+  { id: 'ground', label: 'Driveway or ground' },
 ]
 
 export const REACTIONS: Array<{ id: ReactsTo; label: string; hint: string }> = [
@@ -492,13 +597,18 @@ export function layerLabel(layer: SceneLayer) {
 export interface Starter {
   name: string
   /** Heading the starter is listed under. */
-  occasion: 'Winter holidays' | 'Through the year' | 'Celebrations' | 'Just for fun'
+  occasion: 'Winter holidays' | 'Through the year' | 'Celebrations' | 'Just for fun' | 'On the driveway'
   description: string
   layers: Array<Partial<SceneLayer> & { type: LayerType }>
+  /** Its layers' pins are fractions of each layer's "Where" area (a welcome
+   *  mat in the middle of the driveway), placed when the scene is made. */
+  placed?: boolean
 }
 
 type L = Partial<SceneLayer> & { type: LayerType }
 const objects = (style: string, patch: Partial<SceneLayer>): L => ({ type: 'shapes', style, motion: 'none', change: 'none', ...patch })
+/** One pin, as a fraction of the layer's "Where" area (see Starter.placed). */
+const at = (x: number, y: number, size = 1, rotation = 0) => ({ x, y, size, rotation })
 const sparks = (color: string, color2: string): L => ({
   type: 'particles', name: 'Sparkles from people', style: 'sparks', color, color2, amount: 0.4,
   reacts_to: 'movement', reaction: 0.6,
@@ -560,6 +670,72 @@ export const STARTERS: Starter[] = [
       objects('snowmen', { name: 'Snowmen', target: 'outside', color: '#f8fafc', color2: '#1e3a8a', size: 0.5, amount: 0.12, near: 'dance' }),
       { type: 'falling', name: 'Snow', style: 'snow', amount: 0.6, speed: 0.3, near: 'flee' },
       { type: 'glow', name: 'Warm glow', style: 'soft', color: '#ffb36b', color2: '#ff6a3d', size: 0.4, amount: 0.5 },
+    ],
+  },
+  {
+    name: 'Christmas night',
+    occasion: 'Winter holidays',
+    description: 'For Christmas Eve: the Santa tracker on the house showing where Santa is and when he reaches you, his sleigh and reindeer flying over the roofline (Santa says “Ho ho ho!” to people who walk up), snow settling on the window sills that melts where people stand, twinkling roof stars and shooting stars.',
+    layers: [
+      { type: 'lights', name: 'Roof lights', style: 'multicolor', target: 'roof', size: 0.4, amount: 0.5, speed: 0.4, near: 'light' },
+      { type: 'snowcap', name: 'Snow on the sills', style: 'soft', target: 'windows', amount: 0.55, speed: 0.6, near: 'hide' },
+      { type: 'falling', name: 'Snow', style: 'snow', amount: 0.35, speed: 0.22, size: 0.3, near: 'flee' },
+      objects('stars', { name: 'Roof stars', target: 'roof', color: '#fde047', color2: '#fff7c2', size: 0.22, amount: 0.25, change: 'twinkle', near: 'light' }),
+      { type: 'movers', name: 'Shooting stars', style: 'shooting-stars', color: '#fff7c2', color2: '#93c5fd', blend: 'add', amount: 0.3, speed: 0.4, size: 0.4, near: 'light' },
+      { type: 'info', name: 'Santa tracker', style: 'santa', color: '#0b1d3a', color2: '#f5c451', size: 0.55, near: 'light', pins: [{ x: 0.5, y: 0.5, size: 1, rotation: 0 }] },
+      { type: 'movers', name: 'Santa’s sleigh', style: 'sleigh', color: '#c8102e', color2: '#f5c451', size: 0.45, speed: 0.3, fade: 0.7, near: 'light' },
+    ],
+  },
+  {
+    name: 'North Pole express',
+    occasion: 'Winter holidays',
+    description: 'A Christmas train with presents and a lit tree puffing along the bottom of the house, penguins waddling and elves walking who jump and wave at people, wreaths that light up, snow on the roof that melts near people, and falling snow.',
+    layers: [
+      { type: 'lights', name: 'Warm lights', style: 'chase', target: 'roof', color: '#ffcf6b', color2: '#ffffff', speed: 0.45, near: 'light' },
+      { type: 'snowcap', name: 'Snow on the roof', style: 'soft', target: 'roof', amount: 0.6, speed: 0.55, near: 'hide' },
+      objects('wreaths', { name: 'Wreaths', target: 'windows', color: '#15803d', color2: '#dc2626', size: 0.3, amount: 0.7, change: 'none', near: 'light' }),
+      { type: 'falling', name: 'Snow', style: 'snow', amount: 0.35, speed: 0.25, near: 'flee' },
+      { type: 'movers', name: 'Penguins', style: 'penguins', color: '#dc2626', color2: '#f59e0b', size: 0.35, amount: 0.3, speed: 0.3, near: 'jump' },
+      { type: 'movers', name: 'Elves', style: 'elves', color: '#15803d', color2: '#dc2626', size: 0.35, amount: 0.25, speed: 0.4, near: 'dance' },
+      { type: 'movers', name: 'Christmas train', style: 'train', color: '#b91c1c', color2: '#166534', size: 0.45, amount: 0.5, speed: 0.3, fade: 0.7, near: 'jump' },
+    ],
+  },
+  {
+    name: 'Santa’s workshop',
+    occasion: 'Winter holidays',
+    description: 'Elves at work walking about, gingerbread men that dance near people, stockings that sway, presents that jump, Santa hats that spin, candy canes, and sparkles from people.',
+    layers: [
+      { type: 'outline', name: 'Icing', style: 'icing', target: 'roof', color: '#ffffff', size: 0.4, near: 'light' },
+      objects('gingerbread', { name: 'Gingerbread men', target: 'walls', color: '#b8692f', color2: '#ef4444', size: 0.32, amount: 0.22, motion: 'bob', near: 'dance' }),
+      objects('stockings', { name: 'Stockings', target: 'walls', color: '#dc2626', color2: '#ffffff', size: 0.3, amount: 0.15, motion: 'sway', near: 'jump' }),
+      objects('santa-hats', { name: 'Santa hats', target: 'roof', color: '#dc2626', color2: '#ffffff', size: 0.25, amount: 0.2, motion: 'sway', near: 'spin' }),
+      objects('presents', { name: 'Presents', target: 'outside', color: '#16a34a', color2: '#fde047', size: 0.35, amount: 0.15, near: 'jump' }),
+      { type: 'movers', name: 'Elves', style: 'elves', color: '#15803d', color2: '#dc2626', size: 0.4, amount: 0.45, speed: 0.45, near: 'dance' },
+      sparks('#fff7c2', '#ffd166'),
+    ],
+  },
+  {
+    name: 'Christmas message board',
+    occasion: 'Winter holidays',
+    description: 'A lit sign with your own message scrolling across in bulbs (change the words in the Editor or from the phone remote), cardinals that scatter when people come near, holly and poinsettias that light up, and snow on the sills.',
+    layers: [
+      { type: 'snowcap', name: 'Snow on the sills', style: 'soft', target: 'windows', amount: 0.45, speed: 0.6, near: 'hide' },
+      objects('holly', { name: 'Holly', target: 'roof', color: '#15803d', color2: '#dc2626', size: 0.28, amount: 0.22, motion: 'sway', near: 'light' }),
+      objects('poinsettias', { name: 'Poinsettias', target: 'walls', color: '#dc2626', color2: '#facc15', size: 0.28, amount: 0.18, motion: 'spin', near: 'grow' }),
+      { type: 'info', name: 'Message board', style: 'message', color: '#ffb02e', color2: '#f5c451', text: 'Merry Christmas from our house!', size: 0.55, speed: 0.4, near: 'light', pins: [{ x: 0.5, y: 0.3, size: 1, rotation: 0 }] },
+      { type: 'movers', name: 'Cardinals', style: 'birds', color: '#dc2626', color2: '#f59e0b', size: 0.4, amount: 0.4, speed: 0.3, near: 'flee' },
+    ],
+  },
+  {
+    name: 'Winter birds',
+    occasion: 'Winter holidays',
+    description: 'Flocks of cardinals flying over the house that scatter when someone comes near and settle back, reindeer whose noses glow, mittens and holly, and soft falling snow.',
+    layers: [
+      objects('reindeer', { name: 'Reindeer', target: 'walls', color: '#8a5a32', color2: '#ff2a2a', size: 0.3, amount: 0.15, motion: 'bob', near: 'jump' }),
+      objects('mittens', { name: 'Mittens', target: 'windows', color: '#dc2626', color2: '#16a34a', size: 0.25, amount: 0.5, motion: 'sway', near: 'grow' }),
+      { type: 'falling', name: 'Snow', style: 'snow', amount: 0.4, speed: 0.2, near: 'flee' },
+      { type: 'movers', name: 'Cardinals', style: 'birds', color: '#dc2626', color2: '#f59e0b', size: 0.45, amount: 0.6, speed: 0.3, near: 'flee' },
+      { type: 'info', name: 'Weather', style: 'weather', color: '#0b1d3a', color2: '#93c5fd', size: 0.4, near: 'light', pins: [{ x: 0.5, y: 0.6, size: 1, rotation: 0 }] },
     ],
   },
   {
@@ -665,6 +841,28 @@ export const STARTERS: Starter[] = [
     ],
   },
   {
+    name: 'Haunted night flight',
+    occasion: 'Through the year',
+    description: 'For Halloween: a flock of bats over the roof that scatters when people come near, ghosts drifting across the house that vanish as you walk up, glowing eyes in the windows and flickering jack-o’-lanterns.',
+    layers: [
+      objects('eyes', { name: 'Eyes', target: 'windows', color: '#a3e635', color2: '#facc15', size: 0.3, amount: 0.8, change: 'blink', near: 'grow' }),
+      objects('pumpkins', { name: 'Jack-o’-lanterns', target: 'outside', color: '#f97316', color2: '#65a30d', size: 0.4, amount: 0.15, change: 'flicker', near: 'light' }),
+      { type: 'movers', name: 'Ghosts', style: 'ghosts', color: '#f1f5f9', color2: '#22d3ee', size: 0.45, amount: 0.35, speed: 0.25, near: 'hide' },
+      { type: 'movers', name: 'Bats', style: 'bats', color: '#2e1065', color2: '#a3e635', size: 0.45, amount: 0.7, speed: 0.35, near: 'flee' },
+    ],
+  },
+  {
+    name: 'Thanksgiving',
+    occasion: 'Through the year',
+    description: 'Turkeys that jump when people come near, leaves that blow away from them, warm lights and falling leaves.',
+    layers: [
+      { type: 'lights', name: 'Warm lights', style: 'steady', target: 'roof', color: '#fdba74', color2: '#fde68a', near: 'light' },
+      objects('turkeys', { name: 'Turkeys', target: 'outside', color: '#7c4a21', color2: '#b45309', size: 0.45, amount: 0.15, motion: 'sway', near: 'jump' }),
+      objects('leaves', { name: 'Leaves', target: 'walls', color: '#ea580c', color2: '#facc15', size: 0.3, amount: 0.3, motion: 'sway', near: 'flee' }),
+      { type: 'falling', name: 'Falling leaves', style: 'leaves', color: '#f97316', color2: '#facc15', amount: 0.3, speed: 0.25, near: 'flee' },
+    ],
+  },
+  {
     name: 'Diwali',
     occasion: 'Through the year',
     description: 'Rows of flickering diya lamps that brighten near people, glowing lanterns that grow, fireworks and golden sparks.',
@@ -743,4 +941,81 @@ export const STARTERS: Starter[] = [
       { type: 'glow', name: 'Halo', style: 'halo', color: '#a78bfa', color2: '#22d3ee', amount: 0.3, size: 0.7 },
     ],
   },
+  // -- on the driveway (a projector on the roof pointing down) -------------------------
+  {
+    name: 'Spiders on the driveway',
+    occasion: 'On the driveway',
+    description: 'Spiders crawl across the driveway and scatter from people, glowing footprints follow everyone who walks up, and a few jack-o’-lanterns flicker.',
+    layers: [
+      objects('crawling-spiders', { name: 'Spiders', target: 'ground', color: '#a855f7', color2: '#ef4444', size: 0.3, amount: 0.35, speed: 0.35, motion: 'drift', near: 'flee', reach: 0.6 }),
+      { type: 'trails', name: 'Footprints', style: 'footprints', target: 'ground', color: '#a3e635', color2: '#22c55e', size: 0.5, fade: 0.8 },
+      objects('pumpkins', { name: 'Jack-o’-lanterns', target: 'ground', color: '#f97316', color2: '#65a30d', size: 0.35, amount: 0.05, change: 'flicker', near: 'light' }),
+    ],
+  },
+  {
+    name: 'Ghostly footprints',
+    occasion: 'On the driveway',
+    description: 'Footprints of someone invisible walk across the driveway by themselves, and everyone who walks up leaves glowing footprints of their own.',
+    layers: [
+      objects('footprints', { name: 'Ghost footprints', target: 'ground', color: '#bae6fd', color2: '#ffffff', size: 0.5, amount: 0.3, speed: 0.4, change: 'blink', near: 'hide' }),
+      { type: 'trails', name: 'Your footprints', style: 'footprints', target: 'ground', color: '#38bdf8', color2: '#a5f3fc', size: 0.5, fade: 0.8 },
+    ],
+  },
+  {
+    name: 'Welcome mat',
+    occasion: 'On the driveway',
+    placed: true,
+    description: 'A big WELCOME mat in the middle of the driveway that lights up as people step on it, warm lights along the edges, and leaves that blow away from feet.',
+    layers: [
+      objects('welcome-mat', { name: 'Welcome mat', target: 'ground', color: '#c2410c', color2: '#fde68a', size: 1, near: 'light', pins: [at(0.5, 0.5, 2.2)] }),
+      { type: 'lights', name: 'Edge lights', style: 'steady', target: 'ground', color: '#fdba74', color2: '#fde68a', size: 0.5, near: 'light' },
+      objects('leaves', { name: 'Leaves', target: 'ground', color: '#ea580c', color2: '#facc15', size: 0.25, amount: 0.25, motion: 'sway', near: 'flee' }),
+    ],
+  },
+  {
+    name: 'Path of lights',
+    occasion: 'On the driveway',
+    description: 'Lights along both sides of the driveway (or a path traced as a ground part) that brighten as people walk past, a warm glow around each person and fireflies.',
+    layers: [
+      { type: 'lights', name: 'Path lights', style: 'twinkle', target: 'ground', color: '#fff7e0', color2: '#fde68a', size: 0.55, amount: 0.45, speed: 0.3, near: 'light', reach: 0.6 },
+      { type: 'glow', name: 'Warm glow', style: 'soft', target: 'ground', color: '#ffd27a', color2: '#ff6a3d', size: 0.4, amount: 0.5 },
+      { type: 'particles', name: 'Fireflies', style: 'fireflies', color: '#fde68a', color2: '#fb923c', amount: 0.3, size: 0.25, reacts_to: 'always' },
+    ],
+  },
+  {
+    name: 'Santa’s landing strip',
+    occasion: 'On the driveway',
+    placed: true,
+    description: 'Runway lights chase along the edges of the driveway, glowing arrows down the middle show Santa where to land, and snow drifts away from people.',
+    layers: [
+      { type: 'lights', name: 'Runway lights', style: 'chase', target: 'ground', color: '#ffffff', color2: '#60a5fa', size: 0.5, amount: 0.4, speed: 0.6, near: 'colour' },
+      objects('runway-arrows', { name: 'Landing arrows', target: 'ground', color: '#60a5fa', color2: '#ffffff', size: 0.6, speed: 0.5, near: 'light',
+        pins: [at(0.5, 0.2), at(0.5, 0.4), at(0.5, 0.6), at(0.5, 0.8)] }),
+      objects('stars', { name: 'Stars', target: 'ground', color: '#fde047', color2: '#fff7c2', size: 0.2, amount: 0.15, change: 'twinkle', near: 'grow' }),
+      { type: 'falling', name: 'Snow', style: 'snow', amount: 0.35, speed: 0.25, near: 'flee' },
+    ],
+  },
 ]
+
+/**
+ * A starter's layers, ready to save. Pins of a ``placed`` starter are moved
+ * from fractions of each layer's "Where" area onto the canvas, and sized
+ * with it, so a welcome mat lands in the middle of the traced driveway.
+ */
+export function starterLayers(starter: Starter, surfaces: Surface[]): SceneLayer[] {
+  return starter.layers.map((l) => {
+    const layer = normaliseLayer(l)
+    if (!starter.placed || !layer.pins?.length) return layer
+    const box = targetBox(layer.target, surfaces)
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+    return {
+      ...layer,
+      pins: layer.pins.map((pin) => ({
+        ...pin,
+        x: clamp(box.x + pin.x * box.w, 0, 1),
+        y: clamp(box.y + pin.y * box.h, 0, 1),
+        size: clamp(pin.size * box.h, 0.3, 3),
+      })),
+    }
+  })
+}

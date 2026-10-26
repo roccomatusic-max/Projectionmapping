@@ -3,6 +3,8 @@
 -r ../camera-agent/requirements.txt
 Pillow>=10.0
 psutil>=5.9
+# The USB temperature sensor for the heater in the box (usbsensor.py).
+pyserial>=3.5
 # The icon by the clock, Windows only.
 pystray>=0.19; sys_platform == "win32"
 # Depth cameras, each through its maker's SDK (Windows builds only here;

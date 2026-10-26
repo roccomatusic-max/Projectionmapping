@@ -24,6 +24,9 @@ import {
 } from '@/components/ui'
 import { Glyph, type Tone } from '@/components/graphics'
 import TemperatureHistory from '@/components/monitoring/TemperatureHistory'
+import { ChartTooltip } from '@/components/monitoring/ChartTooltip'
+import { HeaterChart } from '@/components/heater/HeaterChart'
+import { HeaterStatus, useHeaters } from '@/components/heater/HeaterStatus'
 import { classNames, formatDateTime, relativeTime } from '@/lib/format'
 import {
   CoverIcon,
@@ -54,6 +57,7 @@ export default function Monitoring({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { notify: push } = useOps()
+  const heaters = useHeaters(60000)
 
 
   const load = async () => {
@@ -183,6 +187,11 @@ export default function Monitoring({ session }: { session: Session }) {
         projectorName={projectors.length > 1 ? projectors.find((p) => p.id === selectedProjector)?.name : undefined}
       />
 
+      <HeaterStatus session={session} />
+      {(heaters.data?.heaters ?? []).map((heater) => (
+        <HeaterChart key={heater.id} heater={heater} />
+      ))}
+
       <Panel
         icon={TemperatureIcon}
         title="Enclosures"
@@ -252,12 +261,14 @@ export default function Monitoring({ session }: { session: Session }) {
                 <XAxis dataKey="day" {...CHART_AXIS} tickLine={false} />
                 <YAxis {...CHART_AXIS} tickLine={false} axisLine={false} unit="h" />
                 <Tooltip
-                  contentStyle={{
-                    background: '#141820',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
+                  content={
+                    <ChartTooltip
+                      format={(value, key) => [
+                        `${value.toLocaleString()} h`,
+                        key.replace(/^lamp(\d+)_hours$/, 'Lamp $1'),
+                      ]}
+                    />
+                  }
                 />
                 {lampMetrics.map((metric, index) => (
                   <Line

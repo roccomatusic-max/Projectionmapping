@@ -18,13 +18,22 @@ import { SavedMaps } from '@/mapping/editor/SavedMaps'
 import { ScenesPanel } from '@/mapping/editor/ScenesPanel'
 import { TransportBar } from '@/mapping/editor/TransportBar'
 import { sideBySide, withDefaults } from '@/mapping/geometry'
-import { useLocalChannel } from '@/mapping/live'
+import { EditSender, useLocalChannel } from '@/mapping/live'
 import type { Cue, MediaAsset, Output, SavedMap, ShowSummary, TransportAction } from '@/mapping/types'
 import { useShowRuntime } from '@/mapping/useShowRuntime'
 
 const SHOW_KEY = 'pc.mapping.show'
 /** Geometry is saved this long after the last change while dragging. */
 const SAVE_DELAY_MS = 250
+
+/** What the server takes for an output: everything but its place in the show. */
+function outputBody(output: Output): Partial<Output> {
+  const { id: _id, show_id: _show, position: _position, ...body } = output
+  void _id
+  void _show
+  void _position
+  return body
+}
 
 type Section = 'show' | 'scenes' | 'camera' | 'players' | 'remote'
 
@@ -35,7 +44,7 @@ const SECTIONS: Array<{ id: Section; slug: string; label: string; icon: LucideIc
   { id: 'show', slug: 'editor', label: 'Editor', icon: EditorIcon,
     hint: 'Build the show: cues and media, where each projector lands on the picture, warp and blends.' },
   { id: 'scenes', slug: 'scenes', label: 'Scenes', icon: ScenesIcon,
-    hint: 'Light effects that react to people. Make one here, then add it to a cue.' },
+    hint: 'Make a scene step by step: pick the projector it goes on, pick how it looks, then put it on the house.' },
   { id: 'camera', slug: 'camera', label: 'Camera', icon: CameraIcon,
     hint: 'Let the camera line every projector up with the building, and see who it tracks.' },
   { id: 'players', slug: 'players', label: 'Players', icon: MiniPcIcon,
@@ -48,7 +57,7 @@ type EditorPart = 'cues' | 'projectors' | 'elements' | 'maps'
 export const EDITOR_PARTS: Array<{ id: EditorPart; label: string; hint: string }> = [
   { id: 'cues', label: 'Cues and media', hint: 'The list GO plays, and the videos and pictures it uses' },
   { id: 'projectors', label: 'Projectors', hint: 'Where each projector lands on the picture: warp, masks, blends, colour' },
-  { id: 'elements', label: 'Elements', hint: 'Objects and the countdown on a cue, and a picture of its own on one projector' },
+  { id: 'elements', label: 'Elements', hint: 'Objects, flying things, live boards and countdowns on a cue, and a picture of its own on one projector' },
   { id: 'maps', label: 'Saved maps and show', hint: 'Keep or reuse the lined-up projectors; rename, resize or delete the show' },
 ]
 
@@ -139,11 +148,34 @@ export default function Mapping({ session }: { session: Session }) {
   )
   const output = outputs.find((o) => o.id === selectedOutput) ?? outputs[0] ?? null
 
+  // Each output's edits go out live while a handle moves, so the mini PCs
+  // move the picture on the house straight away, and are saved once it stops.
+  const senders = useRef(new Map<number, EditSender>())
+  const sender = useCallback((id: number) => {
+    let found = senders.current.get(id)
+    if (!found) {
+      found = new EditSender(
+        (output) => mappingApi.liveOutput(output.id, outputBody(output)),
+        async (output) => withDefaults(await mappingApi.updateOutput(output.id, outputBody(output))),
+      )
+      senders.current.set(id, found)
+    }
+    return found
+  }, [])
+  useEffect(() => {
+    const map = senders.current
+    return () => {
+      map.forEach((s) => s.dispose())
+      map.clear()
+    }
+  }, [])
+
   const changeOutput = useCallback(
     (target: Output, patch: Partial<Output>) => {
       const next = withDefaults({ ...target, ...patch })
       setOverrides((map) => new Map(map).set(next.id, next))
       broadcast({ type: 'output', output: next })
+      sender(next.id).live(next)
       const serial = (editSerial.current.get(next.id) ?? 0) + 1
       editSerial.current.set(next.id, serial)
       window.clearTimeout(saveTimers.current.get(next.id))
@@ -151,18 +183,16 @@ export default function Mapping({ session }: { session: Session }) {
         next.id,
         window.setTimeout(async () => {
           try {
-            const { id, show_id: _s, position: _p, ...body } = next
-            void _s
-            void _p
-            const saved = withDefaults(await mappingApi.updateOutput(id, body))
+            const saved = await sender(next.id).save(next)
+            if (!saved) return
             setShow((current) =>
               current ? { ...current, outputs: current.outputs.map((o) => (o.id === saved.id ? saved : o)) } : current,
             )
             // Drop the override only if nothing changed while saving.
-            if (editSerial.current.get(id) === serial) {
+            if (editSerial.current.get(saved.id) === serial) {
               setOverrides((map) => {
                 const copy = new Map(map)
-                copy.delete(id)
+                copy.delete(saved.id)
                 return copy
               })
             }
@@ -172,7 +202,7 @@ export default function Mapping({ session }: { session: Session }) {
         }, SAVE_DELAY_MS),
       )
     },
-    [broadcast, setShow],
+    [broadcast, sender, setShow],
   )
 
   const guard = async (work: () => Promise<unknown>) => {
@@ -431,6 +461,7 @@ export default function Mapping({ session }: { session: Session }) {
               clock={clock}
               cameraPeople={runtime.people}
               canEdit={canEdit}
+              transport={transport}
               onError={setError}
               reloadScenes={runtime.reloadScenes}
               reloadMedia={reloadMedia}
@@ -533,7 +564,7 @@ export default function Mapping({ session }: { session: Session }) {
               {part === 'elements' && (
                 <>
                   <Panel title="Media and elements"
-                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects or the countdown here and drag them into place.">
+                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects, a flying sleigh, the Santa tracker or a countdown here and drag them into place. To make a new scene for one projector, use Scenes → Make a scene.">
                     <CanvasElements show={show} outputs={outputs} scenes={scenes} media={media} clock={clock}
                       transport={transport} canEdit={canEdit} reloadScenes={runtime.reloadScenes}
                       onShowChanged={() => runtime.refresh()} onError={setError} />
@@ -643,7 +674,7 @@ function CueHelp() {
     <InfoTip label="What do the cue settings do?" text="What these do">
       <span className="block"><b>Media</b>: the video or picture this cue shows. Black shows nothing.</span>
       <span className="mt-1 block"><b>Fill / Fit / Stretch</b>: Fill covers the whole picture and may crop; Fit shows it all with black edges; Stretch pulls it to the picture's shape.</span>
-      <span className="mt-1 block"><b>Scene</b>: reactive light drawn on top (made on the Scenes tab).</span>
+      <span className="mt-1 block"><b>Scene</b>: reactive light drawn on top (Scenes → Make a scene puts one on a projector for you).</span>
       <span className="mt-1 block"><b>Loop</b>: start the video again when it ends.</span>
       <span className="mt-1 block"><b>Fade</b>: seconds to blend from the previous cue into this one.</span>
       <span className="mt-1 block"><b>Auto</b>: move to the next cue by itself after this many seconds. Empty waits for GO.</span>

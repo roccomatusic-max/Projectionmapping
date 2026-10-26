@@ -20,6 +20,7 @@ import { BLEND_MAP_SIZE, blendKey, blendsByItself, computeBlendMap } from './ble
 import { buildDenseMesh } from './geometry'
 import type { PersonSpot } from './people'
 import { type SceneItem, SceneEngine } from './scene/engine'
+import { flatTesting } from './scene/flat'
 import type { Fit, Interaction, Mask, Output, PatternSpec, Surface, TestPattern, Warp } from './types'
 
 /** A tracked person as the shader sees them, in canvas fractions. */
@@ -404,6 +405,31 @@ function drawIdOverlay(canvas: HTMLCanvasElement, output: Output) {
   ctx.fillText('TR', w - pad * 1.2, pad)
   ctx.fillText('BR', w - pad * 1.2, h - pad)
   ctx.fillText('BL', pad * 1.2, h - pad)
+  // Focus stars: fine wedges that blur into grey when the lens is off,
+  // in the middle and towards each corner, where focus usually goes first.
+  const r = h * 0.075
+  for (const [x, y] of [[0.5, 0.5], [0.2, 0.32], [0.8, 0.32], [0.2, 0.68], [0.8, 0.68]]) focusStar(ctx, w * x, h * y, r)
+}
+
+function focusStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  const wedges = 36
+  ctx.save()
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+  for (let i = 0; i < wedges; i += 2) {
+    const a = (i / wedges) * Math.PI * 2
+    const b = ((i + 1) / wedges) * Math.PI * 2
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.arc(x, y, r, a, b)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.strokeStyle = 'rgba(56, 189, 248, 1)'
+  ctx.lineWidth = Math.max(1.5, r / 30)
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
 }
 
 export class OutputRenderer {
@@ -685,6 +711,7 @@ export class OutputRenderer {
     people = [],
     surfaces = [],
     frameTime = performance.now() / 1000,
+    now,
   }: {
     mix?: number
     blackout?: boolean
@@ -698,6 +725,8 @@ export class OutputRenderer {
     surfaces?: Surface[]
     /** Any steady clock, seconds; scenes use it for how long a frame took. */
     frameTime?: number
+    /** Now on the server's clock, epoch ms (a house part's checkerboard square). */
+    now?: number
   } = {}) {
     const output = this.output
     if (this.lost || !output) return
@@ -705,15 +734,24 @@ export class OutputRenderer {
     const { canvas } = this
     const [cw, ch] = this.canvasSize
 
+    // The checkerboard square of a house part whose corners are being set
+    // shows even with the show stopped or blacked out, without the media.
+    const testing = now != null && surfaces.some((s) => flatTesting(s, now))
+    const playing = testing && blackout ? [] : scenes
+    if (testing && blackout) {
+      this.sources.a = null
+      this.sources.b = null
+    }
+
     // Scenes draw into their own buffer before the output pass.
     let sceneTex: WebGLTexture | null = null
-    if (scenes.length && output.enabled && !blackout && output.test_pattern === 'none') {
+    if ((playing.length || testing) && output.enabled && !(blackout && !testing) && output.test_pattern === 'none') {
       if (!this.scenes) {
         this.scenes = new SceneEngine(gl)
         this.scenes.quality = this.sceneQuality
       }
       sceneTex = this.scenes.render({
-        items: scenes,
+        items: playing,
         rect: output.source,
         canvasWidth: cw,
         canvasHeight: ch,
@@ -722,6 +760,7 @@ export class OutputRenderer {
         surfaces,
         people,
         time: frameTime,
+        now,
       })
     } else if (this.scenes) {
       this.scenes.distort = null
@@ -772,7 +811,7 @@ export class OutputRenderer {
     gl.uniform3f(this.u('uGain'), c.red, c.green, c.blue)
     // A test pattern stays visible through a blackout: aligning happens
     // with the show stopped.
-    gl.uniform1i(this.u('uBlack'), blackout && output.test_pattern === 'none' ? 1 : 0)
+    gl.uniform1i(this.u('uBlack'), blackout && !testing && output.test_pattern === 'none' ? 1 : 0)
 
     const shown = spots ?? people
     const count = Math.min(shown.length, MAX_SPOTS)

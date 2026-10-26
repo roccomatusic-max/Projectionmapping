@@ -12,14 +12,18 @@ import {
   PageHeader,
 } from '@/components/ui'
 import AppUpdates from '@/components/AppUpdates'
+import BackupPanel from '@/components/BackupPanel'
 import HomeAssistantSetup from '@/components/HomeAssistantSetup'
+import PhoneAlertsSetup from '@/components/PhoneAlertsSetup'
 import SceneAiKey from '@/components/SceneAiKey'
 import { ClockIcon, LiveIcon, ProjectorIcon, SettingsIcon, TokenIcon, UsersIcon } from '@/components/icons'
 
-type SettingsPart = 'account' | 'ai' | 'homeassistant' | 'people' | 'technical'
+type SettingsPart = 'account' | 'phone' | 'backup' | 'ai' | 'homeassistant' | 'people' | 'technical'
 
 const SETTINGS_PARTS: Array<{ id: SettingsPart; label: string; hint: string; admin?: boolean }> = [
   { id: 'account', label: 'Updates and password', hint: 'Update the app and change your password.' },
+  { id: 'phone', label: 'Phone alerts', hint: 'A notification on your phone when something goes wrong.', admin: true },
+  { id: 'backup', label: 'Backup', hint: 'Save everything to one file, put it back, and print the setup guide.', admin: true },
   { id: 'ai', label: 'AI keys', hint: 'Optional keys for “Describe a scene” and “Paint the house”.', admin: true },
   { id: 'homeassistant', label: 'Home Assistant', hint: 'Control projectors and the show from Home Assistant.', admin: true },
   { id: 'people', label: 'Users and tokens', hint: 'Who can sign in, and keys for scripts and sensors.', admin: true },
@@ -65,7 +69,7 @@ export default function Settings({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={SettingsIcon} title="Settings" subtitle="App updates, your password, AI keys, Home Assistant and who can sign in." />
+      <PageHeader icon={SettingsIcon} title="Settings" subtitle="App updates, your password, phone alerts, backups, AI keys, Home Assistant and who can sign in." />
       {error && <ErrorBanner message={error} />}
 
       <SectionBar label="Settings sections" sections={parts} value={part} onChange={setPart} />
@@ -83,6 +87,14 @@ export default function Settings({ session }: { session: Session }) {
             </p>
           </Panel>
         </>
+      )}
+
+      {part === 'phone' && isAdmin && (
+        <PhoneAlertsSetup onToast={(tone, title, detail) => push(tone, title, detail)} />
+      )}
+
+      {part === 'backup' && isAdmin && (
+        <BackupPanel onToast={(tone, title, detail) => push(tone, title, detail)} />
       )}
 
       {part === 'ai' && isAdmin && <SceneAiKey />}

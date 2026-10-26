@@ -16,6 +16,7 @@ import Logs from '@/pages/Logs'
 import Settings from '@/pages/Settings'
 import PhoneRemote from '@/pages/PhoneRemote'
 import Calendar from '@/pages/Calendar'
+import SetupGuide from '@/pages/SetupGuide'
 // Monitoring pulls in the charting library; keep it out of the initial
 // bundle so the dashboard loads fast on a tablet over site wifi.
 const Monitoring = lazy(() => import('@/pages/Monitoring'))
@@ -27,6 +28,8 @@ const OutputPage = lazy(() => import('@/mapping/OutputPage'))
 const PlayerPage = lazy(() => import('@/mapping/PlayerPage'))
 const ScreenPage = lazy(() => import('@/mapping/ScreenPage'))
 const RemotePage = lazy(() => import('@/remote/RemotePage'))
+// The heater page draws charts too.
+const Heater = lazy(() => import('@/pages/Heater'))
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => getSession())
@@ -73,6 +76,9 @@ export default function App() {
 
   if (!session) return <Login onSignedIn={setSession} />
 
+  // The setup guide is a sheet of paper: no menu, nothing to print but the guide.
+  if (location.pathname === '/setup-guide') return <SetupGuide />
+
   if (location.pathname.startsWith('/mapping/output/')) {
     return (
       <Suspense fallback={null}>
@@ -117,6 +123,14 @@ export default function App() {
               element={
                 <Suspense fallback={<Spinner label="Loading monitoring…" />}>
                   <Monitoring session={session} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/heater"
+              element={
+                <Suspense fallback={<Spinner label="Loading the heaters…" />}>
+                  <Heater session={session} />
                 </Suspense>
               }
             />

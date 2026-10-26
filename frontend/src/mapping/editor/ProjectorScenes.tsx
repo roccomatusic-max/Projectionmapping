@@ -53,7 +53,7 @@ export function ProjectorScenes({
   return (
     <Panel
       title="Scenes on each projector"
-      description="Pick which scene each projector plays in each cue. A projector that differs from the cue's scene is marked in blue."
+      description="Pick which scene each projector plays in each cue. A projector that differs from the cue's scene is marked in blue. When tonight's show starts, its scene group (Dashboard → Pick tonight's scenes) sets every cue, so for tonight use Make a scene, which changes both."
     >
       {outputs.length === 0 || cues.length === 0 ? (
         <EmptyState title={outputs.length === 0 ? 'No projectors in this show yet' : 'No cues yet'}>

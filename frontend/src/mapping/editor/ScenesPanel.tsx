@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { ConfirmDialog, EmptyState, Modal, Panel, SectionBar } from '@/components/ui'
+import { useSearchParams } from 'react-router-dom'
+import { ConfirmDialog, EmptyState, Panel, SectionBar } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
@@ -17,17 +17,23 @@ import {
   NEARS,
   nearOf,
   newLayer,
-  normaliseLayer,
   REACTIONS,
-  STARTERS,
+  styleLook,
   TARGETS,
 } from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
 import { countdownPinHeight, DESIGN_H, DESIGN_W } from '../scene/countdown'
 import { objectRadius } from '../scene/engine'
-import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
+import { startingSquare } from '../scene/flat'
+import { BOARD, infoPinHeight, infoStyle } from '../scene/info'
+import { moverHeight } from '../scene/movers'
+import type { AiStatus, LayerType, MappingScene, MediaAsset, Point, SceneLayer, Show, Surface, SurfaceKind, TransportState } from '../types'
 import { Slider } from './controls'
+import { CornerPicker } from './CornerPicker'
 import { CountdownColorPickers, countdownLook } from './CountdownColors'
+import { HousePhotoPanel } from './HousePhoto'
+import { MakeScene } from './MakeScene'
+import { InfoFields } from './InfoFields'
 import { PaintHouse } from './PaintHouse'
 import { ProjectorScenes, sceneOn } from './ProjectorScenes'
 import { type Backdrop, type Drawing, type PeopleSource, ScenePreview, SURFACE_KINDS } from './ScenePreview'
@@ -36,20 +42,29 @@ import { SceneRecorder } from './SceneRecorder'
 /** Scene edits are saved this long after the last change. */
 const SAVE_DELAY_MS = 400
 const SCENE_KEY = 'pc.mapping.scene'
+/** How long a part's checkerboard square stays on the projectors after the last change. */
+const FLAT_TEST_MS = 10 * 60 * 1000
+/** While a corner is dragged, the projectors follow this often. */
+const FLAT_SEND_MS = 600
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
 
-type ScenePart = 'edit' | 'house' | 'projectors' | 'paint'
+type ScenePart = 'make' | 'edit' | 'photo' | 'house' | 'projectors' | 'paint'
 
 /** The Scenes tab, one part at a time; the preview stays beside the part that needs it. */
 export const SCENE_PARTS: Array<{ id: ScenePart; label: string; hint: string }> = [
-  { id: 'edit', label: 'Make and change scenes', hint: 'Your scenes, their layers, and a live preview' },
-  { id: 'projectors', label: 'Scenes on each projector', hint: 'A different scene, or none, on one projector in a cue' },
+  { id: 'make', label: 'Make a scene', hint: 'Step by step: pick the projector, pick how it looks, put things in place, put it on the house' },
+  { id: 'edit', label: 'Change a scene', hint: 'Every setting of your scenes, their layers, and a live preview' },
+  { id: 'projectors', label: 'Cue by cue', hint: 'A different scene, or none, on one projector in one cue' },
+  { id: 'photo', label: 'Start from a photo', hint: 'Snap the house; Claude finds the walls, roof, windows and doors, and a scene decorates them' },
   { id: 'house', label: 'House parts', hint: 'Trace the walls, roof, windows and doors so scenes can decorate each one' },
   { id: 'paint', label: 'Paint the house (Beta)', hint: 'An AI repaints a photo of your house as you describe it' },
 ]
 
-/** Layers whose things can be placed by hand on the preview. */
-export const PLACEABLE = new Set<LayerType>(['shapes', 'countdown'])
+/** Layers whose things can be placed by hand on the preview (for flying and walking ones, the points of their path). */
+export const PLACEABLE = new Set<LayerType>(['shapes', 'countdown', 'info', 'movers'])
+
+/** Layers placed by hand as one thing, always the picked one. */
+export const SINGLE = new Set<LayerType>(['countdown', 'info'])
 
 /** What the preview needs to place, pick, size and turn a layer's things. */
 export function placingFor(layer: SceneLayer, selected: number | null) {
@@ -58,6 +73,16 @@ export function placingFor(layer: SceneLayer, selected: number | null) {
     const h = countdownPinHeight(layer.size)
     const w = (h * DESIGN_W) / DESIGN_H
     return { pins: layer.pins!, radius: Math.hypot(w, h) / 2, box: { w, h }, max: 1, selected }
+  }
+  if (layer.type === 'info') {
+    const board = BOARD[infoStyle(layer.style)]
+    const h = infoPinHeight(layer.style, layer.size)
+    const w = (h * board.w) / board.h
+    return { pins: layer.pins!, radius: Math.hypot(w, h) / 2, box: { w, h }, max: 1, selected }
+  }
+  if (layer.type === 'movers') {
+    // The points of a path: a line joins them, and each one's size is how big it is there.
+    return { pins: layer.pins!, radius: moverHeight(layer) / 2, selected, path: true }
   }
   return { pins: layer.pins!, radius: objectRadius(layer.size), selected }
 }
@@ -74,6 +99,7 @@ export function ScenesPanel({
   clock,
   cameraPeople,
   canEdit,
+  transport,
   onError,
   reloadScenes,
   reloadMedia,
@@ -85,15 +111,22 @@ export function ScenesPanel({
   clock: ServerClock
   cameraPeople: PeopleTracker
   canEdit: boolean
+  transport: TransportState | null
   onError: (message: string | null) => void
   reloadScenes: () => Promise<void>
   reloadMedia: () => Promise<unknown>
   onShowChanged: () => Promise<void> | void
 }) {
   const [search, setSearch] = useSearchParams()
-  const part: ScenePart = SCENE_PARTS.find((p) => p.id === search.get('part'))?.id ?? 'edit'
-  const setPart = (id: ScenePart) => setSearch(id === 'edit' ? {} : { part: id }, { replace: true })
-  const [starting, setStarting] = useState(false)
+  const part: ScenePart = SCENE_PARTS.find((p) => p.id === search.get('part'))?.id ?? 'make'
+  const setPart = (id: ScenePart) => setSearch(id === 'make' ? {} : { part: id }, { replace: true })
+  // "Put it on a projector" opens Make a scene with the scene (and maybe a projector) picked.
+  const startWith = useMemo(() => ({
+    sceneId: Number(search.get('scene')) || null,
+    outputId: Number(search.get('projector')) || null,
+  }), [search])
+  const putOnProjector = (target: MappingScene) => setSearch({ scene: String(target.id) }, { replace: true })
+  const startNew = () => setPart('make')
   const [selectedId, setSelectedId] = useState<number | null>(() => Number(localStorage.getItem(SCENE_KEY)) || null)
   const [drafts, setDrafts] = useState<Map<number, MappingScene>>(new Map())
   const [ai, setAi] = useState<AiStatus | null>(null)
@@ -111,19 +144,38 @@ export function ScenesPanel({
   const [sendToProjectors, setSendToProjectors] = useState(false)
   const [backdrop, setBackdrop] = useState<Backdrop>(() => (show.camera_view ? { kind: 'camera' } : { kind: 'none' }))
   const [fps, setFps] = useState<{ fps: number; scale: number | null } | null>(null)
+  // The show's photo of the house, lined up on Start from a photo, is a backdrop too.
+  const [hasHousePhoto, setHasHousePhoto] = useState(false)
+  useEffect(() => {
+    if (part === 'photo') return
+    let cancelled = false
+    mappingApi.getHousePhoto(show.id).then(
+      (saved) => {
+        if (cancelled) return
+        setHasHousePhoto(saved != null)
+        if (saved) setBackdrop((b) => (b.kind === 'none' ? { kind: 'house' } : b))
+        else setBackdrop((b) => (b.kind === 'house' ? { kind: 'none' } : b))
+      },
+      () => undefined,
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [show.id, part])
 
   // House parts.
   const [surfaces, setSurfaces] = useState<Surface[]>(show.surfaces)
   const [tracing, setTracing] = useState(false)
   const [drawing, setDrawing] = useState<Drawing | null>(null)
-  useEffect(() => setSurfaces(show.surfaces), [show.id, show.surfaces])
-  // Tracing belongs to House parts; leaving it puts the preview back to normal.
+  // The part whose corners are being set (a sloped roof), and whether a corner is held.
+  const [straightening, setStraightening] = useState<string | null>(null)
+  const holding = useRef(false)
+  const surfacesRef = useRef(surfaces)
+  surfacesRef.current = surfaces
   useEffect(() => {
-    if (part !== 'house') {
-      setTracing(false)
-      setDrawing(null)
-    }
-  }, [part])
+    // A save while dragging comes back a moment behind the mouse: keep the mouse's.
+    if (!holding.current) setSurfaces(show.surfaces)
+  }, [show.id, show.surfaces])
 
   const list = useMemo(() => scenes.map((s) => drafts.get(s.id) ?? s), [scenes, drafts])
   // Nothing picked yet (or the picked one was deleted): show the first.
@@ -231,6 +283,53 @@ export function ScenesPanel({
       await onShowChanged()
     })
 
+  // -- straightening a part: its four corners and the checkerboard on the projectors
+  const flatTimer = useRef<number>()
+  const flatSentAt = useRef(0)
+  const setFlatCorners = (id: string, corners: Point[] | null, how: 'drag' | 'save' | 'finish') => {
+    const flat = corners ? { corners, test_until: how === 'finish' ? null : clock.now() + FLAT_TEST_MS } : null
+    const next = surfacesRef.current.map((s) => (s.id === id ? { ...s, flat } : s))
+    surfacesRef.current = next
+    setSurfaces(next)
+    holding.current = how === 'drag'
+    window.clearTimeout(flatTimer.current)
+    if (how !== 'drag') {
+      void saveSurfaces(next)
+      return
+    }
+    // While dragging, the projectors follow a couple of times a second.
+    flatTimer.current = window.setTimeout(() => {
+      flatSentAt.current = Date.now()
+      mappingApi.saveSurfaces(show.id, surfacesRef.current).catch((err) =>
+        onError(err instanceof Error ? err.message : 'Saving the corners failed'))
+    }, Math.max(0, flatSentAt.current + FLAT_SEND_MS - Date.now()))
+  }
+  const finishStraightening = () => {
+    const part = surfacesRef.current.find((s) => s.id === straightening)
+    if (part?.flat) setFlatCorners(part.id, part.flat.corners, 'finish')
+    setStraightening(null)
+  }
+  // Keep the checkerboard on while the corners are still being looked at.
+  useEffect(() => {
+    if (!straightening) return
+    const timer = window.setInterval(() => {
+      const part = surfacesRef.current.find((s) => s.id === straightening)
+      if (part?.flat) setFlatCorners(part.id, part.flat.corners, 'save')
+    }, FLAT_TEST_MS / 2)
+    return () => window.clearInterval(timer)
+  }, [straightening]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => window.clearTimeout(flatTimer.current), [])
+
+  // Tracing and straightening belong to House parts; leaving it puts the preview back to normal.
+  useEffect(() => {
+    if (part !== 'house') {
+      setTracing(false)
+      setDrawing(null)
+      if (straightening) finishStraightening()
+    }
+  }, [part]) // eslint-disable-line react-hooks/exhaustive-deps
+  const straightPart = surfaces.find((s) => s.id === straightening) ?? null
+
   const finishDrawing = () => {
     if (!drawing || drawing.points.length < 3) {
       setDrawing(null)
@@ -268,25 +367,61 @@ export function ScenesPanel({
   const hasHouse = surfaces.length > 0
   // An open objects layer that is placed by hand turns clicks on the preview into placing.
   const placingLayer = canEdit ? scene?.layers.find((l) => l.id === openLayer && PLACEABLE.has(l.type) && l.pins) : undefined
-  // A lone countdown is always the picked one, so its handles show at once.
-  const pickedPin = selectedPin ?? (placingLayer?.type === 'countdown' && placingLayer.pins!.length > 0 ? 0 : null)
+  // A lone countdown or board is always the picked one, so its handles show at once.
+  const pickedPin = selectedPin ?? (placingLayer && SINGLE.has(placingLayer.type) && placingLayer.pins!.length > 0 ? 0 : null)
   const placing = placingLayer ? placingFor(placingLayer, pickedPin) : null
 
   const inShow = (target: MappingScene) =>
     show.cues.some((c) => show.outputs.some((o) => sceneOn(c, o.id) === target.id) || c.scene_id === target.id)
 
-  const startFrom = async (name: string, description: string, layers: SceneLayer[]) => {
-    setStarting(false)
-    await create(name, description, layers)
-    setPart('edit')
-  }
-
   return (
     <div className="space-y-4">
       <SectionBar label="Scenes sections" value={part} onChange={setPart} sections={SCENE_PARTS.filter((p) => p.id !== 'paint' || canEdit)} />
 
+      {part === 'make' && (
+        <MakeScene
+          key={show.id}
+          show={{ ...show, surfaces }}
+          scenes={list}
+          media={media}
+          clock={clock}
+          cameraPeople={cameraPeople}
+          canEdit={canEdit}
+          ai={ai}
+          transport={transport}
+          hasHousePhoto={hasHousePhoto}
+          startWith={startWith}
+          onError={onError}
+          reloadScenes={reloadScenes}
+          onShowChanged={onShowChanged}
+          onOpenScene={(id) => {
+            setSelectedId(id)
+            setPart('edit')
+          }}
+        />
+      )}
+
       {part === 'projectors' && (
         <ProjectorScenes show={show} scenes={list} canEdit={canEdit} onChanged={onShowChanged} onError={onError} />
+      )}
+
+      {part === 'photo' && (
+        <HousePhotoPanel
+          show={show}
+          surfaces={surfaces}
+          ai={ai}
+          canEdit={canEdit}
+          busy={busy != null}
+          onSurfacesChange={setSurfaces}
+          onSurfacesSaved={onShowChanged}
+          onDescribe={(prompt) => {
+            setPart('edit')
+            void describe(prompt, null)
+          }}
+          onStartNew={startNew}
+          reloadMedia={reloadMedia}
+          onError={onError}
+        />
       )}
 
       {part === 'paint' && canEdit && (
@@ -302,12 +437,17 @@ export function ScenesPanel({
           <div className="min-w-0 space-y-4">
             {part === 'edit' && (
               <>
+                {busy === 'describe' && (
+                  <p className="rounded-md bg-sky-500/10 px-3 py-2 text-sm text-sky-100 ring-1 ring-sky-500/30">
+                    Claude is designing the scene. It appears here in up to a minute.
+                  </p>
+                )}
                 <Panel
                   title="Your scenes"
-                  description="Pick one to change it and see it in the preview. Add to cues makes it play when GO reaches it."
+                  description="Pick one to change every setting it has. To put one on a projector, press Put it on a projector."
                   action={
                     canEdit ? (
-                      <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={() => setStarting(true)}>
+                      <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={startNew}>
                         New scene
                       </button>
                     ) : undefined
@@ -318,7 +458,7 @@ export function ScenesPanel({
                       title="No scenes yet"
                       action={
                         canEdit ? (
-                          <button className="btn-primary" onClick={() => setStarting(true)}>
+                          <button className="btn-primary" onClick={startNew}>
                             Start a new scene
                           </button>
                         ) : undefined
@@ -353,7 +493,12 @@ export function ScenesPanel({
                     action={
                       canEdit ? (
                         <div className="flex gap-2">
-                          <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={() => void addToCues(scene)}>
+                          <button className="btn-primary px-3 py-1 text-xs" disabled={busy != null} onClick={() => putOnProjector(scene)}
+                            title="Pick a projector and put this scene on it, tonight and in every cue">
+                            Put it on a projector
+                          </button>
+                          <button className="btn-ghost px-2 py-1 text-xs" disabled={busy != null} onClick={() => void addToCues(scene)}
+                            title="Add a new cue at the end of the cue list that plays this scene">
                             Add to cues
                           </button>
                           <button className="btn-ghost px-2 py-1 text-xs" disabled={busy != null}
@@ -525,7 +670,13 @@ export function ScenesPanel({
                   </div>
                 )}
                 {surfaces.length === 0 ? (
-                  !tracing && <p className="text-xs text-slate-500">Nothing traced yet.</p>
+                  !tracing && (
+                    <p className="text-xs text-slate-500">
+                      Nothing traced yet. Have a photo of the house?{' '}
+                      <button className="text-sky-300 hover:underline" onClick={() => setPart('photo')}>Start from a photo</button> and
+                      Claude finds the parts for you.
+                    </p>
+                  )
                 ) : (
                   <ul className="space-y-1">
                     {surfaces.map((s, i) => (
@@ -553,6 +704,25 @@ export function ScenesPanel({
                           {SURFACE_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
                         </select>
                         {canEdit && (
+                          <button
+                            className={classNames('shrink-0 px-1.5 py-0.5 text-xs', straightening === s.id ? 'btn-primary' : 'btn-ghost')}
+                            title="Draw things on this part so they look right from the street, not stretched (for a roof that slopes away)"
+                            onClick={() => {
+                              if (straightening === s.id) {
+                                finishStraightening()
+                                return
+                              }
+                              if (straightening) finishStraightening()
+                              setTracing(false)
+                              setDrawing(null)
+                              setStraightening(s.id)
+                              setFlatCorners(s.id, s.flat?.corners ?? startingSquare(s, show.canvas_width / show.canvas_height), 'save')
+                            }}
+                          >
+                            {straightening === s.id ? 'Done' : s.flat ? 'Straightened ✓' : 'Straighten'}
+                          </button>
+                        )}
+                        {canEdit && (
                           <button className="btn-ghost px-1.5 py-0.5 text-xs text-red-300" onClick={() => {
                             const next = surfaces.filter((_, j) => j !== i)
                             setSurfaces(next)
@@ -565,6 +735,34 @@ export function ScenesPanel({
                     ))}
                   </ul>
                 )}
+                {straightPart && (
+                  <div className="mt-3 space-y-2 rounded-md bg-panel-850 p-2 text-xs text-slate-300 ring-1 ring-yellow-400/30">
+                    <p className="font-semibold text-slate-100">Straighten “{straightPart.name}”</p>
+                    <p>
+                      A checkerboard square with a yellow circle is on the projectors now. Look at it from the street and
+                      drag the four yellow corners on the preview (the filled one is top left) until the squares on the
+                      {straightPart.kind === 'roof' ? ' roof' : ' part'} look like true squares and the circle looks round.
+                      Drag inside the square to move all of it.
+                    </p>
+                    <p className="text-slate-400">
+                      Everything you put on this part is then drawn the same way, so it is not stretched. You can also do
+                      this with the mouse on the mini PC’s own monitor.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="btn-primary px-2 py-1 text-xs" onClick={finishStraightening}>Done</button>
+                      <button className="btn-ghost px-2 py-1 text-xs"
+                        onClick={() => setFlatCorners(straightPart.id, startingSquare(straightPart, show.canvas_width / show.canvas_height), 'save')}>
+                        Start again
+                      </button>
+                      <button className="btn-ghost px-2 py-1 text-xs text-red-300" onClick={() => {
+                        setFlatCorners(straightPart.id, null, 'save')
+                        setStraightening(null)
+                      }}>
+                        Don’t straighten this part
+                      </button>
+                    </div>
+                  </div>
+                )}
               </Panel>
             )}
           </div>
@@ -573,7 +771,9 @@ export function ScenesPanel({
             <Panel
               title={scene ? scene.name : 'Preview'}
               description={
-                placingLayer
+                placingLayer?.type === 'movers'
+                  ? 'Click points on the picture, in order, for the path to follow. Drag a point to move it; pick one to make it bigger or smaller there.'
+                  : placingLayer
                   ? `Click to put ${layerLabel(placingLayer).toLowerCase()} there. Drag one to move it; click one to pick it and change its size below.`
                   : peopleSource === 'simulated'
                   ? 'Live. The white rings are made-up people walking past; drag one to move it.'
@@ -598,7 +798,7 @@ export function ScenesPanel({
                 sendToProjectors={sendToProjectors && canEdit}
                 backdrop={backdrop}
                 surfaces={surfaces}
-                showSurfaces={tracing}
+                showSurfaces={tracing || straightPart != null}
                 drawing={drawing}
                 onDrawingChange={setDrawing}
                 onDrawingDone={finishDrawing}
@@ -611,6 +811,13 @@ export function ScenesPanel({
                   setSelectedPin(selected)
                 }}
                 onStats={(f, scale) => setFps({ fps: f, scale })}
+                picker={straightPart?.flat ? (
+                  <CornerPicker
+                    corners={straightPart.flat.corners}
+                    onChange={(corners) => setFlatCorners(straightPart.id, corners, 'drag')}
+                    onDone={(corners) => setFlatCorners(straightPart.id, corners, 'save')}
+                  />
+                ) : undefined}
               />
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400">
                 <label className="flex items-center gap-1.5">
@@ -643,11 +850,12 @@ export function ScenesPanel({
                     value={backdrop.kind === 'media' ? `m${backdrop.id}` : backdrop.kind}
                     onChange={(e) => {
                       const v = e.target.value
-                      setBackdrop(v === 'none' || v === 'camera' ? { kind: v } : { kind: 'media', id: Number(v.slice(1)) })
+                      setBackdrop(v === 'none' || v === 'camera' || v === 'house' ? { kind: v } : { kind: 'media', id: Number(v.slice(1)) })
                     }}
                   >
                     <option value="none">Black</option>
                     {show.camera_view && <option value="camera">Camera photo of the house</option>}
+                    {hasHousePhoto && <option value="house">Your photo of the house, lined up</option>}
                     {media.map((m) => (
                       <option key={m.id} value={`m${m.id}`}>
                         {m.name}
@@ -660,63 +868,6 @@ export function ScenesPanel({
           </div>
         </div>
       )}
-
-      <Modal open={starting} label="Start a new scene" onClose={() => setStarting(false)} size="lg">
-        <div className="space-y-4 p-5">
-          <div>
-            <h3 className="text-base font-semibold text-slate-50">Start a new scene</h3>
-            <p className="mt-1 text-sm text-slate-400">Pick a ready-made one to change as you like, or start blank.</p>
-          </div>
-          {ai?.available ? (
-            <div className="rounded-md bg-panel-850 p-3 ring-1 ring-white/5">
-              <p className="mb-2 text-sm font-medium text-slate-200">Describe it in words</p>
-              <DescribeBox
-                placeholder="A Christmas scene that turns my house into a gingerbread house, with snow, and sparkles that follow people"
-                busy={busy === 'describe'}
-                disabled={busy != null}
-                action="Create scene"
-                compact
-                onSubmit={(prompt) => {
-                  setStarting(false)
-                  setPart('edit')
-                  void describe(prompt, null)
-                }}
-              />
-            </div>
-          ) : ai ? (
-            <p className="text-xs text-slate-500">
-              To describe scenes in plain words instead, add an Anthropic API key in{' '}
-              <Link className="text-sky-300 hover:underline" to="/settings?part=ai">Settings → AI keys</Link>. Everything else works without one.
-            </p>
-          ) : null}
-          <div className="space-y-3">
-              {[...new Set(STARTERS.map((s) => s.occasion))].map((occasion) => (
-                <div key={occasion}>
-                  <p className="mb-1 mt-2 text-[11px] uppercase tracking-wide text-slate-500">{occasion}</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {STARTERS.filter((s) => s.occasion === occasion).map((starter) => (
-                      <button
-                        key={starter.name}
-                        className="rounded-md bg-panel-850 px-3 py-2 text-left ring-1 ring-white/5 hover:bg-panel-800 disabled:opacity-50"
-                        disabled={busy != null}
-                        onClick={() => void startFrom(starter.name, starter.description, starter.layers.map(normaliseLayer))}
-                      >
-                        <span className="block text-sm text-slate-100">{starter.name}</span>
-                        <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500">{starter.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-          </div>
-          <div className="flex justify-between gap-2 border-t border-white/[0.06] pt-3">
-            <button className="btn-default" disabled={busy != null} onClick={() => void startFrom('New scene', '', [])}>
-              Blank scene
-            </button>
-            <button className="btn-ghost" onClick={() => setStarting(false)}>Cancel</button>
-          </div>
-        </div>
-      </Modal>
 
       <ConfirmDialog
         open={confirmDelete != null}
@@ -785,7 +936,7 @@ function DescribeBox({
   )
 }
 
-function LayerCard({
+export function LayerCard({
   layer,
   media,
   open,
@@ -820,7 +971,8 @@ function LayerCard({
   if (!kind) return null
   const usesColors = layer.type !== 'distort' && layer.type !== 'picture'
   const placed = PLACEABLE.has(layer.type) && layer.pins != null
-  const single = layer.type === 'countdown'
+  const single = SINGLE.has(layer.type)
+  const path = layer.type === 'movers'
   const usesTarget = (kind.group !== 'people' || layer.type === 'particles') && !placed
   const near = nearOf(layer)
   const pin = placed && selectedPin != null ? layer.pins![selectedPin] : undefined
@@ -878,8 +1030,8 @@ function LayerCard({
                 <select className="input py-1 text-sm" value={layer.style} disabled={!canEdit}
                   onChange={(e) => {
                     const style = e.target.value
-                    // A countdown's look is a starting point: it brings its own colours.
-                    onChange(layer.type === 'countdown' ? countdownLook(style) : { style })
+                    // A countdown's look is a starting point: it brings its own colours, as do a sleigh and a board.
+                    onChange(layer.type === 'countdown' ? countdownLook(style) : styleLook(layer, style))
                   }}>
                   {kind.styles.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
@@ -888,6 +1040,11 @@ function LayerCard({
             {layer.type === 'countdown' && (
               <div className="sm:col-span-2">
                 <CountdownColorPickers layer={layer} canEdit={canEdit} onChange={onChange} />
+              </div>
+            )}
+            {layer.type === 'info' && (
+              <div className="sm:col-span-2">
+                <InfoFields layer={layer} canEdit={canEdit} onChange={onChange} />
               </div>
             )}
             {usesColors && layer.type !== 'countdown' && (
@@ -913,8 +1070,8 @@ function LayerCard({
                     onSelectPin(hand && single ? 0 : null)
                     onChange({ pins: hand ? (single ? [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }] : []) : null })
                   }}>
-                  <option value="spread">{single ? 'Centred on an area' : 'Spread over an area'}</option>
-                  <option value="hand">{single ? 'Where I put it' : 'Where I put them'}</option>
+                  <option value="spread">{path ? 'Its own path (over the roof or along the house)' : single ? 'Centred on an area' : 'Spread over an area'}</option>
+                  <option value="hand">{path ? 'Along a path I draw' : single ? 'Where I put it' : 'Where I put them'}</option>
                 </select>
               </label>
             )}
@@ -978,7 +1135,11 @@ function LayerCard({
           {placed && (
             <div className="rounded-md bg-panel-900 px-3 py-2.5 text-xs ring-1 ring-sky-500/30">
               <p className="text-slate-300">
-                {single
+                {path
+                  ? layer.pins!.length < 2
+                    ? 'Click at least two points on the preview, in order, for the path. Until then it uses its own path.'
+                    : `${layer.pins!.length} points. Click to add more at the end, drag one to move it, or pick one to make it bigger or smaller there (smaller looks further away).`
+                  : single
                   ? layer.pins!.length === 0
                     ? 'Click on the preview to put it where you want it.'
                     : 'Drag it on the preview, or click where it should go. Drag the square corner handle to size it and the round handle to turn it.'
@@ -999,14 +1160,16 @@ function LayerCard({
                           })} />
                         <span className="tnum w-9 text-slate-200">{Math.round(pin.size * 100)}%</span>
                       </label>
-                      <label className="flex items-center gap-1.5 text-slate-400">
-                        Turn
-                        <input type="range" min={-180} max={180} step={1} value={pin.rotation ?? 0} className="w-28 accent-sky-500"
-                          onChange={(e) => onChange({
-                            pins: layer.pins!.map((p, i) => (i === selectedPin ? { ...p, rotation: Number(e.target.value) } : p)),
-                          })} />
-                        <span className="tnum w-9 text-slate-200">{Math.round(pin.rotation ?? 0)}°</span>
-                      </label>
+                      {!path && (
+                        <label className="flex items-center gap-1.5 text-slate-400">
+                          Turn
+                          <input type="range" min={-180} max={180} step={1} value={pin.rotation ?? 0} className="w-28 accent-sky-500"
+                            onChange={(e) => onChange({
+                              pins: layer.pins!.map((p, i) => (i === selectedPin ? { ...p, rotation: Number(e.target.value) } : p)),
+                            })} />
+                          <span className="tnum w-9 text-slate-200">{Math.round(pin.rotation ?? 0)}°</span>
+                        </label>
+                      )}
                       {!single && (
                         <button className="btn-ghost px-2 py-0.5 text-xs text-red-300" onClick={() => {
                           onSelectPin(null)
@@ -1044,7 +1207,7 @@ function LayerCard({
               <Slider label="How much it reacts" value={layer.reaction} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ reaction: v })} />
             )}
-            {DIALS.filter((d) => kind.dials[d] && !(placed && d === (single ? 'fade' : 'amount'))).map((d) => (
+            {DIALS.filter((d) => kind.dials[d] && !(placed && !path && d === (single ? 'fade' : 'amount'))).map((d) => (
               <Slider key={d} label={kind.dials[d]!} value={layer[d]} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}`} onChange={(v) => onChange({ [d]: v })} />
             ))}

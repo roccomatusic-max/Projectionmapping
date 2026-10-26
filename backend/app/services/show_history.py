@@ -787,7 +787,8 @@ class Recorder:
     # -- what tonight's show says ----------------------------------------------
 
     async def note_start(self, *, slot: Any, show_id: int | None, group_name: str | None,
-                         by: str, ok: bool, message: str) -> None:
+                         by: str, ok: bool, message: str,
+                         power_failed: list[str] | None = None) -> None:
         details = {"at": utcnow(), "slot": slot, "show_id": show_id,
                    "group_name": group_name, "by": by, "message": message}
         async with self._lock:
@@ -804,9 +805,10 @@ class Recorder:
                                                 message=message, group_name=group_name)
                     record.started_by = by
                     record.problems = [_problem(utcnow(), "start_failed", message)]
-                if ok and "did not answer" in message:
-                    record.problems = [*(record.problems or []),
-                                       _problem(utcnow(), "power_failed", message)]
+                if ok and power_failed:
+                    record.problems = [*(record.problems or []), _problem(
+                        utcnow(), "power_failed",
+                        f"{', '.join(power_failed)} did not turn on when the show started.")]
         bus.publish("show_history", {})
 
     async def note_held(self, slot: Any, message: str) -> None:
