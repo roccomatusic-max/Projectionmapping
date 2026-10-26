@@ -92,6 +92,7 @@ from app.schemas.mapping import (
     ScreenControlResult,
 )
 from app.services import minipc_updates
+from app.services.alerts import alerting
 from app.services.discovery import lan_address, tailscale_address
 from app.services.emergency import emergency
 from app.services.mapping import TransportError, transport
@@ -497,6 +498,8 @@ async def command(player_id: int, payload: PlayerCommand, session: SessionDep,
             raise refuse(f"{player.name} cannot restart or shut down its computer from here: "
                          "only the Windows Mini PC app can.")
         _queue(player.id, "app", action)
+        # Its silence is expected now: no "mini PC offline" alert for it.
+        alerting.expect_minipc_away(player.id, 10 if action == "reboot" else None)
         word = "restart" if action == "reboot" else "shut down"
         session.add(Event(projector_id=None, severity=Severity.WARNING.value, kind="player_power",
                           message=f"{admin.username} asked mini PC {player.name} to {word}"))
