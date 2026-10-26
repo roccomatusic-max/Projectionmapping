@@ -26,6 +26,7 @@ import contextlib
 import logging
 import os
 import secrets
+import signal
 import socket
 import sys
 import threading
@@ -35,6 +36,7 @@ import webbrowser
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from app import backups
 from app.paths import FIRST_RUN_PASSWORD
 
 APP_FOLDER = "ProjectorControl"
@@ -75,6 +77,18 @@ def ensure_secret_key(folder: Path) -> str:
     with contextlib.suppress(OSError):  # Windows: the per-user folder is already private
         path.chmod(0o600)
     return value
+
+
+def apply_restore(folder: Path, database: Path) -> dict | None:
+    """Put in a backup chosen in Settings → Backup, before anything opens the
+    database, together with its secret key (app/backups.py)."""
+    if os.environ.get("DATABASE_URL"):
+        return None  # someone else's database: the app's start-up does it
+    return backups.apply_pending(
+        backups.Place(folder=folder, database=database,
+                      media=Path(os.environ.get("MEDIA_DIR") or folder / "media")),
+        secret_file=None if os.environ.get("SECRET_KEY") else folder / "secret.key",
+        current_secret=os.environ.get("SECRET_KEY"))
 
 
 def probe_socket() -> socket.socket:
@@ -158,6 +172,23 @@ def request_stop() -> None:
 
 def stop_requested() -> bool:
     return _stop.is_set()
+
+
+def request_restart() -> None:
+    """End the server so its service starts it again (restoring a backup).
+
+    Not a stop. Mac: a graceful SIGTERM, as for an update; launchd's
+    KeepAlive starts the app again whatever the reason it ended. (The Mac
+    app runs this file as ``__main__``, so this module's ``_server`` is not
+    the running one there.) Windows: the service runs ``main`` from this
+    module; told to end without a stop, it leaves with an error and the
+    service's recovery settings start it again in 5 s.
+    """
+    if sys.platform == "win32":
+        if _server is not None:
+            _server.should_exit = True
+    else:
+        os.kill(os.getpid(), signal.SIGTERM)
 
 
 def first_run_password(folder: Path, database: Path) -> str | None:
@@ -353,6 +384,10 @@ def main(argv: list[str] | None = None) -> int:
         log.error("port %d is in use, most often by a copy started from Terminal; "
                   "trying again shortly", port)
         return 1
+
+    restored = apply_restore(folder, database)
+    if restored:
+        log.warning("restore: %s", restored["message"])
 
     # Environment must be set before app.config is imported anywhere.
     os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")

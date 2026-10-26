@@ -69,6 +69,24 @@ jobs:
           tail -5 "$RUNNER_TEMP/pc/logs/projector-control.log"
           # Running it must not have changed the bundle, or macOS would call it damaged.
           codesign --verify --deep --strict "$APP"
+      - name: Back up and restore in the built app (Settings, Backup)
+        run: |
+          APP="dist/Projector Control.app/Contents/MacOS/ProjectorControl"
+          DATA="$RUNNER_TEMP/backup-check"
+          # Stand-in for launchd's KeepAlive, which starts the service again when it ends.
+          ( while [ ! -f "$RUNNER_TEMP/backup-check.stop" ]; do
+              PROJECTOR_CONTROL_SERVICE=1 "$APP" --serve --lan --no-browser --port 8766 --data-dir "$DATA" >> "$RUNNER_TEMP/backup-check.log" 2>&1
+              sleep 1
+            done ) > /dev/null 2>&1 &
+          LOOP=$!
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:8766/api/health > /dev/null && break; sleep 1; done
+          PASSWORD=$(sed -n 's/^ *password: *//p' "$DATA/FIRST-RUN-PASSWORD.txt")
+          python desktop/ci/check_backup.py http://127.0.0.1:8766 "$PASSWORD" || { tail -60 "$RUNNER_TEMP/backup-check.log"; exit 1; }
+          ls "$DATA/backups"
+          touch "$RUNNER_TEMP/backup-check.stop"
+          kill "$(cat "$DATA/server.pid")"
+          wait "$LOOP"
+          codesign --verify --deep --strict "dist/Projector Control.app"
       - name: Zip it
         # ditto keeps the bundle's symlinks and signature intact; plain zip breaks them.
         run: ditto -c -k --keepParent "dist/Projector Control.app" "ProjectorControl-Mac-${{ matrix.chip }}.zip"
