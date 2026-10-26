@@ -162,6 +162,7 @@ export function OutputView({
           scenes: frame.scenes,
           people: frame.people,
           surfaces: frame.surfaces,
+          now: clock.now(),
         })
         if (frame.scenes.length) sceneFrames++
       }

@@ -330,6 +330,30 @@ SurfaceKind = Literal["wall", "roof", "window", "door", "other"]
 MAX_SURFACES = 64
 
 
+class SurfaceFlat(BaseModel):
+    """How a house part lies, so things drawn on it are not stretched.
+
+    ``corners`` is where a true square has to be drawn on the canvas for it
+    to look square on this part from where people watch: on a sloped roof
+    seen at an angle it is a slanted four-sided shape. Objects on the part
+    are drawn through it (frontend/src/mapping/scene/flat.ts).
+    """
+    #: Top-left, top-right, bottom-right, bottom-left, in canvas fractions.
+    corners: list[Point]
+    #: While someone is setting the corners: show a checkerboard square on
+    #: the projectors until this time (server clock, epoch milliseconds).
+    test_until: float | None = None
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point]) -> list[Point]:
+        if len(corners) != 4:
+            raise ValueError("a house part's flat view needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "flat view")
+        return corners
+
+
 class Surface(BaseModel):
     """One part of the building traced on the canvas, for scenes to decorate."""
     id: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
@@ -337,6 +361,8 @@ class Surface(BaseModel):
     kind: SurfaceKind = "wall"
     #: Outline in canvas fractions.
     points: list[Point] = Field(min_length=3, max_length=256)
+    #: Straightened: objects on this part are drawn through its flat view.
+    flat: SurfaceFlat | None = None
 
     @field_validator("points")
     @classmethod
@@ -618,6 +644,15 @@ class ScreenControl(BaseModel):
     projector_id: int | None = None
     #: Power off asks twice, like everywhere else.
     confirm: bool = False
+
+
+class ScreenFlat(BaseModel):
+    """The four corners of a house part, dragged on a mini PC's status screen."""
+    surface_id: str = Field(min_length=1, max_length=32)
+    #: null takes the part's straightening away.
+    corners: list[Point] | None = None
+    #: Show the checkerboard square on the projectors while dragging.
+    test: bool = True
 
 
 class ScreenControlResult(BaseModel):

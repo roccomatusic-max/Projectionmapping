@@ -136,6 +136,26 @@ async def test_surfaces_are_traced_per_show(api):
     assert cleared.json()["surfaces"] == []
 
 
+async def test_a_house_part_can_be_straightened(api):
+    headers = await login(api)
+    show = await make_show(api, headers)
+    roof = {"id": "roof", "kind": "roof", "points": [[0.1, 0.1], [0.9, 0.1], [0.7, 0.4], [0.3, 0.4]],
+            "flat": {"corners": [[0.4, 0.15], [0.6, 0.15], [0.65, 0.35], [0.35, 0.35]],
+                     "test_until": 1.9e12}}
+    saved = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers,
+                            json={"surfaces": [HOUSE[0], roof]})
+    assert saved.status_code == 200, saved.text
+    parts = saved.json()["surfaces"]
+    assert parts[0]["flat"] is None
+    assert parts[1]["flat"] == roof["flat"]
+
+    # Four corners, on or near the canvas.
+    for corners in ([[0, 0], [1, 0], [1, 1]], [[0, 0], [1, 0], [1, 1], [0, 99]]):
+        refused = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers,
+                                  json={"surfaces": [{**roof, "flat": {"corners": corners}}]})
+        assert refused.status_code == 422
+
+
 async def test_simulated_people_reach_the_outputs(api):
     headers = await login(api)
     show = await make_show(api, headers)

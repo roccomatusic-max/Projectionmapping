@@ -25,8 +25,10 @@ import {
 import type { Dial } from '../scene/catalog'
 import { countdownPinHeight, DESIGN_H, DESIGN_W } from '../scene/countdown'
 import { objectRadius } from '../scene/engine'
-import type { AiStatus, LayerType, MappingScene, MediaAsset, SceneLayer, Show, Surface, SurfaceKind } from '../types'
+import { startingSquare } from '../scene/flat'
+import type { AiStatus, LayerType, MappingScene, MediaAsset, Point, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
+import { CornerPicker } from './CornerPicker'
 import { CountdownColorPickers, countdownLook } from './CountdownColors'
 import { PaintHouse } from './PaintHouse'
 import { ProjectorScenes, sceneOn } from './ProjectorScenes'
@@ -36,6 +38,10 @@ import { SceneRecorder } from './SceneRecorder'
 /** Scene edits are saved this long after the last change. */
 const SAVE_DELAY_MS = 400
 const SCENE_KEY = 'pc.mapping.scene'
+/** How long a part's checkerboard square stays on the projectors after the last change. */
+const FLAT_TEST_MS = 10 * 60 * 1000
+/** While a corner is dragged, the projectors follow this often. */
+const FLAT_SEND_MS = 600
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
 
 type ScenePart = 'edit' | 'house' | 'projectors' | 'paint'
@@ -116,14 +122,15 @@ export function ScenesPanel({
   const [surfaces, setSurfaces] = useState<Surface[]>(show.surfaces)
   const [tracing, setTracing] = useState(false)
   const [drawing, setDrawing] = useState<Drawing | null>(null)
-  useEffect(() => setSurfaces(show.surfaces), [show.id, show.surfaces])
-  // Tracing belongs to House parts; leaving it puts the preview back to normal.
+  // The part whose corners are being set (a sloped roof), and whether a corner is held.
+  const [straightening, setStraightening] = useState<string | null>(null)
+  const holding = useRef(false)
+  const surfacesRef = useRef(surfaces)
+  surfacesRef.current = surfaces
   useEffect(() => {
-    if (part !== 'house') {
-      setTracing(false)
-      setDrawing(null)
-    }
-  }, [part])
+    // A save while dragging comes back a moment behind the mouse: keep the mouse's.
+    if (!holding.current) setSurfaces(show.surfaces)
+  }, [show.id, show.surfaces])
 
   const list = useMemo(() => scenes.map((s) => drafts.get(s.id) ?? s), [scenes, drafts])
   // Nothing picked yet (or the picked one was deleted): show the first.
@@ -230,6 +237,53 @@ export function ScenesPanel({
       await mappingApi.saveSurfaces(show.id, next)
       await onShowChanged()
     })
+
+  // -- straightening a part: its four corners and the checkerboard on the projectors
+  const flatTimer = useRef<number>()
+  const flatSentAt = useRef(0)
+  const setFlatCorners = (id: string, corners: Point[] | null, how: 'drag' | 'save' | 'finish') => {
+    const flat = corners ? { corners, test_until: how === 'finish' ? null : clock.now() + FLAT_TEST_MS } : null
+    const next = surfacesRef.current.map((s) => (s.id === id ? { ...s, flat } : s))
+    surfacesRef.current = next
+    setSurfaces(next)
+    holding.current = how === 'drag'
+    window.clearTimeout(flatTimer.current)
+    if (how !== 'drag') {
+      void saveSurfaces(next)
+      return
+    }
+    // While dragging, the projectors follow a couple of times a second.
+    flatTimer.current = window.setTimeout(() => {
+      flatSentAt.current = Date.now()
+      mappingApi.saveSurfaces(show.id, surfacesRef.current).catch((err) =>
+        onError(err instanceof Error ? err.message : 'Saving the corners failed'))
+    }, Math.max(0, flatSentAt.current + FLAT_SEND_MS - Date.now()))
+  }
+  const finishStraightening = () => {
+    const part = surfacesRef.current.find((s) => s.id === straightening)
+    if (part?.flat) setFlatCorners(part.id, part.flat.corners, 'finish')
+    setStraightening(null)
+  }
+  // Keep the checkerboard on while the corners are still being looked at.
+  useEffect(() => {
+    if (!straightening) return
+    const timer = window.setInterval(() => {
+      const part = surfacesRef.current.find((s) => s.id === straightening)
+      if (part?.flat) setFlatCorners(part.id, part.flat.corners, 'save')
+    }, FLAT_TEST_MS / 2)
+    return () => window.clearInterval(timer)
+  }, [straightening]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => window.clearTimeout(flatTimer.current), [])
+
+  // Tracing and straightening belong to House parts; leaving it puts the preview back to normal.
+  useEffect(() => {
+    if (part !== 'house') {
+      setTracing(false)
+      setDrawing(null)
+      if (straightening) finishStraightening()
+    }
+  }, [part]) // eslint-disable-line react-hooks/exhaustive-deps
+  const straightPart = surfaces.find((s) => s.id === straightening) ?? null
 
   const finishDrawing = () => {
     if (!drawing || drawing.points.length < 3) {
@@ -553,6 +607,25 @@ export function ScenesPanel({
                           {SURFACE_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
                         </select>
                         {canEdit && (
+                          <button
+                            className={classNames('shrink-0 px-1.5 py-0.5 text-xs', straightening === s.id ? 'btn-primary' : 'btn-ghost')}
+                            title="Draw things on this part so they look right from the street, not stretched (for a roof that slopes away)"
+                            onClick={() => {
+                              if (straightening === s.id) {
+                                finishStraightening()
+                                return
+                              }
+                              if (straightening) finishStraightening()
+                              setTracing(false)
+                              setDrawing(null)
+                              setStraightening(s.id)
+                              setFlatCorners(s.id, s.flat?.corners ?? startingSquare(s, show.canvas_width / show.canvas_height), 'save')
+                            }}
+                          >
+                            {straightening === s.id ? 'Done' : s.flat ? 'Straightened ✓' : 'Straighten'}
+                          </button>
+                        )}
+                        {canEdit && (
                           <button className="btn-ghost px-1.5 py-0.5 text-xs text-red-300" onClick={() => {
                             const next = surfaces.filter((_, j) => j !== i)
                             setSurfaces(next)
@@ -564,6 +637,34 @@ export function ScenesPanel({
                       </li>
                     ))}
                   </ul>
+                )}
+                {straightPart && (
+                  <div className="mt-3 space-y-2 rounded-md bg-panel-850 p-2 text-xs text-slate-300 ring-1 ring-yellow-400/30">
+                    <p className="font-semibold text-slate-100">Straighten “{straightPart.name}”</p>
+                    <p>
+                      A checkerboard square with a yellow circle is on the projectors now. Look at it from the street and
+                      drag the four yellow corners on the preview (the filled one is top left) until the squares on the
+                      {straightPart.kind === 'roof' ? ' roof' : ' part'} look like true squares and the circle looks round.
+                      Drag inside the square to move all of it.
+                    </p>
+                    <p className="text-slate-400">
+                      Everything you put on this part is then drawn the same way, so it is not stretched. You can also do
+                      this with the mouse on the mini PC’s own monitor.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="btn-primary px-2 py-1 text-xs" onClick={finishStraightening}>Done</button>
+                      <button className="btn-ghost px-2 py-1 text-xs"
+                        onClick={() => setFlatCorners(straightPart.id, startingSquare(straightPart, show.canvas_width / show.canvas_height), 'save')}>
+                        Start again
+                      </button>
+                      <button className="btn-ghost px-2 py-1 text-xs text-red-300" onClick={() => {
+                        setFlatCorners(straightPart.id, null, 'save')
+                        setStraightening(null)
+                      }}>
+                        Don’t straighten this part
+                      </button>
+                    </div>
+                  </div>
                 )}
               </Panel>
             )}
@@ -598,7 +699,7 @@ export function ScenesPanel({
                 sendToProjectors={sendToProjectors && canEdit}
                 backdrop={backdrop}
                 surfaces={surfaces}
-                showSurfaces={tracing}
+                showSurfaces={tracing || straightPart != null}
                 drawing={drawing}
                 onDrawingChange={setDrawing}
                 onDrawingDone={finishDrawing}
@@ -611,6 +712,13 @@ export function ScenesPanel({
                   setSelectedPin(selected)
                 }}
                 onStats={(f, scale) => setFps({ fps: f, scale })}
+                picker={straightPart?.flat ? (
+                  <CornerPicker
+                    corners={straightPart.flat.corners}
+                    onChange={(corners) => setFlatCorners(straightPart.id, corners, 'drag')}
+                    onDone={(corners) => setFlatCorners(straightPart.id, corners, 'save')}
+                  />
+                ) : undefined}
               />
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400">
                 <label className="flex items-center gap-1.5">

@@ -466,6 +466,15 @@ cues like media (a cue's **Scene** draws over its media, or over black).
 - **House parts** are traced on each show's canvas (`shows.surfaces`: walls,
   roof, windows, doors, other), so a layer can decorate just the roof or just
   the windows. Untraced, everything covers the whole picture.
+- **Straightened parts** (a roof sloping away from the projector): a part can
+  carry `flat.corners`, four canvas points where a true square has to be drawn
+  to look square on that part from the street. Objects and countdowns whose
+  centre is on the part keep their place but are drawn through that
+  perspective (`scene/flat.ts`, the objects and countdown shaders), so they
+  are not stretched. The corners are dragged on Scenes → House parts →
+  Straighten, or with the mouse on a mini PC's status screen
+  (`POST /mapping/players/me/flat`), while a checkerboard square with a
+  circle shows on the projectors (`flat.test_until`, server clock).
 - **Ready-made scenes**: Gingerbread house, Haunted house, Winter lights,
   Underwater, Party, Shadow play.
 - **Trying without a camera**: the preview walks made-up people across the

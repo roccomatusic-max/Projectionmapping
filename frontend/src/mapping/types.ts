@@ -281,12 +281,22 @@ export interface ApplyResult {
 export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other'
 
 /** One part of the building traced on the canvas. */
+/** Where a true square has to be drawn on the canvas to look square on a house part (scene/flat.ts). */
+export interface SurfaceFlat {
+  /** Top-left, top-right, bottom-right, bottom-left, in canvas fractions. */
+  corners: Point[]
+  /** Show a checkerboard square on the projectors until this time (server clock, epoch ms). */
+  test_until?: number | null
+}
+
 export interface Surface {
   id: string
   name: string
   kind: SurfaceKind
   /** Outline in canvas fractions. */
   points: Point[]
+  /** Straightened: objects on this part are drawn through its flat view. */
+  flat?: SurfaceFlat | null
 }
 
 export type LayerType =

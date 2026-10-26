@@ -245,6 +245,7 @@ export function ScenePreview({
   onPinsChange,
   onStats,
   overlay,
+  picker,
 }: {
   show: Show
   scene: MappingScene | null
@@ -277,6 +278,8 @@ export function ScenePreview({
   onStats?: (fps: number, sceneScale: number | null) => void
   /** Drawn on top of everything, ignoring the pointer (the Editor's projector boxes). */
   overlay?: React.ReactNode
+  /** On top and taking the pointer: the corners of a house part being straightened. */
+  picker?: React.ReactNode
 }) {
   const playback = useMemo(() => new Playback(), [])
   const aspect = show.canvas_width / show.canvas_height
@@ -653,6 +656,7 @@ export function ScenePreview({
         onPointerCancel={onPointerUp}
       />
       {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
+      {picker}
     </div>
   )
 }
