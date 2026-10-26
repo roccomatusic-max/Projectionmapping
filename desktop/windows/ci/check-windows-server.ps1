@@ -3,8 +3,8 @@
 # Installs the built zip with the same PowerShell line Rocco pastes, then checks
 # everything the Mac app does: service at boot, restart after a crash, --lan on
 # 8765, firewall, discovery by mini PCs, the phone remote's address, the
-# first-run password, password reset, keep-awake, update, rollback of a broken
-# update, and uninstall. Each check prints "ok" or stops the job.
+# first-run password, password reset, keep-awake, backup and restore, update,
+# rollback of a broken update, and uninstall. Each check prints "ok" or stops the job.
 #
 #   pwsh desktop/windows/ci/check-windows-server.ps1 -Zip dist\ProjectorControl-Windows-Server.zip -Version 1.0.123
 
@@ -171,6 +171,14 @@ Write-Host $reset
 $newPassword = [regex]::Match($reset, 'password:\s+(\S+)').Groups[1].Value
 Check ($newPassword.Length -ge 12 -and (Login $newPassword)) '--reset-admin-password prints a new password that signs in, with the service running'
 Check (-not (Login $password)) 'the old password no longer signs in'
+$token = Login $newPassword
+
+# -- Settings, Backup: back up, then restore (the service restarts itself) ----------
+$before = Service-Pid
+& python (Join-Path $Root 'desktop\ci\check_backup.py') $Base $newPassword
+Check ($LASTEXITCODE -eq 0) 'Settings, Backup: back up, download, restore, and the backup is back after the service restarts itself'
+Check ((Service-Pid) -ne $before) 'the restore restarted the service (recovery settings)'
+Check (Test-Path (Join-Path $Data 'backups\*-before-restore.zip')) 'backups are kept in C:\ProgramData\ProjectorControl\backups'
 $token = Login $newPassword
 
 # -- running the install line again -------------------------------------------------
