@@ -34,14 +34,20 @@ export const MOVER_STYLES = [
   'snowfall', 'leaves', 'petals', 'confetti', 'falling-hearts', 'clovers', 'hanging-spiders', 'lanterns', 'jellyfish',
   'rising-bubbles', 'hot-air-balloons', 'fireflies', 'bees', 'dragon', 'owls', 'angels', 'sharks', 'sea-turtles',
   'mummies', 'gingerbread-men', 'toy-soldiers', 'dinosaurs', 'ducklings',
+  'trick-or-treaters', 'werewolves', 'vampires', 'frankensteins', 'grim-reaper', 'zombie-hands', 'rats',
+  'falling-presents', 'polar-bears', 'reindeer', 'carolers', 'squirrels', 'lovebirds', 'hatching-eggs', 'frogs',
+  'dragonflies', 'hummingbirds', 'dolphins', 'whales', 'crabs', 'octopus', 'beach-balls', 'paper-planes', 'kites',
+  'rocket-ship', 'astronauts', 'robots', 'dogs', 'dreidels', 'lion-dance', 'red-envelopes',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
-type Motion = 'flyer' | 'flock' | 'walker' | 'train' | 'streak' | 'rocket' | 'rise' | 'fall' | 'dangle' | 'wander'
+type Motion =
+  | 'flyer' | 'flock' | 'walker' | 'train' | 'streak' | 'rocket' | 'rise' | 'fall' | 'dangle' | 'wander'
+  | 'popup' | 'bounce' | 'leap' | 'kite'
 
 /**
  * How each travels; trail leaves sparkles behind, hop goes in bounds, spin
- * turns falling ones over as they come down, pace slows rising ones, animate
+ * turns falling ones over as they come down, pace slows rising ones and walkers, animate
  * plays a rising one's frames (rather than each being another colour), and
  * line has the little ones follow the first in a row.
  */
@@ -98,11 +104,51 @@ const STYLE: Record<MoverStyle, {
   'toy-soldiers': { motion: 'walker', ground: true, height: 0.95 },
   dinosaurs: { motion: 'walker', ground: true, height: 1.05 },
   ducklings: { motion: 'walker', ground: true, height: 0.55, line: true },
+  'trick-or-treaters': { motion: 'walker', ground: true, height: 0.8 },
+  werewolves: { motion: 'walker', ground: true, height: 1 },
+  vampires: { motion: 'walker', ground: true, height: 0.95 },
+  frankensteins: { motion: 'walker', ground: true, height: 1, pace: 1.4 },
+  'grim-reaper': { motion: 'flyer', ground: false, height: 0.9 },
+  // Coming up out of the ground beside people, along the bottom of the house.
+  'zombie-hands': { motion: 'popup', ground: true, height: 0.85 },
+  rats: { motion: 'walker', ground: true, height: 0.3, pace: 0.45 },
+  'falling-presents': { motion: 'fall', ground: false, height: 0.22, spin: 0.4 },
+  'polar-bears': { motion: 'walker', ground: true, height: 0.8, pace: 1.3 },
+  reindeer: { motion: 'walker', ground: true, height: 0.85 },
+  carolers: { motion: 'walker', ground: true, height: 0.9, pace: 1.5 },
+  squirrels: { motion: 'walker', ground: true, height: 0.4, hop: true, pace: 0.7 },
+  lovebirds: { motion: 'flyer', ground: false, height: 0.5 },
+  'hatching-eggs': { motion: 'popup', ground: true, height: 0.6 },
+  frogs: { motion: 'walker', ground: true, height: 0.42, hop: true },
+  dragonflies: { motion: 'flock', ground: false, height: 0.24 },
+  hummingbirds: { motion: 'flock', ground: false, height: 0.24 },
+  // Leaping out of the bottom of the house (or the line drawn) as if it were the sea.
+  dolphins: { motion: 'leap', ground: true, height: 0.75 },
+  whales: { motion: 'flyer', ground: false, height: 0.9 },
+  crabs: { motion: 'walker', ground: true, height: 0.38, pace: 0.8 },
+  octopus: { motion: 'flyer', ground: false, height: 0.7 },
+  'beach-balls': { motion: 'bounce', ground: true, height: 0.55 },
+  'paper-planes': { motion: 'flyer', ground: false, height: 0.3 },
+  // Flown on strings from the bottom of the house.
+  kites: { motion: 'kite', ground: true, height: 0.7 },
+  'rocket-ship': { motion: 'flyer', ground: false, height: 0.55, trail: true },
+  astronauts: { motion: 'flyer', ground: false, height: 0.7 },
+  robots: { motion: 'walker', ground: true, height: 0.9, pace: 1.3 },
+  dogs: { motion: 'walker', ground: true, height: 0.6, pace: 0.75 },
+  dreidels: { motion: 'walker', ground: true, height: 0.45 },
+  'lion-dance': { motion: 'walker', ground: true, height: 1.05, pace: 1.2 },
+  'red-envelopes': { motion: 'fall', ground: false, height: 0.2, spin: 0.9 },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
-const FLOAT: Partial<Record<MoverStyle, number>> = { ghosts: 0.25, ufo: 0.18, angels: 0.12, 'sea-turtles': 0.12, sharks: 0.08 }
-const BEAT: Partial<Record<MoverStyle, number>> = { ghosts: 6, ufo: 4, 'sea-turtles': 4, angels: 5, sharks: 6, dragon: 7 }
+const FLOAT: Partial<Record<MoverStyle, number>> = {
+  ghosts: 0.25, ufo: 0.18, angels: 0.12, 'sea-turtles': 0.12, sharks: 0.08,
+  'grim-reaper': 0.2, whales: 0.1, octopus: 0.3, astronauts: 0.3, 'paper-planes': 0.35, 'rocket-ship': 0.12,
+}
+const BEAT: Partial<Record<MoverStyle, number>> = {
+  ghosts: 6, ufo: 4, 'sea-turtles': 4, angels: 5, sharks: 6, dragon: 7,
+  'grim-reaper': 4, whales: 3, octopus: 5, astronauts: 3, 'rocket-ship': 12,
+}
 
 /** Width over height of a style's main picture. */
 function ratioOf(style: MoverStyle): number {
@@ -123,10 +169,10 @@ export function moverHeight(layer: SceneLayer): number {
   return (0.04 + 0.22 * layer.size) * STYLE[moverStyle(layer.style)].height
 }
 
-/** Walkers and the train go along the ground; the rest fly, float, fall or hang. */
+/** Walkers, the train, bouncing balls and things coming up out of the ground stay on it; the rest fly, float, fall or hang. */
 export function moverWalks(style: string): boolean {
   const { motion } = STYLE[moverStyle(style)]
-  return motion === 'walker' || motion === 'train'
+  return motion === 'walker' || motion === 'train' || motion === 'bounce' || motion === 'popup'
 }
 
 // -- paths --------------------------------------------------------------------------------
@@ -353,6 +399,11 @@ function bubble(s: Sprite, size: number, flip: boolean, k: number): Sprite {
 /** What one does when someone comes near; flocks scatter by themselves (below). */
 function react(s: Sprite, action: string, near: Near, t: number, ph: number, reach: number) {
   const k = near.k
+  // Ones that only appear for people stay hidden while nobody is near at all.
+  if (action === 'appear') {
+    s.alpha *= smoothstep(0.05, 0.6, k)
+    return
+  }
   if (k <= 0.001) return
   if (action === 'light') s.glow = Math.max(s.glow, k)
   else if (action === 'grow') {
@@ -371,7 +422,6 @@ function react(s: Sprite, action: string, near: Near, t: number, ph: number, rea
     s.angle += Math.sin(t * 10 + ph) * 0.3 * k
     s.y -= Math.abs(Math.sin(t * 10 + ph)) * s.hh * 0.5 * k
   } else if (action === 'hide') s.alpha *= 1 - smoothstep(0.25, 0.85, k)
-  else if (action === 'appear') s.alpha *= smoothstep(0.05, 0.6, k)
 }
 
 export interface MoverFrame {
@@ -450,6 +500,18 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         out.push({
           x: sprite.x + ca * lx - sa * ly, y: sprite.y + sa * lx + ca * ly, hw: fw / 2, hh: fh / 2, angle, flip,
           alpha: sprite.alpha * smoothstep(0.2, 0.5, near.k), glow: 0.5, row: 'fire', frame: Math.floor(t * 12),
+        })
+      }
+      if (hasRow(style, 'spout') && near.k > 0.2) {
+        // The whale blows a spout over whoever comes near.
+        const hh = size * 0.4 * smoothstep(0.2, 0.6, near.k)
+        const dir = flip ? -1 : 1
+        const lx = dir * ((size * (330 - 210)) / 230)
+        const ly = (size * (64 - 115)) / 230 - hh
+        out.push({
+          x: sprite.x + Math.cos(angle) * lx - Math.sin(angle) * ly, y: sprite.y + Math.sin(angle) * lx + Math.cos(angle) * ly,
+          hw: size * 0.4, hh, angle: 0, flip: false,
+          alpha: sprite.alpha * smoothstep(0.2, 0.5, near.k), glow: 0, row: 'spout', frame: Math.floor(t * 8),
         })
       }
       if (STYLE[style].trail) {
@@ -531,7 +593,7 @@ export function moverSprites(f: MoverFrame): Sprite[] {
   }
 
   if (motion === 'walker') {
-    const v = 0.025 + 0.12 * layer.speed
+    const v = (0.025 + 0.12 * layer.speed) / (STYLE[style].pace ?? 1)
     // A line is one big one with little ones hurrying after it (a duck and her ducklings).
     const line = STYLE[style].line
     const n = line ? 2 + Math.round(layer.amount * 6) : 1 + Math.round(layer.amount * 7)
@@ -569,7 +631,9 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         frame: waves && excited && !little ? Math.floor(t * 8 + ph * 4) : Math.floor(step * 8),
       }
       // Walkers jump for joy rather than shake; the ones that can dance do that instead.
-      react(sprite, action === 'dance' ? (waves ? 'none' : 'jump') : action, near, t, ph * 6, reach)
+      // They run off along the ground, not up the wall.
+      const along: Near = action === 'flee' ? { ...near, ax: near.ax >= 0 ? 1 : -1, ay: 0 } : near
+      react(sprite, action === 'dance' ? (waves ? 'none' : 'jump') : action, along, t, ph * 6, reach)
       out.push(sprite)
       if (!little && hasRow(style, 'bubble') && near.k > 0.2) out.push(bubble(sprite, size, sprite.flip, near.k))
     }
@@ -843,6 +907,174 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         alpha: Math.max(0.1 + 0.9 * blink, near.k), glow: 0, row: 'main', frame: 0,
       }
       react(sprite, action, near, t, hA * 6, reach)
+      out.push(sprite)
+    }
+    return out
+  }
+
+  if (motion === 'popup') {
+    // Zombie hands clawing up out of the ground, or eggs hatching, spread along the bottom of the house.
+    // Each comes up now and then by itself; people bring up the ones beside them (Appear: only then).
+    const n = 2 + Math.round(layer.amount * 8)
+    const ratio = ratioOf(style)
+    const frames = SPRITE_ROWS[style][0].frames
+    const hand = hasRow(style, 'mound')
+    for (let i = 0; i < n; i++) {
+      const ph = hash(i * 4.3 + 2 + own)
+      const p = path.at(L * ((i + 0.5) / n) + (ph - 0.5) * (L / n) * 0.6)
+      const size = H * p.size * (0.85 + 0.3 * hash(i * 2.2))
+      const period = (9 + ph * 7) / (0.3 + 1.4 * layer.speed)
+      const q = (((t + ph * period) / period) % 1 + 1) % 1
+      let up = action === 'appear' ? 0 : smoothstep(0.05, 0.2, q) * (1 - smoothstep(0.6, 0.75, q))
+      const near = nearAt(p.x, p.y - size / 2, size / 2, people, reach, aspect)
+      if (action === 'hide') up *= 1 - smoothstep(0.2, 0.7, near.k)
+      else if (action !== 'none') up = Math.max(up, smoothstep(0.1, 0.6, near.k))
+      if (hand) {
+        // Growing up out of its mound (nothing shows below the ground), flexing its fingers; the mound stays.
+        const grow = 0.3 + 0.7 * up
+        const sprite: Sprite = {
+          x: p.x, y: p.y - size * 0.06 - (size / 2) * grow, hw: ((size * ratio) / 2) * grow, hh: (size / 2) * grow,
+          angle: Math.sin(t * 1.7 + ph * 9) * 0.12 * up, flip: ph < 0.5,
+          alpha: smoothstep(0.02, 0.35, up), glow: 0, row: 'main', frame: Math.floor(t * (4 + 8 * near.k) + ph * 8),
+        }
+        react(sprite, action === 'light' || action === 'grow' || action === 'dance' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        out.push({
+          x: p.x, y: p.y - size * 0.09, hw: size * 0.4, hh: size * 0.15, angle: 0, flip: ph < 0.5,
+          alpha: 1, glow: 0, row: 'mound', frame: 0,
+        })
+      } else {
+        // Eggs sit there and hatch as they come up: whole, cracking, then the chick climbs out.
+        const stage = Math.min(frames - 1, Math.floor(up * frames * 0.999))
+        const sprite: Sprite = {
+          x: p.x, y: p.y - size / 2, hw: (size * ratio) / 2, hh: size / 2,
+          angle: stage >= 1 && stage <= 2 ? Math.sin(t * 14 + ph * 9) * 0.12 : 0, flip: false,
+          alpha: 1, glow: 0, row: 'main', frame: stage,
+        }
+        react(sprite, action === 'light' || action === 'grow' || action === 'dance' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+      }
+    }
+    return out
+  }
+
+  if (motion === 'bounce') {
+    // Beach balls bouncing along the bottom of the house, spinning; people kick them up and away.
+    const n = 1 + Math.round(layer.amount * 5)
+    const v = 0.04 + 0.2 * layer.speed
+    for (let i = 0; i < n; i++) {
+      const ph = hash(i * 6.1 + own)
+      const size = H * (0.8 + 0.4 * hash(i * 1.3))
+      const u = t * v * (0.8 + 0.4 * ph) + (i / n) * 2 * L + ph * L
+      const m = ((u % (2 * L)) + 2 * L) % (2 * L)
+      const forward = m < L
+      const s = forward ? m : 2 * L - m
+      const p = path.at(s)
+      const hop = size * (2.2 + 1.2 * ph)
+      const step = (((u / hop) % 1) + 1) % 1
+      const height = Math.sin(step * Math.PI) * size * (1.1 + 0.6 * ph)
+      const sprite: Sprite = {
+        x: p.x, y: p.y - size / 2 - height, hw: size / 2, hh: size / 2,
+        angle: ((forward ? 1 : -1) * u) / (size * 0.5), flip: false, alpha: 1, glow: 0, row: 'main', frame: 0,
+      }
+      const near = nearAt(sprite.x, sprite.y, size / 2, people, reach, aspect)
+      if (action === 'flee' || action === 'jump') {
+        // A kick: up high and off to the side, away from them.
+        const kick = smoothstep(0.05, 0.6, near.k)
+        sprite.x += near.ax * kick * (0.06 + 0.25 * reach)
+        sprite.y -= kick * size * (1.5 + Math.abs(Math.sin(t * 3 + ph * 6)) * 1.5)
+        sprite.angle += kick * t * 8
+      } else react(sprite, action, near, t, ph * 6, reach)
+      out.push(sprite)
+    }
+    return out
+  }
+
+  if (motion === 'leap') {
+    // Dolphins leaping out of the bottom of the house as if it were the sea, with a splash in and out.
+    const n = 1 + Math.round(layer.amount * 6)
+    const ratio = ratioOf(style)
+    for (let i = 0; i < n; i++) {
+      const ph = hash(i * 3.9 + own)
+      const period = (2.6 + ph * 2) / (0.3 + 1.2 * layer.speed)
+      const u = (t + ph * period * 3) / period
+      const cycle = Math.floor(u)
+      const q = u - cycle
+      const seed = cycle * 9.7 + i * 2.9
+      const size = H * (0.85 + 0.3 * hash(seed + 1))
+      const span = Math.min(L * 0.8, size * (3.2 + 1.4 * hash(seed + 2)))
+      const left = hash(seed + 3) < 0.5
+      const s0 = hash(seed) * Math.max(0, L - span)
+      const air = 0.6
+      // Under water for the rest of the time.
+      if (q > air) continue
+      const k = q / air
+      const a = path.at(left ? s0 + span : s0)
+      const b = path.at(left ? s0 : s0 + span)
+      const near = nearAt((a.x + b.x) / 2, a.y - size, size, people, reach, aspect)
+      const high = size * (1.6 + 0.8 * hash(seed + 4)) * (action === 'jump' || action === 'grow' ? 1 + 0.7 * near.k : 1)
+      const x = a.x + (b.x - a.x) * k
+      const y = a.y + (b.y - a.y) * k - Math.sin(k * Math.PI) * high
+      const dx = b.x - a.x
+      const dy = b.y - a.y - Math.cos(k * Math.PI) * high * Math.PI
+      const len = Math.hypot(dx, dy) || 1
+      const { angle, flip } = heading(dx / len, dy / len, Math.PI / 2)
+      const sprite: Sprite = {
+        x, y, hw: (size * ratio) / 2, hh: size / 2, angle, flip,
+        alpha: smoothstep(0, 0.06, k) * (1 - smoothstep(0.94, 1, k)), glow: 0, row: 'main', frame: Math.floor(t * 9 + ph * 8),
+      }
+      react(sprite, action === 'jump' ? 'none' : action, near, t, ph * 6, reach)
+      out.push(sprite)
+      for (const [sx, sy, at] of [[a.x, a.y, k], [b.x, b.y, k - 0.85]] as const) {
+        // A splash where it comes out, and another where it goes back in.
+        const w = 1 - smoothstep(0, 0.2, Math.abs(at - 0.05))
+        if (w <= 0.01) continue
+        out.push({
+          x: sx, y: sy - size * 0.25 * w, hw: size * 0.55, hh: size * 0.34 * w, angle: 0, flip: false,
+          alpha: w, glow: 0, row: 'splash', frame: 0,
+        })
+      }
+    }
+    return out
+  }
+
+  if (motion === 'kite') {
+    // Kites on strings from the bottom of the house, riding the wind above it; people make them dive and climb.
+    const n = 1 + Math.round(layer.amount * 5)
+    const ratio = ratioOf(style)
+    for (let i = 0; i < n; i++) {
+      const ph = hash(i * 5.9 + own)
+      const p = path.at(L * ((i + 0.5) / n) + (ph - 0.5) * (L / n) * 0.5)
+      const size = H * p.size * (0.85 + 0.3 * hash(i * 3.3))
+      const wind = 0.4 + 1.2 * layer.speed
+      // Its own path is along the ground: the string comes from there and the kite flies high above.
+      const ax = drawn ? p.x : p.x - size * 0.6
+      const ay = drawn ? Math.min(1, p.y + 0.45) : p.y
+      let x = drawn ? p.x : ax + size * (1.2 + ph)
+      let y = drawn ? p.y : Math.max(size, ay - (0.42 + 0.25 * ph))
+      x += Math.sin(t * 0.5 * wind + ph * 9) * size * 0.6 + Math.sin(t * 1.3 * wind + ph * 3) * size * 0.15
+      y += Math.sin(t * 0.7 * wind + ph * 5) * size * 0.35
+      const near = nearAt(ax, ay, size, people, reach, aspect)
+      const sprite: Sprite = {
+        x, y, hw: (size * ratio) / 2, hh: size / 2, angle: Math.sin(t * 1.1 * wind + ph * 7) * 0.25, flip: false,
+        alpha: 1, glow: 0, row: 'main', frame: Math.floor(t * (6 + 6 * layer.speed) + ph * 8),
+      }
+      if (action === 'jump' || action === 'dance') {
+        // A dive and loop over whoever is holding the string.
+        const k = smoothstep(0.1, 0.6, near.k)
+        const a = t * 2.4 + ph * 6
+        sprite.x += Math.cos(a) * size * 1.1 * k
+        sprite.y += Math.sin(a) * size * 0.9 * k
+        sprite.angle += k * Math.sin(a) * 0.9
+      } else react(sprite, action, near, t, ph * 6, reach)
+      // The string from the hand to the bottom of the kite.
+      const bx = sprite.x - Math.sin(sprite.angle) * sprite.hh * 0.24
+      const by = sprite.y + Math.cos(sprite.angle) * sprite.hh * 0.24
+      const len = Math.hypot(bx - ax, by - ay)
+      out.push({
+        x: (ax + bx) / 2, y: (ay + by) / 2, hw: size * 0.012, hh: len / 2, angle: Math.atan2(bx - ax, ay - by),
+        flip: false, alpha: 0.8, glow: 0, row: 'string', frame: 0,
+      })
       out.push(sprite)
     }
     return out

@@ -106,9 +106,12 @@ function stamp(ctx: CanvasRenderingContext2D, style: string, layer: SceneLayer, 
   ctx.restore()
 }
 
-const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees'])
+const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees', 'dragonflies', 'hummingbirds'])
 /** Small things that come many at a time: shown as a scatter. */
-const SCATTER = new Set(['snowfall', 'leaves', 'petals', 'confetti', 'falling-hearts', 'clovers', 'fireflies', 'rising-bubbles'])
+const SCATTER = new Set([
+  'snowfall', 'leaves', 'petals', 'confetti', 'falling-hearts', 'clovers', 'fireflies', 'rising-bubbles', 'falling-presents',
+  'red-envelopes',
+])
 /** Ones that float up: three of them. */
 const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons'])
 
@@ -146,7 +149,10 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
   if (SCATTER.has(style)) {
     const frames = main.frames
     const many = style === 'fireflies' ? 18 : 14
-    const big = { leaves: 0.2, 'falling-hearts': 0.18, clovers: 0.17, 'rising-bubbles': 0.2, fireflies: 0.13 }[style] ?? 0.13
+    const big = {
+      leaves: 0.2, 'falling-hearts': 0.18, clovers: 0.17, 'rising-bubbles': 0.2, fireflies: 0.13, 'falling-presents': 0.2,
+      'red-envelopes': 0.2,
+    }[style] ?? 0.13
     for (let i = 0; i < many; i++) {
       const fall = style === 'fireflies' ? Math.sin(time + i) * 0.03 : ((time * 0.06 + hash(i + 9)) % 1) * (style === 'rising-bubbles' ? -1 : 1)
       const y = ((hash(i + 3) + fall) % 1 + 1) % 1
@@ -177,6 +183,58 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
   if (style === 'ducklings') {
     stamp(ctx, style, layer, 'main', f, W * 0.72, H * 0.58, H * 0.5)
     ;[0.48, 0.33, 0.18].forEach((x, i) => stamp(ctx, style, layer, 'baby', f + i * 2, W * x, H * 0.7, H * 0.25))
+    return
+  }
+  if (style === 'zombie-hands') {
+    ;[[0.25, 0.55], [0.52, 0.95], [0.78, 0.7]].forEach(([x, up], i) => {
+      const k = Math.min(1, up + Math.sin(time * 1.2 + i * 2) * 0.12)
+      stamp(ctx, style, layer, 'main', f + i * 3, W * x, H * (0.98 - k * 0.42), H * 0.5)
+      stamp(ctx, style, layer, 'mound', 0, W * x, H * 0.9, H * 0.18)
+    })
+    return
+  }
+  if (style === 'hatching-eggs') {
+    // Three at different stages, as people bring them on.
+    ;[[0.2, 0], [0.5, 2 + Math.floor(time * 0.7) % 2], [0.8, 4]].forEach(([x, stage]) =>
+      stamp(ctx, style, layer, 'main', stage, W * x, H * 0.58, H * 0.62))
+    return
+  }
+  if (style === 'dolphins') {
+    const k = (time * 0.35) % 1
+    const x = W * (0.15 + 0.7 * k)
+    const y = H * (0.82 - Math.sin(k * Math.PI) * 0.5)
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(Math.cos(k * Math.PI) * -0.9)
+    stamp(ctx, style, layer, 'main', f, 0, 0, H * 0.32)
+    ctx.restore()
+    stamp(ctx, style, layer, 'splash', 0, W * 0.15, H * 0.82, H * 0.22)
+    stamp(ctx, style, layer, 'splash', 0, W * 0.85, H * 0.82, H * 0.22)
+    return
+  }
+  if (style === 'kites') {
+    ;[[0.32, 0.36, 0], [0.7, 0.28, 1]].forEach(([x, y, i]) => {
+      const kx = W * x + Math.sin(time + i * 3) * W * 0.04
+      const ky = H * y + Math.sin(time * 1.3 + i) * H * 0.04
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(W * (x - 0.12), H)
+      ctx.lineTo(kx, ky + H * 0.08)
+      ctx.stroke()
+      stamp(ctx, style, layer, 'main', f + i * 4, kx, ky, H * 0.42)
+    })
+    return
+  }
+  if (style === 'beach-balls') {
+    ;[[0.3, 0.3], [0.7, 0.9]].forEach(([x, ph], i) => {
+      const y = H * (0.8 - Math.abs(Math.sin(time * 2.2 + ph * 3)) * 0.45)
+      ctx.save()
+      ctx.translate(W * x, y)
+      ctx.rotate(time * (i ? -2 : 2))
+      stamp(ctx, style, layer, 'main', 0, 0, 0, H * 0.32)
+      ctx.restore()
+    })
     return
   }
   if (FLOCKS.has(style)) {
