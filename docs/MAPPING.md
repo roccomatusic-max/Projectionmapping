@@ -529,6 +529,28 @@ one. Claude (`claude-opus-5-5`, structured JSON output) chooses from the same
 catalog; the answer is validated like any saved scene. Picture layers are
 kept as they are when a scene is changed in words.
 
+**Start from a photo** (Scenes → Start from a photo): take or pick a photo of
+the house (on a phone the file picker opens the camera), or use the camera's
+photo. It is kept in the media library as "House photo.jpg" (up to 2048 px).
+With an Anthropic key, Claude (`claude-opus-5-5`, image input, structured JSON
+output) outlines every wall, roof face, window, door and "other" part in the
+photo's pixels (`POST /mapping/house-photo/trace`, nothing saved); the answer
+is clamped onto the photo, parts with fewer than three points or no area are
+dropped, and the person picks "Use these parts" (replace) or "Add them".
+Without a key the same photo can be traced by hand. Four corners say where
+the canvas's corners are on the photo (default: the photo's own corners; the
+camera's corners for a camera photo); a homography takes parts from the photo
+to the canvas and back. The parts are ordinary house parts (`shows.surfaces`),
+drawn on the photo: dragging a corner keeps every part where it is on the
+photo and moves it on the canvas, saved four times a second, so a playing
+scene follows on the house. A part's `flat.corners`, when present, move with
+it. The photo and its corners are kept per show in
+`house-photos/<show id>.json` beside the media folder (`GET/PUT/DELETE
+/mapping/shows/{id}/house-photo`); deleting the photo from the library
+forgets them. "Make a scene for these parts" sends a theme and Claude's
+one-line description of the house to Describe a scene; the preview's backdrop
+"Your photo of the house, lined up" shows the scene on the straightened photo.
+
 **Paint the house (Beta)** (optional): with an OpenAI API key (Settings, or
 `OPENAI_API_KEY`), a photo of the building lined up with the canvas is
 repainted as described (`gpt-image-2` image edits, asked to keep every edge
@@ -587,6 +609,8 @@ second and the light sweep, glints and chasing bulbs are done in the shader.
 | GET, PUT/DELETE | `/mapping/ai`, `/mapping/ai/key` | Anthropic key status / set / remove |
 | GET, PUT/DELETE | `/mapping/paint`, `/mapping/paint/key` | OpenAI key status / set / remove |
 | POST | `/mapping/paint` | Admin: repaint a picture; returns the new media |
+| POST | `/mapping/house-photo/trace` | Admin: Claude's outline of the house's parts on a photo |
+| GET, PUT/DELETE | `/mapping/shows/{id}/house-photo` | The show's photo of the house and its four corners |
 
 ## 6b. Scene groups and tonight's show (the Dashboard)
 
