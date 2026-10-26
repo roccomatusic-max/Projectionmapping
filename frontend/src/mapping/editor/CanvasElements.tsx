@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { EmptyState, Modal } from '@/components/ui'
+import { classNames } from '@/lib/format'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
 import { PeopleTracker } from '../people'
@@ -18,13 +19,35 @@ import { PLACEABLE, placingFor, SINGLE } from './ScenesPanel'
 /** Edits are saved this long after the last change, as in the Scenes tab. */
 const SAVE_DELAY_MS = 400
 
+/**
+ * Where an element lives: on the picked cue only, on every cue of the show,
+ * or (elements added before there was a choice) inside the cue's scene,
+ * which plays wherever that scene plays.
+ */
+type Home = 'cue' | 'every' | 'scene'
+
+/** Where new elements go, remembered on this computer. */
+const WHERE_KEY = 'pm.elementsWhere'
+
+function readWhere(): 'cue' | 'every' {
+  try {
+    return localStorage.getItem(WHERE_KEY) === 'every' ? 'every' : 'cue'
+  } catch {
+    return 'cue'
+  }
+}
+
+const NO_LAYERS: SceneLayer[] = []
+
 
 /**
- * The cue's media with its scene elements on top and every projector's box
- * outlined over both, so it can be seen where things land. Elements (objects
- * and the countdown) are added and placed right here; they are stored in the
- * cue's scene, exactly as the Scenes tab stores them, so the Scenes tab and
- * the projectors show the same thing. A cue without a scene gets one.
+ * The cue's media with its scene and elements on top and every projector's
+ * box outlined over both, so it can be seen where things land. Elements
+ * (objects, movers, boards and the countdown) are added and placed right
+ * here, each either on this cue only (kept in the cue) or on every cue
+ * (kept in the show, in the same place on each). Scene groups and
+ * playlists change cues' scenes but never these. Elements added before
+ * there was a choice live in the cue's scene and can be moved out of it.
  */
 export function CanvasElements({
   show,
@@ -59,17 +82,21 @@ export function CanvasElements({
     followed.current = playing
   }, [playing])
 
-  const [draft, setDraft] = useState<MappingScene | null>(null)
+  const [sceneDraft, setSceneDraft] = useState<MappingScene | null>(null)
+  const [cueDraft, setCueDraft] = useState<{ id: number; layers: SceneLayer[] } | null>(null)
+  const [everyDraft, setEveryDraft] = useState<{ showId: number; layers: SceneLayer[] } | null>(null)
   const saved = cue?.scene_id != null ? scenes.find((s) => s.id === cue.scene_id) ?? null : null
-  const scene = draft && draft.id === saved?.id ? draft : saved
+  const scene = sceneDraft && sceneDraft.id === saved?.id ? sceneDraft : saved
+  const cueLayers = cue && cueDraft?.id === cue.id ? cueDraft.layers : cue?.elements ?? NO_LAYERS
+  const everyLayers = everyDraft?.showId === show.id ? everyDraft.layers : show.every_cue_elements ?? NO_LAYERS
   const [layerId, setLayerId] = useState<string | null>(null)
   const [pinIndex, setPinIndex] = useState<number | null>(null)
-  const [adding, setAdding] = useState(false)
+  const [busy, setBusy] = useState(false)
   /** The element library is open. */
   const [picking, setPicking] = useState(false)
+  /** Where the next element picked goes. */
+  const [where, setWhere] = useState<'cue' | 'every'>(readWhere)
   const [people, setPeople] = useState(true)
-  const saveTimer = useRef<number>()
-  const serial = useRef(0)
   const tracker = useState(() => new PeopleTracker(show.id))[0]
 
   const hasMedia = cue?.media_id != null && media.some((m) => m.id === cue.media_id)
@@ -83,13 +110,17 @@ export function CanvasElements({
           ? { kind: 'camera' }
           : { kind: 'none' }
 
+  // Each place (a cue, the show, a scene) saves on its own delay, so moving
+  // on to another cue straight after a change still saves the first one.
+  const timers = useRef(new Map<string, number>())
+  const serials = useRef(new Map<string, number>())
+  const pending = useRef(new Map<string, () => Promise<boolean>>())
   // Leaving the page (another Editor section or tab) saves a change still
   // waiting for its delay instead of dropping it.
-  const pendingSave = useRef<(() => void) | null>(null)
   useEffect(
     () => () => {
-      window.clearTimeout(saveTimer.current)
-      pendingSave.current?.()
+      for (const timer of timers.current.values()) window.clearTimeout(timer)
+      for (const write of pending.current.values()) void write()
     },
     [],
   )
@@ -98,75 +129,126 @@ export function CanvasElements({
     setPinIndex(null)
   }, [cue?.id])
 
-  // Things placed here (and snow, which places itself on the ledges).
-  const elements = scene?.layers.filter((l) => (PLACEABLE.has(l.type) && l.pins) || l.type === 'snowcap') ?? []
-  const layer = canEdit ? elements.find((l) => l.id === layerId) : undefined
+  /** Save after the delay, or at once; resolves to whether it was saved. */
+  const schedule = (key: string, write: () => Promise<unknown>, reload: () => Promise<unknown>, clear: () => void, now: boolean) => {
+    const mine = (serials.current.get(key) ?? 0) + 1
+    serials.current.set(key, mine)
+    window.clearTimeout(timers.current.get(key))
+    const run = async () => {
+      if (pending.current.get(key) === run) pending.current.delete(key)
+      try {
+        await write()
+        await reload()
+        if (serials.current.get(key) === mine) clear()
+        onError(null)
+        return true
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'Saving the elements failed')
+        return false
+      }
+    }
+    pending.current.set(key, run)
+    if (now) return run()
+    timers.current.set(key, window.setTimeout(() => void run(), SAVE_DELAY_MS))
+    return Promise.resolve(true)
+  }
+
+  const putScene = (next: MappingScene, now = false) => {
+    setSceneDraft(next)
+    return schedule(`scene:${next.id}`,
+      () => mappingApi.updateScene(next.id, { name: next.name, description: next.description, layers: next.layers }),
+      reloadScenes, () => setSceneDraft(null), now)
+  }
+  const putCue = (cueId: number, layers: SceneLayer[], now = false) => {
+    setCueDraft({ id: cueId, layers })
+    return schedule(`cue:${cueId}`, () => mappingApi.updateCue(cueId, { elements: layers }),
+      onShowChanged, () => setCueDraft((d) => (d?.id === cueId ? null : d)), now)
+  }
+  const putEvery = (layers: SceneLayer[], now = false) => {
+    setEveryDraft({ showId: show.id, layers })
+    return schedule(`show:${show.id}`, () => mappingApi.updateShow(show.id, { every_cue_elements: layers }),
+      onShowChanged, () => setEveryDraft(null), now)
+  }
+
+  // Every element of this cue: its own, the show's on every cue, and older
+  // ones placed inside its scene (and snow, which places itself on the ledges).
+  const elements: { layer: SceneLayer; home: Home }[] = [
+    ...cueLayers.map((layer) => ({ layer, home: 'cue' as const })),
+    ...everyLayers.map((layer) => ({ layer, home: 'every' as const })),
+    ...(scene?.layers ?? [])
+      .filter((l) => (PLACEABLE.has(l.type) && l.pins) || l.type === 'snowcap')
+      .map((layer) => ({ layer, home: 'scene' as const })),
+  ]
+  const picked = canEdit ? elements.find((e) => e.layer.id === layerId) : undefined
+  const layer = picked?.layer
   const pickedPin = pinIndex ?? (layer && SINGLE.has(layer.type) && layer.pins!.length > 0 ? 0 : null)
   const placing = layer?.pins ? placingFor(layer, pickedPin) : null
   const pin = layer && pickedPin != null ? layer.pins![pickedPin] : undefined
 
-  const save = (next: MappingScene) => {
-    setDraft(next)
-    const mine = ++serial.current
-    window.clearTimeout(saveTimer.current)
-    const write = async () => {
-      pendingSave.current = null
-      try {
-        await mappingApi.updateScene(next.id, { name: next.name, description: next.description, layers: next.layers })
-        await reloadScenes()
-        if (serial.current === mine) setDraft(null)
-        onError(null)
-      } catch (err) {
-        onError(err instanceof Error ? err.message : 'Saving the elements failed')
-      }
-    }
-    pendingSave.current = () => void write()
-    saveTimer.current = window.setTimeout(write, SAVE_DELAY_MS)
+  // The preview draws the cue's scene with its elements and the every-cue ones on top, as the projectors do.
+  const shown = useMemo<MappingScene | null>(() => {
+    if (!scene && cueLayers.length === 0 && everyLayers.length === 0) return null
+    const layers = [...(scene?.layers ?? []), ...cueLayers, ...everyLayers]
+    return { id: -2, name: scene?.name ?? '', description: '', layers, created_at: '', updated_at: '' }
+  }, [scene, cueLayers, everyLayers])
+
+  const changeLayer = (home: Home, id: string, patch: Partial<SceneLayer>) => {
+    const edit = (layers: SceneLayer[]) => layers.map((l) => (l.id === id ? { ...l, ...patch } : l))
+    if (home === 'cue' && cue) void putCue(cue.id, edit(cueLayers))
+    else if (home === 'every') void putEvery(edit(everyLayers))
+    else if (home === 'scene' && scene) void putScene({ ...scene, layers: edit(scene.layers) })
   }
 
-  const changeLayer = (id: string, patch: Partial<SceneLayer>) => {
-    if (!scene) return
-    save({ ...scene, layers: scene.layers.map((l) => (l.id === id ? { ...l, ...patch } : l)) })
+  const full = (to: 'cue' | 'every') => {
+    if ((to === 'cue' ? cueLayers : everyLayers).length < MAX_LAYERS) return false
+    onError(to === 'cue'
+      ? `This cue already has ${MAX_LAYERS} elements of its own, the most it can hold. Remove one first.`
+      : `There are already ${MAX_LAYERS} elements on every cue, the most there can be. Remove one first.`)
+    return true
   }
 
   const add = async (made: SceneLayer) => {
-    if (!cue) return
-    if (scene && scene.layers.length >= MAX_LAYERS) {
-      onError(`This cue's scene already has ${MAX_LAYERS} elements, the most one scene can hold. Remove one first, or give another cue a scene.`)
-      return
-    }
+    if (!cue || full(where)) return
     setPicking(false)
-    if (scene) {
-      save({ ...scene, layers: [...scene.layers, made] })
-    } else {
-      // No scene on this cue yet: start one holding just this element.
-      setAdding(true)
-      try {
-        const taken = new Set(scenes.map((s) => s.name))
-        let name = `${cue.name} elements`
-        for (let n = 2; taken.has(name); n++) name = `${cue.name} elements ${n}`
-        const created = await mappingApi.createScene({ name, description: 'Elements added in the Editor', layers: [made] })
-        await mappingApi.updateCue(cue.id, { scene_id: created.id })
-        await reloadScenes()
-        await onShowChanged()
-        onError(null)
-      } catch (err) {
-        onError(err instanceof Error ? err.message : 'Adding the element failed')
-        return
-      } finally {
-        setAdding(false)
-      }
-    }
+    setBusy(true)
+    const ok = where === 'cue' ? await putCue(cue.id, [...cueLayers, made], true) : await putEvery([...everyLayers, made], true)
+    setBusy(false)
+    if (!ok) return
     setLayerId(made.id)
     setPinIndex(SINGLE.has(made.type) ? 0 : null)
   }
 
-  const remove = (id: string) => {
-    if (!scene) return
-    save({ ...scene, layers: scene.layers.filter((l) => l.id !== id) })
+  const removeFrom = (home: Home, id: string, now = false) => {
+    if (home === 'cue' && cue) return putCue(cue.id, cueLayers.filter((l) => l.id !== id), now)
+    if (home === 'every') return putEvery(everyLayers.filter((l) => l.id !== id), now)
+    if (home === 'scene' && scene) return putScene({ ...scene, layers: scene.layers.filter((l) => l.id !== id) }, now)
+    return Promise.resolve(true)
+  }
+
+  const remove = (home: Home, id: string) => {
+    void removeFrom(home, id)
     if (layerId === id) {
       setLayerId(null)
       setPinIndex(null)
+    }
+  }
+
+  /** Put an element on this cue only or on every cue, taking it from where it was. */
+  const move = async (item: { layer: SceneLayer; home: Home }, to: 'cue' | 'every') => {
+    if (!cue || item.home === to || full(to)) return
+    setBusy(true)
+    // Added where it goes first, so a failed save never loses it.
+    const ok = to === 'cue' ? await putCue(cue.id, [...cueLayers, item.layer], true) : await putEvery([...everyLayers, item.layer], true)
+    if (ok) await removeFrom(item.home, item.layer.id, true)
+    setBusy(false)
+  }
+
+  const pickWhere = (next: 'cue' | 'every') => {
+    setWhere(next)
+    try {
+      localStorage.setItem(WHERE_KEY, next)
+    } catch {
+      // Remembering it is only a convenience.
     }
   }
 
@@ -190,6 +272,10 @@ export function CanvasElements({
     </svg>
   )
 
+  const cueNumber = show.cues.findIndex((c) => c.id === cue.id) + 1
+  const cueName = cue.name || `Cue ${cueNumber}`
+  const sceneName = scene?.name ?? 'its scene'
+
   const hint = !canEdit
     ? null
     : !layer
@@ -211,7 +297,26 @@ export function CanvasElements({
       <Modal open={picking} label="Add an element" size="lg" className="sm:max-w-4xl" onClose={() => setPicking(false)}>
         <div className="p-4 sm:p-5">
           <h2 className="mb-3 text-base font-semibold text-slate-100">Add an element</h2>
-          <ElementLibrary disabled={adding} onPick={(made) => void add(made)} />
+          <div className="mb-4 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Where it goes">
+            {([
+              ['cue', 'This cue only', `Only on cue ${cueNumber}, “${cueName}”.`],
+              ['every', 'Every cue', `On all ${show.cues.length} cue${show.cues.length === 1 ? '' : 's'}, in the same place on each, and on cues you add later.`],
+            ] as const).map(([value, title, detail]) => (
+              <button key={value} type="button" role="radio" aria-checked={where === value}
+                className={classNames(
+                  'rounded-md px-3 py-2 text-left ring-1 transition-colors',
+                  where === value ? 'bg-sky-500/15 ring-sky-400/60' : 'bg-panel-850 ring-white/10 hover:bg-panel-800',
+                )}
+                onClick={() => pickWhere(value)}>
+                <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
+                  <span className={classNames('h-3 w-3 rounded-full ring-2', where === value ? 'bg-sky-400 ring-sky-400/40' : 'ring-slate-500')} />
+                  {title}
+                </span>
+                <span className="mt-0.5 block pl-5 text-xs text-slate-400">{detail}</span>
+              </button>
+            ))}
+          </div>
+          <ElementLibrary disabled={busy} onPick={(made) => void add(made)} />
         </div>
       </Modal>
       <div className="flex flex-wrap items-end gap-3">
@@ -237,7 +342,7 @@ export function CanvasElements({
         {canEdit && (
           <div className="block">
             <span className="label">Add an element</span>
-            <button type="button" className="btn-primary py-1 text-sm" disabled={adding} onClick={() => setPicking(true)}>
+            <button type="button" className="btn-primary py-1 text-sm" disabled={busy} onClick={() => setPicking(true)}>
               <Plus size={14} aria-hidden /> Find an element…
             </button>
           </div>
@@ -250,7 +355,7 @@ export function CanvasElements({
 
       <ScenePreview
         show={show}
-        scene={scene}
+        scene={shown}
         media={media}
         clock={clock}
         cameraPeople={tracker}
@@ -267,8 +372,8 @@ export function CanvasElements({
         onSurfacesDone={() => undefined}
         placing={placing}
         onPinsChange={(pins: ObjectPin[], selected) => {
-          if (!layer) return
-          changeLayer(layer.id, { pins })
+          if (!picked) return
+          changeLayer(picked.home, picked.layer.id, { pins })
           setPinIndex(selected)
         }}
         overlay={boxes}
@@ -277,10 +382,11 @@ export function CanvasElements({
 
       {elements.length > 0 && (
         <ul className="space-y-1">
-          {elements.map((l) => {
+          {elements.map(({ layer: l, home }) => {
             const open = l.id === layer?.id
+            const change = (patch: Partial<SceneLayer>) => changeLayer(home, l.id, patch)
             return (
-              <li key={l.id} className="rounded-md bg-panel-850 ring-1 ring-white/5">
+              <li key={`${home}:${l.id}`} className="rounded-md bg-panel-850 ring-1 ring-white/5">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <span className="flex shrink-0">
                     <span className="h-3 w-3 rounded-l-sm" style={{ background: l.color }} />
@@ -294,6 +400,18 @@ export function CanvasElements({
                         : PLACEABLE.has(l.type) && !SINGLE.has(l.type) ? ` · ${l.pins!.length} placed` : ''}
                     </span>
                   </span>
+                  {canEdit ? (
+                    <select aria-label={`Where ${layerLabel(l).toLowerCase()} shows`} disabled={busy}
+                      className={classNames('input w-auto py-0.5 text-xs', home === 'every' ? 'text-sky-300' : home === 'scene' ? 'text-amber-200' : '')}
+                      value={home}
+                      onChange={(e) => void move({ layer: l, home }, e.target.value as 'cue' | 'every')}>
+                      <option value="cue">This cue only</option>
+                      <option value="every">Every cue</option>
+                      {home === 'scene' && <option value="scene">In the scene “{sceneName}”</option>}
+                    </select>
+                  ) : (
+                    <span className="text-xs text-slate-500">{home === 'cue' ? 'This cue only' : home === 'every' ? 'Every cue' : `In the scene “${sceneName}”`}</span>
+                  )}
                   {canEdit && (
                     <>
                       <button className="btn-ghost px-2 py-0.5 text-xs"
@@ -303,8 +421,9 @@ export function CanvasElements({
                         }}>
                         {open ? 'Done' : 'Move and colours'}
                       </button>
-                      <button className="btn-ghost px-2 py-0.5 text-xs text-rose-300" onClick={() => remove(l.id)}>
-                        Remove
+                      <button className="btn-ghost px-2 py-0.5 text-xs text-rose-300" disabled={busy} onClick={() => remove(home, l.id)}
+                        title={home === 'every' ? 'Takes it off every cue' : home === 'scene' ? `Takes it out of the scene “${sceneName}”, wherever that plays` : 'Takes it off this cue'}>
+                        {home === 'every' ? 'Remove from all' : 'Remove'}
                       </button>
                     </>
                   )}
@@ -313,36 +432,36 @@ export function CanvasElements({
                   <div className="grid gap-3 border-t border-white/[0.06] px-3 py-3 sm:grid-cols-2">
                     {l.type === 'info' && (
                       <div className="sm:col-span-2">
-                        <InfoFields layer={l} canEdit={canEdit} onChange={(patch) => changeLayer(l.id, patch)} />
+                        <InfoFields layer={l} canEdit={canEdit} onChange={(patch) => change(patch)} />
                       </div>
                     )}
                     {l.type === 'countdown' ? (
                       <div className="sm:col-span-2">
                         <CountdownColorPickers layer={l} canEdit={canEdit} withLook
-                          onChange={(patch) => changeLayer(l.id, patch)} />
+                          onChange={(patch) => change(patch)} />
                       </div>
                     ) : (
                       <label className="flex items-center gap-2 text-xs text-slate-400">
                         Colours
                         <input type="color" className="h-7 w-12 cursor-pointer rounded bg-transparent" value={l.color}
-                          onChange={(e) => changeLayer(l.id, { color: e.target.value })} />
+                          onChange={(e) => change({ color: e.target.value })} />
                         <input type="color" className="h-7 w-12 cursor-pointer rounded bg-transparent" value={l.color2}
-                          onChange={(e) => changeLayer(l.id, { color2: e.target.value })} />
+                          onChange={(e) => change({ color2: e.target.value })} />
                       </label>
                     )}
                     {(l.type === 'movers' || l.type === 'snowcap') && (
                       <Slider label="Size" min={0} max={1} step={0.01} value={l.size}
-                        onChange={(size) => changeLayer(l.id, { size })} />
+                        onChange={(size) => change({ size })} />
                     )}
                     {l.type === 'movers' && (
                       <Slider label={l.style === 'sleigh' || l.style === 'train' ? 'Speed' : 'How many'} min={0} max={1} step={0.01}
                         value={l.style === 'sleigh' || l.style === 'train' ? l.speed : l.amount}
-                        onChange={(v) => changeLayer(l.id, l.style === 'sleigh' || l.style === 'train' ? { speed: v } : { amount: v })} />
+                        onChange={(v) => change(l.style === 'sleigh' || l.style === 'train' ? { speed: v } : { amount: v })} />
                     )}
                     {l.type === 'movers' && l.pins!.length > 0 && (
                       <button className="btn-ghost justify-self-start px-2 py-0.5 text-xs"
                         onClick={() => {
-                          changeLayer(l.id, { pins: [] })
+                          change({ pins: [] })
                           setPinIndex(null)
                         }}>
                         Clear the path (use its own)
@@ -352,16 +471,16 @@ export function CanvasElements({
                       <>
                         <Slider label={l.type === 'movers' ? 'Size at the picked point' : 'Size of the picked one'} min={0.3} max={3} step={0.05} value={pin.size}
                           onChange={(size) =>
-                            changeLayer(l.id, { pins: l.pins!.map((p, i) => (i === pickedPin ? { ...p, size } : p)) })} />
+                            change({ pins: l.pins!.map((p, i) => (i === pickedPin ? { ...p, size } : p)) })} />
                         {l.type !== 'movers' && (
                           <Slider label="Turn" min={-180} max={180} step={1} value={pin.rotation ?? 0}
                             onChange={(rotation) =>
-                              changeLayer(l.id, { pins: l.pins!.map((p, i) => (i === pickedPin ? { ...p, rotation } : p)) })} />
+                              change({ pins: l.pins!.map((p, i) => (i === pickedPin ? { ...p, rotation } : p)) })} />
                         )}
                         {!SINGLE.has(l.type) && (
                           <button className="btn-ghost justify-self-start px-2 py-0.5 text-xs"
                             onClick={() => {
-                              changeLayer(l.id, { pins: l.pins!.filter((_, i) => i !== pickedPin) })
+                              change({ pins: l.pins!.filter((_, i) => i !== pickedPin) })
                               setPinIndex(null)
                             }}>
                             Remove the picked one
@@ -376,10 +495,13 @@ export function CanvasElements({
           })}
         </ul>
       )}
-      {scene && (
+      {elements.length > 0 && (
         <p className="text-xs text-slate-500">
-          Saved in the scene “{scene.name}”, so the Scenes tab and the projectors show the same thing. The Scenes tab has
-          more ways to make them move and react.
+          “This cue only” stays with this cue. “Every cue” shows on all the cues in the same place, keeps going
+          smoothly from one cue to the next, and “Remove from all” takes it off every cue. Tonight’s scene group and
+          playlists change the scenes but leave elements where you put them.
+          {elements.some((e) => e.home === 'scene') &&
+            ` Ones marked “In the scene” were added before there was a choice and play wherever “${sceneName}” plays; pick This cue only or Every cue to take them out of it.`}
         </p>
       )}
     </div>

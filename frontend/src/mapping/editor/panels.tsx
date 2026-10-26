@@ -164,6 +164,11 @@ export function CueList({
                   Some projectors show a picture of their own
                 </p>
               )}
+              {(cue.elements?.length || show.every_cue_elements?.length) ? (
+                <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Added and placed under Editor → Elements">
+                  {elementsLine(cue.elements?.length ?? 0, show.every_cue_elements?.length ?? 0)}
+                </p>
+              ) : null}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 pl-8">
               <label className="flex items-center gap-1.5 text-xs text-slate-400" title="Start the video again when it ends">
@@ -346,4 +351,11 @@ const OUTPUT_COLORS = ['#38bdf8', '#f472b6', '#a3e635', '#fbbf24', '#c084fc', '#
 
 export function outputColor(index: number) {
   return OUTPUT_COLORS[index % OUTPUT_COLORS.length]
+}
+
+/** "2 elements on this cue only · 3 on every cue" for a cue's row. */
+function elementsLine(own: number, every: number): string {
+  const many = (n: number) => `${n} element${n === 1 ? '' : 's'}`
+  if (own && every) return `${many(own)} on this cue only · ${every} on every cue`
+  return own ? `${many(own)} on this cue only` : `${many(every)} on every cue`
 }

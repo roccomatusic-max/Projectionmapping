@@ -184,6 +184,7 @@ class MappingTransport:
         )
         self._state.previous = self._state.current if crossfade else None
         self._state.fade_started_at_ms = start if crossfade else None
+        self._start_run(start)
         self._state.current = _cue_out(cue, position, start)
         self._state.show_id = show.id
         self._state.status = "playing"
@@ -213,8 +214,14 @@ class MappingTransport:
             id=-scene_id, position=-1, name=name, media_id=None, fit="fill", loop=True,
             fade_seconds=fade, scene_id=scene_id, started_at_ms=start,
         )
+        self._start_run(start)
         self._state.status = "playing"
         self._state.paused_position = None
+
+    def _start_run(self, start: float) -> None:
+        """Note when playing began, unless it is already playing or paused."""
+        if self._state.status not in ("playing", "paused") or self._state.run_started_at_ms is None:
+            self._state.run_started_at_ms = start
 
     def _pause(self) -> None:
         if self._state.status != "playing" or self._state.current is None:

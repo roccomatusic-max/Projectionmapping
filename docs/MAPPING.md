@@ -508,6 +508,19 @@ every cue when tonight's show starts. **Change a scene** keeps every setting;
 its "Put it on a projector" opens Make a scene with that scene picked.
 **Cue by cue** is the per-cue, per-projector table.
 
+**Elements on one cue or every cue** (Editor → Elements,
+`editor/CanvasElements.tsx`): each element picked there goes on "This cue
+only" (`mapping_cues.elements`) or "Every cue" (`mapping_shows.every_cue_elements`),
+both lists of scene layers (up to 12 each) kept apart from the scene library,
+so a scene group or playlist changing the cues' scenes leaves them in place.
+Outputs draw a cue's scenes, then its own elements, then the every-cue ones,
+over the whole canvas (`scene/cueElements.ts`, `playback.ts`). Every-cue
+elements keep one clock from `run_started_at_ms` (the first GO after a stop or
+blackout), so they carry on smoothly from cue to cue; a scene played on its
+own has none. Each element's row switches where it lives; elements placed in
+the Editor before there was a choice live in the cue's scene, are marked "In
+the scene", and can be moved out of it.
+
 - **A scene is a stack of layers**, bottom first, stored in a global library
   (`mapping_scenes`). Each layer is one of 18 types with a style, two colours,
   four dials (size, speed, amount, fade, each 0–1; what each means is in

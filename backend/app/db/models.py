@@ -477,6 +477,9 @@ class MappingShow(Base):
     #: [{"id", "name", "kind": "wall"|"roof"|"window"|"door"|"other",
     #:   "points": [[x, y]...]}] in canvas fractions.
     surfaces: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    #: Elements (scene layers) on every cue, in the same place on each, drawn
+    #: over whatever each cue plays. Cues have their own in ``elements``.
+    every_cue_elements: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -564,6 +567,9 @@ class MappingCue(Base):
     #: A picture of their own on some projectors: {output id: media id, or
     #: None for no media there}. Outputs not listed show their part of ``media_id``.
     output_media: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    #: Elements (scene layers) on this cue only, drawn over its scenes on
+    #: every projector. Scene groups and playlists change the scenes, not these.
+    elements: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
 
     show: Mapped[MappingShow] = relationship(back_populates="cues")
 
