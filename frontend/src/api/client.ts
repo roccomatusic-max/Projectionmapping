@@ -148,6 +148,23 @@ export type HomeAssistantSetupStatus = {
   local_only: boolean
 }
 
+export type PhoneAlertTopic = 'hot' | 'offline' | 'minipc' | 'show' | 'other'
+
+export type PhoneAlertsStatus = {
+  service: 'off' | 'ntfy' | 'pushover'
+  ready: boolean
+  ntfy_server: string
+  ntfy_topic: string
+  pushover_user_hint: string | null
+  pushover_token_hint: string | null
+  topics: Record<PhoneAlertTopic, boolean>
+  all_clear: boolean
+  last_ok: boolean | null
+  last_message: string | null
+  /** Seconds since 1970. */
+  last_at: number | null
+}
+
 export const api = {
   // -- auth ---------------------------------------------------------------
   /** ``remember``: stay signed in for months (the phone remote) rather than a day. */
@@ -326,6 +343,18 @@ export const api = {
       '/integration/homeassistant/key', { method: 'POST' }),
   homeAssistantDisconnect: () =>
     request<void>('/integration/homeassistant/key', { method: 'DELETE' }),
+
+  // -- phone alerts -------------------------------------------------------
+  phoneAlerts: () => request<PhoneAlertsStatus>('/phone-alerts'),
+  setPhoneAlerts: (body: {
+    service?: PhoneAlertsStatus['service']
+    pushover_user?: string
+    pushover_token?: string
+    topics?: Partial<Record<PhoneAlertTopic, boolean>>
+    all_clear?: boolean
+  }) => request<PhoneAlertsStatus>('/phone-alerts', { method: 'PUT', body }),
+  newPhoneAlertChannel: () => request<PhoneAlertsStatus>('/phone-alerts/new-channel', { method: 'POST' }),
+  testPhoneAlert: () => request<{ ok: boolean; message: string }>('/phone-alerts/test', { method: 'POST' }),
 
   // -- system -------------------------------------------------------------
   health: () => request<{ status: string; devices_registered: number }>('/health'),

@@ -21,9 +21,19 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.core.events import bus
-from app.core.lifecycle import stop_task
-from app.db.models import Alert, AlertRule, AlertState, CommandLog, Event, Severity, as_utc
+from app.core.lifecycle import stop_task, wait_or_stop
+from app.db.models import (
+    Alert,
+    AlertRule,
+    AlertState,
+    CommandLog,
+    Event,
+    MappingPlayer,
+    Severity,
+    as_utc,
+)
 from app.db.session import session_scope
+from app.services.phone_alerts import phone
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +42,32 @@ HANDLED = ("projector_offline", "projector_online", "projector_state", "command_
            "command_verified", "power_changed", "automation_failed", "enclosure_reading")
 
 _RANK = {Severity.INFO.value: 0, Severity.WARNING.value: 1, Severity.CRITICAL.value: 2}
+
+#: A mini PC's output page reports every few seconds. This long without a
+#: report, its projector is probably showing nothing: long enough to ride
+#: out a page reload or the Mini PC app restarting after an update.
+MINIPC_SILENT = timedelta(minutes=3)
+#: While its app is updating, or after Restart computer from the Players page.
+MINIPC_SILENT_RESTARTING = timedelta(minutes=10)
+#: How often mini PCs are checked.
+MINIPC_CHECK_SECONDS = 30.0
+#: After the server itself starts (an update restarts it), mini PCs get this
+#: long to come back before any is called offline.
+MINIPC_START_GRACE = timedelta(minutes=3)
+#: Below the warning line by this much before "running hot" ends, so a
+#: reading that wobbles around the line does not send alert after alert.
+HOT_HYSTERESIS_C = 1.0
+
+
+def _when(at: datetime, now: datetime) -> str:
+    """ "at 6:52 PM", or "on Sat at 6:52 PM" for another day, in local time."""
+    local, today = at.astimezone(settings.tz), now.astimezone(settings.tz)
+    clock = f"{local:%I:%M %p}".lstrip("0")
+    return f"at {clock}" if local.date() == today.date() else f"on {local:%a} at {clock}"
+
+
+def _fahrenheit(celsius: float) -> str:
+    return f"{celsius * 9 / 5 + 32:.0f} °F ({celsius:.0f} °C)"
 
 
 class AlertingService:
@@ -43,6 +79,12 @@ class AlertingService:
         #: resolve_alert() — called on every poll of every healthy projector —
         #: return without a query when there is nothing to resolve.
         self._open_keys: set[str] = set()
+        self._minipc_task: asyncio.Task | None = None
+        self._stop = asyncio.Event()
+        self._started_at = datetime.now(UTC)
+        #: Mini PCs told to restart or shut down from the Players page: by
+        #: player id, until when their silence is expected.
+        self._expected_away: dict[int, datetime] = {}
 
     async def start(self) -> None:
         if self._running:
@@ -51,6 +93,9 @@ class AlertingService:
         self._queue = await bus.subscribe(HANDLED)
         await self._load_open_keys()
         self._task = asyncio.create_task(self._run(), name="alerting")
+        self._started_at = datetime.now(UTC)
+        self._stop = asyncio.Event()
+        self._minipc_task = asyncio.create_task(self._watch_minipcs(), name="alerting-minipcs")
         log.info("alerting service started (%d open)", len(self._open_keys))
 
     async def _load_open_keys(self) -> None:
@@ -62,7 +107,10 @@ class AlertingService:
 
     async def stop(self) -> None:
         self._running = False
+        self._stop.set()
         await stop_task(self._task, name="alerting")
+        await stop_task(self._minipc_task, name="alerting mini PCs")
+        self._minipc_task = None
         if self._queue:
             await bus.unsubscribe(self._queue)
         self._task = None
@@ -210,6 +258,47 @@ class AlertingService:
         if lamp.get("availability") == "available":
             await self._evaluate_lamp_hours(projector_id, name, lamp.get("value") or [])
 
+        if payload.get("tier") in ("diagnostics", "maintenance"):
+            await self._evaluate_temperature(projector_id, name, payload.get("temperature") or {})
+
+    async def _evaluate_temperature(self, projector_id: int, name: str,
+                                    reading: dict[str, Any]) -> None:
+        """Room air going into the projector, against its rated limit.
+
+        Only the intake sensor has a published limit (see
+        settings.temperature_intake_limit_c); the projector's own
+        temperature warning arrives through error_status above.
+        """
+        value = reading.get("value")
+        if reading.get("availability") != "available" or not isinstance(value, dict):
+            return
+        intake = next((s.get("celsius") for s in value.get("sensors") or []
+                       if s.get("key") == "intake" and isinstance(s.get("celsius"), int | float)),
+                      None)
+        if intake is None:
+            return
+        limit = settings.temperature_intake_limit_c
+        warn = limit - settings.temperature_warn_margin_c
+        key = f"hot:{projector_id}"
+        if intake >= limit:
+            await self.raise_alert(
+                dedupe_key=key, projector_id=projector_id, kind="too_hot",
+                severity=Severity.CRITICAL,
+                message=f"{name}: the air going into it is {_fahrenheit(intake)}, at or above "
+                        f"its limit of {_fahrenheit(limit)}. It may shut itself down.",
+                details={"intake_celsius": intake, "limit_celsius": limit},
+            )
+        elif intake >= warn:
+            await self.raise_alert(
+                dedupe_key=key, projector_id=projector_id, kind="running_hot",
+                severity=Severity.WARNING,
+                message=f"{name}: the air going into it is {_fahrenheit(intake)}, close to "
+                        f"its limit of {_fahrenheit(limit)}.",
+                details={"intake_celsius": intake, "limit_celsius": limit},
+            )
+        elif intake < warn - HOT_HYSTERESIS_C:
+            await self.resolve_alert(key, f"{name} has cooled down to {_fahrenheit(intake)}")
+
     async def _evaluate_lamp_hours(self, projector_id: int, name: str,
                                    lamps: list[dict[str, Any]]) -> None:
         from app.db.models import Projector
@@ -328,6 +417,7 @@ class AlertingService:
         now = datetime.now(UTC)
         notify = False
         changed = False
+        escalated = False
         state = AlertState.OPEN.value
         async with session_scope() as session:
             existing = (await session.execute(
@@ -394,6 +484,11 @@ class AlertingService:
             })
         if notify:
             await self._notify(channels, webhook, severity, message, details or {})
+            # The phone hears about a condition once, and again only if it
+            # gets worse: never the reminders above.
+            if existing is None or escalated:
+                phone.alert(dedupe_key=dedupe_key, kind=kind, severity=severity.value,
+                            message=message)
 
     async def resolve_alert(self, dedupe_key: str, message: str) -> None:
         if dedupe_key not in self._open_keys:
@@ -420,6 +515,79 @@ class AlertingService:
         self._open_keys.discard(dedupe_key)
         if resolved:
             bus.publish("alert_resolved", {"dedupe_key": dedupe_key, "message": message})
+            phone.all_clear(dedupe_key=dedupe_key, message=message)
+
+    # -- mini PCs ------------------------------------------------------------
+
+    def expect_minipc_away(self, player_id: int, minutes: float | None) -> None:
+        """Restart computer or Shut down was pressed: its silence is no news.
+
+        ``None`` means until it is heard from again (a shutdown).
+        """
+        self._expected_away[player_id] = (
+            datetime.max.replace(tzinfo=UTC) if minutes is None
+            else datetime.now(UTC) + timedelta(minutes=minutes))
+
+    async def _watch_minipcs(self) -> None:
+        while self._running:
+            try:
+                await self.check_minipcs()
+            except asyncio.CancelledError:
+                return
+            except Exception:  # noqa: BLE001 - keep watching
+                log.exception("mini PC check failed")
+            if await wait_or_stop(self._stop, MINIPC_CHECK_SECONDS):
+                return
+
+    async def check_minipcs(self, now: datetime | None = None) -> None:
+        """Open an alert for each mini PC that has gone quiet, and close it
+        when it reports again.
+
+        Only paired mini PCs with a projector output count: one still being
+        set up, or a camera, has nothing on screen to lose.
+        """
+        from app.services import minipc_updates
+
+        now = now or datetime.now(UTC)
+        async with session_scope() as session:
+            players = (await session.execute(
+                select(MappingPlayer.id, MappingPlayer.name, MappingPlayer.last_seen_at)
+                .where(MappingPlayer.approved.is_(True),
+                       MappingPlayer.output_id.is_not(None),
+                       MappingPlayer.kind == "player")
+            )).all()
+        updating = set(minipc_updates.get().jobs)
+        watched = set()
+        for player_id, name, last_seen_at in players:
+            key = f"minipc:{player_id}"
+            watched.add(key)
+            seen = as_utc(last_seen_at)
+            if seen is None:
+                continue  # never connected yet
+            quiet = now - seen
+            if quiet <= MINIPC_SILENT:
+                self._expected_away.pop(player_id, None)
+                await self.resolve_alert(key, f"Mini PC {name} is back online")
+                continue
+            if now - self._started_at < MINIPC_START_GRACE:
+                continue
+            if now < self._expected_away.get(player_id, now):
+                continue
+            if player_id in updating and quiet <= MINIPC_SILENT_RESTARTING:
+                continue
+            # The same words on every check: a changing message would count
+            # as news and make every open page refetch its alerts.
+            await self.raise_alert(
+                dedupe_key=key, projector_id=None, kind="minipc_offline",
+                severity=Severity.CRITICAL,
+                message=(f"Mini PC {name} stopped reporting {_when(seen, now)}. Its "
+                         "projector may be showing nothing. Check it is on and plugged "
+                         "into the network."),
+                details={"player_id": player_id, "last_seen_at": seen.isoformat()},
+            )
+        # A removed mini PC takes its alert with it.
+        for key in [k for k in self._open_keys if k.startswith("minipc:") and k not in watched]:
+            await self.resolve_alert(key, "Mini PC removed")
 
     # -- notification channels ---------------------------------------------
 

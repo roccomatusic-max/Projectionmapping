@@ -59,6 +59,11 @@ TICK_SECONDS = 20
 #: at the end time). Later than this, nothing is switched off by surprise.
 END_GRACE = timedelta(hours=6)
 
+#: Who starts the show at its start time.
+SCHEDULE = "the schedule"
+#: One alert for "the show did not start", whichever night.
+START_ALERT = "show_start"
+
 _TOOK_IT = {CommandOutcome.CONFIRMED.value, CommandOutcome.ACCEPTED.value,
             CommandOutcome.OK.value, CommandOutcome.QUEUED.value}
 
@@ -201,12 +206,13 @@ async def _projector_ids(session, show_id: int) -> list[int]:
     )).scalars().all())
 
 
-async def _power(ids: list[int], state: str) -> str:
+async def _power(ids: list[int], state: str) -> tuple[str, list[str]]:
+    """Turn the projectors on or off: what happened, and who did not answer."""
     from app.services.audit import log_command_results
     from app.services.device_manager import Priority, manager
 
     if not ids:
-        return ""
+        return "", []
     results = await manager.dispatch_many(ids, "power.set", {"state": state},
                                           priority=Priority.AUTOMATION)
     await log_command_results(results, "power.set", {"state": state},
@@ -215,16 +221,18 @@ async def _power(ids: list[int], state: str) -> str:
               for r in results if r.get("outcome") not in _TOOK_IT]
     verb = "on" if state == "on" else "off"
     if not failed:
-        return f"{len(results)} projector{'s' if len(results) != 1 else ''} turning {verb}."
+        return f"{len(results)} projector{'s' if len(results) != 1 else ''} turning {verb}.", []
     return (f"{len(results) - len(failed)} of {len(results)} projectors turning {verb}; "
-            f"{', '.join(failed)} did not answer.")
+            f"{', '.join(failed)} did not answer."), failed
 
 
 async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
     """Use tonight's group, GO on the first cue, turn the projectors on.
 
     Without a show time given, it plays the one on now, else the next one
-    later today, else the weekly plan's show and group.
+    later today, else the weekly plan's show and group. A start by the
+    schedule that goes wrong opens an alert (which can reach the phone);
+    nobody is watching then. Any good start closes it.
     """
     if transport.snapshot().emergency is not None:
         return False, "The emergency stop is on, so the show was not started. Clear it first."
@@ -261,12 +269,35 @@ async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
         except TransportError as exc:
             ok = False
             parts.append(f"The show did not start: {exc}.")
+    failed: list[str] = []
     if power:
-        parts.append(await _power(ids, "on"))
+        said, failed = await _power(ids, "on")
+        parts.append(said)
     message = " ".join(p for p in parts if p)
     await _record(f"Started by {by} at {clock(datetime.now(settings.tz))}. {message}",
                   severity=Severity.INFO if ok else Severity.WARNING, kind="tonight_started")
+    if ok and not failed:
+        await _start_went_well()
+    elif by == SCHEDULE:
+        await _start_went_wrong(
+            f"Tonight's show did not start at {clock(datetime.now(settings.tz))}. {message}"
+            if not ok else
+            f"Tonight's show started, but {', '.join(failed)} did not turn on. {message}",
+            severity=Severity.CRITICAL if not ok else Severity.WARNING)
     return ok, message
+
+
+async def _start_went_wrong(message: str, *, severity: Severity) -> None:
+    from app.services.alerts import alerting
+
+    await alerting.raise_alert(dedupe_key=START_ALERT, projector_id=None,
+                               kind="show_not_started", severity=severity, message=message)
+
+
+async def _start_went_well() -> None:
+    from app.services.alerts import alerting
+
+    await alerting.resolve_alert(START_ALERT, "Tonight's show is playing")
 
 
 async def stop_show(*, by: str, power_off: bool, show_id: int | None = None) -> tuple[bool, str]:
@@ -282,7 +313,7 @@ async def stop_show(*, by: str, power_off: bool, show_id: int | None = None) -> 
     else:
         parts.append("The show was already stopped.")
     if power_off:
-        parts.append(await _power(ids, "off"))
+        parts.append((await _power(ids, "off"))[0])
     message = " ".join(p for p in parts if p)
     await _record(f"Stopped by {by} at {clock(datetime.now(settings.tz))}. {message}",
                   severity=Severity.INFO, kind="tonight_stopped")
@@ -351,14 +382,17 @@ class TonightScheduler:
                 return  # already going (started by hand, or before a page reload)
             await self._mark(start=current)
             if state.emergency is not None:
-                await _record(
-                    f"Not started at {clock(current.start)} because the emergency stop is on.",
-                    severity=Severity.WARNING, kind="tonight_held")
+                held = f"Not started at {clock(current.start)} because the emergency stop is on."
+                await _record(held, severity=Severity.WARNING, kind="tonight_held")
+                await _start_went_wrong(
+                    f"Tonight's show was not started at {clock(current.start)} because the "
+                    "emergency stop is on. Clear it, then press Start tonight's show.",
+                    severity=Severity.CRITICAL)
                 return
-            await start_show(by="the schedule", slot=current)
+            await start_show(by=SCHEDULE, slot=current)
         elif ending is not None:
             await self._mark(end=ending)
-            await stop_show(by="the schedule", power_off=ending.power, show_id=ending.show_id)
+            await stop_show(by=SCHEDULE, power_off=ending.power, show_id=ending.show_id)
 
     @staticmethod
     def _due_end(planner: Planner, plan: ShowPlan, now: datetime) -> Slot | None:
