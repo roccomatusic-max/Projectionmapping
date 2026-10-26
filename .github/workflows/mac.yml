@@ -73,9 +73,10 @@ jobs:
         run: |
           APP="dist/Projector Control.app/Contents/MacOS/ProjectorControl"
           DATA="$RUNNER_TEMP/backup-check"
-          # Stand-in for launchd's KeepAlive, which starts the service again when it ends.
+          # Stand-in for launchd's KeepAlive, which starts the service again when it ends,
+          # whatever the exit code (a restart ends it by SIGTERM: 143, which `bash -e` would stop on).
           ( while [ ! -f "$RUNNER_TEMP/backup-check.stop" ]; do
-              PROJECTOR_CONTROL_SERVICE=1 "$APP" --serve --lan --no-browser --port 8766 --data-dir "$DATA" >> "$RUNNER_TEMP/backup-check.log" 2>&1
+              PROJECTOR_CONTROL_SERVICE=1 "$APP" --serve --lan --no-browser --port 8766 --data-dir "$DATA" >> "$RUNNER_TEMP/backup-check.log" 2>&1 || true
               sleep 1
             done ) > /dev/null 2>&1 &
           LOOP=$!
