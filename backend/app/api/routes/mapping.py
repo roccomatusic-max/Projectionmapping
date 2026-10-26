@@ -434,6 +434,25 @@ async def update_output(output_id: int, payload: OutputUpdate, session: SessionD
     return out
 
 
+# A corner, mesh point, mask or blend on the move in the editor, sent many
+# times a second while the handle is dragged. Nothing is written: players
+# move the picture straight away and the editor saves (PATCH above) when
+# the handle is let go.
+LIVE_FIELDS = {"width", "height", "source", "warp", "masks", "blend", "color", "test_pattern", "enabled"}
+
+
+@router.post("/outputs/{output_id}/live", status_code=status.HTTP_204_NO_CONTENT,
+             response_model=None)
+async def live_output(output_id: int, payload: OutputUpdate, session: SessionDep,
+                      _: RequireAdmin) -> None:
+    output = await _load_output(session, output_id)
+    changes = {field: getattr(payload, field) for field in payload.model_fields_set & LIVE_FIELDS
+               if getattr(payload, field) is not None}
+    out = _output_out(output).model_copy(update=changes)
+    _touch(output.show_id, kind="mapping_output",
+           payload={"output": out.model_dump(mode="json"), "live": True})
+
+
 @router.delete("/outputs/{output_id}", status_code=status.HTTP_204_NO_CONTENT,
                response_model=None, dependencies=[Depends(write_rate_limit)])
 async def delete_output(output_id: int, session: SessionDep, _: RequireAdmin) -> None:

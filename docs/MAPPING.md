@@ -96,9 +96,16 @@ from the editor on a computer with several display outputs. It renders with WebG
 
 Editing is live. The editor and the output window exchange changes through a
 `BroadcastChannel` while a handle is being dragged, so the projector image
-follows the mouse with no server round-trip, and the change is saved to the
-server a moment later. Output windows on another computer pick the saved
-change up over the WebSocket feed.
+follows the mouse with no server round-trip. Players on other computers (the
+mini PCs) follow too, show running or not: while a corner, mesh point, mask
+or blend moves, the editor posts each position to
+`POST /outputs/{id}/live` (about 25 a second, one request at a time, newer
+positions replacing ones not yet sent), which relays it as a
+`mapping_output` message with `"live": true` and writes nothing. A quarter
+second after the last change the editor saves it with `PATCH /outputs/{id}`
+through the same queue, so no live position can land after the save. The
+renderer is never rebuilt for a geometry change, so the picture moves
+without a flash.
 
 ### Placing windows on displays
 
@@ -142,6 +149,7 @@ matching how projector configuration is gated.
 | GET/POST | `/shows` | |
 | GET/PATCH/DELETE | `/shows/{id}` | GET returns outputs and cues |
 | POST | `/shows/{id}/outputs` · PATCH/DELETE `/outputs/{id}` | |
+| POST | `/outputs/{id}/live` | Geometry on the move: relayed to every player as `mapping_output` with `"live": true`, not saved |
 | POST | `/shows/{id}/cues` · PATCH/DELETE `/cues/{id}` · PUT `/shows/{id}/cue-order` | |
 | GET | `/maps` | Saved maps (summaries) |
 | POST | `/shows/{id}/save-map` | Save the show's mapping as a named map (`replace` overwrites one of the same name) |

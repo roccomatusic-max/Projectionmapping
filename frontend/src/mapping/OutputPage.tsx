@@ -144,12 +144,14 @@ export function OutputScreen({
       .filter((s) => used.has(s.id))
       .flatMap((s) => s.layers.map((l) => l.media_id).filter((id): id is number => id != null))
     return [...new Set(ids)].sort((a, b) => a - b)
-  }, [show, scenes])
+  }, [show?.cues, scenes])
   const sceneMediaKey = sceneMedia.join(',')
 
+  // Not again for a corner nudged live (only the outputs change then, many
+  // times a second); a reloaded show brings new cues and checks again.
   useEffect(() => {
     if (show) onShow?.(show, sceneMedia)
-  }, [show, sceneMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [show?.id, show?.cues, sceneMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Shown when asked from the Players page; H on a keyboard still toggles it.
   useEffect(() => {

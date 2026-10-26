@@ -47,6 +47,9 @@ export const mappingApi = {
     request<Output>(`/mapping/shows/${showId}/outputs`, { method: 'POST', body }),
   updateOutput: (id: number, body: Partial<Output>) =>
     request<Output>(`/mapping/outputs/${id}`, { method: 'PATCH', body }),
+  /** Geometry on the move: shown on the projectors at once, not saved. */
+  liveOutput: (id: number, body: Partial<Output>) =>
+    request<void>(`/mapping/outputs/${id}/live`, { method: 'POST', body }),
   deleteOutput: (id: number) => request<void>(`/mapping/outputs/${id}`, { method: 'DELETE' }),
   identifyOutput: (id: number) => request<void>(`/mapping/outputs/${id}/identify`, { method: 'POST' }),
 

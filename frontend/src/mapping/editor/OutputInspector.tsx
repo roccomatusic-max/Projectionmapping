@@ -90,6 +90,12 @@ export function OutputInspector({
           onChange={onChange}
           onSelectMask={setSelectedMask}
         />
+        {canEdit && (
+          <p className="mt-2 text-xs text-slate-400">
+            Live: the projector follows every corner, mesh point, mask and blend as you move it, even while the
+            show plays. It is saved when you let go.
+          </p>
+        )}
       </div>
 
       <div className="min-w-0 space-y-4">
