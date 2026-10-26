@@ -36,7 +36,6 @@ import webbrowser
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from app import backups
 from app.paths import FIRST_RUN_PASSWORD
 
 APP_FOLDER = "ProjectorControl"
@@ -84,6 +83,10 @@ def apply_restore(folder: Path, database: Path) -> dict | None:
     database, together with its secret key (app/backups.py)."""
     if os.environ.get("DATABASE_URL"):
         return None  # someone else's database: the app's start-up does it
+    # Here, not at the top: ``--version`` must answer without SQLite, which the
+    # updater relies on to tell a broken download from a broken start.
+    from app import backups
+
     return backups.apply_pending(
         backups.Place(folder=folder, database=database,
                       media=Path(os.environ.get("MEDIA_DIR") or folder / "media")),
