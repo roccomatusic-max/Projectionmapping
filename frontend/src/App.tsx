@@ -26,6 +26,8 @@ const OutputPage = lazy(() => import('@/mapping/OutputPage'))
 const PlayerPage = lazy(() => import('@/mapping/PlayerPage'))
 const ScreenPage = lazy(() => import('@/mapping/ScreenPage'))
 const RemotePage = lazy(() => import('@/remote/RemotePage'))
+// The heater page draws charts too.
+const Heater = lazy(() => import('@/pages/Heater'))
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => getSession())
@@ -116,6 +118,14 @@ export default function App() {
               element={
                 <Suspense fallback={<Spinner label="Loading monitoring…" />}>
                   <Monitoring session={session} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/heater"
+              element={
+                <Suspense fallback={<Spinner label="Loading the heaters…" />}>
+                  <Heater session={session} />
                 </Suspense>
               }
             />

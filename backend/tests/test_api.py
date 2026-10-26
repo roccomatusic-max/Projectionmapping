@@ -38,12 +38,14 @@ async def api(panasonic_sim, monkeypatch):
     import app.services.audit as audit_module
     import app.services.automation as automation_module
     import app.services.emergency as emergency_module
+    import app.services.heater as heater_module
     import app.services.mapping as mapping_module
     import app.services.minipc_updates as minipc_updates_module
     import app.services.monitor as monitor_module
     import app.services.tonight as tonight_module
     for module in (audit_module, monitor_module, alerts_module, automation_module,
-                   mapping_module, emergency_module, tonight_module, minipc_updates_module):
+                   mapping_module, emergency_module, tonight_module, minipc_updates_module,
+                   heater_module):
         importlib.reload(module)
     import app.api.deps as deps_module
     import app.api.routes.auth as auth_routes
@@ -51,6 +53,7 @@ async def api(panasonic_sim, monkeypatch):
     import app.api.routes.emergency as emergency_routes
     import app.api.routes.enclosure as enclosure_routes
     import app.api.routes.groups as group_routes
+    import app.api.routes.heaters as heater_routes
     import app.api.routes.integration as integration_routes
     import app.api.routes.mapping as mapping_routes
     import app.api.routes.mapping_camera as camera_routes
@@ -67,7 +70,8 @@ async def api(panasonic_sim, monkeypatch):
     for module in (auth_routes, projector_routes, group_routes, monitoring_routes,
                    automation_routes, enclosure_routes, integration_routes,
                    mapping_routes, player_routes, camera_routes, scene_routes, ws_routes, system_routes,
-                   update_routes, emergency_routes, tonight_routes, phone_alert_routes):
+                   update_routes, emergency_routes, tonight_routes, phone_alert_routes,
+                   heater_routes):
         importlib.reload(module)
     import app.main as main_module
     importlib.reload(main_module)

@@ -696,6 +696,14 @@ class PlayerScreen(BaseModel):
     pattern: TestPattern
 
 
+class PlayerSensor(BaseModel):
+    """The newest reading of a USB temperature sensor on a mini PC."""
+
+    name: str = Field(default="USB sensor", max_length=64)
+    celsius: float = Field(ge=-40, le=125)
+    humidity: float | None = Field(default=None, ge=0, le=100)
+
+
 class PlayerAppHello(BaseModel):
     """The Mini PC app checking in for commands, next to its player page."""
 
@@ -717,6 +725,9 @@ class PlayerAppHello(BaseModel):
     screens: PlayerScreens | None = None
     #: Windows starts the app again by itself if it stops (installer.iss).
     watchdog: bool = False
+    #: A USB temperature sensor plugged into it (minipc/usbsensor.py), for
+    #: the heater in the projector's box.
+    sensor: PlayerSensor | None = None
 
 
 #: The tail of a Mini PC app's logs it sends: plenty for a day's story.

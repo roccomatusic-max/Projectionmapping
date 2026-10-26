@@ -751,3 +751,94 @@ class ShowCalendarEntry(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class Heater(Base):
+    """A heater in a projector's box, switched by a smart plug.
+
+    The temperature inside the box decides (a USB sensor on the mini PC
+    beside it, else the projector's own intake air); the weather outside is
+    only used when there is no inside reading. See services/heater.py.
+    Temperatures are stored in degrees Celsius, like everything else.
+    """
+
+    __tablename__ = "heaters"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    #: "shelly", "tasmota" or "home_assistant".
+    plug_kind: Mapped[str] = mapped_column(String(16), default="shelly")
+    #: The plug's address (Shelly, Tasmota) or Home Assistant's address.
+    plug_address: Mapped[str] = mapped_column(String(255))
+    #: Home Assistant's entity (switch.heater); unused for the others.
+    plug_entity: Mapped[str | None] = mapped_column(String(255))
+    #: The plug's password, or Home Assistant's access token; encrypted.
+    plug_secret_enc: Mapped[str | None] = mapped_column(Text)
+    #: "auto" follows the temperature; "on" is on by hand until ``hold_until``;
+    #: "off" stays off until set back to automatic.
+    mode: Mapped[str] = mapped_column(String(8), default="auto")
+    hold_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Where the inside temperature comes from: a mini PC's USB sensor, the
+    #: projector's intake air, or both (the sensor first).
+    sensor_player_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_players.id", ondelete="SET NULL")
+    )
+    projector_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projectors.id", ondelete="SET NULL")
+    )
+    on_below_c: Mapped[float] = mapped_column(Float, default=4.5)
+    off_above_c: Mapped[float] = mapped_column(Float, default=10.0)
+    #: Off whatever else is asked, while the inside is this warm.
+    max_inside_c: Mapped[float] = mapped_column(Float, default=27.0)
+    #: Only used without an inside reading.
+    outside_on_below_c: Mapped[float] = mapped_column(Float, default=0.0)
+    outside_off_above_c: Mapped[float] = mapped_column(Float, default=2.0)
+    #: Longest run at a time; then it rests for the rest of the hour.
+    max_minutes_per_hour: Mapped[int] = mapped_column(Integer, default=30)
+    #: Never on while its projector is on (or warming up or cooling down).
+    interlock: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: Warm the box up this long before the show starts when it is cold; 0 is never.
+    warmup_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    #: What the plug last said: True on, False off, None not known.
+    is_on: Mapped[bool | None] = mapped_column(Boolean)
+    on_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rest_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_switched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Why it is on or off right now, in plain words.
+    reason: Mapped[str] = mapped_column(Text, default="", server_default="")
+    #: Why the plug could not be reached, or None when it answers.
+    plug_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class HeaterReading(Base):
+    """One minute of a heater's history: inside, outside, and on or off."""
+
+    __tablename__ = "heater_readings"
+    __table_args__ = (Index("ix_heater_readings_lookup", "heater_id", "recorded_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    heater_id: Mapped[int] = mapped_column(ForeignKey("heaters.id", ondelete="CASCADE"))
+    inside_c: Mapped[float | None] = mapped_column(Float)
+    #: "sensor" or "projector".
+    inside_source: Mapped[str | None] = mapped_column(String(16))
+    outside_c: Mapped[float | None] = mapped_column(Float)
+    is_on: Mapped[bool | None] = mapped_column(Boolean)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WeatherPlace(Base):
+    """Where the house is, for the outside temperature. One row."""
+
+    __tablename__ = "weather_place"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
