@@ -80,7 +80,7 @@ export const NAV: NavSection[] = [
         label: 'Editor',
         icon: EditorIcon,
         hint: 'Cues, media, where each projector lands, warp and blends.',
-        keywords: 'cues media canvas outputs warp corner pin mesh mask blend elements countdown saved maps',
+        keywords: 'cues media canvas outputs warp corner pin mesh mask blend elements countdown sleigh santa tracker weather message board saved maps',
       },
       {
         to: '/mapping/scenes',
@@ -228,7 +228,7 @@ export const PLACES: Place[] = [
   { to: '/mapping/editor?part=projectors', label: 'Projectors on the picture', where: 'Editor', icon: EditorIcon,
     hint: 'Where each projector lands, warp, masks, blends and colour.', keywords: 'warp corner pin mesh mask blend colour color output window identify test pattern add output' },
   { to: '/mapping/editor?part=elements', label: 'Elements', where: 'Editor', icon: EditorIcon,
-    hint: 'Objects and the countdown on a cue; a picture of its own on one projector.', keywords: 'countdown objects place pictures on each projector' },
+    hint: 'Objects, flying things, live boards and countdowns on a cue; a picture of its own on one projector.', keywords: 'countdown objects sleigh reindeer train santa tracker weather message board place pictures on each projector' },
   { to: '/mapping/editor?part=maps', label: 'Saved maps and show settings', where: 'Editor', icon: EditorIcon,
     hint: 'Keep or reuse the lined-up projectors; rename, resize or delete the show.', keywords: 'save map load rename delete canvas size' },
   { to: '/mapping/scenes?part=projectors', label: 'Scenes on each projector', where: 'Scenes', icon: ScenesIcon,

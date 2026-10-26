@@ -998,6 +998,23 @@ float sdHeart(vec2 p) {
   if (p.y + p.x > 1.0) return sqrt(dot2(p - vec2(0.25, 0.75))) - 0.35355;
   return sqrt(min(dot2(p - vec2(0.0, 1.0)), dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
 }
+// Any triangle.
+float sdTri(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
+  vec2 e0 = p1 - p0;
+  vec2 e1 = p2 - p1;
+  vec2 e2 = p0 - p2;
+  vec2 v0 = p - p0;
+  vec2 v1 = p - p1;
+  vec2 v2 = p - p2;
+  vec2 pq0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);
+  vec2 pq1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);
+  vec2 pq2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
+  float s = sign(e0.x * e2.y - e0.y * e2.x);
+  vec2 d = min(min(vec2(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
+                   vec2(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
+                   vec2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+  return -sqrt(d.x) * sign(d.y);
+}
 // y up, apex up, side 2r.
 float sdEqTri(vec2 p, float r) {
   const float k = 1.7320508;
@@ -1362,6 +1379,109 @@ void main() {
     c = mix(uColor, uColor2, sweep) * (0.9 + 0.5 * sweep);
     ec = uColor;
     ea = exp(-max(sd, 0.0) * 8.0) * 0.35;
+  } else if (uStyle == S_GINGERBREAD) {
+    float head = length(q - vec2(0.0, -0.58)) - 0.27;
+    float body = sdEl(q - vec2(0.0, 0.02), vec2(0.3, 0.36));
+    float arms = sdSegment(q, vec2(-0.62, -0.22), vec2(0.62, -0.22)) - 0.14;
+    vec2 pl = vec2(abs(q.x), q.y);
+    float legs = sdSegment(pl, vec2(0.08, 0.2), vec2(0.36, 0.84)) - 0.15;
+    sd = min(min(head, body), min(arms, legs));
+    c = uColor * (0.8 + 0.3 * (0.5 - q.y * 0.4)) * (0.92 + 0.12 * hash(floor(q * 14.0) + vSeed));
+    // White icing squiggles on the hands and feet, buttons, eyes and a smile.
+    float wig = 0.03 * sin(q.y * 40.0);
+    if (abs(abs(q.x) - 0.5 + wig) < 0.035 && arms < 0.0) c = vec3(1.0);
+    if (abs(q.y - 0.68 + 0.03 * sin(q.x * 40.0)) < 0.035 && legs < 0.0) c = vec3(1.0);
+    if (length(vec2(q.x, mod(q.y + 0.12, 0.2) - 0.1)) < 0.06 && abs(q.y) < 0.25) c = uColor2;
+    if (length(vec2(abs(q.x) - 0.1, q.y + 0.64)) < 0.045) c = vec3(1.0);
+    if (abs(length(q - vec2(0.0, -0.6)) - 0.15) < 0.025 && q.y > -0.53) c = vec3(1.0);
+  } else if (uStyle == S_STOCKINGS) {
+    float leg = sdBox(q - vec2(-0.08, -0.2), vec2(0.28, 0.5)) - 0.04;
+    float foot = sdEl(q - vec2(0.16, 0.42), vec2(0.48, 0.28));
+    float cuff = sdBox(q - vec2(-0.08, -0.74), vec2(0.38, 0.16)) - 0.05;
+    sd = min(min(leg, foot), cuff);
+    c = mix(uColor, uColor2, step(0.5, fract((q.y - q.x * 0.6) * 3.0))) * (0.8 + 0.25 * (0.4 - q.x));
+    if (length(q - vec2(0.42, 0.45)) < 0.2 || length(q - vec2(-0.22, 0.52)) < 0.16) c = vec3(1.0) * 0.95;
+    if (cuff < min(leg, foot)) c = vec3(1.0) * (0.88 + 0.12 * hash(floor(q * 18.0)));
+  } else if (uStyle == S_WREATHS) {
+    float a = atan(q.y, q.x);
+    float r = length(q);
+    float ring = abs(r - 0.58) - 0.24 - 0.05 * abs(sin(a * 9.0)) - 0.03 * sin(a * 23.0 + vSeed * 9.0);
+    vec2 bp = q - vec2(0.0, 0.62);
+    float bow = min(sdEl(rot2(0.5) * (bp - vec2(-0.18, -0.02)), vec2(0.2, 0.11)), sdEl(rot2(-0.5) * (bp - vec2(0.18, -0.02)), vec2(0.2, 0.11)));
+    float tails = min(sdSegment(bp, vec2(0.0), vec2(-0.16, 0.3)), sdSegment(bp, vec2(0.0), vec2(0.16, 0.3))) - 0.06;
+    sd = min(ring, min(bow, tails));
+    c = uColor * (0.65 + 0.5 * hash(floor(vec2(a * 6.0, r * 9.0)) + vSeed));
+    vec2 bc = vec2(cos(floor(a * 1.6 + 0.5) / 1.6), sin(floor(a * 1.6 + 0.5) / 1.6)) * 0.6;
+    if (length(q - bc) < 0.08 && ring < 0.0) c = vec3(0.95, 0.1, 0.12);
+    if (min(bow, tails) < ring) c = uColor2 * (0.85 + 0.3 * (0.5 - bp.y));
+  } else if (uStyle == S_SANTA_HATS) {
+    float cone = sdTri(q, vec2(-0.6, 0.38), vec2(0.58, 0.38), vec2(0.5, -0.66)) - 0.05;
+    float brim = sdBox(q - vec2(0.0, 0.48), vec2(0.7, 0.13)) - 0.06;
+    float pom = length(q - vec2(0.52, -0.7)) - 0.19;
+    sd = min(min(cone, brim), pom);
+    c = uColor * (0.75 + 0.4 * (0.5 - q.x * 0.4));
+    if (min(brim, pom) < cone) c = uColor2 * (0.9 + 0.1 * hash(floor(q * 20.0)));
+  } else if (uStyle == S_REINDEER) {
+    float head = sdEl(q - vec2(0.0, 0.08), vec2(0.4, 0.5));
+    float snout = sdEl(q - vec2(0.0, 0.42), vec2(0.3, 0.22));
+    vec2 pe = vec2(abs(q.x), q.y);
+    float ear = sdEl(rot2(-0.6) * (pe - vec2(0.46, -0.24)), vec2(0.2, 0.09));
+    float antler = min(min(sdSegment(pe, vec2(0.2, -0.36), vec2(0.42, -0.86)), sdSegment(pe, vec2(0.33, -0.62), vec2(0.6, -0.7))),
+      sdSegment(pe, vec2(0.38, -0.76), vec2(0.28, -0.98))) - 0.055;
+    float nose = length(q - vec2(0.0, 0.34)) - 0.13;
+    sd = min(min(min(head, snout), min(ear, antler)), nose);
+    c = uColor * (0.75 + 0.35 * (0.5 - q.y * 0.5));
+    if (snout < 0.0) c = mix(uColor, vec3(0.95, 0.85, 0.7), 0.55);
+    if (antler < min(head, ear)) c = vec3(0.9, 0.8, 0.6);
+    if (length(pe - vec2(0.17, -0.02)) < 0.065) c = vec3(0.05);
+    if (nose < 0.0) c = uColor2 * 1.3 + 0.5 * exp(-dot2(q - vec2(-0.04, 0.3)) * 120.0);
+    ec = uColor2;
+    ea = 0.7 * exp(-max(nose, 0.0) * 9.0);
+  } else if (uStyle == S_POINSETTIAS) {
+    float petals = 1e9;
+    float inner = 1e9;
+    for (int i = 0; i < 6; i++) {
+      float a = float(i) * 1.0472;
+      petals = min(petals, sdEl(rot2(a) * q - vec2(0.0, -0.5), vec2(0.17, 0.42)));
+      inner = min(inner, sdEl(rot2(a + 0.5236) * q - vec2(0.0, -0.32), vec2(0.13, 0.28)));
+    }
+    float centre = length(q) - 0.14;
+    sd = min(min(petals, inner), centre);
+    c = uColor * (0.7 + 0.35 * (1.0 - length(q)));
+    if (inner < petals) c = uColor * 1.1;
+    if (centre < 0.0 || (length(q) < 0.2 && hash(floor(q * 30.0) + vSeed) > 0.6)) c = uColor2 * 1.2;
+  } else if (uStyle == S_HOLLY) {
+    vec2 l1 = rot2(0.5) * (q - vec2(-0.38, 0.18));
+    vec2 l2 = rot2(-0.5) * (q - vec2(0.38, 0.18));
+    float leaf1 = sdEl(l1, vec2(0.52, 0.22)) + 0.05 * abs(sin(l1.x * 13.0));
+    float leaf2 = sdEl(l2, vec2(0.52, 0.22)) + 0.05 * abs(sin(l2.x * 13.0));
+    float berries = min(min(length(q - vec2(-0.12, -0.12)) - 0.16, length(q - vec2(0.13, -0.14)) - 0.16), length(q - vec2(0.0, -0.36)) - 0.16);
+    sd = min(min(leaf1, leaf2), berries);
+    c = uColor * (0.75 + 0.3 * (0.5 - q.y * 0.5));
+    if (abs((leaf1 < leaf2 ? l1 : l2).y) < 0.02) c *= 1.4;
+    if (berries < min(leaf1, leaf2)) c = uColor2 * (0.85 + 0.2 * (0.5 - q.y)) + 0.6 * exp(-dot2(q - vec2(-0.05, -0.42)) * 90.0);
+  } else if (uStyle == S_MITTENS) {
+    float palm = sdEl(q - vec2(0.05, -0.12), vec2(0.42, 0.56));
+    float thumb = sdEl(rot2(-0.6) * (q - vec2(-0.4, 0.02)), vec2(0.15, 0.3));
+    float cuff = sdBox(q - vec2(0.05, 0.56), vec2(0.4, 0.17)) - 0.04;
+    sd = min(min(palm, thumb), cuff);
+    c = uColor * (0.75 + 0.35 * (0.5 - q.x * 0.5));
+    if (abs(q.y + 0.08) < 0.09 && palm < 0.0) c = uColor2;
+    if (abs(q.y + 0.08) < 0.04 && palm < 0.0 && fract(q.x * 6.0) < 0.5) c = vec3(1.0);
+    if (cuff < min(palm, thumb)) c = mix(vec3(1.0), uColor2, step(0.5, fract(q.x * 8.0))) * 0.95;
+  } else if (uStyle == S_TURKEYS) {
+    float a = atan(q.x, -(q.y - 0.3));
+    float fan = max(length(q - vec2(0.0, 0.3)) - 0.92 - 0.06 * abs(sin(a * 6.0)), q.y - 0.32);
+    float body = length(q - vec2(0.0, 0.32)) - 0.4;
+    float head = length(q - vec2(0.0, -0.12)) - 0.2;
+    float beak = sdTri(q, vec2(-0.06, -0.08), vec2(0.06, -0.08), vec2(0.0, 0.06));
+    sd = min(min(fan, body), min(head, beak));
+    float band = floor((length(q - vec2(0.0, 0.3)) - 0.4) / 0.17);
+    c = band < 1.0 ? uColor2 : band < 2.0 ? vec3(0.95, 0.55, 0.1) : band < 3.0 ? vec3(0.85, 0.2, 0.1) : vec3(0.95, 0.8, 0.2);
+    if (body < 0.0 || head < 0.0) c = uColor * (0.8 + 0.3 * (0.5 - q.y));
+    if (length(vec2(abs(q.x) - 0.08, q.y + 0.17)) < 0.04) c = vec3(0.05);
+    if (beak < 0.0) c = vec3(1.0, 0.7, 0.1);
+    if (length(q - vec2(0.06, 0.08)) < 0.06) c = vec3(0.9, 0.1, 0.1);
   }
 
   c = mix(c, uColor2, vTint * 0.85) * vBright;

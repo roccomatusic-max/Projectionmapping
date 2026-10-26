@@ -3,13 +3,14 @@ import { EmptyState } from '@/components/ui'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
 import { PeopleTracker } from '../people'
-import { COUNTDOWN_COLORS, COUNTDOWN_PRESETS, KIND, layerLabel, newLayer, STARTERS } from '../scene/catalog'
+import { COUNTDOWN_COLORS, COUNTDOWN_PRESETS, INFO_LOOKS, KIND, layerLabel, MOVER_LOOKS, newLayer, STARTERS } from '../scene/catalog'
 import type { MappingScene, MediaAsset, ObjectPin, Output, SceneLayer, Show, TransportState } from '../types'
 import { Slider } from './controls'
 import { CountdownColorPickers } from './CountdownColors'
 import { outputColor } from './panels'
 import { type Backdrop, ScenePreview } from './ScenePreview'
-import { PLACEABLE, placingFor } from './ScenesPanel'
+import { InfoFields } from './InfoFields'
+import { PLACEABLE, placingFor, SINGLE } from './ScenesPanel'
 
 /** Edits are saved this long after the last change, as in the Scenes tab. */
 const SAVE_DELAY_MS = 400
@@ -22,16 +23,48 @@ function starterLook(style: string): Partial<SceneLayer> {
   return Object.fromEntries(Object.entries({ color, color2, change, near, reacts_to }).filter(([, v]) => v != null))
 }
 
-/** What the Add menu offers: each kind of object by itself, and a countdown for each holiday. */
-const ADDABLE: Array<{ value: string; label: string; make: () => SceneLayer }> = [
+type Group = 'objects' | 'movers' | 'info' | 'countdown' | 'snow'
+
+/** What the Add menu offers: each kind of object by itself, things that fly or walk, live info boards, snow, and a countdown for each holiday. */
+const ADDABLE: Array<{ value: string; label: string; group: Group; make: () => SceneLayer }> = [
   ...KIND.shapes.styles.map((s) => ({
     value: `shapes:${s.id}`,
     label: s.label,
+    group: 'objects' as const,
     make: () => newLayer('shapes', { ...starterLook(s.id), style: s.id, name: s.label, pins: [] }),
   })),
+  ...KIND.movers.styles.map((s) => ({
+    value: `movers:${s.id}`,
+    label: s.label,
+    group: 'movers' as const,
+    // An empty path: it flies or walks on a path of its own until points are clicked.
+    make: () => newLayer('movers', { ...MOVER_LOOKS[s.id], style: s.id, name: s.label, pins: [] }),
+  })),
+  ...KIND.info.styles.map((s) => ({
+    value: `info:${s.id}`,
+    label: s.label,
+    group: 'info' as const,
+    make: () => newLayer('info', {
+      ...INFO_LOOKS[s.id], style: s.id, name: s.label,
+      size: s.id === 'message' ? 0.5 : 0.6, pins: [{ x: 0.5, y: s.id === 'message' ? 0.3 : 0.42, size: 1, rotation: 0 }],
+    }),
+  })),
+  {
+    value: 'snowcap:soft',
+    label: 'Snow on window sills',
+    group: 'snow' as const,
+    make: () => newLayer('snowcap', { name: 'Snow on the sills', target: 'windows' }),
+  },
+  {
+    value: 'snowcap:roof',
+    label: 'Snow on the roof',
+    group: 'snow' as const,
+    make: () => newLayer('snowcap', { name: 'Snow on the roof', target: 'roof' }),
+  },
   ...COUNTDOWN_PRESETS.map((p) => ({
     value: `countdown:${p.id}`,
     label: p.label,
+    group: 'countdown' as const,
     make: () => newLayer('countdown', {
       ...COUNTDOWN_COLORS[p.style], style: p.style, name: p.label, pins: [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }],
     }),
@@ -115,10 +148,11 @@ export function CanvasElements({
     setPinIndex(null)
   }, [cue?.id])
 
-  const elements = scene?.layers.filter((l) => PLACEABLE.has(l.type) && l.pins) ?? []
+  // Things placed here (and snow, which places itself on the ledges).
+  const elements = scene?.layers.filter((l) => (PLACEABLE.has(l.type) && l.pins) || l.type === 'snowcap') ?? []
   const layer = canEdit ? elements.find((l) => l.id === layerId) : undefined
-  const pickedPin = pinIndex ?? (layer?.type === 'countdown' && layer.pins!.length > 0 ? 0 : null)
-  const placing = layer ? placingFor(layer, pickedPin) : null
+  const pickedPin = pinIndex ?? (layer && SINGLE.has(layer.type) && layer.pins!.length > 0 ? 0 : null)
+  const placing = layer?.pins ? placingFor(layer, pickedPin) : null
   const pin = layer && pickedPin != null ? layer.pins![pickedPin] : undefined
 
   const save = (next: MappingScene) => {
@@ -171,7 +205,7 @@ export function CanvasElements({
       }
     }
     setLayerId(made.id)
-    setPinIndex(made.type === 'countdown' ? 0 : null)
+    setPinIndex(SINGLE.has(made.type) ? 0 : null)
   }
 
   const remove = (id: string) => {
@@ -209,9 +243,15 @@ export function CanvasElements({
       ? elements.length
         ? 'Pick an element below to move it or change its colours, or add another.'
         : 'Add an element, then click the picture to put it where you want it.'
-      : layer.type === 'countdown'
-        ? 'Drag the countdown to move it. Pull the square corner to size it and the round handle to turn it.'
-        : `Click the picture to put ${layerLabel(layer).toLowerCase()} there. Drag one to move it; click one to pick it, then use its handles to size or turn it.`
+      : SINGLE.has(layer.type)
+        ? `Drag the ${layer.type === 'countdown' ? 'countdown' : 'board'} to move it. Pull the square corner to size it and the round handle to turn it.`
+        : layer.type === 'movers'
+          ? layer.pins!.length < 2
+            ? 'It flies or walks on a path of its own. To pick its path, click points on the picture in order (two or more).'
+            : 'Click to add a point to the end of the path. Drag a point to move it; pick one and pull its square corner to make it bigger or smaller there.'
+          : layer.type === 'snowcap'
+            ? 'Snow settles by itself on the level edges of the traced house parts (Scenes → House parts), and melts where people stand.'
+            : `Click the picture to put ${layerLabel(layer).toLowerCase()} there. Drag one to move it; click one to pick it, then use its handles to size or turn it.`
 
   return (
     <div className="space-y-3">
@@ -241,16 +281,19 @@ export function CanvasElements({
             <select className="input w-auto py-1 text-sm" value="" disabled={adding}
               onChange={(e) => e.target.value && void add(e.target.value)}>
               <option value="">Add…</option>
-              <optgroup label="Objects that react to people">
-                {ADDABLE.filter((a) => !a.value.startsWith('countdown:')).map((a) => (
-                  <option key={a.value} value={a.value}>{a.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Countdowns">
-                {ADDABLE.filter((a) => a.value.startsWith('countdown:')).map((a) => (
-                  <option key={a.value} value={a.value}>{a.label}</option>
-                ))}
-              </optgroup>
+              {([
+                ['movers', 'Things that fly or walk'],
+                ['info', 'Live info'],
+                ['snow', 'Snow'],
+                ['objects', 'Objects that react to people'],
+                ['countdown', 'Countdowns'],
+              ] as Array<[Group, string]>).map(([group, label]) => (
+                <optgroup key={group} label={label}>
+                  {ADDABLE.filter((a) => a.group === group).map((a) => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </label>
         )}
@@ -301,7 +344,9 @@ export function CanvasElements({
                   <span className="min-w-0 flex-1 truncate text-sm text-slate-100">
                     {layerLabel(l)}
                     <span className="text-xs text-slate-500">
-                      {l.type === 'countdown' ? '' : ` · ${l.pins!.length} placed`}
+                      {l.type === 'movers'
+                        ? l.pins!.length >= 2 ? ` · path of ${l.pins!.length} points` : ' · its own path'
+                        : PLACEABLE.has(l.type) && !SINGLE.has(l.type) ? ` · ${l.pins!.length} placed` : ''}
                     </span>
                   </span>
                   {canEdit && (
@@ -321,6 +366,11 @@ export function CanvasElements({
                 </div>
                 {open && (
                   <div className="grid gap-3 border-t border-white/[0.06] px-3 py-3 sm:grid-cols-2">
+                    {l.type === 'info' && (
+                      <div className="sm:col-span-2">
+                        <InfoFields layer={l} canEdit={canEdit} onChange={(patch) => changeLayer(l.id, patch)} />
+                      </div>
+                    )}
                     {l.type === 'countdown' ? (
                       <div className="sm:col-span-2">
                         <CountdownColorPickers layer={l} canEdit={canEdit} withLook
@@ -335,15 +385,35 @@ export function CanvasElements({
                           onChange={(e) => changeLayer(l.id, { color2: e.target.value })} />
                       </label>
                     )}
+                    {(l.type === 'movers' || l.type === 'snowcap') && (
+                      <Slider label="Size" min={0} max={1} step={0.01} value={l.size}
+                        onChange={(size) => changeLayer(l.id, { size })} />
+                    )}
+                    {l.type === 'movers' && (
+                      <Slider label={l.style === 'sleigh' || l.style === 'train' ? 'Speed' : 'How many'} min={0} max={1} step={0.01}
+                        value={l.style === 'sleigh' || l.style === 'train' ? l.speed : l.amount}
+                        onChange={(v) => changeLayer(l.id, l.style === 'sleigh' || l.style === 'train' ? { speed: v } : { amount: v })} />
+                    )}
+                    {l.type === 'movers' && l.pins!.length > 0 && (
+                      <button className="btn-ghost justify-self-start px-2 py-0.5 text-xs"
+                        onClick={() => {
+                          changeLayer(l.id, { pins: [] })
+                          setPinIndex(null)
+                        }}>
+                        Clear the path (use its own)
+                      </button>
+                    )}
                     {pin && (
                       <>
-                        <Slider label="Size of the picked one" min={0.3} max={3} step={0.05} value={pin.size}
+                        <Slider label={l.type === 'movers' ? 'Size at the picked point' : 'Size of the picked one'} min={0.3} max={3} step={0.05} value={pin.size}
                           onChange={(size) =>
                             changeLayer(l.id, { pins: l.pins!.map((p, i) => (i === pickedPin ? { ...p, size } : p)) })} />
-                        <Slider label="Turn" min={-180} max={180} step={1} value={pin.rotation ?? 0}
-                          onChange={(rotation) =>
-                            changeLayer(l.id, { pins: l.pins!.map((p, i) => (i === pickedPin ? { ...p, rotation } : p)) })} />
-                        {l.type !== 'countdown' && (
+                        {l.type !== 'movers' && (
+                          <Slider label="Turn" min={-180} max={180} step={1} value={pin.rotation ?? 0}
+                            onChange={(rotation) =>
+                              changeLayer(l.id, { pins: l.pins!.map((p, i) => (i === pickedPin ? { ...p, rotation } : p)) })} />
+                        )}
+                        {!SINGLE.has(l.type) && (
                           <button className="btn-ghost justify-self-start px-2 py-0.5 text-xs"
                             onClick={() => {
                               changeLayer(l.id, { pins: l.pins!.filter((_, i) => i !== pickedPin) })
