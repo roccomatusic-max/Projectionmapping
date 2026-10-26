@@ -19,6 +19,7 @@ import type {
   TransportAction,
   TracedHouse,
   TransportState,
+  WeatherNow,
 } from './types'
 
 export const mappingApi = {
@@ -88,6 +89,8 @@ export const mappingApi = {
     request<HousePhoto>(`/mapping/shows/${showId}/house-photo`, { method: 'PUT', body }),
   forgetHousePhoto: (showId: number) => request<void>(`/mapping/shows/${showId}/house-photo`, { method: 'DELETE' }),
   aiStatus: () => request<AiStatus>('/mapping/ai'),
+  /** The weather now at a town or ZIP code (empty: found from the server's internet address). */
+  weather: (place: string) => request<WeatherNow>(`/mapping/weather?place=${encodeURIComponent(place)}`),
   setAiKey: (key: string) => request<AiStatus>('/mapping/ai/key', { method: 'PUT', body: { key } }),
   removeAiKey: () => request<AiStatus>('/mapping/ai/key', { method: 'DELETE' }),
   paintStatus: () => request<AiStatus>('/mapping/paint'),

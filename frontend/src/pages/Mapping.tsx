@@ -57,7 +57,7 @@ type EditorPart = 'cues' | 'projectors' | 'elements' | 'maps'
 export const EDITOR_PARTS: Array<{ id: EditorPart; label: string; hint: string }> = [
   { id: 'cues', label: 'Cues and media', hint: 'The list GO plays, and the videos and pictures it uses' },
   { id: 'projectors', label: 'Projectors', hint: 'Where each projector lands on the picture: warp, masks, blends, colour' },
-  { id: 'elements', label: 'Elements', hint: 'Objects and the countdown on a cue, and a picture of its own on one projector' },
+  { id: 'elements', label: 'Elements', hint: 'Objects, flying things, live boards and countdowns on a cue, and a picture of its own on one projector' },
   { id: 'maps', label: 'Saved maps and show', hint: 'Keep or reuse the lined-up projectors; rename, resize or delete the show' },
 ]
 
@@ -563,7 +563,7 @@ export default function Mapping({ session }: { session: Session }) {
               {part === 'elements' && (
                 <>
                   <Panel title="Media and elements"
-                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects or the countdown here and drag them into place.">
+                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects, a flying sleigh, the Santa tracker or a countdown here and drag them into place.">
                     <CanvasElements show={show} outputs={outputs} scenes={scenes} media={media} clock={clock}
                       transport={transport} canEdit={canEdit} reloadScenes={runtime.reloadScenes}
                       onShowChanged={() => runtime.refresh()} onError={setError} />

@@ -458,7 +458,7 @@ wall and approximate further out.
 cues like media (a cue's **Scene** draws over its media, or over black).
 
 - **A scene is a stack of layers**, bottom first, stored in a global library
-  (`mapping_scenes`). Each layer is one of 15 types with a style, two colours,
+  (`mapping_scenes`). Each layer is one of 18 types with a style, two colours,
   four dials (size, speed, amount, fade, each 0–1; what each means is in
   `frontend/src/mapping/scene/catalog.ts`), a mix (add light, soft light,
   paint over), where it goes and what it reacts to.
@@ -600,6 +600,49 @@ the 2D canvas only when the number changes (bundled OFL fonts, so every
 player draws the same letters offline); the clock strip is patched in once a
 second and the light sweep, glints and chasing bulbs are done in the shader.
 
+**Things that fly or walk** (`movers`, `frontend/src/mapping/scene/movers.ts`
+and `sprites.ts`): Santa's sleigh and reindeer (Rudolph's nose glows, a
+sparkle trail, "Ho ho ho!" when someone is near), a toy train of presents
+along a line with steam, flocks of birds and bats that scatter from people,
+walking elves (they wave) and penguins, shooting stars and floating ghosts.
+With no pins it picks a path of its own: flyers loop over the roofline (or the
+top of the picture), walkers and the train go along the bottom. Two or more
+pins are a path drawn by hand, in order (a smooth curve through them; each
+pin's size makes it bigger or smaller there). Positions come from the cue's
+time on the server clock, so every projector draws the sleigh in the same
+place and it crosses from one projector to the next. The artwork is painted
+once into a sprite sheet; each frame is up to 64 quads in one draw.
+
+**Snow on ledges** (`snowcap`, `snowcap.ts`): lumpy snow piles up on the
+roughly level edges of the traced windows, doors or roof over the first minute
+of the cue (Speed) and melts where people stand. Untraced, it lies along the
+bottom of the picture.
+
+**Live info boards** (`info`, `info.ts`), one pin each like a countdown:
+- **Santa tracker** (`santa.ts`, `worldmap.ts`): a world map (Natural Earth
+  land, public domain) with Santa's route and sleigh, where he is, his next
+  stop, presents delivered, and when he reaches this house. It is worked out
+  on each computer from a built-in timetable of about 80 cities, each visited
+  around local midnight on Christmas Eve, so it needs no internet. Before
+  takeoff (about 09:30 UTC on 24 December) it counts down; after landing it says he
+  is home.
+- **Weather**: now, feels like, high and low for a town or ZIP code (layer
+  `text`; empty means where the server is). The outputs ask the server
+  (`GET /mapping/weather`, `services/weather_board.py`), which asks Open-Meteo (free, no key) at most every
+  10 minutes per place and keeps the last reading if the internet drops.
+- **Days until**: days until a date that comes round every year (layer `text`
+  is the name, `date` is `YYYY-MM-DD`).
+- **Message board**: a light-up bulb board scrolling the layer's `text` (up to
+  200 characters). The phone remote's Show tab lists every message board with
+  a box to change the words (admins).
+
+More Christmas decorations for the objects layer: gingerbread people,
+stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
+turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,
+snow on the sills, shooting stars, the Santa tracker and the sleigh), North
+Pole express, Santa's workshop, Christmas message board, Winter birds,
+Haunted night flight and Thanksgiving.
+
 | Method | Path | |
 |---|---|---|
 | GET/POST | `/mapping/scenes` | The scene library |
@@ -611,6 +654,7 @@ second and the light sweep, glints and chasing bulbs are done in the shader.
 | POST | `/mapping/paint` | Admin: repaint a picture; returns the new media |
 | POST | `/mapping/house-photo/trace` | Admin: Claude's outline of the house's parts on a photo |
 | GET, PUT/DELETE | `/mapping/shows/{id}/house-photo` | The show's photo of the house and its four corners |
+| GET | `/mapping/weather?place=` | The weather now for a Weather board (cached 10 min) |
 
 ## 6b. Scene groups and tonight's show (the Dashboard)
 

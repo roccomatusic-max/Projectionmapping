@@ -18,7 +18,9 @@ import type { LayerBlend, MappingScene, ReactsTo, SceneLayer, SourceRect, Surfac
 import { CHANGES, changeOf, KIND, MOTIONS, motionOf, NEARS, nearOf } from './catalog'
 import { CountdownDrawer } from './countdown'
 import { CHECKER_FRAGMENT, CHECKER_VERTEX, flatParts, flatTesting, glMat3, MAX_FLAT, rasteriseFlatIndex, type FlatPart } from './flat'
+import { InfoDrawer } from './info'
 import { maskKey, rasteriseLayerMask } from './masks'
+import { MoverDrawer } from './movers'
 import {
   LAYER_VERTEX,
   layerFragment,
@@ -29,6 +31,7 @@ import {
   REVEAL_UPDATE,
   TRAILS_UPDATE,
 } from './shaders'
+import { SnowcapDrawer } from './snowcap'
 
 export const MAX_PEOPLE = 16
 /** The largest scene buffer side; beyond this soft effects gain nothing visible. */
@@ -156,6 +159,9 @@ export class SceneEngine {
   /** Failed loads per picture, for backing off its retries. */
   private pictureFailures = new Map<number, number>()
   private countdown: CountdownDrawer | null = null
+  private movers: MoverDrawer | null = null
+  private info: InfoDrawer | null = null
+  private snowcap: SnowcapDrawer | null = null
   /** Index into SCENE_SCALES. */
   quality = 0
   /** The distortion the output shader should apply to the media, if any. */
@@ -428,6 +434,33 @@ export class SceneEngine {
           })
           continue
         }
+        if (layer.type === 'movers') {
+          this.movers ??= new MoverDrawer(gl)
+          this.movers.draw(key, {
+            layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, h, surfaces: frame.surfaces,
+            surfacesKey: this.surfacesKey, people: frame.people, strength, time: item.time, dt, detail: this.scale,
+            blend: (mode) => this.blend(mode),
+          })
+          continue
+        }
+        if (layer.type === 'info') {
+          this.info ??= new InfoDrawer(gl)
+          this.info.draw(key, {
+            layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, w, surfaces: frame.surfaces,
+            people: frame.people, strength, time: item.time, clockMs: item.clock ?? Date.now(), detail: this.scale, dt,
+            blend: (mode) => this.blend(mode),
+          })
+          continue
+        }
+        if (layer.type === 'snowcap') {
+          this.snowcap ??= new SnowcapDrawer(gl)
+          this.snowcap.draw(key, {
+            layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, surfaces: frame.surfaces,
+            surfacesKey: this.surfacesKey, people: frame.people, strength, time: item.time, pxPerHeight,
+            blend: (mode) => this.blend(mode),
+          })
+          continue
+        }
         const state = this.state(key)
         if (layer.type === 'shapes') {
           // Objects check where they may sit against the whole canvas, so
@@ -511,6 +544,9 @@ export class SceneEngine {
   /** Layers not drawn for a while (scene changed, layer deleted) give their memory back. */
   private forgetUnused(used: Set<string>) {
     this.countdown?.forget(used)
+    this.movers?.forget(used)
+    this.info?.forget(used)
+    this.snowcap?.forget(used)
     const now = performance.now()
     for (const [key, state] of this.states) {
       if (!used.has(key) && now - state.seenAt > 5000) {
@@ -720,6 +756,12 @@ export class SceneEngine {
     this.pictures.clear()
     this.countdown?.dispose()
     this.countdown = null
+    this.movers?.dispose()
+    this.movers = null
+    this.info?.dispose()
+    this.info = null
+    this.snowcap?.dispose()
+    this.snowcap = null
     for (const { program } of this.programs.values()) gl.deleteProgram(program)
     this.programs.clear()
     gl.deleteVertexArray(this.vao)

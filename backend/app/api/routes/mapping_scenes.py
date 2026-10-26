@@ -14,7 +14,7 @@ import base64
 import binascii
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.api.deps import RequireAdmin, RequireViewer, SessionDep, write_rate_limit
@@ -44,8 +44,9 @@ from app.schemas.mapping import (
     SimulatedPeople,
     TracedHouse,
     TraceHousePhoto,
+    WeatherNow,
 )
-from app.services import house_paint, house_photo, scene_ai
+from app.services import house_paint, house_photo, scene_ai, weather_board
 from app.services.mapping import now_ms
 
 router = APIRouter(prefix="/mapping", tags=["mapping"])
@@ -261,6 +262,19 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
     await session.refresh(scene)
     _changed(scene.id)
     return scene
+
+
+# -- live info boards ------------------------------------------------------------------
+
+
+@router.get("/weather", response_model=WeatherNow)
+async def weather(_: RequireViewer, place: str = Query("", max_length=80)) -> dict:
+    """The weather right now for a scene's "Weather" board; the outputs ask
+    the server so only it needs the internet."""
+    try:
+        return await weather_board.weather_now(place)
+    except weather_board.WeatherError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
 
 
 # -- painting the house (Beta) -------------------------------------------------------

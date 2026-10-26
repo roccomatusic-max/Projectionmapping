@@ -20,17 +20,21 @@ import {
   REACTIONS,
   STARTERS,
   starterLayers,
+  styleLook,
   TARGETS,
 } from '../scene/catalog'
 import type { Dial } from '../scene/catalog'
 import { countdownPinHeight, DESIGN_H, DESIGN_W } from '../scene/countdown'
 import { objectRadius } from '../scene/engine'
 import { startingSquare } from '../scene/flat'
+import { BOARD, infoPinHeight, infoStyle } from '../scene/info'
+import { moverHeight } from '../scene/movers'
 import type { AiStatus, LayerType, MappingScene, MediaAsset, Point, SceneLayer, Show, Surface, SurfaceKind } from '../types'
 import { Slider } from './controls'
 import { CornerPicker } from './CornerPicker'
 import { CountdownColorPickers, countdownLook } from './CountdownColors'
 import { HousePhotoPanel } from './HousePhoto'
+import { InfoFields } from './InfoFields'
 import { PaintHouse } from './PaintHouse'
 import { ProjectorScenes, sceneOn } from './ProjectorScenes'
 import { type Backdrop, type Drawing, type PeopleSource, ScenePreview, SURFACE_KINDS } from './ScenePreview'
@@ -56,8 +60,11 @@ export const SCENE_PARTS: Array<{ id: ScenePart; label: string; hint: string }> 
   { id: 'paint', label: 'Paint the house (Beta)', hint: 'An AI repaints a photo of your house as you describe it' },
 ]
 
-/** Layers whose things can be placed by hand on the preview. */
-export const PLACEABLE = new Set<LayerType>(['shapes', 'countdown'])
+/** Layers whose things can be placed by hand on the preview (for flying and walking ones, the points of their path). */
+export const PLACEABLE = new Set<LayerType>(['shapes', 'countdown', 'info', 'movers'])
+
+/** Layers placed by hand as one thing, always the picked one. */
+export const SINGLE = new Set<LayerType>(['countdown', 'info'])
 
 /** What the preview needs to place, pick, size and turn a layer's things. */
 export function placingFor(layer: SceneLayer, selected: number | null) {
@@ -66,6 +73,16 @@ export function placingFor(layer: SceneLayer, selected: number | null) {
     const h = countdownPinHeight(layer.size)
     const w = (h * DESIGN_W) / DESIGN_H
     return { pins: layer.pins!, radius: Math.hypot(w, h) / 2, box: { w, h }, max: 1, selected }
+  }
+  if (layer.type === 'info') {
+    const board = BOARD[infoStyle(layer.style)]
+    const h = infoPinHeight(layer.style, layer.size)
+    const w = (h * board.w) / board.h
+    return { pins: layer.pins!, radius: Math.hypot(w, h) / 2, box: { w, h }, max: 1, selected }
+  }
+  if (layer.type === 'movers') {
+    // The points of a path: a line joins them, and each one's size is how big it is there.
+    return { pins: layer.pins!, radius: moverHeight(layer) / 2, selected, path: true }
   }
   return { pins: layer.pins!, radius: objectRadius(layer.size), selected }
 }
@@ -342,8 +359,8 @@ export function ScenesPanel({
   const hasHouse = surfaces.length > 0
   // An open objects layer that is placed by hand turns clicks on the preview into placing.
   const placingLayer = canEdit ? scene?.layers.find((l) => l.id === openLayer && PLACEABLE.has(l.type) && l.pins) : undefined
-  // A lone countdown is always the picked one, so its handles show at once.
-  const pickedPin = selectedPin ?? (placingLayer?.type === 'countdown' && placingLayer.pins!.length > 0 ? 0 : null)
+  // A lone countdown or board is always the picked one, so its handles show at once.
+  const pickedPin = selectedPin ?? (placingLayer && SINGLE.has(placingLayer.type) && placingLayer.pins!.length > 0 ? 0 : null)
   const placing = placingLayer ? placingFor(placingLayer, pickedPin) : null
 
   const inShow = (target: MappingScene) =>
@@ -724,7 +741,9 @@ export function ScenesPanel({
             <Panel
               title={scene ? scene.name : 'Preview'}
               description={
-                placingLayer
+                placingLayer?.type === 'movers'
+                  ? 'Click points on the picture, in order, for the path to follow. Drag a point to move it; pick one to make it bigger or smaller there.'
+                  : placingLayer
                   ? `Click to put ${layerLabel(placingLayer).toLowerCase()} there. Drag one to move it; click one to pick it and change its size below.`
                   : peopleSource === 'simulated'
                   ? 'Live. The white rings are made-up people walking past; drag one to move it.'
@@ -979,7 +998,8 @@ function LayerCard({
   if (!kind) return null
   const usesColors = layer.type !== 'distort' && layer.type !== 'picture'
   const placed = PLACEABLE.has(layer.type) && layer.pins != null
-  const single = layer.type === 'countdown'
+  const single = SINGLE.has(layer.type)
+  const path = layer.type === 'movers'
   const usesTarget = (kind.group !== 'people' || layer.type === 'particles') && !placed
   const near = nearOf(layer)
   const pin = placed && selectedPin != null ? layer.pins![selectedPin] : undefined
@@ -1037,8 +1057,8 @@ function LayerCard({
                 <select className="input py-1 text-sm" value={layer.style} disabled={!canEdit}
                   onChange={(e) => {
                     const style = e.target.value
-                    // A countdown's look is a starting point: it brings its own colours.
-                    onChange(layer.type === 'countdown' ? countdownLook(style) : { style })
+                    // A countdown's look is a starting point: it brings its own colours, as do a sleigh and a board.
+                    onChange(layer.type === 'countdown' ? countdownLook(style) : styleLook(layer, style))
                   }}>
                   {kind.styles.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
@@ -1047,6 +1067,11 @@ function LayerCard({
             {layer.type === 'countdown' && (
               <div className="sm:col-span-2">
                 <CountdownColorPickers layer={layer} canEdit={canEdit} onChange={onChange} />
+              </div>
+            )}
+            {layer.type === 'info' && (
+              <div className="sm:col-span-2">
+                <InfoFields layer={layer} canEdit={canEdit} onChange={onChange} />
               </div>
             )}
             {usesColors && layer.type !== 'countdown' && (
@@ -1072,8 +1097,8 @@ function LayerCard({
                     onSelectPin(hand && single ? 0 : null)
                     onChange({ pins: hand ? (single ? [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }] : []) : null })
                   }}>
-                  <option value="spread">{single ? 'Centred on an area' : 'Spread over an area'}</option>
-                  <option value="hand">{single ? 'Where I put it' : 'Where I put them'}</option>
+                  <option value="spread">{path ? 'Its own path (over the roof or along the house)' : single ? 'Centred on an area' : 'Spread over an area'}</option>
+                  <option value="hand">{path ? 'Along a path I draw' : single ? 'Where I put it' : 'Where I put them'}</option>
                 </select>
               </label>
             )}
@@ -1137,7 +1162,11 @@ function LayerCard({
           {placed && (
             <div className="rounded-md bg-panel-900 px-3 py-2.5 text-xs ring-1 ring-sky-500/30">
               <p className="text-slate-300">
-                {single
+                {path
+                  ? layer.pins!.length < 2
+                    ? 'Click at least two points on the preview, in order, for the path. Until then it uses its own path.'
+                    : `${layer.pins!.length} points. Click to add more at the end, drag one to move it, or pick one to make it bigger or smaller there (smaller looks further away).`
+                  : single
                   ? layer.pins!.length === 0
                     ? 'Click on the preview to put it where you want it.'
                     : 'Drag it on the preview, or click where it should go. Drag the square corner handle to size it and the round handle to turn it.'
@@ -1158,14 +1187,16 @@ function LayerCard({
                           })} />
                         <span className="tnum w-9 text-slate-200">{Math.round(pin.size * 100)}%</span>
                       </label>
-                      <label className="flex items-center gap-1.5 text-slate-400">
-                        Turn
-                        <input type="range" min={-180} max={180} step={1} value={pin.rotation ?? 0} className="w-28 accent-sky-500"
-                          onChange={(e) => onChange({
-                            pins: layer.pins!.map((p, i) => (i === selectedPin ? { ...p, rotation: Number(e.target.value) } : p)),
-                          })} />
-                        <span className="tnum w-9 text-slate-200">{Math.round(pin.rotation ?? 0)}°</span>
-                      </label>
+                      {!path && (
+                        <label className="flex items-center gap-1.5 text-slate-400">
+                          Turn
+                          <input type="range" min={-180} max={180} step={1} value={pin.rotation ?? 0} className="w-28 accent-sky-500"
+                            onChange={(e) => onChange({
+                              pins: layer.pins!.map((p, i) => (i === selectedPin ? { ...p, rotation: Number(e.target.value) } : p)),
+                            })} />
+                          <span className="tnum w-9 text-slate-200">{Math.round(pin.rotation ?? 0)}°</span>
+                        </label>
+                      )}
                       {!single && (
                         <button className="btn-ghost px-2 py-0.5 text-xs text-red-300" onClick={() => {
                           onSelectPin(null)
@@ -1203,7 +1234,7 @@ function LayerCard({
               <Slider label="How much it reacts" value={layer.reaction} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ reaction: v })} />
             )}
-            {DIALS.filter((d) => kind.dials[d] && !(placed && d === (single ? 'fade' : 'amount'))).map((d) => (
+            {DIALS.filter((d) => kind.dials[d] && !(placed && !path && d === (single ? 'fade' : 'amount'))).map((d) => (
               <Slider key={d} label={kind.dials[d]!} value={layer[d]} min={0} max={1} step={0.01} disabled={!canEdit}
                 format={(v) => `${Math.round(v * 100)}`} onChange={(v) => onChange({ [d]: v })} />
             ))}
