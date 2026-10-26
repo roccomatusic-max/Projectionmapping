@@ -756,6 +756,41 @@ Ready-made scenes added: Nutcracker march, Hanukkah lights, Christmas angels,
 Spider drop, Autumn breeze, Summer night, Spring garden, Under the sea,
 Dragon's lair, Lunar New Year and Party time.
 
+Third batch:
+
+- Coming up out of the ground (`popup` motion): zombie hands that claw up
+  from mounds of earth along the bottom of the house, and painted Easter eggs
+  that crack and hatch a chick. Each comes up now and then by itself, and the
+  ones beside people come up for them (near "appear": only for people; "hide":
+  they sink back).
+- Bouncing (`bounce`): beach balls bouncing and spinning along the bottom;
+  people kick them up and away (near "flee" or "jump").
+- Leaping (`leap`): dolphins jumping out along the bottom of the house as if
+  it were the sea, with a splash out and back in, higher near people.
+- Kites (`kite`): kites on strings from the bottom of the house riding the
+  wind; they dive and loop over whoever stands under them (near "jump").
+- Walking: trick-or-treaters with pumpkin buckets ("Trick or treat!"),
+  werewolves ("Awoooooo!"), vampires, Frankenstein's monster ("Friend?"),
+  scurrying rats, polar bears in scarves, reindeer whose noses light up like
+  Rudolph's as they prance (near "dance"), carolers ("Joy to the world!"),
+  squirrels and frogs (hopping), crabs, robots that wave (near "dance"),
+  dogs ("Woof woof!"), spinning dreidels (the letters drawn as strokes, so no
+  Hebrew font is needed) and a lion dance that rears up (near "dance").
+  Ground walkers that run from people now run along the ground, not up the
+  wall. Walkers can have their own pace (`pace` in movers.ts).
+- Flying: the grim reaper, lovebirds, whales that blow a spout over people,
+  an octopus, paper aeroplanes, a rocket ship with a sparkle trail and
+  floating astronauts ("Hello, Earth!"); dragonflies and hummingbirds are
+  flocks.
+- Falling: presents and red envelopes.
+
+Near "appear" on a flying or walking element now keeps it hidden while
+nobody is near at all (before, it only hid once someone had been seen).
+
+Ready-made scenes added: North Pole parade, Dreidel night, Monster mash,
+Trick or treat street, Easter morning, Pond life, Beach day, Deep sea, Space
+walk, Lion dance parade and Puppy parade.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

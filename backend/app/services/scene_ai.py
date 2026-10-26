@@ -181,7 +181,19 @@ CATALOG: dict[str, dict] = {
                  "(hoot), angels, sharks and sea-turtles fly or swim over the roof; "
                  "mummies, gingerbread-men (run away), toy-soldiers (salute near people), "
                  "dinosaurs (roar) and ducklings (a duck and her ducklings in a line) walk "
-                 "along the bottom",
+                 "along the bottom; trick-or-treaters, werewolves (howl), vampires, "
+                 "frankensteins, rats, polar-bears, reindeer (Rudolph noses light up near "
+                 "people: near dance), carolers (sing), squirrels and frogs (hop), crabs, "
+                 "robots (wave: near dance), dogs (bark), dreidels (spin) and lion-dance "
+                 "(rears up: near dance) walk along the bottom; grim-reaper floats over the "
+                 "roof and drifts towards people (near follow); zombie-hands claw up out "
+                 "of the ground and hatching-eggs hatch chicks beside people (near "
+                 "follow); falling-presents and red-envelopes fall; lovebirds, whales "
+                 "(spout near people), octopus, paper-planes, rocket-ship and astronauts "
+                 "fly over the roof; dragonflies and hummingbirds are flocks; dolphins "
+                 "leap out along the bottom (higher near people: near jump); beach-balls "
+                 "bounce along and people kick them (near flee); kites fly on strings "
+                 "and loop over people (near jump)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -190,7 +202,13 @@ CATALOG: dict[str, dict] = {
                    "lanterns", "jellyfish", "rising-bubbles", "hot-air-balloons",
                    "fireflies", "bees", "dragon", "owls", "angels", "sharks",
                    "sea-turtles", "mummies", "gingerbread-men", "toy-soldiers",
-                   "dinosaurs", "ducklings"],
+                   "dinosaurs", "ducklings", "trick-or-treaters", "werewolves",
+                   "vampires", "frankensteins", "grim-reaper", "zombie-hands", "rats",
+                   "falling-presents", "polar-bears", "reindeer", "carolers", "squirrels",
+                   "lovebirds", "hatching-eggs", "frogs", "dragonflies", "hummingbirds",
+                   "dolphins", "whales", "crabs", "octopus", "beach-balls", "paper-planes",
+                   "kites", "rocket-ship", "astronauts", "robots", "dogs", "dreidels",
+                   "lion-dance", "red-envelopes"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
