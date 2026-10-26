@@ -26,7 +26,9 @@
 
 import type { PersonSpot } from '../people'
 import type { CountdownColors, LayerBlend, SceneLayer, SourceRect, Surface, SurfaceKind } from '../types'
+import { applyHomography } from '../geometry'
 import { nearOf } from './catalog'
+import { flatAt, glMat3, type FlatPart } from './flat'
 import { LAYER_VERTEX } from './shaders'
 
 // -- the count ----------------------------------------------------------------------------
@@ -1061,6 +1063,7 @@ const TARGET_KINDS: Record<string, SurfaceKind[]> = {
   roof: ['roof'],
   windows: ['window'],
   doors: ['door'],
+  ground: ['ground'],
 }
 
 /** The artwork's rectangle in canvas fractions: fitted into the "Where" area, Size and Height applied. */
@@ -1097,6 +1100,8 @@ interface Placement {
   hw: number
   hh: number
   angle: number
+  /** The straightened house part it sits on (a sloped roof), drawn through its perspective. */
+  part?: FlatPart | null
 }
 
 function placements(layer: SceneLayer, surfaces: Surface[], canvasWidth: number, canvasHeight: number): Placement[] {
@@ -1117,6 +1122,21 @@ function placements(layer: SceneLayer, surfaces: Surface[], canvasWidth: number,
 
 /** The rectangle around a placement, turned, in canvas fractions. */
 function bounds(p: Placement, aspect: number): SourceRect {
+  if (p.part) {
+    const { toFlat, toCanvas } = p.part
+    const [fx, fy] = applyHomography(toFlat, p.cx * aspect, p.cy)
+    const ca = Math.cos(p.angle)
+    const sa = Math.sin(p.angle)
+    const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => {
+      const dx = u * p.hw
+      const dy = v * p.hh
+      const [x, y] = applyHomography(toCanvas, fx + ca * dx - sa * dy, fy + sa * dx + ca * dy)
+      return [x / aspect, y]
+    })
+    const xs = pts.map((q) => q[0])
+    const ys = pts.map((q) => q[1])
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+  }
   const c = Math.abs(Math.cos(p.angle))
   const s = Math.abs(Math.sin(p.angle))
   const hx = (p.hw * c + p.hh * s) / aspect
@@ -1143,6 +1163,10 @@ uniform float uStrength;
 uniform float uReact;
 uniform int uStyle;
 uniform vec3 uGlow;
+// On a straightened house part: canvas (in canvas heights) → its flat space, and the centre there.
+uniform int uFlatOn;
+uniform mat3 uFlatFrom;
+uniform vec2 uFlatCenter;
 
 float hash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -1153,6 +1177,10 @@ float hash(vec2 p) {
 void main() {
   // Into the artwork's own frame: centred, turned back, scaled to 0..1.
   vec2 off = vec2((vC.x - uCenter.x) * uAspect, vC.y - uCenter.y);
+  if (uFlatOn == 1) {
+    vec3 f = uFlatFrom * vec3(vC.x * uAspect, vC.y, 1.0);
+    off = f.xy / f.z - uFlatCenter;
+  }
   float ca = cos(uAngle);
   float sa = sin(uAngle);
   vec2 uv = vec2(ca * off.x + sa * off.y, -sa * off.x + ca * off.y) / (2.0 * uHalf) + 0.5;
@@ -1319,6 +1347,7 @@ export class CountdownDrawer {
     const aspect = d.canvasWidth / Math.max(1, d.canvasHeight)
     const places = placements(layer, d.surfaces, d.canvasWidth, d.canvasHeight)
     if (!places.length) return
+    for (const p of places) p.part = flatAt(d.surfaces, p.cx, p.cy, aspect)
     let art = this.arts.get(key)
     const nearNow = Math.max(...places.map((p) => nearness(bounds(p, aspect), d.people, layer.reach ?? 0.5, aspect)))
     const near = art ? art.near + (nearNow - art.near) * (1 - Math.exp(-d.dt / 0.35)) : nearNow
@@ -1412,6 +1441,11 @@ export class CountdownDrawer {
       gl.uniform2f(this.u('uCenter'), p.cx, p.cy)
       gl.uniform2f(this.u('uHalf'), p.hw, p.hh)
       gl.uniform1f(this.u('uAngle'), p.angle)
+      gl.uniform1i(this.u('uFlatOn'), p.part ? 1 : 0)
+      if (p.part) {
+        gl.uniformMatrix3fv(this.u('uFlatFrom'), false, glMat3(p.part.toFlat))
+        gl.uniform2f(this.u('uFlatCenter'), ...applyHomography(p.part.toFlat, p.cx * aspect, p.cy))
+      }
       gl.drawArrays(gl.TRIANGLES, 0, 3)
     }
   }

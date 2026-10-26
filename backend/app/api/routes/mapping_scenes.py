@@ -3,7 +3,8 @@
 A scene is a list of layers (see ``SceneLayer``); the output windows draw
 it. This module stores scenes, lets the scene builder send made-up people
 to the projectors, turns a sentence into a scene when an Anthropic key is
-set (services/scene_ai.py), and repaints a picture of the building when an
+set (services/scene_ai.py), traces the house's parts on a photo with the
+same key (services/house_photo.py), and repaints a picture of the building when an
 OpenAI key is set (services/house_paint.py, Beta).
 """
 
@@ -13,7 +14,7 @@ import base64
 import binascii
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.api.deps import RequireAdmin, RequireViewer, SessionDep, write_rate_limit
@@ -33,6 +34,7 @@ from app.schemas.mapping import (
     AiStatus,
     CountdownColors,
     DescribeScene,
+    HousePhoto,
     MediaOut,
     ObjectPin,
     PaintHouse,
@@ -40,8 +42,11 @@ from app.schemas.mapping import (
     SceneOut,
     SceneUpdate,
     SimulatedPeople,
+    TracedHouse,
+    TraceHousePhoto,
+    WeatherNow,
 )
-from app.services import house_paint, scene_ai
+from app.services import house_paint, house_photo, scene_ai, weather_board
 from app.services.mapping import now_ms
 
 router = APIRouter(prefix="/mapping", tags=["mapping"])
@@ -259,6 +264,19 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
     return scene
 
 
+# -- live info boards ------------------------------------------------------------------
+
+
+@router.get("/weather", response_model=WeatherNow)
+async def weather(_: RequireViewer, place: str = Query("", max_length=80)) -> dict:
+    """The weather right now for a scene's "Weather" board; the outputs ask
+    the server so only it needs the internet."""
+    try:
+        return await weather_board.weather_now(place)
+    except weather_board.WeatherError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+
+
 # -- painting the house (Beta) -------------------------------------------------------
 
 
@@ -321,3 +339,66 @@ async def paint_house(payload: PaintHouse, session: SessionDep, admin: RequireAd
     await session.commit()
     await session.refresh(asset)
     return asset
+
+
+# -- the house's parts from a photo ---------------------------------------------------
+
+
+@router.post("/house-photo/trace", response_model=TracedHouse,
+             dependencies=[Depends(write_rate_limit)])
+async def trace_house_photo(payload: TraceHousePhoto, admin: RequireAdmin,
+                            session: SessionDep) -> dict:
+    """Claude's outline of each wall, roof, window and door on the photo, in
+    fractions of the photo. Nothing is saved: the browser lines the photo up
+    with the canvas and saves the parts as the show's house parts."""
+    data = payload.image.split(",", 1)[1] if payload.image.startswith("data:") else payload.image
+    try:
+        image = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The photo could not be read") from None
+    try:
+        result = await house_photo.trace(image, payload.width, payload.height)
+    except scene_ai.SceneAiError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+    session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="house_traced",
+                      message=f"{admin.username} had Claude trace {len(result['parts'])} "
+                              "house parts on a photo"))
+    await session.commit()
+    return result
+
+
+@router.get("/shows/{show_id}/house-photo", response_model=HousePhoto | None)
+async def get_house_photo(show_id: int, session: SessionDep, _: RequireViewer) -> dict | None:
+    await _load_show(session, show_id)
+    saved = house_photo.load(show_id)
+    if not saved:
+        return None
+    try:
+        photo = HousePhoto.model_validate(saved)
+    except ValueError:
+        return None
+    # The photo was deleted from the media library: start again.
+    if await session.get(MediaAsset, photo.media_id) is None:
+        return None
+    return photo.model_dump()
+
+
+# Dragging a corner saves continuously, like dragging a corner pin.
+@router.put("/shows/{show_id}/house-photo", response_model=HousePhoto)
+async def set_house_photo(show_id: int, payload: HousePhoto, session: SessionDep,
+                          _: RequireAdmin) -> dict:
+    await _load_show(session, show_id)
+    asset = await session.get(MediaAsset, payload.media_id)
+    if asset is None or asset.kind != "image":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The photo is not a picture in the media library")
+    house_photo.save(show_id, payload.model_dump())
+    return payload.model_dump()
+
+
+@router.delete("/shows/{show_id}/house-photo", status_code=status.HTTP_204_NO_CONTENT,
+               response_model=None)
+async def delete_house_photo(show_id: int, session: SessionDep, _: RequireAdmin) -> None:
+    await _load_show(session, show_id)
+    house_photo.forget(show_id)

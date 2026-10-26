@@ -21,7 +21,7 @@ from app.paths import alembic_dir
 MAPPING_TABLES = {"media_assets", "mapping_shows", "mapping_outputs", "mapping_cues",
                   "mapping_players", "mapping_scenes", "mapping_maps",
                   "mapping_scene_groups", "show_plan", "show_calendar",
-                  "mapping_playlists"}
+                  "heaters", "heater_readings", "weather_place", "mapping_playlists"}
 HEAD_REVISION = "a9d4e7c2b6f1"
 
 

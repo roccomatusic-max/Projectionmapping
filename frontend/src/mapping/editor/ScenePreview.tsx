@@ -22,6 +22,7 @@ export const SURFACE_KINDS: Array<{ id: SurfaceKind; label: string; color: strin
   { id: 'window', label: 'Window', color: '#fbbf24' },
   { id: 'door', label: 'Door', color: '#4ade80' },
   { id: 'other', label: 'Other', color: '#a78bfa' },
+  { id: 'ground', label: 'Driveway or ground', color: '#fb923c' },
 ]
 
 const KIND_COLOR = Object.fromEntries(SURFACE_KINDS.map((k) => [k.id, k.color])) as Record<SurfaceKind, string>
@@ -45,7 +46,7 @@ export function wholeCanvasOutput(showId: number, id: number, name: string, widt
 }
 
 export type PeopleSource = 'simulated' | 'camera'
-export type Backdrop = { kind: 'none' } | { kind: 'camera' } | { kind: 'media'; id: number }
+export type Backdrop = { kind: 'none' } | { kind: 'camera' } | { kind: 'house' } | { kind: 'media'; id: number }
 
 export interface Drawing {
   kind: SurfaceKind
@@ -63,6 +64,8 @@ export interface Placing {
   box?: { w: number; h: number }
   max?: number
   selected: number | null
+  /** The pins are the points of a path, in order: a line joins them and they do not turn. */
+  path?: boolean
 }
 
 /** How far the turn handle sits above the top edge, in overlay units. */
@@ -129,8 +132,19 @@ function turnHandle(turn: (lx: number, ly: number) => [number, number], half: nu
 export async function straightenedPhoto(show: Show, version: number): Promise<HTMLImageElement | null> {
   const view = show.camera_view
   if (!view) return null
+  return straightened(show, snapshotUrl(view.camera_id, version), view.corners)
+}
+
+/** The show's own photo of the house (Scenes → Start from a photo), straightened with its four corners. */
+export async function straightenedHousePhoto(show: Show): Promise<HTMLImageElement | null> {
+  const saved = await mappingApi.getHousePhoto(show.id).catch(() => null)
+  return saved ? straightened(show, mediaUrl(saved.media_id), saved.corners) : null
+}
+
+/** The part of a picture inside ``corners`` (TL, TR, BR, BL), stretched to the canvas's shape. */
+async function straightened(show: Show, url: string, corners: Point[]): Promise<HTMLImageElement | null> {
   const photo = new Image()
-  photo.src = snapshotUrl(view.camera_id, version)
+  photo.src = url
   try {
     await photo.decode()
   } catch {
@@ -151,7 +165,7 @@ export async function straightenedPhoto(show: Show, version: number): Promise<HT
   out.height = h
   const octx = out.getContext('2d')!
   const image = octx.createImageData(w, h)
-  const H = squareToQuad(view.corners)
+  const H = squareToQuad(corners)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const [u, v] = applyHomography(H, (x + 0.5) / w, (y + 0.5) / h)
@@ -181,8 +195,8 @@ function useBackdrop(show: Show, backdrop: Backdrop, media: MediaAsset[]): Textu
   useEffect(() => {
     let cancelled = false
     setSource(null)
-    if (backdrop.kind === 'camera') {
-      void straightenedPhoto(show, Date.now()).then((img) => {
+    if (backdrop.kind === 'camera' || backdrop.kind === 'house') {
+      void (backdrop.kind === 'camera' ? straightenedPhoto(show, Date.now()) : straightenedHousePhoto(show)).then((img) => {
         if (!cancelled && img) setSource({ element: img, width: img.naturalWidth, height: img.naturalHeight, fit: 'stretch' })
       })
     } else if (asset) {
@@ -245,6 +259,7 @@ export function ScenePreview({
   onPinsChange,
   onStats,
   overlay,
+  picker,
 }: {
   show: Show
   scene: MappingScene | null
@@ -277,6 +292,8 @@ export function ScenePreview({
   onStats?: (fps: number, sceneScale: number | null) => void
   /** Drawn on top of everything, ignoring the pointer (the Editor's projector boxes). */
   overlay?: React.ReactNode
+  /** On top and taking the pointer: the corners of a house part being straightened. */
+  picker?: React.ReactNode
 }) {
   const playback = useMemo(() => new Playback(), [])
   const aspect = show.canvas_width / show.canvas_height
@@ -389,6 +406,42 @@ export function ScenePreview({
           ctx.fill()
         })
       }
+      if (place?.path && place.pins.length > 0) {
+        // The path: a line through the points in order, with arrows the way it goes.
+        ctx.strokeStyle = 'rgba(56,189,248,0.85)'
+        ctx.lineWidth = 2 * unit
+        ctx.setLineDash([6 * unit, 4 * unit])
+        ctx.beginPath()
+        place.pins.forEach((pin, i) => (i === 0 ? ctx.moveTo(pin.x * w, pin.y * h) : ctx.lineTo(pin.x * w, pin.y * h)))
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.fillStyle = '#38bdf8'
+        for (let i = 1; i < place.pins.length; i++) {
+          const a = place.pins[i - 1]
+          const b = place.pins[i]
+          const mx = ((a.x + b.x) / 2) * w
+          const my = ((a.y + b.y) / 2) * h
+          const ang = Math.atan2((b.y - a.y) * h, (b.x - a.x) * w)
+          const s = 6 * unit
+          ctx.beginPath()
+          ctx.moveTo(mx + Math.cos(ang) * s, my + Math.sin(ang) * s)
+          ctx.lineTo(mx + Math.cos(ang + 2.5) * s, my + Math.sin(ang + 2.5) * s)
+          ctx.lineTo(mx + Math.cos(ang - 2.5) * s, my + Math.sin(ang - 2.5) * s)
+          ctx.closePath()
+          ctx.fill()
+        }
+        ctx.font = `${Math.round(9 * unit)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        place.pins.forEach((pin, i) => {
+          ctx.fillStyle = '#0f172a'
+          ctx.beginPath()
+          ctx.arc(pin.x * w, pin.y * h, 7 * unit, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.fillStyle = '#e0f2fe'
+          ctx.fillText(String(i + 1), pin.x * w, pin.y * h + 0.5)
+        })
+      }
       if (place) {
         // A dashed outline around each placed thing; the picked one is solid
         // and has a square handle to size it and a round one to turn it.
@@ -405,10 +458,12 @@ export function ScenePreview({
           ctx.stroke()
           ctx.setLineDash([])
           if (!picked) return
-          ctx.beginPath()
-          ctx.moveTo(g.top[0], g.top[1])
-          ctx.lineTo(g.turn[0], g.turn[1])
-          ctx.stroke()
+          if (!place.path) {
+            ctx.beginPath()
+            ctx.moveTo(g.top[0], g.top[1])
+            ctx.lineTo(g.turn[0], g.turn[1])
+            ctx.stroke()
+          }
           ctx.fillStyle = '#0f172a'
           ctx.lineWidth = 1.5 * unit
           const s = 4.5 * unit
@@ -416,6 +471,7 @@ export function ScenePreview({
           ctx.rect(g.size[0] - s, g.size[1] - s, s * 2, s * 2)
           ctx.fill()
           ctx.stroke()
+          if (place.path) return
           ctx.beginPath()
           ctx.arc(g.turn[0], g.turn[1], s, 0, Math.PI * 2)
           ctx.fill()
@@ -497,7 +553,7 @@ export function ScenePreview({
     const x = p[0] * rect.width
     const y = p[1] * rect.height
     const near = (q: [number, number]) => Math.hypot(x - q[0], y - q[1]) < Math.max(12, 8 * unit)
-    if (near(g.turn)) return { kind: 'pin-turn', below: g.below }
+    if (!placing.path && near(g.turn)) return { kind: 'pin-turn', below: g.below }
     if (near(g.size)) return { kind: 'pin-size' }
     return null
   }
@@ -653,6 +709,7 @@ export function ScenePreview({
         onPointerCancel={onPointerUp}
       />
       {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
+      {picker}
     </div>
   )
 }

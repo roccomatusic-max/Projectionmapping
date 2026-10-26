@@ -227,6 +227,42 @@ is stale rather than assuming stale means safe.
 
 ---
 
+## Phone alerts
+
+Settings → Phone alerts sends alerts to a phone even when the app is closed
+and the phone is away from home. iPhones only take web push from https
+sites and this server is plain http on the home network, so it goes
+through a service with its own phone app:
+
+- **ntfy** (free, no account, no key): the server makes up a random
+  channel name (`show-xxxx-xxxx-xxxx`); type it into the free ntfy app
+  (+, Topic name, Subscribe). The server POSTs JSON to `https://ntfy.sh`.
+  Anyone who knows the name can read the channel, so it is random and
+  can be replaced ("make a new name").
+- **Pushover**: paste the User Key and an application's API Token from
+  pushover.net. The keys are never sent back to a browser.
+
+The choice is saved in `phone-alerts.json` beside the media folder,
+readable only by the server's account (backend/app/services/phone_alerts.py).
+
+What is sent, in six groups that can each be turned off: the show
+starting and stopping (when, who if it was Tonight's show or its schedule,
+what plays, how long it ran; the emergency stop and Blackout say so; the
+next cue, Pause and Resume are not sent), a projector
+running hot (intake air within `TEMPERATURE_WARN_MARGIN_C` of
+`TEMPERATURE_INTAKE_LIMIT_C`, or the projector's own heat warning), a
+projector offline or shutting down unexpectedly, a mini PC whose output
+has not reported for 3 minutes (10 while its app updates or after Restart
+computer; never after Shut down; not in the first 3 minutes after the
+server starts), tonight's show not starting at its start time (the
+emergency stop is on, the show would not play, or projectors did not turn
+on) or a failed automation, and other projector faults and warnings.
+Each condition is sent once when it opens and again only if it gets worse,
+never the hourly reminders; "All clear" follows when it ends (can be
+turned off). `command_unverified` is never sent.
+
+---
+
 ## Webhooks
 
 Alert rules can POST to an arbitrary URL:

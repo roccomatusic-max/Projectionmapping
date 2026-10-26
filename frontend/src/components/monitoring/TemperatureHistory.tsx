@@ -12,6 +12,7 @@ import {
 import { api } from '@/api/client'
 import type { TemperatureHistory as History, TemperatureSensorHistory, TemperatureState } from '@/api/types'
 import { Banner, EmptyState, Panel, Spinner } from '@/components/ui'
+import { ChartTooltip } from '@/components/monitoring/ChartTooltip'
 import { TemperatureIcon } from '@/components/icons'
 import { classNames, relativeTime } from '@/lib/format'
 
@@ -24,6 +25,12 @@ const SENSOR_COLOR: Record<string, string> = {
   optics: '#a78bfa',
 }
 const EXTRA_COLORS = ['#f472b6', '#2dd4bf']
+const TILE_ORDER = ['exhaust', 'optics', 'intake']
+
+function tileOrder(key: string): number {
+  const index = TILE_ORDER.indexOf(key)
+  return index === -1 ? TILE_ORDER.length : index
+}
 
 const RANGES = [
   { hours: 1, label: 'Last hour' },
@@ -130,7 +137,11 @@ export default function TemperatureHistory({ projectorId, projectorName }: { pro
     }
   }, [projectorId, hours])
 
-  const sensors = data?.projector_id === projectorId ? data.sensors : []
+  // Tiles in the order the lines usually stack on the chart, top to bottom:
+  // exhaust air runs hottest, the room air coming in coolest.
+  const sensors = [...(data?.projector_id === projectorId ? data.sensors : [])].sort(
+    (a, b) => tileOrder(a.key) - tileOrder(b.key),
+  )
   const colorOf = (key: string, index: number) => SENSOR_COLOR[key] ?? EXTRA_COLORS[index % EXTRA_COLORS.length]
   const rows = (data?.points ?? []).map((point) => {
     const row: Record<string, number | null> = { t: point.t }
@@ -265,17 +276,12 @@ export default function TemperatureHistory({ projectorId, projectorName }: { pro
                   allowDecimals={false}
                 />
                 <Tooltip
-                  labelFormatter={(ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-                  formatter={(value: number, key: string) => [
-                    `${value} °${unit}`,
-                    sensors.find((s) => s.key === key)?.label ?? key,
-                  ]}
-                  contentStyle={{
-                    background: '#141820',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
+                  content={
+                    <ChartTooltip
+                      title={(ms) => new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+                      format={(value, key) => [`${value} °${unit}`, sensors.find((s) => s.key === key)?.label ?? key]}
+                    />
+                  }
                 />
                 {limits.map((sensor) => (
                   <ReferenceLine

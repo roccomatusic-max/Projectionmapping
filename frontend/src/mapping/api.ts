@@ -6,6 +6,7 @@ import type {
   CameraCommandName,
   CameraView,
   Cue,
+  HousePhoto,
   MapApplied,
   MapParts,
   MappingScene,
@@ -16,7 +17,9 @@ import type {
   ShowSummary,
   Surface,
   TransportAction,
+  TracedHouse,
   TransportState,
+  WeatherNow,
 } from './types'
 
 export const mappingApi = {
@@ -47,6 +50,9 @@ export const mappingApi = {
     request<Output>(`/mapping/shows/${showId}/outputs`, { method: 'POST', body }),
   updateOutput: (id: number, body: Partial<Output>) =>
     request<Output>(`/mapping/outputs/${id}`, { method: 'PATCH', body }),
+  /** Geometry on the move: shown on the projectors at once, not saved. */
+  liveOutput: (id: number, body: Partial<Output>) =>
+    request<void>(`/mapping/outputs/${id}/live`, { method: 'POST', body }),
   deleteOutput: (id: number) => request<void>(`/mapping/outputs/${id}`, { method: 'DELETE' }),
   identifyOutput: (id: number) => request<void>(`/mapping/outputs/${id}/identify`, { method: 'POST' }),
 
@@ -75,7 +81,16 @@ export const mappingApi = {
     showId: number,
     people: Array<{ id: number; x: number; y: number; z: number | null; size: number }>,
   ) => request<void>('/mapping/simulated-people', { method: 'POST', body: { show_id: showId, people } }),
+  /** Claude's outline of the house's parts on a photo (base64 JPEG, width × height pixels). */
+  traceHousePhoto: (body: { image: string; width: number; height: number }) =>
+    request<TracedHouse>('/mapping/house-photo/trace', { method: 'POST', body }),
+  getHousePhoto: (showId: number) => request<HousePhoto | null>(`/mapping/shows/${showId}/house-photo`),
+  saveHousePhoto: (showId: number, body: HousePhoto) =>
+    request<HousePhoto>(`/mapping/shows/${showId}/house-photo`, { method: 'PUT', body }),
+  forgetHousePhoto: (showId: number) => request<void>(`/mapping/shows/${showId}/house-photo`, { method: 'DELETE' }),
   aiStatus: () => request<AiStatus>('/mapping/ai'),
+  /** The weather now at a town or ZIP code (empty: found from the server's internet address). */
+  weather: (place: string) => request<WeatherNow>(`/mapping/weather?place=${encodeURIComponent(place)}`),
   setAiKey: (key: string) => request<AiStatus>('/mapping/ai/key', { method: 'PUT', body: { key } }),
   removeAiKey: () => request<AiStatus>('/mapping/ai/key', { method: 'DELETE' }),
   paintStatus: () => request<AiStatus>('/mapping/paint'),

@@ -278,15 +278,26 @@ export interface ApplyResult {
 
 // -- scenes --------------------------------------------------------------------
 
-export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other'
+/** "ground" is a driveway, path or lawn seen from above, not part of the building. */
+export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other' | 'ground'
 
 /** One part of the building traced on the canvas. */
+/** Where a true square has to be drawn on the canvas to look square on a house part (scene/flat.ts). */
+export interface SurfaceFlat {
+  /** Top-left, top-right, bottom-right, bottom-left, in canvas fractions. */
+  corners: Point[]
+  /** Show a checkerboard square on the projectors until this time (server clock, epoch ms). */
+  test_until?: number | null
+}
+
 export interface Surface {
   id: string
   name: string
   kind: SurfaceKind
   /** Outline in canvas fractions. */
   points: Point[]
+  /** Straightened: objects on this part are drawn through its flat view. */
+  flat?: SurfaceFlat | null
 }
 
 export type LayerType =
@@ -294,9 +305,10 @@ export type LayerType =
   | 'wash' | 'field' | 'texture' | 'outline' | 'lights' | 'falling' | 'shapes'
   | 'picture'
   | 'countdown'
+  | 'movers' | 'info' | 'snowcap'
 
 export type ReactsTo = 'presence' | 'movement' | 'count' | 'closeness' | 'always'
-export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside'
+export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside' | 'ground'
 export type LayerBlend = 'normal' | 'add' | 'screen'
 /** How an object moves by itself. */
 export type Motion = 'none' | 'bob' | 'sway' | 'spin' | 'drift' | 'bounce' | 'orbit' | 'rise' | 'flutter'
@@ -351,6 +363,13 @@ export interface SceneLayer {
   media_id?: number | null
   /** A countdown's own colour for each part; missing keeps its look's colours. */
   colors?: CountdownColors | null
+  /**
+   * Words a live info element shows: the message board's message, the
+   * weather's town, or what a "days until" counts to.
+   */
+  text?: string | null
+  /** The day a "days until" counts to, YYYY-MM-DD; it repeats every year. */
+  date?: string | null
 }
 
 /**
@@ -377,6 +396,26 @@ export interface MappingScene {
   layers: SceneLayer[]
   created_at: string
   updated_at: string
+}
+
+/** A part of the building Claude found on a photo, in fractions of the photo. */
+export interface TracedPart {
+  kind: SurfaceKind
+  name: string
+  points: Point[]
+}
+
+export interface TracedHouse {
+  /** The house in a sentence or two, for designing its scene. */
+  description: string
+  parts: TracedPart[]
+}
+
+/** The show's photo of the house and where the canvas's corners are on it (TL, TR, BR, BL). */
+export interface HousePhoto {
+  media_id: number
+  corners: Point[]
+  description: string
 }
 
 export interface AiStatus {
@@ -411,4 +450,21 @@ export interface MapParts {
   outputs: boolean
   surfaces: boolean
   players: boolean
+}
+
+/** The weather now, for the weather element (from Open-Meteo, through the server). */
+export interface WeatherNow {
+  /** The town it is for, as found. */
+  place: string
+  temperature_f: number
+  feels_like_f: number | null
+  high_f: number | null
+  low_f: number | null
+  /** WMO weather code (0 clear … 95 thunder). */
+  code: number
+  is_day: boolean
+  wind_mph: number | null
+  humidity: number | null
+  /** When the server fetched it, ISO time. */
+  updated_at: string
 }

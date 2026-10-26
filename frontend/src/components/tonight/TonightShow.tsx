@@ -36,6 +36,7 @@ import { classNames, formatHours } from '@/lib/format'
 import { LiveView } from './LiveView'
 import { PlaylistTimeline, PlaylistsPanel } from './Playlists'
 import { isLive, lampTone, matchesFilter, peakLampHours } from '@/lib/status'
+import { problemText, stopLabel, useWalkInfo, walkDay, walkTime, walkVerdict } from '@/lib/walkthrough'
 import {
   DAY_NAMES,
   clockText,
@@ -249,9 +250,12 @@ function Metrics() {
   const emergency = !!transport?.emergency
   const cue = transport?.current
   const playing = transport?.status === 'playing' || transport?.status === 'paused'
+  const walk = useWalkInfo()
+  const walked = walk?.last ?? null
+  const verdict = walkVerdict(walked)
 
   return (
-    <div className="grid grid-cols-2 divide-white/[0.06] border-t border-white/[0.06] sm:grid-cols-4 xl:grid-cols-7 xl:divide-x [&>*]:border-b [&>*]:border-white/[0.06] xl:[&>*]:border-b-0">
+    <div className="grid grid-cols-2 divide-white/[0.06] border-t border-white/[0.06] sm:grid-cols-4 xl:grid-cols-8 xl:divide-x [&>*]:border-b [&>*]:border-white/[0.06] xl:[&>*]:border-b-0">
       <Tile
         label="Projectors"
         to="/projectors"
@@ -302,6 +306,19 @@ function Metrics() {
         value={emergency ? 'ON' : 'Off'}
         sub={emergency ? 'clear it in the red bar' : 'ready if you need it'}
         tone={emergency ? 'fault' : 'ok'}
+      />
+      <Tile
+        label="Last checked"
+        value={walk?.active ? 'Walking' : walked ? walkDay(walked) : '—'}
+        sub={walk?.active
+          ? `projector ${walk.active.index + 1} of ${walk.active.stops.length} lit up`
+          : walked
+            ? `${walkTime(walked)} · ${verdict.text}`
+            : 'Walk the yard on the phone'}
+        tone={walk?.active ? 'busy' : verdict.tone}
+        title={walked
+          ? walked.stops.map((stop) => `${stopLabel(stop)}: ${stop.result === 'good' ? 'looked good' : stop.result === 'wrong' ? problemText(stop) : 'not checked'}`).join('\n')
+          : 'Walk the yard from the phone remote (Tonight or Projectors tab): each projector lights up in turn and you tap how it looks.'}
       />
       <Tile
         label="Show now"
@@ -817,9 +834,15 @@ export function TonightShow({ session }: { session: Session }) {
             </div>
           </div>
           {canEdit && (
-            <button className="btn-default btn-sm" onClick={() => setEditor({ group: null })}>
-              <AddIcon size={14} aria-hidden /> New scene group
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <Link className="btn-default btn-sm" to="/mapping/scenes"
+                title="Make a new scene, pick the projector it goes on, and put it in tonight's show">
+                <ScenesIcon size={14} aria-hidden /> Make a scene
+              </Link>
+              <button className="btn-default btn-sm" onClick={() => setEditor({ group: null })}>
+                <AddIcon size={14} aria-hidden /> New scene group
+              </button>
+            </div>
           )}
         </header>
         {visibleGroups.length === 0 ? (

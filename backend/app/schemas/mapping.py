@@ -324,10 +324,36 @@ class FitResult(BaseModel):
     sliced: list[int] = Field(default_factory=list)
 
 
-SurfaceKind = Literal["wall", "roof", "window", "door", "other"]
+#: "ground" is a driveway, path or lawn seen from above: not part of the
+#: building, so "Whole building" leaves it out.
+SurfaceKind = Literal["wall", "roof", "window", "door", "other", "ground"]
 
 #: Traced building parts per show.
 MAX_SURFACES = 64
+
+
+class SurfaceFlat(BaseModel):
+    """How a house part lies, so things drawn on it are not stretched.
+
+    ``corners`` is where a true square has to be drawn on the canvas for it
+    to look square on this part from where people watch: on a sloped roof
+    seen at an angle it is a slanted four-sided shape. Objects on the part
+    are drawn through it (frontend/src/mapping/scene/flat.ts).
+    """
+    #: Top-left, top-right, bottom-right, bottom-left, in canvas fractions.
+    corners: list[Point]
+    #: While someone is setting the corners: show a checkerboard square on
+    #: the projectors until this time (server clock, epoch milliseconds).
+    test_until: float | None = None
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point]) -> list[Point]:
+        if len(corners) != 4:
+            raise ValueError("a house part's flat view needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "flat view")
+        return corners
 
 
 class Surface(BaseModel):
@@ -337,6 +363,8 @@ class Surface(BaseModel):
     kind: SurfaceKind = "wall"
     #: Outline in canvas fractions.
     points: list[Point] = Field(min_length=3, max_length=256)
+    #: Straightened: objects on this part are drawn through its flat view.
+    flat: SurfaceFlat | None = None
 
     @field_validator("points")
     @classmethod
@@ -620,6 +648,38 @@ class ScreenControl(BaseModel):
     confirm: bool = False
 
 
+class ScreenFlat(BaseModel):
+    """The four corners of a house part, dragged on a mini PC's status screen."""
+    surface_id: str = Field(min_length=1, max_length=32)
+    #: null takes the part's straightening away.
+    corners: list[Point] | None = None
+    #: Show the checkerboard square on the projectors while dragging.
+    test: bool = True
+
+
+class ScreenWarp(BaseModel):
+    """This mini PC's own picture fitted onto the ground (a driveway, from a
+    projector on the roof): its output's four corners, dragged with the mouse
+    on the status screen."""
+    #: Top-left, top-right, bottom-right, bottom-left in the output's own
+    #: fractions; null puts the picture back square, filling the projector.
+    corners: list[Point] | None = None
+    #: Show the canvas grid on this projector while fitting (its squares
+    #: look square on the ground when the fit is right); false takes it off.
+    grid: bool = True
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point] | None) -> list[Point] | None:
+        if corners is None:
+            return None
+        if len(corners) != 4:
+            raise ValueError("the picture needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "corner")
+        return corners
+
+
 class ScreenControlResult(BaseModel):
     ok: bool
     message: str
@@ -634,6 +694,14 @@ class PlayerCommandResult(BaseModel):
 class PlayerScreen(BaseModel):
     #: "none" goes back to the show.
     pattern: TestPattern
+
+
+class PlayerSensor(BaseModel):
+    """The newest reading of a USB temperature sensor on a mini PC."""
+
+    name: str = Field(default="USB sensor", max_length=64)
+    celsius: float = Field(ge=-40, le=125)
+    humidity: float | None = Field(default=None, ge=0, le=100)
 
 
 class PlayerAppHello(BaseModel):
@@ -657,6 +725,9 @@ class PlayerAppHello(BaseModel):
     screens: PlayerScreens | None = None
     #: Windows starts the app again by itself if it stops (installer.iss).
     watchdog: bool = False
+    #: A USB temperature sensor plugged into it (minipc/usbsensor.py), for
+    #: the heater in the projector's box.
+    sensor: PlayerSensor | None = None
 
 
 #: The tail of a Mini PC app's logs it sends: plenty for a day's story.
@@ -820,12 +891,20 @@ LayerType = Literal[
     "picture",
     # days until Christmas as holiday graphics
     "countdown",
+    # things that fly or walk along a path (a sleigh, a train, birds, elves...)
+    "movers",
+    # live info boards: the Santa tracker, the weather, days until, a message
+    "info",
+    # snow settling on window sills and the roof
+    "snowcap",
 ]
 #: What makes a layer stronger: someone there, how fast people move, how many
 #: there are, how close they come, or nothing (always at full strength).
 ReactsTo = Literal["presence", "movement", "count", "closeness", "always"]
 #: Which traced surfaces a layer is drawn on; "everywhere" ignores them.
-LayerTarget = Literal["everywhere", "building", "walls", "roof", "windows", "doors", "outside"]
+LayerTarget = Literal[
+    "everywhere", "building", "walls", "roof", "windows", "doors", "outside", "ground"
+]
 LayerBlend = Literal["normal", "add", "screen"]
 #: How an object moves by itself, changes by itself, and what it does when a
 #: person comes near (see frontend/src/mapping/scene/catalog.ts).
@@ -915,6 +994,27 @@ class SceneLayer(BaseModel):
     media_id: int | None = None
     #: A countdown's colour for each part; None keeps its look's colours.
     colors: CountdownColors | None = None
+    #: Words an info board shows: the message board's message, what a "days
+    #: until" counts to, or the town or ZIP code the weather is for.
+    text: str | None = Field(default=None, max_length=200)
+    #: The date a "days until" counts to (comes round every year).
+    date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class WeatherNow(BaseModel):
+    """The weather right now, for a scene's "Weather" board."""
+    place: str
+    temperature_f: float
+    feels_like_f: float | None = None
+    high_f: float | None = None
+    low_f: float | None = None
+    #: The WMO weather code (0 clear ... 95 thunderstorm).
+    code: int = 0
+    is_day: bool = True
+    wind_mph: float | None = None
+    humidity: float | None = None
+    #: Unix seconds.
+    updated_at: float
 
 
 class SceneBase(BaseModel):
@@ -984,6 +1084,44 @@ class PaintHouse(BaseModel):
     #: The picture, as base64 JPEG or PNG, already the canvas's shape.
     image: str = Field(min_length=100, max_length=30_000_000)
     show_id: int
+
+
+class TraceHousePhoto(BaseModel):
+    """A photo of the house for Claude to trace, as base64 JPEG, PNG or WebP."""
+    image: str = Field(min_length=100, max_length=15_000_000)
+    width: int = Field(ge=64, le=8000)
+    height: int = Field(ge=64, le=8000)
+
+
+class TracedPart(BaseModel):
+    kind: SurfaceKind
+    name: str
+    #: Outline in fractions of the photo.
+    points: list[Point]
+
+
+class TracedHouse(BaseModel):
+    #: The house in a sentence or two, for designing its scene.
+    description: str = ""
+    parts: list[TracedPart]
+
+
+class HousePhoto(BaseModel):
+    """The show's photo of the house and how it lines up with the canvas."""
+    media_id: int
+    #: Where the canvas's corners are on the photo (TL, TR, BR, BL), in
+    #: fractions of the photo; outside it when the canvas reaches past it.
+    corners: list[Point]
+    description: str = Field(default="", max_length=600)
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point]) -> list[Point]:
+        if len(corners) != 4:
+            raise ValueError("the photo needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "corner")
+        return corners
 
 
 # -- emergency stop --------------------------------------------------------------
