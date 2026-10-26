@@ -764,7 +764,7 @@ export const STARTERS: Starter[] = [
     layers: [
       objects('crawling-spiders', { name: 'Spiders', target: 'ground', color: '#a855f7', color2: '#ef4444', size: 0.3, amount: 0.35, speed: 0.35, motion: 'drift', near: 'flee', reach: 0.6 }),
       { type: 'trails', name: 'Footprints', style: 'footprints', target: 'ground', color: '#a3e635', color2: '#22c55e', size: 0.5, fade: 0.8 },
-      objects('pumpkins', { name: 'Jack-o’-lanterns', target: 'ground', color: '#f97316', color2: '#65a30d', size: 0.35, amount: 0.12, change: 'flicker', near: 'light' }),
+      objects('pumpkins', { name: 'Jack-o’-lanterns', target: 'ground', color: '#f97316', color2: '#65a30d', size: 0.35, amount: 0.05, change: 'flicker', near: 'light' }),
     ],
   },
   {
@@ -793,7 +793,7 @@ export const STARTERS: Starter[] = [
     description: 'Lights along both sides of the driveway (or a path traced as a ground part) that brighten as people walk past, a warm glow around each person and fireflies.',
     layers: [
       { type: 'lights', name: 'Path lights', style: 'twinkle', target: 'ground', color: '#fff7e0', color2: '#fde68a', size: 0.55, amount: 0.45, speed: 0.3, near: 'light', reach: 0.6 },
-      { type: 'glow', name: 'Warm glow', style: 'soft', color: '#ffd27a', color2: '#ff6a3d', size: 0.4, amount: 0.5 },
+      { type: 'glow', name: 'Warm glow', style: 'soft', target: 'ground', color: '#ffd27a', color2: '#ff6a3d', size: 0.4, amount: 0.5 },
       { type: 'particles', name: 'Fireflies', style: 'fireflies', color: '#fde68a', color2: '#fb923c', amount: 0.3, size: 0.25, reacts_to: 'always' },
     ],
   },

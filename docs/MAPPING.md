@@ -483,6 +483,27 @@ cues like media (a cue's **Scene** draws over its media, or over black).
   Straighten, or with the mouse on a mini PC's status screen
   (`POST /mapping/players/me/flat`), while a checkerboard square with a
   circle shows on the projectors (`flat.test_until`, server clock).
+- **The driveway** (a projector on the roof pointing down): a house part of
+  kind `ground` ("Driveway or ground") is not part of the building, so
+  "Whole building" leaves it out and "Around the building" may cover it;
+  layers reach it with the target `ground`. Ground objects are drawn flat:
+  footprints, a WELCOME mat, landing strip arrows and crawling spiders (no
+  thread), and trails have a footprints style that stamps a left and right
+  foot twice a second along each person's way. Starters under "On the
+  driveway": Spiders on the driveway, Ghostly footprints, Welcome mat, Path
+  of lights, Santa's landing strip. A starter marked `placed` gives its pins
+  as fractions of the layer's area, put on the traced driveway when the
+  scene is made (`starterLayers`).
+- **Fitting a picture to the ground**: without a camera, the projector's
+  own corner pin is what straightens the driveway: dragged until the canvas
+  grid shows true squares on the ground, everything drawn on its slice is
+  flat on the driveway. The mini PC's status screen has "Fit the picture to
+  the ground" (`POST /mapping/players/me/warp`, only its own output's
+  corners; the grid shows while fitting, never while a show plays, and goes
+  off on Done, after ten minutes untouched or when the screen closes), with
+  Turn left, Turn right, Upside down and Mirror, so the picture's top faces
+  the house and reads the right way up from the street. The Editor's
+  Warp tab has the same turn buttons (`turnCorners`).
 - **Ready-made scenes**: Gingerbread house, Haunted house, Winter lights,
   Underwater, Party, Shadow play.
 - **Trying without a camera**: the preview walks made-up people across the

@@ -6,6 +6,7 @@ import { classNames, formatHours } from '@/lib/format'
 import { activeInput, attentionItems, isLive, lampReadings } from '@/lib/status'
 import { clockText, spanText, whenText, type Tonight } from '@/lib/tonight'
 import type { Player } from './editor/PlayersPanel'
+import { FitGroundBar, FitGroundHandles, useFitGround } from './ScreenFitGround'
 import { StraightenBar, StraightenHandles, useStraighten } from './ScreenStraighten'
 import type { MappingScene, Show, TransportState } from './types'
 
@@ -293,6 +294,7 @@ export default function ScreenPage() {
   const scenes = usePoll(signedIn ? scenesLoader : null, SCENES_MS).value
   const { picture, tried } = usePicture(signedIn ? playerId : null)
   const straighten = useStraighten(signedIn ? show : null)
+  const fitGround = useFitGround(signedIn ? output : null)
 
   const lost = now - lastAnswer > LOST_MS
   const { busy, said, press, pressEmergency } = useButtons()
@@ -382,7 +384,7 @@ export default function ScreenPage() {
             now={now + offset}
             mine={showId}
           />
-          {testPicture && (
+          {testPicture && !fitGround.corners && (
             <p className="mt-[calc(var(--u)*1.4)] rounded-lg bg-amber-500/15 px-[1vw] py-[calc(var(--u)*0.8)] text-[length:calc(var(--u)*2.4)] text-amber-200">
               The projector shows a test picture ({testPicture}) instead of the show. Change it on Mapping → Players.
             </p>
@@ -398,9 +400,15 @@ export default function ScreenPage() {
             online={player?.online ?? false}
             emergency={emergency != null}
             aspect={output ? output.width / output.height : 16 / 10}
-            overlay={output && <StraightenHandles straighten={straighten} output={output} />}
+            overlay={output && (
+              <>
+                <StraightenHandles straighten={straighten} output={output} />
+                <FitGroundHandles fit={fitGround} />
+              </>
+            )}
           />
-          <StraightenBar straighten={straighten} show={show} />
+          {!fitGround.corners && <StraightenBar straighten={straighten} show={show} />}
+          <FitGroundBar fit={fitGround} output={output} busy={straighten.part != null} />
           <PlayerFacts player={player} />
         </Card>
 
@@ -758,20 +766,21 @@ function OutputPicture({
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center">
       <div
-        className="relative max-h-full w-full overflow-hidden rounded-xl bg-black ring-1 ring-white/10"
+        // Not clipped: corners dragged on the picture sit on its edges.
+        className="relative max-h-full w-full rounded-xl bg-black ring-1 ring-white/10"
         style={{ aspectRatio: String(aspect) }}
       >
         {picture && (
           <img
             src={picture.url}
             alt="What this mini PC is putting out to the projector"
-            className={classNames('absolute inset-0 h-full w-full object-contain', (stale || !online) && 'opacity-40 grayscale')}
+            className={classNames('absolute inset-0 h-full w-full rounded-xl object-contain', (stale || !online) && 'opacity-40 grayscale')}
           />
         )}
         {(note || emergency) && (
           <span
             className={classNames(
-              'absolute inset-x-0 bottom-0 px-[1vw] py-[calc(var(--u)*0.6)] text-center text-[length:calc(var(--u)*2.2)]',
+              'absolute inset-x-0 bottom-0 rounded-b-xl px-[1vw] py-[calc(var(--u)*0.6)] text-center text-[length:calc(var(--u)*2.2)]',
               !online || emergency ? 'bg-red-950/80 text-red-100' : 'bg-black/70 text-slate-300',
             )}
           >
