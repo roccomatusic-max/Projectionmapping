@@ -32,6 +32,13 @@ export function InfoFields({ layer, canEdit, onChange }: {
       </p>
     )
   }
+  const about: Partial<Record<typeof style, string>> = {
+    clock: 'Shows the time and date on this computer’s clock, with the colon blinking each second.',
+    moon: 'Shows tonight’s moon as it really is, how much of it is lit and when it is next full. Worked out from the date, so it needs no internet.',
+    holiday: 'Counts the days to the next holiday (New Year’s, Valentine’s, St Patrick’s, Easter, Mother’s and Father’s Day, the Fourth, Halloween, Thanksgiving, Christmas) and says the greeting on the day. It moves on to the next one by itself.',
+    'new-year': 'Counts the days to New Year, then on New Year’s Eve the hours, minutes and seconds to midnight, and says Happy New Year on the first.',
+  }
+  if (about[style]) return <p className="text-xs text-slate-500">{about[style]}</p>
   if (style === 'weather') {
     return (
       <label className="block">

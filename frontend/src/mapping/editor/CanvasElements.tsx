@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { EmptyState } from '@/components/ui'
+import { Plus } from 'lucide-react'
+import { EmptyState, Modal } from '@/components/ui'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
 import { PeopleTracker } from '../people'
-import { COUNTDOWN_COLORS, COUNTDOWN_PRESETS, INFO_LOOKS, KIND, layerLabel, MOVER_LOOKS, newLayer, STARTERS } from '../scene/catalog'
+import { layerLabel } from '../scene/catalog'
+import { MAX_LAYERS } from '../scene/library'
 import type { MappingScene, MediaAsset, ObjectPin, Output, SceneLayer, Show, TransportState } from '../types'
 import { Slider } from './controls'
 import { CountdownColorPickers } from './CountdownColors'
+import { ElementLibrary } from './ElementLibrary'
 import { outputColor } from './panels'
 import { type Backdrop, ScenePreview } from './ScenePreview'
 import { InfoFields } from './InfoFields'
@@ -15,61 +18,6 @@ import { PLACEABLE, placingFor, SINGLE } from './ScenesPanel'
 /** Edits are saved this long after the last change, as in the Scenes tab. */
 const SAVE_DELAY_MS = 400
 
-/** How the ready-made scenes colour an object and make it react, so a new one looks right at once. */
-function starterLook(style: string): Partial<SceneLayer> {
-  const used = STARTERS.flatMap((s) => s.layers).find((l) => l.type === 'shapes' && l.style === style)
-  if (!used) return {}
-  const { color, color2, change, near, reacts_to } = used
-  return Object.fromEntries(Object.entries({ color, color2, change, near, reacts_to }).filter(([, v]) => v != null))
-}
-
-type Group = 'objects' | 'movers' | 'info' | 'countdown' | 'snow'
-
-/** What the Add menu offers: each kind of object by itself, things that fly or walk, live info boards, snow, and a countdown for each holiday. */
-export const ADDABLE: Array<{ value: string; label: string; group: Group; make: () => SceneLayer }> = [
-  ...KIND.shapes.styles.map((s) => ({
-    value: `shapes:${s.id}`,
-    label: s.label,
-    group: 'objects' as const,
-    make: () => newLayer('shapes', { ...starterLook(s.id), style: s.id, name: s.label, pins: [] }),
-  })),
-  ...KIND.movers.styles.map((s) => ({
-    value: `movers:${s.id}`,
-    label: s.label,
-    group: 'movers' as const,
-    // An empty path: it flies or walks on a path of its own until points are clicked.
-    make: () => newLayer('movers', { ...MOVER_LOOKS[s.id], style: s.id, name: s.label, pins: [] }),
-  })),
-  ...KIND.info.styles.map((s) => ({
-    value: `info:${s.id}`,
-    label: s.label,
-    group: 'info' as const,
-    make: () => newLayer('info', {
-      ...INFO_LOOKS[s.id], style: s.id, name: s.label,
-      size: s.id === 'message' ? 0.5 : 0.6, pins: [{ x: 0.5, y: s.id === 'message' ? 0.3 : 0.42, size: 1, rotation: 0 }],
-    }),
-  })),
-  {
-    value: 'snowcap:soft',
-    label: 'Snow on window sills',
-    group: 'snow' as const,
-    make: () => newLayer('snowcap', { name: 'Snow on the sills', target: 'windows' }),
-  },
-  {
-    value: 'snowcap:roof',
-    label: 'Snow on the roof',
-    group: 'snow' as const,
-    make: () => newLayer('snowcap', { name: 'Snow on the roof', target: 'roof' }),
-  },
-  ...COUNTDOWN_PRESETS.map((p) => ({
-    value: `countdown:${p.id}`,
-    label: p.label,
-    group: 'countdown' as const,
-    make: () => newLayer('countdown', {
-      ...COUNTDOWN_COLORS[p.style], style: p.style, name: p.label, pins: [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }],
-    }),
-  })),
-]
 
 /**
  * The cue's media with its scene elements on top and every projector's box
@@ -117,6 +65,8 @@ export function CanvasElements({
   const [layerId, setLayerId] = useState<string | null>(null)
   const [pinIndex, setPinIndex] = useState<number | null>(null)
   const [adding, setAdding] = useState(false)
+  /** The element library is open. */
+  const [picking, setPicking] = useState(false)
   const [people, setPeople] = useState(true)
   const saveTimer = useRef<number>()
   const serial = useRef(0)
@@ -179,10 +129,13 @@ export function CanvasElements({
     save({ ...scene, layers: scene.layers.map((l) => (l.id === id ? { ...l, ...patch } : l)) })
   }
 
-  const add = async (value: string) => {
-    const kind = ADDABLE.find((a) => a.value === value)
-    if (!kind || !cue) return
-    const made = kind.make()
+  const add = async (made: SceneLayer) => {
+    if (!cue) return
+    if (scene && scene.layers.length >= MAX_LAYERS) {
+      onError(`This cue's scene already has ${MAX_LAYERS} elements, the most one scene can hold. Remove one first, or give another cue a scene.`)
+      return
+    }
+    setPicking(false)
     if (scene) {
       save({ ...scene, layers: [...scene.layers, made] })
     } else {
@@ -255,6 +208,12 @@ export function CanvasElements({
 
   return (
     <div className="space-y-3">
+      <Modal open={picking} label="Add an element" size="lg" className="sm:max-w-4xl" onClose={() => setPicking(false)}>
+        <div className="p-4 sm:p-5">
+          <h2 className="mb-3 text-base font-semibold text-slate-100">Add an element</h2>
+          <ElementLibrary disabled={adding} onPick={(made) => void add(made)} />
+        </div>
+      </Modal>
       <div className="flex flex-wrap items-end gap-3">
         <label className="block">
           <span className="label">Cue</span>
@@ -276,26 +235,12 @@ export function CanvasElements({
           </select>
         </label>
         {canEdit && (
-          <label className="block">
+          <div className="block">
             <span className="label">Add an element</span>
-            <select className="input w-auto py-1 text-sm" value="" disabled={adding}
-              onChange={(e) => e.target.value && void add(e.target.value)}>
-              <option value="">Add…</option>
-              {([
-                ['movers', 'Things that fly or walk'],
-                ['info', 'Live info'],
-                ['snow', 'Snow'],
-                ['objects', 'Objects that react to people'],
-                ['countdown', 'Countdowns'],
-              ] as Array<[Group, string]>).map(([group, label]) => (
-                <optgroup key={group} label={label}>
-                  {ADDABLE.filter((a) => a.group === group).map((a) => (
-                    <option key={a.value} value={a.value}>{a.label}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+            <button type="button" className="btn-primary py-1 text-sm" disabled={adding} onClick={() => setPicking(true)}>
+              <Plus size={14} aria-hidden /> Find an element…
+            </button>
+          </div>
         )}
         <label className="flex items-center gap-2 pb-1.5 text-xs text-slate-400">
           <input type="checkbox" className="accent-sky-500" checked={people} onChange={(e) => setPeople(e.target.checked)} />

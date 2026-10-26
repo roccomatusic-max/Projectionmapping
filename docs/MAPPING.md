@@ -628,7 +628,7 @@ until the holiday as a big number with a ribbon and a ticking
 hours/minutes/seconds clock. The look picks the holiday: four Christmas looks
 (gold and holly, frosted, candy cane, marquee lights) and two Halloween looks
 (jack-o'-lantern orange with pumpkins and bats, ghostly green with ghosts and
-bats, both flickering like a candle). Editor → Elements → Add an element offers
+bats, both flickering like a candle). Editor → Elements → Find an element offers
 "Christmas countdown" and "Halloween countdown". Each part has its own
 colour picker (Editor → Elements → Move and colours, or the layer's card in
 Scenes): big number, its 3D side, words above the number, banner, words on the
@@ -686,6 +686,43 @@ bottom of the picture.
 - **Message board**: a light-up bulb board scrolling the layer's `text` (up to
   200 characters). The phone remote's Show tab lists every message board with
   a box to change the words (admins).
+
+**The element library** (`frontend/src/mapping/scene/library.ts`, the
+"Find an element…" button under Editor → Elements, a search box rather than a
+list): every element on its own, with a moving picture, searchable by name,
+by holiday (Halloween, Thanksgiving, Christmas, New Year's, Valentine's,
+St Patrick's, Easter, Fourth of July, birthdays and more) and by kind (flies,
+walks, objects, live info, countdowns, snow). Typing searches every holiday;
+the chip for the season now is picked when it opens. An entry is a layer
+type, a style and a starting look (colours, how many, what people do to it);
+some styles appear more than once only where a different look means a
+different thing (blue jays and doves, holiday-coloured fireworks). The
+pictures of flying and walking ones are their sprites drawn on a 2D canvas;
+the rest are drawn by the real scene engine on one shared hidden WebGL canvas
+and copied out. A scene holds at most 12 layers; the library says so when it
+is full. Each element does something with people or shows real data:
+
+- Flying and walking: a witch on her broomstick (cat on the broom, "Hee hee
+  hee!" near people), a UFO that follows people and beams them up, dancing
+  skeletons (wave when someone is near), shuffling zombies ("Braaains!"),
+  prowling black cats (glowing outline, so they show on a dark house),
+  strutting turkeys ("Gobble gobble!"), Cupid, dancing leprechauns, hopping
+  Easter bunnies, bald eagles, firework rockets that launch from the ground
+  and burst in two rings (bigger and brighter near people), balloons that
+  float up, butterflies and a school of fish that scatter.
+- Objects: candy corn, skulls, tombstones, cauldrons, witch hats, acorns,
+  pies, party hats, champagne glasses, flags, cupcakes, chicks, pots of gold
+  and rainbows.
+- Live info: a clock (blinking colon), tonight's moon phase worked out from
+  the date (how much is lit, next full moon), days until the next holiday
+  (it moves on to the next by itself, with the greeting on the day) and a
+  New Year's countdown (hours, minutes and seconds on New Year's Eve).
+
+Ready-made scenes added with them: Witching hour, Graveyard dance, Alien
+visit, Thanksgiving parade, New Year's Eve countdown, Fourth of July
+fireworks, Leprechaun's gold, Easter bunny hop, Cupid's arrows and Birthday
+balloons. "Describe a scene" knows every new style; a test checks its list
+matches the Editor's.
 
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
