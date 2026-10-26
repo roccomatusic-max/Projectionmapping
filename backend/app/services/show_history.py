@@ -799,14 +799,14 @@ class Recorder:
                 elif ok:
                     self._pending = details
                     record = await self._open(session, show_id, utcnow())
-                if ok and "did not answer" in message:
-                    record.problems = [*(record.problems or []),
-                                       _problem(utcnow(), "power_failed", message)]
                 else:
                     record = await self._missed(session, slot, show_id=show_id, outcome="failed",
                                                 message=message, group_name=group_name)
                     record.started_by = by
                     record.problems = [_problem(utcnow(), "start_failed", message)]
+                if ok and "did not answer" in message:
+                    record.problems = [*(record.problems or []),
+                                       _problem(utcnow(), "power_failed", message)]
         bus.publish("show_history", {})
 
     async def note_held(self, slot: Any, message: str) -> None:
