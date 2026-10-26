@@ -324,7 +324,9 @@ class FitResult(BaseModel):
     sliced: list[int] = Field(default_factory=list)
 
 
-SurfaceKind = Literal["wall", "roof", "window", "door", "other"]
+#: "ground" is a driveway, path or lawn seen from above: not part of the
+#: building, so "Whole building" leaves it out.
+SurfaceKind = Literal["wall", "roof", "window", "door", "other", "ground"]
 
 #: Traced building parts per show.
 MAX_SURFACES = 64
@@ -655,6 +657,29 @@ class ScreenFlat(BaseModel):
     test: bool = True
 
 
+class ScreenWarp(BaseModel):
+    """This mini PC's own picture fitted onto the ground (a driveway, from a
+    projector on the roof): its output's four corners, dragged with the mouse
+    on the status screen."""
+    #: Top-left, top-right, bottom-right, bottom-left in the output's own
+    #: fractions; null puts the picture back square, filling the projector.
+    corners: list[Point] | None = None
+    #: Show the canvas grid on this projector while fitting (its squares
+    #: look square on the ground when the fit is right); false takes it off.
+    grid: bool = True
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point] | None) -> list[Point] | None:
+        if corners is None:
+            return None
+        if len(corners) != 4:
+            raise ValueError("the picture needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "corner")
+        return corners
+
+
 class ScreenControlResult(BaseModel):
     ok: bool
     message: str
@@ -860,7 +885,9 @@ LayerType = Literal[
 #: there are, how close they come, or nothing (always at full strength).
 ReactsTo = Literal["presence", "movement", "count", "closeness", "always"]
 #: Which traced surfaces a layer is drawn on; "everywhere" ignores them.
-LayerTarget = Literal["everywhere", "building", "walls", "roof", "windows", "doors", "outside"]
+LayerTarget = Literal[
+    "everywhere", "building", "walls", "roof", "windows", "doors", "outside", "ground"
+]
 LayerBlend = Literal["normal", "add", "screen"]
 #: How an object moves by itself, changes by itself, and what it does when a
 #: person comes near (see frontend/src/mapping/scene/catalog.ts).

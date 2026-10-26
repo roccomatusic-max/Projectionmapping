@@ -92,10 +92,12 @@ from app.schemas.mapping import (
     ScreenControl,
     ScreenControlResult,
     ScreenFlat,
+    ScreenWarp,
     SurfaceFlat,
 )
 from app.services import minipc_updates
 from app.services.alerts import alerting
+from app.services.calibration import is_convex
 from app.services.discovery import lan_address, tailscale_address
 from app.services.emergency import emergency
 from app.services.mapping import TransportError, transport
@@ -768,6 +770,46 @@ async def screen_emergency_stop(session: SessionDep, user: CurrentUser) -> Scree
                           source="minipc")
     return ScreenControlResult(ok=True, message="Emergency stop is on: the show is stopped, every "
                                                 "mini PC is black and the projectors are turning off.")
+
+
+@router.post("/me/warp", response_model=ScreenControlResult,
+             dependencies=[Depends(write_rate_limit)])
+async def screen_warp(payload: ScreenWarp, session: SessionDep,
+                      user: CurrentUser) -> ScreenControlResult:
+    """This mini PC's picture fitted onto the ground with the mouse on its status screen.
+
+    Only its own output, and only the corners of its picture and the grid
+    that helps line them up: a projector on the roof pointing down at the
+    driveway is fitted from beside it, watching the light.
+    """
+    player = await _own_player(session, user)
+    output = await session.get(MappingOutput, player.output_id) if player.output_id else None
+    if output is None:
+        return ScreenControlResult(ok=False, message="Pick an output for this mini PC on "
+                                                     "Mapping → Players first.")
+    if payload.grid and transport.snapshot().status in ("playing", "paused"):
+        return ScreenControlResult(ok=False, message="The show is playing. Stop it first, so the "
+                                                     "grid does not show during the show.")
+    corners = payload.corners or [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    if not is_convex(corners):
+        return ScreenControlResult(ok=False, message="Those corners cross over. Drag one back.")
+    warp = dict(output.warp or {})
+    output.warp = {**warp, "corners": [list(p) for p in corners]}
+    if payload.grid:
+        output.test_pattern = "grid"
+    elif output.test_pattern == "grid":
+        output.test_pattern = "none"
+    if not payload.grid:
+        session.add(Event(projector_id=output.projector_id, severity=Severity.INFO.value,
+                          kind="mapping_output",
+                          message=f"{player.name} (status screen) fitted {output.name} to the ground"))
+    await session.commit()
+    await session.refresh(output)
+    _touch(output.show_id, kind="mapping_output",
+           payload={"output": _output_out(output).model_dump(mode="json")})
+    if payload.grid:
+        return ScreenControlResult(ok=True, message="Saved.")
+    return ScreenControlResult(ok=True, message=f"Saved. The grid on {output.name} is off.")
 
 
 @router.post("/me/control", response_model=ScreenControlResult,

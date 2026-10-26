@@ -561,3 +561,29 @@ async def test_a_cue_plays_different_scenes_on_different_projectors(api):
     reloaded = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
     assert reloaded["cues"][0]["output_scenes"] == {str(garage): None, str(house): None}
     assert reloaded["cues"][0]["scene_id"] == ghosts["id"]
+
+
+async def test_a_driveway_is_a_ground_part_scenes_can_target(api):
+    """A projector on the roof pointing down: the driveway is traced as a
+    ground part, and its scenes put footprints and a welcome mat on it."""
+    headers = await login(api)
+    show = await make_show(api, headers)
+    driveway = {"id": "drive", "name": "Driveway", "kind": "ground",
+                "points": [[0.6, 0.6], [1.0, 0.6], [1.0, 1.0], [0.6, 1.0]]}
+    saved = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers,
+                            json={"surfaces": [*HOUSE, driveway]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["surfaces"][-1]["kind"] == "ground"
+
+    created = await api.post("/api/mapping/scenes", headers=headers, json={
+        "name": "Welcome mat", "layers": [
+            {"type": "shapes", "style": "welcome-mat", "target": "ground",
+             "pins": [{"x": 0.8, "y": 0.8, "size": 0.9}]},
+            {"type": "trails", "style": "footprints"},
+            {"type": "lights", "style": "chase", "target": "ground"},
+        ]})
+    assert created.status_code == 201, created.text
+    mat, steps, lights = created.json()["layers"]
+    assert (mat["style"], mat["target"]) == ("welcome-mat", "ground")
+    assert steps["style"] == "footprints"
+    assert lights["target"] == "ground"

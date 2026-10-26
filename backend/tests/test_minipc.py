@@ -843,3 +843,49 @@ async def test_only_admins_read_a_mini_pc_log(api, logs):
     headers = await login(api)
     player_id, token = await paired(api, headers)
     assert (await api.get(f"/api/mapping/players/{player_id}/log", headers=token)).status_code == 403
+
+
+async def test_the_status_screen_fits_its_picture_onto_the_driveway(api):
+    """A projector on the roof pointing down: its picture's corners are
+    dragged onto the driveway with the mini PC's mouse, over the grid."""
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    fit = {"corners": [[0.1, 0.0], [0.9, 0.05], [1.0, 1.0], [0.0, 0.95]]}
+    # No output yet: nothing to fit.
+    alone = await api.post("/api/mapping/players/me/warp", headers=token, json=fit)
+    assert alone.json()["ok"] is False
+
+    show = (await api.post("/api/mapping/shows", headers=headers, json={"name": "Driveway"})).json()
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Driveway", "warp": {"corners": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                                                                "mesh": None}})).json()
+    await api.patch(f"/api/mapping/players/{player_id}", headers=headers,
+                    json={"output_id": output["id"]})
+
+    async def now():
+        return (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()["outputs"][0]
+
+    # While dragging, the grid shows on this projector; Done takes it off.
+    dragged = await api.post("/api/mapping/players/me/warp", headers=token, json=fit)
+    assert dragged.json() == {"ok": True, "message": "Saved."}
+    assert (await now())["warp"]["corners"] == fit["corners"]
+    assert (await now())["test_pattern"] == "grid"
+    done = await api.post("/api/mapping/players/me/warp", headers=token, json={**fit, "grid": False})
+    assert done.json()["ok"] is True
+    assert (await now())["test_pattern"] == "none"
+
+    # Folded corners and anything but four are refused; null puts it back square.
+    folded = await api.post("/api/mapping/players/me/warp", headers=token,
+                            json={"corners": [[0, 0], [1, 1], [1, 0], [0, 1]]})
+    assert folded.json()["ok"] is False
+    three = await api.post("/api/mapping/players/me/warp", headers=token,
+                           json={"corners": fit["corners"][:3]})
+    assert three.status_code == 422
+    square = await api.post("/api/mapping/players/me/warp", headers=token,
+                            json={"corners": None, "grid": False})
+    assert square.json()["ok"] is True
+    assert (await now())["warp"]["corners"] == [[0, 0], [1, 0], [1, 1], [0, 1]]
+
+    # Only a mini PC's own account.
+    person = await api.post("/api/mapping/players/me/warp", headers=headers, json=fit)
+    assert person.status_code == 403
