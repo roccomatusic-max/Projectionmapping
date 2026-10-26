@@ -23,6 +23,8 @@ import urllib.request
 import zipfile
 
 BASE, PASSWORD = sys.argv[1].rstrip("/"), sys.argv[2]
+# The Windows runner's console is cp1252, which has no "→".
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 NAME = "Backup check"
 
 
