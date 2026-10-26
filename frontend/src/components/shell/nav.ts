@@ -15,6 +15,7 @@ import {
   DashboardIcon,
   EditorIcon,
   GroupsIcon,
+  HeaterIcon,
   LogsIcon,
   MiniPcIcon,
   MonitoringIcon,
@@ -148,6 +149,13 @@ export const NAV: NavSection[] = [
         icon: MonitoringIcon,
         hint: 'Lamp hours, hours switched on, enclosures and upkeep records.',
         keywords: 'lamp hours maintenance enclosure charts history',
+      },
+      {
+        to: '/heater',
+        label: 'Heater',
+        icon: HeaterIcon,
+        hint: 'The heater in a projector box: on when it gets cold, never with the projector on.',
+        keywords: 'heater heating freezing cold winter enclosure box smart plug shelly temperature warm up',
       },
       {
         to: '/logs',

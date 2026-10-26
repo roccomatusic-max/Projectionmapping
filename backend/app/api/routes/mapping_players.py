@@ -95,7 +95,7 @@ from app.schemas.mapping import (
     ScreenWarp,
     SurfaceFlat,
 )
-from app.services import minipc_updates
+from app.services import heater, minipc_updates
 from app.services.alerts import alerting
 from app.services.calibration import is_convex
 from app.services.discovery import lan_address, tailscale_address
@@ -643,7 +643,11 @@ async def app_checkin(payload: PlayerAppHello, session: SessionDep) -> PlayerApp
     info = {"power": payload.power, "computer": payload.computer, "mac": payload.mac,
             "version": payload.version, "awake": payload.awake,
             "screens": payload.screens.model_dump() if payload.screens else None,
-            "watchdog": payload.watchdog}
+            "watchdog": payload.watchdog,
+            "sensor": payload.sensor.name if payload.sensor else None}
+    if payload.sensor:
+        heater.record_sensor(player.id, payload.sensor.celsius, payload.sensor.humidity,
+                             payload.sensor.name)
     old = (player.report or {}).get("app")
     updates = minipc_updates.get()
     before = updates.describe(player.id, payload.version)

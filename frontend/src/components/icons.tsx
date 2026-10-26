@@ -24,6 +24,8 @@ export {
   EyeOff as BlankIcon,
   Gauge as PictureIcon,
   Grid3x3 as TestPatternIcon,
+  Heater as HeaterIcon,
+  Plug as PlugIcon,
   History as HistoryIcon,
   Info as InfoIcon,
   LayoutGrid as GridViewIcon,

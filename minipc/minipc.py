@@ -17,7 +17,10 @@ signs in after that, it:
   restarting the computer or closing the output (selfupdate.py),
 - shows the status screen (the show, its projector, a picture of its
   output) on a monitor plugged in beside the projector, when there is one
-  (screens.py).
+  (screens.py),
+- reads a USB temperature sensor plugged into it (an Adafruit Trinkey)
+  and sends it to the main server, for the heater in the projector's box
+  (usbsensor.py).
 
 The first time, the projector shows a pairing code. Approving it on the
 Mapping page, Players tab, pairs this computer and its camera together.
@@ -57,6 +60,7 @@ import requests  # noqa: E402
 import discovery  # noqa: E402
 import screens  # noqa: E402
 import stayawake  # noqa: E402
+import usbsensor  # noqa: E402
 from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
 from selfupdate import VERSION, SelfUpdate, collect_log  # noqa: E402
 
@@ -349,6 +353,8 @@ class MiniPC:
         self.handing_over = False
         #: The status screen on a second monitor (Windows), once running.
         self.second: screens.SecondScreen | None = None
+        #: A USB temperature sensor for the heater in the projector's box.
+        self.sensor = usbsensor.UsbSensor(self.stopping)
 
     # -- what the window and the tray show ----------------------------------
 
@@ -442,6 +448,9 @@ class MiniPC:
                 "version": self.updater.version, "update": self.updater.report(),
                 "awake": self.awake, "screens": self.second.report() if self.second else None,
                 "watchdog": sys.platform == "win32"}
+        reading = self.sensor.report()
+        if reading:
+            body["sensor"] = reading
         try:
             reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
             if reply.status_code != 200:
@@ -524,6 +533,7 @@ class MiniPC:
         self.status_port = getattr(page, "port", STATUS_PORT)
         keep_awake()
         threading.Thread(target=self.stay_on, name="stay-on", daemon=True).start()
+        self.sensor.start()
         browser = self.browser or find_browser()
         kiosk = None
         if browser:
@@ -641,6 +651,7 @@ def self_check() -> int:
     import cv2  # noqa: F401
     import numpy  # noqa: F401
     import requests  # noqa: F401
+    import serial.tools.list_ports  # noqa: F401
     import websocket  # noqa: F401
 
     import agent  # noqa: F401
