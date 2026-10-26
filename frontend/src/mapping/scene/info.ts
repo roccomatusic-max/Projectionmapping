@@ -20,6 +20,12 @@
  *   Thanksgiving, Christmas), the one after, and the greeting on the day.
  * - New Year's: days until New Year, then on New Year's Eve the hours,
  *   minutes and seconds to midnight (repainted once a second that day).
+ * - Hanukkah menorah: tonight's candles lit (worked out from the Hebrew
+ *   calendar), or the days until the first night.
+ * - Advent calendar: a door opens each day of December up to Christmas.
+ * - Lunar New Year: days to go and the year's animal, then the festival.
+ * - Tonight's show: when tonight's show starts and ends, or the next one,
+ *   from the server's plan for tonight (the Dashboard and the Calendar).
  *
  * Like the countdown, the artwork is painted with the 2D canvas only when
  * the words change (once a minute at most; the tracker's presents counter
@@ -34,12 +40,15 @@ import type { LayerBlend, SceneLayer, SourceRect, Surface, SurfaceKind } from '.
 import { nearOf } from './catalog'
 import { countdownFontsReady } from './countdown'
 import { santaNow, santaWords, type SantaNow } from './santa'
+import { tonightNow } from './showtimes'
 import { LAYER_VERTEX } from './shaders'
 import { weatherFor, weatherLook } from './weather'
 import { landRings } from './worldmap'
 
 // New boards go at the end: the shader knows them by their place in this list.
-export const INFO_STYLES = ['santa', 'weather', 'days', 'message', 'clock', 'moon', 'holiday', 'new-year'] as const
+export const INFO_STYLES = [
+  'santa', 'weather', 'days', 'message', 'clock', 'moon', 'holiday', 'new-year', 'menorah', 'advent', 'lunar-new-year', 'showtimes',
+] as const
 export type InfoStyle = (typeof INFO_STYLES)[number]
 
 export function infoStyle(style: string): InfoStyle {
@@ -56,6 +65,10 @@ export const BOARD: Record<InfoStyle, { w: number; h: number }> = {
   moon: { w: 1400, h: 800 },
   holiday: { w: 1400, h: 860 },
   'new-year': { w: 1400, h: 860 },
+  menorah: { w: 1400, h: 920 },
+  advent: { w: 1400, h: 980 },
+  'lunar-new-year': { w: 1400, h: 860 },
+  showtimes: { w: 1400, h: 660 },
 }
 
 /** Height in canvas heights of a board placed by hand at pin size 1. */
@@ -1038,6 +1051,416 @@ function paintNewYear(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: s
   ctx.fillText(caption, w / 2, 720)
 }
 
+// -- Hanukkah menorah ------------------------------------------------------------------------------
+
+const RD_UNIX = 719_163
+const HEBREW_EPOCH = -1_373_427
+
+/** Days from the Hebrew epoch to the new year (Rosh Hashanah) of a Hebrew year, before the postponements. */
+function hebrewElapsed(year: number) {
+  const months = Math.floor((235 * year - 234) / 19)
+  const parts = 12084 + 13753 * months
+  const day = months * 29 + Math.floor(parts / 25920)
+  return (3 * (day + 1)) % 7 < 3 ? day + 1 : day
+}
+
+/** Rosh Hashanah of a Hebrew year, as a fixed day count (1 = 1 January of year 1). */
+function roshHashanah(year: number) {
+  const [a, b, c] = [hebrewElapsed(year - 1), hebrewElapsed(year), hebrewElapsed(year + 1)]
+  const delay = c - b === 356 ? 2 : b - a === 382 ? 1 : 0
+  return HEBREW_EPOCH + b + delay
+}
+
+/** The evening the first Hanukkah candle is lit (the eve of 25 Kislev) in a Gregorian year: [year, month, day]. */
+export function hanukkahEve(gregorianYear: number): [number, number, number] {
+  const hy = gregorianYear + 3761
+  const length = roshHashanah(hy + 1) - roshHashanah(hy)
+  const heshvan = length % 10 === 5 ? 30 : 29
+  const kislev25 = roshHashanah(hy) + 30 + heshvan + 24
+  const d = new Date((kislev25 - 1 - RD_UNIX) * 86_400_000)
+  return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]
+}
+
+/** Tonight's Hanukkah night (1 to 8), or how many days until it starts. */
+export function menorahNow(nowMs: number) {
+  const now = new Date(nowMs)
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  for (const year of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
+    const [y, m, d] = hanukkahEve(year)
+    const start = Date.UTC(y, m, d)
+    const days = Math.round((start - today) / 86_400_000)
+    if (days <= 0 && days > -8) return { night: 1 - days, days: 0, start: new Date(y, m, d) }
+    if (days > 0) return { night: 0, days, start: new Date(y, m, d) }
+  }
+  return { night: 0, days: 0, start: now }
+}
+
+function paintMenorah(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: string) {
+  const { w, h } = BOARD.menorah
+  panel(ctx, fx, w, h, color, color2)
+  const now = menorahNow(nowMs)
+  const cx = w / 2
+  const top = 330
+  const step = 112
+  const metal = gold(ctx, 200, 700, color2)
+  // The arms: half circles from the middle stem, the base and the stem.
+  ctx.strokeStyle = metal
+  ctx.lineCap = 'round'
+  ctx.lineWidth = 18
+  for (let k = 1; k <= 4; k++) {
+    ctx.beginPath()
+    ctx.arc(cx, top, k * step, 0, Math.PI)
+    ctx.stroke()
+  }
+  ctx.beginPath()
+  ctx.moveTo(cx, top - 40)
+  ctx.lineTo(cx, 680)
+  ctx.stroke()
+  ctx.fillStyle = metal
+  ctx.beginPath()
+  ctx.moveTo(cx - 150, 700)
+  ctx.quadraticCurveTo(cx, 640, cx + 150, 700)
+  ctx.closePath()
+  ctx.fill()
+  fx.strokeStyle = '#ff0000'
+  fx.lineWidth = 18
+  fx.beginPath()
+  fx.moveTo(cx, top - 40)
+  fx.lineTo(cx, 680)
+  fx.stroke()
+  // Candles, placed right to left; tonight's are lit, with the helper candle in the middle.
+  const candle = (x: number, y: number, lit: boolean, tall: boolean) => {
+    const ch = tall ? 110 : 90
+    ctx.fillStyle = metal
+    ctx.fillRect(x - 26, y - 8, 52, 14)
+    const g = ctx.createLinearGradient(x - 14, 0, x + 14, 0)
+    g.addColorStop(0, '#cbd5e1')
+    g.addColorStop(0.5, '#ffffff')
+    g.addColorStop(1, '#94a3b8')
+    ctx.fillStyle = g
+    ctx.fillRect(x - 14, y - 8 - ch, 28, ch)
+    ctx.fillStyle = '#3b82f6'
+    for (let k = 0; k < 3; k++) ctx.fillRect(x - 14, y - 8 - ch + 18 + k * 26, 28, 7)
+    if (!lit) return
+    const fy = y - 8 - ch - 26
+    const flame = ctx.createRadialGradient(x, fy, 2, x, fy, 70)
+    flame.addColorStop(0, 'rgba(255,240,180,0.9)')
+    flame.addColorStop(0.3, 'rgba(251,191,36,0.4)')
+    flame.addColorStop(1, 'rgba(251,191,36,0)')
+    ctx.fillStyle = flame
+    ctx.beginPath()
+    ctx.arc(x, fy, 70, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#fde68a'
+    ctx.beginPath()
+    ctx.ellipse(x, fy, 11, 22, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.beginPath()
+    ctx.ellipse(x, fy + 6, 5, 10, 0, 0, Math.PI * 2)
+    ctx.fill()
+    fx.fillStyle = '#0000ff'
+    fx.beginPath()
+    fx.arc(x, fy, 40, 0, Math.PI * 2)
+    fx.fill()
+  }
+  for (let k = 4; k >= 1; k--) {
+    candle(cx - k * step, top, now.night >= 4 + k, false)
+    candle(cx + k * step, top, now.night >= 5 - k, false)
+  }
+  candle(cx, top - 40, now.night > 0, true)
+  // What tonight is.
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#ffffff'
+  const line = now.night
+    ? 'Happy Hanukkah'
+    : now.days === 1 ? 'Hanukkah begins tomorrow' : `Hanukkah begins in ${now.days} days`
+  fitFont(ctx, line, SCRIPT, '400', 120, w - 200)
+  ctx.fillText(line, cx, 770)
+  ctx.fillStyle = '#dbeafe'
+  const sub = now.night
+    ? `TONIGHT IS NIGHT ${now.night} OF 8`
+    : `${now.start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()} AT SUNDOWN`
+  fitFont(ctx, sub, CAPS, '700', 44, w - 240)
+  ctx.fillText(sub, cx, 850)
+}
+
+// -- Advent calendar -------------------------------------------------------------------------------
+
+/** The door numbers in the order they hang, mixed up as on a real calendar. */
+const ADVENT_ORDER = [7, 18, 3, 22, 12, 1, 15, 9, 24, 5, 20, 11, 2, 14, 19, 8, 23, 16, 10, 4, 17, 21, 6, 13]
+
+/** Which doors are open today (0 before December), and the days to December and to Christmas. */
+export function adventNow(nowMs: number) {
+  const now = new Date(nowMs)
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  if (now.getMonth() === 11) {
+    const open = Math.min(24, now.getDate())
+    const toChristmas = Math.round((Date.UTC(now.getFullYear(), 11, 25) - today) / 86_400_000)
+    return { open, toDecember: 0, toChristmas }
+  }
+  const toDecember = Math.round((Date.UTC(now.getFullYear(), 11, 1) - today) / 86_400_000)
+  return { open: 0, toDecember, toChristmas: toDecember + 24 }
+}
+
+function paintAdvent(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: string) {
+  const { w, h } = BOARD.advent
+  panel(ctx, fx, w, h, color, color2)
+  const a = adventNow(nowMs)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = gold(ctx, 60, 150, color2)
+  fitFont(ctx, 'ADVENT CALENDAR', CAPS, '700', 64, w - 200)
+  ctx.fillText('ADVENT CALENDAR', w / 2, 112)
+  const cols = 6
+  const gx = 110
+  const gy = 180
+  const cw = (w - gx * 2) / cols
+  const rh = 160
+  const icons: Array<'star' | 'tree' | 'burst' | 'heart'> = ['star', 'tree', 'burst', 'heart']
+  ADVENT_ORDER.forEach((n, i) => {
+    const x = gx + (i % cols) * cw + 8
+    const y = gy + Math.floor(i / cols) * rh + 8
+    const dw = cw - 16
+    const dh = rh - 16
+    const open = n <= a.open
+    const today = n === a.open && a.toChristmas > 0
+    if (open) {
+      // Inside the door: a little picture, lit up.
+      ctx.fillStyle = shade(color, -0.5)
+      ctx.fillRect(x, y, dw, dh)
+      const g = ctx.createRadialGradient(x + dw / 2, y + dh / 2, 4, x + dw / 2, y + dh / 2, dw * 0.6)
+      g.addColorStop(0, rgba(today ? '#fde68a' : '#93c5fd', today ? 0.55 : 0.25))
+      g.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = g
+      ctx.fillRect(x, y, dw, dh)
+      const icon = icons[n % icons.length]
+      if (n % 5 === 0) snowflake(ctx, x + dw / 2, y + dh / 2, 40, '#e0f2fe')
+      else holidayIcon(ctx, icon, x + dw / 2, y + dh / 2, 40, icon === 'tree' ? '#22c55e' : icon === 'heart' ? '#f43f5e' : color2)
+      // The door swung open on its hinge.
+      ctx.fillStyle = shade(n % 2 ? '#b91c1c' : '#166534', -0.2)
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x - dw * 0.18, y + 10)
+      ctx.lineTo(x - dw * 0.18, y + dh - 10)
+      ctx.lineTo(x, y + dh)
+      ctx.closePath()
+      ctx.fill()
+    } else {
+      const g = ctx.createLinearGradient(0, y, 0, y + dh)
+      const base = n % 2 ? '#b91c1c' : '#166534'
+      g.addColorStop(0, shade(base, 0.15))
+      g.addColorStop(1, shade(base, -0.25))
+      ctx.fillStyle = g
+      ctx.fillRect(x, y, dw, dh)
+      ctx.fillStyle = gold(ctx, y + 20, y + dh - 20, color2)
+      fitFont(ctx, String(n), DISPLAY, '900', 84, dw - 30)
+      ctx.fillText(String(n), x + dw / 2, y + dh / 2 + 4)
+      fx.font = ctx.font
+      fx.textAlign = 'center'
+      fx.textBaseline = 'middle'
+      fx.fillStyle = '#ff0000'
+      fx.fillText(String(n), x + dw / 2, y + dh / 2 + 4)
+    }
+    ctx.lineWidth = today ? 8 : 3
+    ctx.strokeStyle = today ? '#fde68a' : rgba(color2, 0.7)
+    ctx.strokeRect(x, y, dw, dh)
+    if (today) {
+      fx.strokeStyle = '#ff0000'
+      fx.lineWidth = 8
+      fx.strokeRect(x, y, dw, dh)
+    }
+  })
+  const line = a.toChristmas <= 0 ? 'Merry Christmas!'
+    : a.toChristmas === 1 ? 'Christmas Eve! One more sleep'
+      : a.open ? `${a.toChristmas} days until Christmas`
+        : a.toDecember === 1 ? 'The first door opens tomorrow' : `The first door opens in ${a.toDecember} days`
+  ctx.fillStyle = '#ffffff'
+  fitFont(ctx, line, SCRIPT, '400', 84, w - 200)
+  ctx.fillText(line, w / 2, 905)
+}
+
+// -- Lunar New Year --------------------------------------------------------------------------------
+
+/** Lunar New Year's day in each year (month from 0, day). */
+const LUNAR_NEW_YEAR: Record<number, [number, number]> = {
+  2025: [0, 29], 2026: [1, 17], 2027: [1, 6], 2028: [0, 26], 2029: [1, 13], 2030: [1, 3], 2031: [0, 23], 2032: [1, 11],
+  2033: [0, 31], 2034: [1, 19], 2035: [1, 8], 2036: [0, 28], 2037: [1, 15], 2038: [1, 4], 2039: [0, 24], 2040: [1, 12],
+}
+const ZODIAC = ['Rat', 'Ox', 'Tiger', 'Rabbit', 'Dragon', 'Snake', 'Horse', 'Goat', 'Monkey', 'Rooster', 'Dog', 'Pig']
+
+/** Days until the next Lunar New Year and its animal; during the 15 days of the festival, which day it is. */
+export function lunarNow(nowMs: number) {
+  const now = new Date(nowMs)
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  for (const year of [now.getFullYear(), now.getFullYear() + 1]) {
+    const [m, d] = LUNAR_NEW_YEAR[year] ?? [1, 1]
+    const days = Math.round((Date.UTC(year, m, d) - today) / 86_400_000)
+    const animal = ZODIAC[(((year - 4) % 12) + 12) % 12]
+    if (days <= 0 && days > -15) return { days: 0, festivalDay: 1 - days, animal, year }
+    if (days > 0) return { days, festivalDay: 0, animal, year }
+  }
+  return { days: 0, festivalDay: 0, animal: ZODIAC[0], year: now.getFullYear() }
+}
+
+/** A red paper lantern with gold caps and a tassel. */
+function redLantern(ctx: Ctx, fx: Ctx, x: number, y: number, r: number) {
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r * 1.2)
+  g.addColorStop(0, '#fca5a5')
+  g.addColorStop(0.45, '#dc2626')
+  g.addColorStop(1, '#7f1d1d')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.ellipse(x, y, r, r * 0.85, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(250,204,21,0.55)'
+  ctx.lineWidth = 3
+  for (const k of [-0.6, -0.25, 0.25, 0.6]) {
+    ctx.beginPath()
+    ctx.ellipse(x, y, Math.abs(k) * r, r * 0.85, 0, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  ctx.fillStyle = '#facc15'
+  ctx.fillRect(x - r * 0.4, y - r * 0.95, r * 0.8, r * 0.18)
+  ctx.fillRect(x - r * 0.4, y + r * 0.78, r * 0.8, r * 0.18)
+  fx.fillStyle = '#ff0000'
+  fx.fillRect(x - r * 0.4, y - r * 0.95, r * 0.8, r * 0.18)
+  fx.fillRect(x - r * 0.4, y + r * 0.78, r * 0.8, r * 0.18)
+  ctx.strokeStyle = '#facc15'
+  ctx.lineWidth = 4
+  ctx.beginPath()
+  for (let k = -3; k <= 3; k++) {
+    ctx.moveTo(x + k * 3, y + r * 0.96)
+    ctx.lineTo(x + k * 4, y + r * 1.5)
+  }
+  ctx.moveTo(x, y - r * 0.95)
+  ctx.lineTo(x, y - r * 1.4)
+  ctx.stroke()
+}
+
+function paintLunar(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: string) {
+  const { w, h } = BOARD['lunar-new-year']
+  panel(ctx, fx, w, h, color, color2)
+  const l = lunarNow(nowMs)
+  redLantern(ctx, fx, 190, 380, 95)
+  redLantern(ctx, fx, w - 190, 380, 95)
+  const cx = w / 2
+  const room = w - 560
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  fx.textAlign = 'center'
+  fx.textBaseline = 'middle'
+  fx.fillStyle = '#ff0000'
+  ctx.fillStyle = '#fde68a'
+  fitFont(ctx, 'LUNAR NEW YEAR', CAPS, '700', 56, room)
+  ctx.fillText('LUNAR NEW YEAR', cx, 150)
+  if (l.festivalDay) {
+    ctx.fillStyle = '#ffffff'
+    fitFont(ctx, 'Happy New Year!', SCRIPT, '400', 150, room)
+    ctx.fillText('Happy New Year!', cx, 360)
+    ctx.fillStyle = gold(ctx, 480, 620, color2)
+    const animal = `YEAR OF THE ${l.animal.toUpperCase()}`
+    fitFont(ctx, animal, DISPLAY, '900', 92, room)
+    ctx.fillText(animal, cx, 560)
+    fx.font = ctx.font
+    fx.fillText(animal, cx, 560)
+    ctx.fillStyle = '#fecaca'
+    const day = `DAY ${l.festivalDay} OF THE SPRING FESTIVAL`
+    fitFont(ctx, day, CAPS, '700', 40, w - 200)
+    ctx.fillText(day, cx, 730)
+    return
+  }
+  const n = String(l.days)
+  ctx.fillStyle = gold(ctx, 220, 500, color2)
+  fitFont(ctx, n, DISPLAY, '900', 300, room)
+  ctx.fillText(n, cx, 360)
+  fx.font = ctx.font
+  fx.fillText(n, cx, 360)
+  ctx.fillStyle = '#dbeafe'
+  const top = l.days === 1 ? 'DAY TO GO' : 'DAYS TO GO'
+  fitFont(ctx, top, CAPS, '700', 46, room)
+  ctx.fillText(top, cx, 540)
+  ctx.fillStyle = '#ffffff'
+  const animal = `to the Year of the ${l.animal}`
+  fitFont(ctx, animal, SCRIPT, '400', 110, w - 200)
+  ctx.fillText(animal, cx, 680)
+}
+
+// -- Tonight's show ---------------------------------------------------------------------------------
+
+interface ShowtimesView {
+  head: string
+  big: string
+  line: string
+}
+
+function timeIn(iso: string | null | undefined, zone: string | undefined, withDay = false) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const opts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', ...(withDay ? { weekday: 'long' } : {}) }
+  try {
+    return d.toLocaleString(undefined, { ...opts, timeZone: zone || undefined })
+  } catch {
+    return d.toLocaleString(undefined, opts)
+  }
+}
+
+/** What the "Tonight's show" board says now, from the server's plan for tonight. */
+export function showtimesView(nowMs: number): ShowtimesView {
+  const { data: t, error } = tonightNow()
+  if (!t) return { head: 'TONIGHT’S SHOW', big: '', line: error ? 'Show times will be back soon' : 'Checking the show times…' }
+  const zone = t.timezone
+  const slots = (t.tonight_slots ?? []).filter((s) => new Date(s.ends_at).getTime() > nowMs)
+  const now = slots.find((s) => new Date(s.starts_at).getTime() <= nowMs)
+  if (t.state === 'running' || now) {
+    const until = now?.ends_at ?? t.ends_at
+    return { head: 'SHOWING NOW', big: now?.title || t.title || 'Enjoy the show!', line: until ? `Until ${timeIn(until, zone)}` : '' }
+  }
+  const next = slots[0]
+  if (next) {
+    return {
+      head: 'TONIGHT’S SHOW',
+      big: `${timeIn(next.starts_at, zone)} – ${timeIn(next.ends_at, zone)}`,
+      line: next.title || 'See you tonight!',
+    }
+  }
+  if (t.next_starts_at) {
+    return {
+      head: t.cancelled_by ? 'NO SHOW TONIGHT' : 'NEXT SHOW',
+      big: timeIn(t.next_starts_at, zone, true),
+      line: t.next_title || 'See you then!',
+    }
+  }
+  return { head: 'TONIGHT’S SHOW', big: 'Thanks for visiting!', line: 'Check back soon for the next show' }
+}
+
+function paintShowtimes(ctx: Ctx, fx: Ctx, v: ShowtimesView, color: string, color2: string) {
+  const { w, h } = BOARD.showtimes
+  panel(ctx, fx, w, h, color, color2)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  fx.textAlign = 'center'
+  fx.textBaseline = 'middle'
+  fx.fillStyle = '#ff0000'
+  // A star either side of the heading, like a marquee.
+  holidayIcon(ctx, 'star', 170, 150, 50, color2)
+  holidayIcon(ctx, 'star', w - 170, 150, 50, color2)
+  ctx.fillStyle = '#dbeafe'
+  fitFont(ctx, v.head, CAPS, '700', 66, w - 460)
+  ctx.fillText(v.head, w / 2, 150)
+  if (v.big) {
+    ctx.fillStyle = gold(ctx, 250, 440, color2)
+    fitFont(ctx, v.big, DISPLAY, '900', 170, w - 200)
+    ctx.fillText(v.big, w / 2, 345)
+    fx.font = ctx.font
+    fx.fillText(v.big, w / 2, 345)
+  }
+  ctx.fillStyle = '#ffffff'
+  fitFont(ctx, v.line, SCRIPT, '400', 96, w - 200)
+  ctx.fillText(v.line, w / 2, v.big ? 540 : 400)
+}
+
 // -- placing --------------------------------------------------------------------------------------
 
 const TARGET_KINDS: Record<string, SurfaceKind[]> = {
@@ -1242,6 +1665,12 @@ void main() {
     }
   }
 
+  // Candle flames flicker.
+  if (uKind != 3 && fx.b > 0.5) {
+    float fl = 0.8 + 0.2 * sin(uTime * 13.0 + uv.x * 40.0) * sin(uTime * 7.3 + uv.y * 23.0);
+    col *= fl;
+  }
+
   // The clock's colon blinks once a second.
   if (uKind == 4 && fx.g > 0.5) {
     float on = 0.35 + 0.65 * step(0.5, fract(uTime));
@@ -1409,6 +1838,17 @@ export class InfoDrawer {
       // Once a day, or once a second on New Year's Eve while it counts the hours.
       const ny = newYearNow(d.clockMs)
       words = [ny.phase, ny.days, ny.left].join('|')
+    } else if (style === 'menorah') {
+      const m = menorahNow(d.clockMs)
+      words = [m.night, m.days].join('|')
+    } else if (style === 'advent') {
+      const a = adventNow(d.clockMs)
+      words = [a.open, a.toDecember, a.toChristmas].join('|')
+    } else if (style === 'lunar-new-year') {
+      const l = lunarNow(d.clockMs)
+      words = [l.days, l.festivalDay, l.animal].join('|')
+    } else if (style === 'showtimes') {
+      words = JSON.stringify(showtimesView(d.clockMs))
     }
     const artKey = [style, layer.color, layer.color2, words, scale, fonts].join('|')
     if (b.key !== artKey) {
@@ -1431,6 +1871,10 @@ export class InfoDrawer {
       else if (style === 'moon') paintMoon(ctx, fx, d.clockMs, layer.color, layer.color2)
       else if (style === 'holiday') paintHoliday(ctx, fx, d.clockMs, layer.color, layer.color2)
       else if (style === 'new-year') paintNewYear(ctx, fx, d.clockMs, layer.color, layer.color2)
+      else if (style === 'menorah') paintMenorah(ctx, fx, d.clockMs, layer.color, layer.color2)
+      else if (style === 'advent') paintAdvent(ctx, fx, d.clockMs, layer.color, layer.color2)
+      else if (style === 'lunar-new-year') paintLunar(ctx, fx, d.clockMs, layer.color, layer.color2)
+      else if (style === 'showtimes') paintShowtimes(ctx, fx, showtimesView(d.clockMs), layer.color, layer.color2)
       else paintMessageBoard(ctx, fx, layer.color2)
       this.upload(b.artTex, b.art, true)
       this.upload(b.fxTex, b.fx, false)

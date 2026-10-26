@@ -37,6 +37,10 @@ export function InfoFields({ layer, canEdit, onChange }: {
     moon: 'Shows tonight’s moon as it really is, how much of it is lit and when it is next full. Worked out from the date, so it needs no internet.',
     holiday: 'Counts the days to the next holiday (New Year’s, Valentine’s, St Patrick’s, Easter, Mother’s and Father’s Day, the Fourth, Halloween, Thanksgiving, Christmas) and says the greeting on the day. It moves on to the next one by itself.',
     'new-year': 'Counts the days to New Year, then on New Year’s Eve the hours, minutes and seconds to midnight, and says Happy New Year on the first.',
+    menorah: 'Lights the right number of candles for tonight’s night of Hanukkah, worked out from the Hebrew calendar, with the flames flickering. The rest of the year it counts the days to the first night.',
+    advent: 'Opens one door for each day of December up to Christmas Eve, with today’s door lit up. Before December it counts down to the first door.',
+    'lunar-new-year': 'Counts the days to Lunar New Year and names the year’s animal, then says Happy New Year through the 15 days of the festival.',
+    showtimes: 'Tells people walking by when tonight’s show starts and ends, that it is showing now, or when the next show is. It reads the show times you set on the Dashboard and the Calendar.',
   }
   if (about[style]) return <p className="text-xs text-slate-500">{about[style]}</p>
   if (style === 'weather') {

@@ -724,6 +724,38 @@ fireworks, Leprechaun's gold, Easter bunny hop, Cupid's arrows and Birthday
 balloons. "Describe a scene" knows every new style; a test checks its list
 matches the Editor's.
 
+Second batch, each with a job of its own:
+
+- Falling (`fall` motion): big snowflakes (four crystal shapes), maple and
+  oak leaves, cherry blossom petals, confetti, hearts and shamrocks. They
+  come down the whole picture (or from a drawn line), swaying and turning
+  over, and drift aside round people. Different from the older Falling
+  layer type: these are drawn pictures, not dots.
+- Hanging (`dangle`): spiders on threads from the roofline that slowly
+  climb and drop, and drop down to whoever walks under them (near "follow").
+- Rising: sky lanterns (flickering), glowing jellyfish (pulsing), bubbles
+  (they pop, near "hide") and hot air balloons (slow).
+- Wandering (`wander`): fireflies drifting and blinking over the lower part
+  of the house; near people they gather and all light up.
+- Flying: a dragon that turns to people and breathes fire at them, owls
+  ("Hoo hoo!"), angels with trumpets ("Peace on earth"), sharks that circle
+  towards people, sea turtles, and bumblebees (a flock that follows people).
+- Walking: mummies, gingerbread men that run off ("Catch me if you can!"),
+  toy soldiers that stop and salute, dinosaurs that roar, and a duck leading
+  her ducklings in a line (`line` in movers.ts).
+- Live boards: a Hanukkah menorah with tonight's candles lit (the dates are
+  worked out from the Hebrew calendar in info.ts, so it needs no table or
+  internet; the flames flicker in the shader, marked blue in the fx
+  picture), an Advent calendar (a door a day in December, today's lit), Lunar
+  New Year (days to go and the year's animal, then the festival; dates from a
+  table to 2040), and Tonight's show times, which reads `GET /tonight`
+  (`showtimes.ts`, once a minute) and says when tonight's show starts and
+  ends, that it is on now, or when the next one is.
+
+Ready-made scenes added: Nutcracker march, Hanukkah lights, Christmas angels,
+Spider drop, Autumn breeze, Summer night, Spring garden, Under the sea,
+Dragon's lair, Lunar New Year and Party time.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,
