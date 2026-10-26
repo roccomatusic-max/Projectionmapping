@@ -891,6 +891,12 @@ LayerType = Literal[
     "picture",
     # days until Christmas as holiday graphics
     "countdown",
+    # things that fly or walk along a path (a sleigh, a train, birds, elves...)
+    "movers",
+    # live info boards: the Santa tracker, the weather, days until, a message
+    "info",
+    # snow settling on window sills and the roof
+    "snowcap",
 ]
 #: What makes a layer stronger: someone there, how fast people move, how many
 #: there are, how close they come, or nothing (always at full strength).
@@ -988,6 +994,27 @@ class SceneLayer(BaseModel):
     media_id: int | None = None
     #: A countdown's colour for each part; None keeps its look's colours.
     colors: CountdownColors | None = None
+    #: Words an info board shows: the message board's message, what a "days
+    #: until" counts to, or the town or ZIP code the weather is for.
+    text: str | None = Field(default=None, max_length=200)
+    #: The date a "days until" counts to (comes round every year).
+    date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class WeatherNow(BaseModel):
+    """The weather right now, for a scene's "Weather" board."""
+    place: str
+    temperature_f: float
+    feels_like_f: float | None = None
+    high_f: float | None = None
+    low_f: float | None = None
+    #: The WMO weather code (0 clear ... 95 thunderstorm).
+    code: int = 0
+    is_day: bool = True
+    wind_mph: float | None = None
+    humidity: float | None = None
+    #: Unix seconds.
+    updated_at: float
 
 
 class SceneBase(BaseModel):

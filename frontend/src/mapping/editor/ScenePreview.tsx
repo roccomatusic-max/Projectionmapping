@@ -64,6 +64,8 @@ export interface Placing {
   box?: { w: number; h: number }
   max?: number
   selected: number | null
+  /** The pins are the points of a path, in order: a line joins them and they do not turn. */
+  path?: boolean
 }
 
 /** How far the turn handle sits above the top edge, in overlay units. */
@@ -404,6 +406,42 @@ export function ScenePreview({
           ctx.fill()
         })
       }
+      if (place?.path && place.pins.length > 0) {
+        // The path: a line through the points in order, with arrows the way it goes.
+        ctx.strokeStyle = 'rgba(56,189,248,0.85)'
+        ctx.lineWidth = 2 * unit
+        ctx.setLineDash([6 * unit, 4 * unit])
+        ctx.beginPath()
+        place.pins.forEach((pin, i) => (i === 0 ? ctx.moveTo(pin.x * w, pin.y * h) : ctx.lineTo(pin.x * w, pin.y * h)))
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.fillStyle = '#38bdf8'
+        for (let i = 1; i < place.pins.length; i++) {
+          const a = place.pins[i - 1]
+          const b = place.pins[i]
+          const mx = ((a.x + b.x) / 2) * w
+          const my = ((a.y + b.y) / 2) * h
+          const ang = Math.atan2((b.y - a.y) * h, (b.x - a.x) * w)
+          const s = 6 * unit
+          ctx.beginPath()
+          ctx.moveTo(mx + Math.cos(ang) * s, my + Math.sin(ang) * s)
+          ctx.lineTo(mx + Math.cos(ang + 2.5) * s, my + Math.sin(ang + 2.5) * s)
+          ctx.lineTo(mx + Math.cos(ang - 2.5) * s, my + Math.sin(ang - 2.5) * s)
+          ctx.closePath()
+          ctx.fill()
+        }
+        ctx.font = `${Math.round(9 * unit)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        place.pins.forEach((pin, i) => {
+          ctx.fillStyle = '#0f172a'
+          ctx.beginPath()
+          ctx.arc(pin.x * w, pin.y * h, 7 * unit, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.fillStyle = '#e0f2fe'
+          ctx.fillText(String(i + 1), pin.x * w, pin.y * h + 0.5)
+        })
+      }
       if (place) {
         // A dashed outline around each placed thing; the picked one is solid
         // and has a square handle to size it and a round one to turn it.
@@ -420,10 +458,12 @@ export function ScenePreview({
           ctx.stroke()
           ctx.setLineDash([])
           if (!picked) return
-          ctx.beginPath()
-          ctx.moveTo(g.top[0], g.top[1])
-          ctx.lineTo(g.turn[0], g.turn[1])
-          ctx.stroke()
+          if (!place.path) {
+            ctx.beginPath()
+            ctx.moveTo(g.top[0], g.top[1])
+            ctx.lineTo(g.turn[0], g.turn[1])
+            ctx.stroke()
+          }
           ctx.fillStyle = '#0f172a'
           ctx.lineWidth = 1.5 * unit
           const s = 4.5 * unit
@@ -431,6 +471,7 @@ export function ScenePreview({
           ctx.rect(g.size[0] - s, g.size[1] - s, s * 2, s * 2)
           ctx.fill()
           ctx.stroke()
+          if (place.path) return
           ctx.beginPath()
           ctx.arc(g.turn[0], g.turn[1], s, 0, Math.PI * 2)
           ctx.fill()
@@ -512,7 +553,7 @@ export function ScenePreview({
     const x = p[0] * rect.width
     const y = p[1] * rect.height
     const near = (q: [number, number]) => Math.hypot(x - q[0], y - q[1]) < Math.max(12, 8 * unit)
-    if (near(g.turn)) return { kind: 'pin-turn', below: g.below }
+    if (!placing.path && near(g.turn)) return { kind: 'pin-turn', below: g.below }
     if (near(g.size)) return { kind: 'pin-size' }
     return null
   }

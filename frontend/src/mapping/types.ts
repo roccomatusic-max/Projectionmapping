@@ -305,6 +305,7 @@ export type LayerType =
   | 'wash' | 'field' | 'texture' | 'outline' | 'lights' | 'falling' | 'shapes'
   | 'picture'
   | 'countdown'
+  | 'movers' | 'info' | 'snowcap'
 
 export type ReactsTo = 'presence' | 'movement' | 'count' | 'closeness' | 'always'
 export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside' | 'ground'
@@ -362,6 +363,13 @@ export interface SceneLayer {
   media_id?: number | null
   /** A countdown's own colour for each part; missing keeps its look's colours. */
   colors?: CountdownColors | null
+  /**
+   * Words a live info element shows: the message board's message, the
+   * weather's town, or what a "days until" counts to.
+   */
+  text?: string | null
+  /** The day a "days until" counts to, YYYY-MM-DD; it repeats every year. */
+  date?: string | null
 }
 
 /**
@@ -442,4 +450,21 @@ export interface MapParts {
   outputs: boolean
   surfaces: boolean
   players: boolean
+}
+
+/** The weather now, for the weather element (from Open-Meteo, through the server). */
+export interface WeatherNow {
+  /** The town it is for, as found. */
+  place: string
+  temperature_f: number
+  feels_like_f: number | null
+  high_f: number | null
+  low_f: number | null
+  /** WMO weather code (0 clear … 95 thunder). */
+  code: number
+  is_day: boolean
+  wind_mph: number | null
+  humidity: number | null
+  /** When the server fetched it, ISO time. */
+  updated_at: string
 }

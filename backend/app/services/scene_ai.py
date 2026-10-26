@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 
 from app.schemas.mapping import MAX_LAYERS, SceneLayer
 from app.services.api_keys import KeyStore
@@ -91,7 +92,8 @@ CATALOG: dict[str, dict] = {
                    "butterflies", "bunnies", "balloons", "lanterns", "diyas",
                    "star-of-david", "fireworks", "fish", "bubbles", "leaves", "moons",
                    "notes", "snowmen", "coins", "footprints", "welcome-mat",
-                   "runway-arrows", "crawling-spiders"],
+                   "runway-arrows", "crawling-spiders", "gingerbread", "stockings", "wreaths",
+                   "santa-hats", "reindeer", "poinsettias", "holly", "mittens", "turkeys"],
         "dials": "size: object size (bigger means fewer fit); amount: how many; speed: "
                  "how fast they move and change",
         "notes": "pumpkins are carved jack-o'-lanterns; eyes always watch the nearest "
@@ -148,6 +150,45 @@ CATALOG: dict[str, dict] = {
         "notes": "color is the ribbon, color2 the glow; use blend normal and reacts_to "
                  "always so it stays readable; only add it when the person asks for a "
                  "countdown",
+    },
+    "movers": {
+        "about": "things that travel across the building on a path of their own: "
+                 "sleigh is Santa's sleigh and reindeer flying over the roofline; train "
+                 "is a toy train of presents along the bottom; birds and bats are "
+                 "flocks that scatter from people; elves and penguins walk along the "
+                 "bottom; shooting-stars streak across the sky; ghosts float around",
+        "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
+                   "shooting-stars", "ghosts"],
+        "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
+                 "fade: sparkle trail and steam",
+        "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
+                  "appear"],
+        "notes": "color is the main colour (the sleigh, the engine), color2 the trim; "
+                 "use blend normal and reacts_to always",
+    },
+    "snowcap": {
+        "about": "snow settling on the level edges of the target surfaces (window "
+                 "sills, frames, the roof) over the first minute and staying; it melts "
+                 "where people stand",
+        "styles": ["soft"],
+        "dials": "size and amount: how deep it piles; speed: how fast it settles",
+        "nears": ["none", "hide", "light", "colour"],
+        "notes": "target windows or roof; color is the snow (#ffffff), color2 its "
+                 "shadow (#9fb4d8); use blend normal and reacts_to always",
+    },
+    "info": {
+        "about": "a live info board: santa is a Santa tracker (a world map with "
+                 "Santa's sleigh, his next stop and presents delivered on Christmas "
+                 "Eve, a countdown to takeoff before); weather is the current weather; "
+                 "days counts the days until a date; message is a scrolling light-up "
+                 "message board",
+        "styles": ["santa", "weather", "days", "message"],
+        "dials": "size: how big; speed: how fast light sweeps (message: scroll speed); "
+                 "amount: sparkle",
+        "nears": ["none", "light", "grow", "jump"],
+        "notes": "text is the message (message), what is counted to (days) or the "
+                 "town (weather); date is YYYY-MM-DD for days; use blend normal and "
+                 "reacts_to always; only add one when the person asks for it",
     },
     # -- backdrops: only when the person asks for a material or background ---------
     "texture": {
@@ -246,6 +287,9 @@ _LAYER_SCHEMA = {
         "change": {"type": "string", "enum": CHANGES},
         "near": {"type": "string", "enum": NEARS},
         "reach": {"type": "number"},
+        # Only info boards read these.
+        "text": {"type": "string"},
+        "date": {"type": "string"},
     },
     "required": ["type", "name", "style", "opacity", "blend", "color", "color2", "size",
                  "speed", "amount", "fade", "target", "reacts_to", "reaction", "motion",
@@ -403,6 +447,18 @@ def _choice(entry: dict, field: str, value) -> str | None:
     return value if value in allowed else "none"
 
 
+def _text(value) -> str | None:
+    """An info board's words, on one line."""
+    text = " ".join(str(value or "").split())[:200]
+    return text or None
+
+
+def _date(value) -> str | None:
+    """A YYYY-MM-DD date, or None."""
+    text = str(value or "").strip()
+    return text if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else None
+
+
 def to_layers(raw: list) -> list[SceneLayer]:
     """Claude's layers, made valid: unknown styles get the default, dials clamped."""
     layers: list[SceneLayer] = []
@@ -435,6 +491,8 @@ def to_layers(raw: list) -> list[SceneLayer]:
             change=_choice(CATALOG[kind], "changes", item.get("change")),
             near=_choice(CATALOG[kind], "nears", item.get("near")),
             reach=_clamp(item.get("reach"), default=0.5),
+            text=_text(item.get("text")) if kind == "info" else None,
+            date=_date(item.get("date")) if kind == "info" else None,
         ))
     return layers
 

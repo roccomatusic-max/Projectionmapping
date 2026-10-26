@@ -29,6 +29,7 @@ import type { Show, ShowSummary, TransportAction, TransportState } from '@/mappi
 import { addHomeScreenTags, onHomeScreen, phoneKind } from './homeScreen'
 import TonightTab from './TonightTab'
 import CalendarTab from './CalendarTab'
+import MessageBoards from './MessageBoards'
 import WalkTheYard, { WalkCard } from './WalkTheYard'
 
 /**
@@ -510,6 +511,7 @@ function ShowTab({ session, onSignOut, showId, onShowId: setShowId, live }: {
               {show.cues.length === 0 && <li className="px-4 py-4 text-[15px] text-slate-500">Add cues on the Mapping tab.</li>}
             </ol>
           </section>
+          <MessageBoards canEdit={session.role === 'admin'} />
         </>
       )}
     </div>
