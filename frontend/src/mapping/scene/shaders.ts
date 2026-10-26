@@ -1482,6 +1482,194 @@ void main() {
     if (length(vec2(abs(q.x) - 0.08, q.y + 0.17)) < 0.04) c = vec3(0.05);
     if (beak < 0.0) c = vec3(1.0, 0.7, 0.1);
     if (length(q - vec2(0.06, 0.08)) < 0.06) c = vec3(0.9, 0.1, 0.1);
+  } else if (uStyle == S_CANDY_CORN) {
+    float body = sdTri(q, vec2(-0.62, -0.72), vec2(0.62, -0.72), vec2(0.0, 0.92)) - 0.12;
+    sd = body;
+    c = q.y < -0.25 ? vec3(1.0, 0.97, 0.88) : q.y < 0.3 ? uColor : uColor2;
+    c *= 0.85 + 0.25 * (0.4 - q.x * 0.5);
+    c += 0.3 * exp(-dot2(q - vec2(-0.2, -0.4)) * 25.0);
+  } else if (uStyle == S_SKULLS) {
+    float cranium = length(q - vec2(0.0, -0.18)) - 0.68;
+    float jaw = sdBox(q - vec2(0.0, 0.5), vec2(0.36, 0.2)) - 0.08;
+    sd = min(cranium, jaw);
+    c = uColor * (0.8 + 0.25 * (0.5 - q.y * 0.5));
+    vec2 pe = vec2(abs(q.x) - 0.27, q.y + 0.1);
+    float eye = sdEl(pe, vec2(0.17, 0.2));
+    float nose = sdTri(q, vec2(-0.08, 0.32), vec2(0.08, 0.32), vec2(0.0, 0.14));
+    float teeth = step(0.5, fract(q.x * 6.0 + 0.5)) * step(abs(q.y - 0.52), 0.12) * step(abs(q.x), 0.3);
+    if (eye < 0.0) {
+      c = uColor2 * (1.2 + 0.8 * exp(-dot2(pe) * 60.0));
+      ec = uColor2;
+    }
+    if (nose < 0.0) c = vec3(0.05);
+    if (teeth > 0.5 && jaw < 0.0) c *= 0.55;
+    ea = 0.45 * exp(-max(eye, 0.0) * 10.0) * step(0.0, -cranium + 0.3);
+  } else if (uStyle == S_TOMBSTONES) {
+    float stone = min(sdBox(q - vec2(0.0, 0.2), vec2(0.6, 0.6)), length(q - vec2(0.0, -0.4)) - 0.6);
+    float mound = sdEl(q - vec2(0.0, 0.86), vec2(0.95, 0.16));
+    sd = min(stone, mound);
+    c = uColor * (0.7 + 0.35 * (0.5 - q.y * 0.5)) * (0.9 + 0.15 * hash(floor(q * 16.0) + vSeed));
+    // R.I.P. carved in, and grass on the mound.
+    vec2 r = q - vec2(0.0, -0.2);
+    float letters = min(min(sdSegment(r, vec2(-0.38, -0.12), vec2(-0.38, 0.14)), sdSegment(r, vec2(-0.38, -0.12), vec2(-0.24, -0.06))),
+      min(min(sdSegment(r, vec2(-0.24, -0.06), vec2(-0.38, 0.0)), sdSegment(r, vec2(-0.38, 0.0), vec2(-0.24, 0.14))),
+      min(sdSegment(r, vec2(0.0, -0.12), vec2(0.0, 0.14)), min(sdSegment(r, vec2(0.22, -0.12), vec2(0.22, 0.14)),
+      min(sdSegment(r, vec2(0.22, -0.12), vec2(0.36, -0.06)), sdSegment(r, vec2(0.36, -0.06), vec2(0.22, 0.02)))))));
+    if (letters < 0.035 && stone < 0.0) c *= 0.35;
+    float cross = min(sdBox(q - vec2(0.0, 0.32), vec2(0.04, 0.16)), sdBox(q - vec2(0.0, 0.26), vec2(0.12, 0.035)));
+    if (cross < 0.0) c *= 0.45;
+    if (mound < 0.0 && mound < stone) c = uColor2 * (0.6 + 0.5 * hash(floor(q * 30.0)));
+  } else if (uStyle == S_CAULDRONS) {
+    float pot = max(length(q - vec2(0.0, 0.18)) - 0.7, -0.22 - q.y);
+    float rim = sdBox(q - vec2(0.0, -0.24), vec2(0.72, 0.08)) - 0.05;
+    vec2 pl = vec2(abs(q.x), q.y);
+    float legs = sdSegment(pl, vec2(0.42, 0.72), vec2(0.52, 0.94)) - 0.07;
+    // Bubbles rising from the brew.
+    float bubbles = 1e9;
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i);
+      float t = fract(vPhase * 0.25 + fi * 0.33);
+      vec2 bc = vec2((fi - 1.0) * 0.32 + 0.06 * sin(vPhase + fi), -0.32 - t * 0.6);
+      bubbles = min(bubbles, length(q - bc) - 0.11 * (1.0 - t * 0.6));
+    }
+    float brew = sdEl(q - vec2(0.0, -0.3), vec2(0.62, 0.1));
+    sd = min(min(min(pot, rim), legs), min(bubbles, brew));
+    c = vec3(0.13, 0.12, 0.15) * (1.0 + 0.6 * exp(-dot2(q - vec2(-0.3, 0.0)) * 6.0));
+    if (rim < 0.0) c = vec3(0.25, 0.24, 0.28);
+    if (brew < 0.0 || bubbles < 0.0) c = uColor * (1.1 + 0.4 * sin(vPhase * 2.0 + q.x * 6.0));
+    ec = uColor;
+    ea = 0.7 * exp(-max(min(brew, bubbles), 0.0) * 7.0) * step(q.y, -0.2);
+    // The fire glows under it.
+    float fire = sdEl(q - vec2(0.0, 0.9), vec2(0.45, 0.12 + 0.05 * sin(vPhase * 7.0)));
+    if (fire < sd) {
+      sd = fire;
+      c = uColor2 * 1.4;
+    }
+  } else if (uStyle == S_WITCH_HATS) {
+    vec2 p = q;
+    p.x += 0.18 * smoothstep(-0.2, -0.95, q.y) * (q.y + 0.2);
+    float cone = sdTri(p, vec2(-0.42, 0.42), vec2(0.42, 0.42), vec2(0.18, -0.95)) - 0.04;
+    float brim = sdEl(q - vec2(0.0, 0.5), vec2(0.95, 0.16));
+    sd = min(cone, brim);
+    c = uColor * (0.8 + 0.4 * (0.5 - q.x * 0.5));
+    if (abs(q.y - 0.3) < 0.08 && cone < 0.0) c = uColor2;
+    if (sdBox(q - vec2(0.0, 0.3), vec2(0.1, 0.1)) < 0.0 && abs(q.x) > 0.05) c = vec3(1.0, 0.85, 0.3);
+  } else if (uStyle == S_ACORNS) {
+    float nut = sdEl(q - vec2(0.0, 0.2), vec2(0.5, 0.62));
+    float cap = max(sdEl(q - vec2(0.0, -0.22), vec2(0.66, 0.36)), q.y + 0.02 - 0.0);
+    float stem = sdSegment(q, vec2(0.0, -0.56), vec2(0.12, -0.84)) - 0.07;
+    sd = min(min(nut, cap), stem);
+    c = uColor * (0.75 + 0.35 * (0.5 - q.x * 0.6)) + 0.3 * exp(-dot2(q - vec2(-0.2, 0.15)) * 20.0);
+    if (min(cap, stem) < nut || q.y < -0.04) c = uColor2 * (0.7 + 0.4 * hash(floor(q * 18.0) + vSeed));
+  } else if (uStyle == S_PIES) {
+    float dish = sdEl(q - vec2(0.0, 0.25), vec2(0.92, 0.42));
+    float top = sdEl(q - vec2(0.0, 0.1), vec2(0.86, 0.36));
+    float steam = 1e9;
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i) - 1.0;
+      float yy = -0.35 - 0.5 * fract(vPhase * 0.2 + fi * 0.3);
+      steam = min(steam, abs(q.x - fi * 0.3 - 0.07 * sin(q.y * 9.0 + vPhase * 2.0)) - 0.04 + step(q.y, yy - 0.25) + step(yy, q.y));
+    }
+    sd = min(dish, steam);
+    c = uColor2 * (0.75 + 0.3 * hash(floor(q * 20.0)));
+    if (top < 0.0) c = uColor * (0.85 + 0.2 * (0.5 - q.y));
+    if (abs(top) < 0.06) c = uColor2 * 1.1;
+    if (length(q - vec2(0.0, 0.05)) < 0.18) c = vec3(1.0, 0.98, 0.92);
+    if (steam < dish) c = vec3(0.9);
+    own = steam < dish ? 0.5 : 1.0;
+  } else if (uStyle == S_PARTY_HATS) {
+    float cone = sdTri(q, vec2(-0.55, 0.72), vec2(0.55, 0.72), vec2(0.0, -0.72)) - 0.04;
+    float pom = length(q - vec2(0.0, -0.78)) - 0.16;
+    sd = min(cone, pom);
+    float stripes = step(0.5, fract((q.y - q.x * 0.5) * 3.0));
+    c = mix(uColor, uColor2, stripes) * (0.8 + 0.3 * (0.4 - q.x * 0.5));
+    if (length(vec2(fract(q.x * 4.0 + 0.5) - 0.5, fract(q.y * 4.0) - 0.5)) < 0.12 && cone < 0.0) c = vec3(1.0, 0.9, 0.3);
+    if (pom < cone) c = vec3(1.0, 0.95, 0.6);
+    if (abs(q.y - 0.68) < 0.05 && cone < 0.0) c = vec3(1.0, 0.85, 0.2);
+  } else if (uStyle == S_CHAMPAGNE) {
+    vec2 p = vec2(abs(q.x), q.y);
+    float bowl = max(sdEl(q - vec2(0.0, -0.62), vec2(0.44, 0.58)), -(q.y + 0.62));
+    float stem = sdBox(q - vec2(0.0, 0.34), vec2(0.04, 0.32));
+    float base = sdEl(q - vec2(0.0, 0.7), vec2(0.36, 0.08));
+    sd = min(min(bowl, stem), base);
+    c = vec3(0.85, 0.92, 1.0) * 0.6;
+    if (bowl < 0.0 && q.y > -0.5) c = uColor * (0.9 + 0.3 * (0.5 - q.y));
+    // Bubbles rising in it.
+    vec2 bq = vec2(q.x * 6.0, q.y * 6.0 + vPhase * 2.0);
+    if (bowl < 0.0 && length(fract(bq) - 0.5) < 0.16 && hash(floor(bq)) > 0.6) c = vec3(1.0);
+    if (abs(p.x - 0.3) < 0.035 && bowl < 0.0 && q.y < -0.5) c = vec3(1.0);
+  } else if (uStyle == S_FLAGS) {
+    // A waving flag on a pole: stripes and a starry corner.
+    float wave = 0.08 * sin(q.x * 4.0 - vPhase * 4.0);
+    vec2 p = vec2(q.x, q.y - wave * (q.x + 0.75));
+    float cloth = sdBox(p - vec2(0.12, -0.25), vec2(0.72, 0.48));
+    float pole = sdBox(q - vec2(-0.66, 0.1), vec2(0.04, 0.9));
+    sd = min(cloth, pole);
+    float stripe = step(0.5, fract((p.y + 0.73) * 6.5));
+    c = mix(uColor, vec3(1.0), stripe);
+    if (p.x < 0.1 && p.y < -0.23) {
+      c = uColor2;
+      vec2 st = fract(vec2(p.x, p.y) * 9.0) - 0.5;
+      if (length(st) < 0.18) c = vec3(1.0);
+    }
+    c *= 0.8 + 0.35 * (0.5 + 0.5 * sin(q.x * 4.0 - vPhase * 4.0 + 1.0));
+    if (pole < cloth) c = vec3(0.85, 0.75, 0.4);
+  } else if (uStyle == S_CUPCAKES) {
+    float cup = sdTri(q, vec2(-0.55, 0.05), vec2(0.55, 0.05), vec2(0.0, 1.4));
+    cup = max(cup, q.y - 0.85);
+    float frosting = min(sdEl(q - vec2(0.0, -0.08), vec2(0.62, 0.2)), min(sdEl(q - vec2(0.0, -0.28), vec2(0.45, 0.17)), sdEl(q - vec2(0.0, -0.45), vec2(0.26, 0.13))));
+    float cherry = length(q - vec2(0.0, -0.62)) - 0.12;
+    float flame = sdEl(q - vec2(0.18, -0.92 - 0.03 * sin(vPhase * 9.0)), vec2(0.06, 0.11));
+    float candle = sdBox(q - vec2(0.18, -0.68), vec2(0.035, 0.16));
+    sd = min(min(min(cup, frosting), cherry), min(flame, candle));
+    c = uColor2 * (0.7 + 0.3 * step(0.5, fract(q.x * 7.0)));
+    if (frosting < cup) c = uColor * (0.9 + 0.3 * (0.4 - q.y));
+    if (frosting < 0.0 && hash(floor(q * 22.0) + vSeed) > 0.85) c = candy(hash(floor(q * 22.0)));
+    if (cherry < 0.0) c = vec3(0.9, 0.1, 0.15) + 0.4 * exp(-dot2(q - vec2(-0.04, -0.66)) * 200.0);
+    if (candle < 0.0) c = vec3(1.0, 0.95, 0.9);
+    if (flame < 0.0) c = flameColour(length(q - vec2(0.18, -0.95)), 0.1);
+    ec = vec3(1.0, 0.7, 0.3);
+    ea = 0.6 * exp(-max(flame, 0.0) * 12.0);
+  } else if (uStyle == S_CHICKS) {
+    float body = length(q - vec2(0.0, 0.25)) - 0.55;
+    float head = length(q - vec2(0.18, -0.38)) - 0.36;
+    float beak = sdTri(q, vec2(0.48, -0.42), vec2(0.48, -0.28), vec2(0.72, -0.35));
+    float shell = max(sdEl(q - vec2(0.0, 0.55), vec2(0.66, 0.42)), -q.y + 0.36 + 0.08 * step(0.5, fract(q.x * 3.5)));
+    sd = min(min(body, head), min(beak, shell));
+    c = uColor * (0.85 + 0.3 * (0.4 - q.y * 0.4));
+    if (beak < 0.0) c = vec3(1.0, 0.55, 0.1);
+    if (length(q - vec2(0.28, -0.44)) < 0.06) c = vec3(0.05);
+    if (shell < min(body, head)) c = uColor2 * (0.85 + 0.2 * (0.5 - q.x));
+    float wing = sdEl(rot2(0.6 + 0.3 * sin(vPhase * 5.0)) * (q - vec2(-0.3, 0.2)), vec2(0.28, 0.14));
+    if (wing < 0.0 && shell > 0.0) c *= 0.8;
+  } else if (uStyle == S_POTS_OF_GOLD) {
+    float pot = max(length(q - vec2(0.0, 0.3)) - 0.6, -0.08 - q.y);
+    float rim = sdBox(q - vec2(0.0, -0.08), vec2(0.62, 0.08)) - 0.04;
+    float coins = 1e9;
+    for (int i = 0; i < 6; i++) {
+      float fi = float(i);
+      vec2 cc = vec2((fi - 2.5) * 0.2, -0.22 - 0.12 * sin(fi * 2.3) - 0.1 * step(1.5, fi) * step(fi, 3.5));
+      coins = min(coins, length(q - cc) - 0.15);
+    }
+    sd = min(min(pot, rim), coins);
+    c = vec3(0.1, 0.1, 0.11) * (1.0 + 0.8 * exp(-dot2(q - vec2(-0.25, 0.2)) * 8.0));
+    if (rim < 0.0) c = vec3(0.2);
+    if (coins < min(pot, rim)) {
+      c = uColor * (0.9 + 0.4 * hash(floor(q * 12.0)));
+      ec = uColor;
+    }
+    ea = 0.5 * exp(-max(coins, 0.0) * 8.0) * step(q.y, 0.0);
+    if (abs(q.y - 0.3) < 0.06 && pot < 0.0) c = uColor2;
+  } else if (uStyle == S_RAINBOWS) {
+    float r = length(q - vec2(0.0, 0.55));
+    float arc = max(abs(r - 0.68) - 0.3, q.y - 0.55);
+    float cloudL = min(length(q - vec2(-0.72, 0.52)) - 0.22, length(q - vec2(-0.5, 0.58)) - 0.18);
+    float cloudR = min(length(q - vec2(0.72, 0.52)) - 0.22, length(q - vec2(0.5, 0.58)) - 0.18);
+    sd = min(arc, min(cloudL, cloudR));
+    float band = clamp(floor((r - 0.38) / 0.6 * 6.0), 0.0, 5.0);
+    c = band < 1.0 ? vec3(0.55, 0.3, 0.95) : band < 2.0 ? vec3(0.2, 0.45, 1.0) : band < 3.0 ? vec3(0.2, 0.8, 0.35)
+      : band < 4.0 ? vec3(1.0, 0.85, 0.15) : band < 5.0 ? vec3(1.0, 0.55, 0.1) : vec3(0.95, 0.15, 0.2);
+    if (min(cloudL, cloudR) < arc) c = vec3(1.0);
   }
 
   c = mix(c, uColor2, vTint * 0.85) * vBright;

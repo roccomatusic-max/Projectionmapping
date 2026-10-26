@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { EmptyState, Panel } from '@/components/ui'
+import { Plus } from 'lucide-react'
+import { EmptyState, Modal, Panel } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { type SceneGroup, type Tonight, tonightApi, whenText } from '@/lib/tonight'
 import { mappingApi } from '../api'
 import type { ServerClock } from '../live'
 import type { PeopleTracker } from '../people'
 import { KIND, layerLabel, STARTERS, type Starter, starterLayers } from '../scene/catalog'
+import { MAX_LAYERS } from '../scene/library'
 import { targetBox } from '../scene/masks'
 import type {
   AiStatus, Cue, LayerTarget, MappingScene, MediaAsset, ObjectPin, SceneLayer, Show, SourceRect, SurfaceKind,
   TransportState,
 } from '../types'
-import { ADDABLE } from './CanvasElements'
+import { ElementLibrary } from './ElementLibrary'
 import { outputColor } from './panels'
 import { sceneOn } from './ProjectorScenes'
 import { type Backdrop, ScenePreview, SURFACE_KINDS } from './ScenePreview'
@@ -334,6 +336,7 @@ export function MakeScene({
   // -- putting things in place
   const [openLayer, setOpenLayer] = useState<string | null>(null)
   const [selectedPin, setSelectedPin] = useState<number | null>(null)
+  const [picking, setPicking] = useState(false)
   useEffect(() => setSelectedPin(null), [openLayer, sceneId])
   const placingLayer = canEdit && step === 'place'
     ? scene?.layers.find((l) => l.id === openLayer && PLACEABLE.has(l.type) && l.pins)
@@ -347,6 +350,8 @@ export function MakeScene({
   /** Something new in the scene, inside this projector's part of the house, ready to place. */
   const addLayer = (layer: SceneLayer) => {
     if (!scene) return
+    setPicking(false)
+    if (scene.layers.length >= MAX_LAYERS) return
     const made = { ...layer }
     // A board or countdown starts in the middle of this projector's part, not of the whole picture.
     if (made.pins?.length) made.pins = movePins(made.pins.map((p) => ({ ...p, size: p.size / Math.max(0.3, area.h) })), area)
@@ -681,30 +686,22 @@ export function MakeScene({
                     onChange={(e) => e.target.value.trim() && change({ ...scene, name: e.target.value })} />
                 </label>
                 {canEdit && (
-                  <label className="block">
-                    <span className="label">Add something</span>
-                    <select className="input w-auto py-1.5 text-sm" value="" onChange={(e) => e.target.value && addLayer(ADDABLE.find((a) => a.value === e.target.value)!.make())}>
-                      <option value="">Add…</option>
-                      {([
-                        ['objects', 'Objects that react to people'],
-                        ['movers', 'Things that fly or walk'],
-                        ['info', 'Live info'],
-                        ['snow', 'Snow'],
-                        ['countdown', 'Countdowns'],
-                      ] as const).map(([group, label]) => (
-                        <optgroup key={group} label={label}>
-                          {ADDABLE.filter((a) => a.group === group).map((a) => (
-                            <option key={a.value} value={a.value}>{a.label}</option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </label>
+                  <button className="btn-default inline-flex items-center gap-1.5" disabled={scene.layers.length >= MAX_LAYERS}
+                    title={scene.layers.length >= MAX_LAYERS ? `A scene holds up to ${MAX_LAYERS} things; take one out to add another.` : undefined}
+                    onClick={() => setPicking(true)}>
+                    <Plus size={14} aria-hidden /> Add something…
+                  </button>
                 )}
               </div>
+              <Modal open={picking} label="Add something" size="lg" className="sm:max-w-4xl" onClose={() => setPicking(false)}>
+                <div className="p-4 sm:p-5">
+                  <h2 className="mb-3 text-base font-semibold text-slate-100">Add something</h2>
+                  <ElementLibrary onPick={addLayer} />
+                </div>
+              </Modal>
               {scene.layers.length === 0 ? (
                 <p className="mt-4 rounded-md bg-panel-850 px-3 py-3 text-sm text-slate-400 ring-1 ring-white/5">
-                  Nothing in it yet. Pick something in <span className="text-slate-200">Add something</span>, then click the
+                  Nothing in it yet. Press <span className="text-slate-200">Add something</span> and pick one, then click the
                   picture to put it there.
                 </p>
               ) : (

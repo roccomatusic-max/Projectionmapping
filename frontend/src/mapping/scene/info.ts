@@ -12,6 +12,14 @@
  * - Days until: any date of the year, with its name.
  * - Message board: a lit sign whose words scroll across in bulbs, typed in
  *   the Editor or from the phone remote.
+ * - Clock: the time and date now, its colon blinking.
+ * - Moon: tonight's moon as it really is (worked out from the date), how
+ *   much is lit and when it is next full.
+ * - Next holiday: days until the next one (New Year's, Valentine's, St
+ *   Patrick's, Easter, Mother's and Father's Day, the Fourth, Halloween,
+ *   Thanksgiving, Christmas), the one after, and the greeting on the day.
+ * - New Year's: days until New Year, then on New Year's Eve the hours,
+ *   minutes and seconds to midnight (repainted once a second that day).
  *
  * Like the countdown, the artwork is painted with the 2D canvas only when
  * the words change (once a minute at most; the tracker's presents counter
@@ -31,7 +39,7 @@ import { weatherFor, weatherLook } from './weather'
 import { landRings } from './worldmap'
 
 // New boards go at the end: the shader knows them by their place in this list.
-export const INFO_STYLES = ['santa', 'weather', 'days', 'message'] as const
+export const INFO_STYLES = ['santa', 'weather', 'days', 'message', 'clock', 'moon', 'holiday', 'new-year'] as const
 export type InfoStyle = (typeof INFO_STYLES)[number]
 
 export function infoStyle(style: string): InfoStyle {
@@ -44,6 +52,10 @@ export const BOARD: Record<InfoStyle, { w: number; h: number }> = {
   weather: { w: 1400, h: 700 },
   days: { w: 1400, h: 900 },
   message: { w: 2400, h: 400 },
+  clock: { w: 1400, h: 560 },
+  moon: { w: 1400, h: 800 },
+  holiday: { w: 1400, h: 860 },
+  'new-year': { w: 1400, h: 860 },
 }
 
 /** Height in canvas heights of a board placed by hand at pin size 1. */
@@ -591,6 +603,441 @@ function paintMessageStrip(canvas: HTMLCanvasElement, text: string): { width: nu
   return { width, strips }
 }
 
+// -- clock ---------------------------------------------------------------------------------------
+
+/** The time now, in this computer's own way of writing it (7:42 PM), and the date. */
+export function clockWords(nowMs: number) {
+  const now = new Date(nowMs)
+  const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  const [hm, ampm = ''] = time.split(' ')
+  return { hm, ampm, date: now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) }
+}
+
+function paintClock(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: string) {
+  const { w, h } = BOARD.clock
+  panel(ctx, fx, w, h, color, color2)
+  const { hm, ampm, date } = clockWords(nowMs)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#dbeafe'
+  fitFont(ctx, date.toUpperCase(), CAPS, '700', 46, w - 200)
+  ctx.fillText(date.toUpperCase(), w / 2, 104)
+  // The hours and minutes, with the colon marked (fx green) so the shader can blink it.
+  const size = fitFont(ctx, `${hm} ${ampm}`, DISPLAY, '900', 300, w - 220)
+  ctx.font = `900 ${size}px ${DISPLAY}`
+  const [hh, mm] = hm.split(':')
+  const small = Math.round(size * 0.36)
+  const wh = ctx.measureText(hh).width
+  const wc = ctx.measureText(':').width
+  const wm = ctx.measureText(mm).width
+  ctx.font = `700 ${small}px ${CAPS}`
+  const wa = ampm ? ctx.measureText(ampm).width + small * 0.3 : 0
+  let x = (w - (wh + wc + wm + wa)) / 2
+  const y = 350
+  ctx.font = `900 ${size}px ${DISPLAY}`
+  fx.font = ctx.font
+  ctx.textAlign = 'left'
+  fx.textAlign = 'left'
+  fx.textBaseline = 'middle'
+  ctx.fillStyle = gold(ctx, y - size / 2, y + size / 2, color2)
+  ctx.fillText(hh, x, y)
+  fx.fillStyle = '#ff0000'
+  fx.fillText(hh, x, y)
+  x += wh
+  ctx.fillText(':', x, y - size * 0.04)
+  fx.fillStyle = '#00ff00'
+  fx.fillText(':', x, y - size * 0.04)
+  x += wc
+  ctx.fillText(mm, x, y)
+  fx.fillStyle = '#ff0000'
+  fx.fillText(mm, x, y)
+  x += wm + small * 0.3
+  if (ampm) {
+    ctx.font = `700 ${small}px ${CAPS}`
+    ctx.fillStyle = '#e2e8f0'
+    ctx.fillText(ampm, x, y + size * 0.18)
+  }
+}
+
+// -- moon ----------------------------------------------------------------------------------------
+
+/** Days in one round of the moon's phases. */
+const SYNODIC = 29.530588853
+/** A new moon to count from: 6 January 2000, 18:14 UTC. */
+const NEW_MOON_MS = Date.UTC(2000, 0, 6, 18, 14)
+
+const MOON_NAMES: Array<[number, string]> = [
+  [1.85, 'New moon'], [5.54, 'Waxing crescent'], [9.23, 'First quarter'], [12.92, 'Waxing gibbous'],
+  [16.61, 'Full moon'], [20.3, 'Waning gibbous'], [23.99, 'Last quarter'], [27.68, 'Waning crescent'], [99, 'New moon'],
+]
+
+/** Where the moon is in its phases now: its age in days, how much is lit, its name, days to the next full and new moon. */
+export function moonNow(nowMs: number) {
+  const age = ((((nowMs - NEW_MOON_MS) / 86_400_000) % SYNODIC) + SYNODIC) % SYNODIC
+  const lit = (1 - Math.cos((2 * Math.PI * age) / SYNODIC)) / 2
+  const name = MOON_NAMES.find(([upTo]) => age < upTo)![1]
+  const toFull = (SYNODIC / 2 - age + SYNODIC) % SYNODIC
+  const toNew = SYNODIC - age
+  return { age, lit, name, toFull, toNew }
+}
+
+function paintMoonDisc(ctx: Ctx, cx: number, cy: number, r: number, age: number) {
+  // The dark part faintly, then the lit part: half the disc on the lit side and the curved edge between.
+  const glowG = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.5)
+  glowG.addColorStop(0, 'rgba(254,249,195,0.25)')
+  glowG.addColorStop(1, 'rgba(254,249,195,0)')
+  ctx.fillStyle = glowG
+  ctx.beginPath()
+  ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = '#1e293b'
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+  const k = Math.cos((2 * Math.PI * age) / SYNODIC)
+  ctx.save()
+  ctx.translate(cx, cy)
+  // Waxing is lit on the right (as seen from the northern half of the world), waning on the left.
+  if (age > SYNODIC / 2) ctx.scale(-1, 1)
+  ctx.beginPath()
+  ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false)
+  ctx.ellipse(0, 0, r * Math.abs(k), r, 0, Math.PI / 2, -Math.PI / 2, k > 0)
+  ctx.closePath()
+  const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r)
+  g.addColorStop(0, '#fffbeb')
+  g.addColorStop(1, '#e7dcae')
+  ctx.fillStyle = g
+  ctx.fill()
+  ctx.clip()
+  // Craters.
+  ctx.fillStyle = 'rgba(160,150,110,0.35)'
+  for (const [x, y, s] of [[-0.3, -0.25, 0.18], [0.25, 0.1, 0.24], [-0.1, 0.4, 0.12], [0.4, -0.4, 0.1], [-0.45, 0.2, 0.09]]) {
+    ctx.beginPath()
+    ctx.arc((age > SYNODIC / 2 ? -x : x) * r, y * r, s * r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+function paintMoon(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: string) {
+  const { w, h } = BOARD.moon
+  panel(ctx, fx, w, h, color, color2)
+  const m = moonNow(nowMs)
+  paintMoonDisc(ctx, 330, h / 2 + 20, 230, m.age)
+  const x = 640
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#dbeafe'
+  fitFont(ctx, 'THE MOON TONIGHT', CAPS, '700', 44, w - x - 80)
+  ctx.fillText('THE MOON TONIGHT', x, 170)
+  ctx.fillStyle = '#ffffff'
+  fitFont(ctx, m.name, SCRIPT, '400', 120, w - x - 80)
+  ctx.fillText(m.name, x, 300)
+  ctx.fillStyle = gold(ctx, 380, 480, color2)
+  fitFont(ctx, `${Math.round(m.lit * 100)}% lit`, DISPLAY, '900', 110, w - x - 80)
+  ctx.fillText(`${Math.round(m.lit * 100)}% lit`, x, 440)
+  fx.font = ctx.font
+  fx.textAlign = 'left'
+  fx.textBaseline = 'middle'
+  fx.fillStyle = '#ff0000'
+  fx.fillText(`${Math.round(m.lit * 100)}% lit`, x, 440)
+  const full = m.toFull < 0.75 || m.toFull > SYNODIC - 0.75
+    ? 'Full moon tonight!'
+    : `Full moon in ${Math.round(m.toFull)} day${Math.round(m.toFull) === 1 ? '' : 's'}`
+  ctx.fillStyle = '#cbd5e1'
+  fitFont(ctx, full, CAPS, '700', 46, w - x - 80)
+  ctx.fillText(full, x, 590)
+  const when = new Date(nowMs + m.toFull * 86_400_000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  ctx.fillStyle = '#94a3b8'
+  fitFont(ctx, when, CAPS, '700', 34, w - x - 80)
+  ctx.fillText(when, x, 660)
+}
+
+// -- the next holiday ------------------------------------------------------------------------------
+
+interface HolidayDay {
+  name: string
+  /** What the board says on the day. */
+  greeting: string
+  icon: 'heart' | 'shamrock' | 'egg' | 'flower' | 'star' | 'pumpkin' | 'leaf' | 'tree' | 'burst'
+  accent: string
+  date: Date
+}
+
+/** The nth weekday (0 Sunday) of a month. */
+function nthWeekday(year: number, month: number, weekday: number, n: number) {
+  const first = new Date(year, month, 1).getDay()
+  return new Date(year, month, 1 + ((weekday - first + 7) % 7) + (n - 1) * 7)
+}
+
+/** Easter Sunday (the Western date). */
+function easter(year: number) {
+  const a = year % 19
+  const b = Math.floor(year / 100)
+  const c = year % 100
+  const d = Math.floor(b / 4)
+  const e = b % 4
+  const f = Math.floor((b + 8) / 25)
+  const g = Math.floor((b - f + 1) / 3)
+  const hh = (19 * a + b - d - g + 15) % 30
+  const i = Math.floor(c / 4)
+  const k = c % 4
+  const l = (32 + 2 * e + 2 * i - hh - k) % 7
+  const m = Math.floor((a + 11 * hh + 22 * l) / 451)
+  const month = Math.floor((hh + l - 7 * m + 114) / 31)
+  const day = ((hh + l - 7 * m + 114) % 31) + 1
+  return new Date(year, month - 1, day)
+}
+
+function holidaysOf(year: number): HolidayDay[] {
+  return [
+    { name: 'New Year’s Day', greeting: `Happy New Year ${year}!`, icon: 'burst', accent: '#fbbf24', date: new Date(year, 0, 1) },
+    { name: 'Valentine’s Day', greeting: 'Happy Valentine’s Day!', icon: 'heart', accent: '#f43f5e', date: new Date(year, 1, 14) },
+    { name: 'St Patrick’s Day', greeting: 'Happy St Patrick’s Day!', icon: 'shamrock', accent: '#22c55e', date: new Date(year, 2, 17) },
+    { name: 'Easter', greeting: 'Happy Easter!', icon: 'egg', accent: '#c084fc', date: easter(year) },
+    { name: 'Mother’s Day', greeting: 'Happy Mother’s Day!', icon: 'flower', accent: '#f472b6', date: nthWeekday(year, 4, 0, 2) },
+    { name: 'Father’s Day', greeting: 'Happy Father’s Day!', icon: 'star', accent: '#38bdf8', date: nthWeekday(year, 5, 0, 3) },
+    { name: 'the Fourth of July', greeting: 'Happy Fourth of July!', icon: 'star', accent: '#ef4444', date: new Date(year, 6, 4) },
+    { name: 'Halloween', greeting: 'Happy Halloween!', icon: 'pumpkin', accent: '#f97316', date: new Date(year, 9, 31) },
+    { name: 'Thanksgiving', greeting: 'Happy Thanksgiving!', icon: 'leaf', accent: '#ea580c', date: nthWeekday(year, 10, 4, 4) },
+    { name: 'Christmas', greeting: 'Merry Christmas!', icon: 'tree', accent: '#22c55e', date: new Date(year, 11, 25) },
+  ]
+}
+
+/** Today's holiday if there is one, then the next ones, with whole days to each by this computer's calendar. */
+export function nextHolidays(nowMs: number): Array<HolidayDay & { days: number }> {
+  const now = new Date(nowMs)
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  const days = (d: Date) => Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - today) / 86_400_000)
+  return [...holidaysOf(now.getFullYear()), ...holidaysOf(now.getFullYear() + 1)]
+    .map((hd) => ({ ...hd, days: days(hd.date) }))
+    .filter((hd) => hd.days >= 0)
+    .sort((a, b) => a.days - b.days)
+}
+
+function holidayIcon(ctx: Ctx, icon: HolidayDay['icon'], x: number, y: number, r: number, color: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.fillStyle = color
+  ctx.strokeStyle = color
+  const heart = (s: number) => {
+    ctx.beginPath()
+    ctx.moveTo(0, s * 0.35)
+    ctx.bezierCurveTo(-s * 1.1, -s * 0.35, -s * 0.5, -s * 1.05, 0, -s * 0.45)
+    ctx.bezierCurveTo(s * 0.5, -s * 1.05, s * 1.1, -s * 0.35, 0, s * 0.35)
+    ctx.fill()
+  }
+  if (icon === 'heart') heart(r * 1.1)
+  else if (icon === 'shamrock') {
+    for (const a of [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]) {
+      ctx.save()
+      ctx.rotate(a + Math.PI / 2)
+      ctx.translate(0, -r * 0.45)
+      heart(r * 0.6)
+      ctx.restore()
+    }
+    ctx.lineWidth = r * 0.12
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(0, r * 0.1)
+    ctx.quadraticCurveTo(r * 0.1, r * 0.6, r * 0.35, r * 0.95)
+    ctx.stroke()
+  } else if (icon === 'egg') {
+    ctx.beginPath()
+    ctx.ellipse(0, r * 0.08, r * 0.7, r * 0.92, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.save()
+    ctx.clip()
+    ctx.fillStyle = '#fde68a'
+    ctx.fillRect(-r, -r * 0.2, r * 2, r * 0.22)
+    ctx.fillStyle = '#f9a8d4'
+    ctx.fillRect(-r, r * 0.3, r * 2, r * 0.18)
+    ctx.restore()
+  } else if (icon === 'flower') {
+    for (let k = 0; k < 6; k++) {
+      ctx.save()
+      ctx.rotate((k * Math.PI) / 3)
+      ctx.beginPath()
+      ctx.ellipse(0, -r * 0.5, r * 0.28, r * 0.5, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+    ctx.fillStyle = '#fde047'
+    ctx.beginPath()
+    ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2)
+    ctx.fill()
+  } else if (icon === 'star') {
+    ctx.beginPath()
+    for (let k = 0; k < 10; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI) / 5
+      const rr = k % 2 ? r * 0.42 : r
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr)
+    }
+    ctx.fill()
+  } else if (icon === 'pumpkin') {
+    for (const [dx, rx] of [[-0.42, 0.45], [0.42, 0.45], [0, 0.55]] as const) {
+      ctx.fillStyle = dx === 0 ? color : shade(color, -0.2)
+      ctx.beginPath()
+      ctx.ellipse(dx * r, r * 0.1, rx * r, r * 0.78, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#4d7c0f'
+    ctx.fillRect(-r * 0.08, -r * 0.92, r * 0.16, r * 0.3)
+    ctx.fillStyle = '#fde68a'
+    for (const s of [-1, 1]) {
+      ctx.beginPath()
+      ctx.moveTo(s * r * 0.4, -r * 0.05)
+      ctx.lineTo(s * r * 0.15, -r * 0.05)
+      ctx.lineTo(s * r * 0.27, -r * 0.3)
+      ctx.fill()
+    }
+    ctx.beginPath()
+    ctx.moveTo(-r * 0.45, r * 0.25)
+    ctx.quadraticCurveTo(0, r * 0.7, r * 0.45, r * 0.25)
+    ctx.quadraticCurveTo(0, r * 0.45, -r * 0.45, r * 0.25)
+    ctx.fill()
+  } else if (icon === 'leaf') {
+    ctx.beginPath()
+    for (let k = 0; k <= 10; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI * 2) / 10
+      const rr = k % 2 ? r * 0.5 : r
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr * 0.9)
+    }
+    ctx.fill()
+    ctx.strokeStyle = shade(color, -0.4)
+    ctx.lineWidth = r * 0.07
+    ctx.beginPath()
+    ctx.moveTo(0, r * 1.1)
+    ctx.lineTo(0, -r * 0.6)
+    ctx.stroke()
+  } else if (icon === 'tree') {
+    for (let k = 0; k < 3; k++) {
+      const top = -r + k * r * 0.5
+      const half = r * (0.45 + k * 0.22)
+      ctx.beginPath()
+      ctx.moveTo(0, top)
+      ctx.lineTo(half, top + r * 0.75)
+      ctx.lineTo(-half, top + r * 0.75)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#92400e'
+    ctx.fillRect(-r * 0.12, r * 0.75, r * 0.24, r * 0.3)
+    ctx.fillStyle = '#fde047'
+    ctx.beginPath()
+    ctx.arc(0, -r, r * 0.14, 0, Math.PI * 2)
+    ctx.fill()
+  } else {
+    ctx.lineWidth = r * 0.08
+    ctx.lineCap = 'round'
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8
+      ctx.strokeStyle = k % 2 ? '#ffffff' : color
+      ctx.beginPath()
+      ctx.moveTo(Math.cos(a) * r * 0.25, Math.sin(a) * r * 0.25)
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
+}
+
+function paintHoliday(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: string) {
+  const { w, h } = BOARD.holiday
+  panel(ctx, fx, w, h, color, color2)
+  const [next, then] = nextHolidays(nowMs)
+  holidayIcon(ctx, next.icon, 250, 400, 150, next.accent)
+  const x = 480
+  const cx = x + (w - x - 70) / 2
+  const room = w - x - 110
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  fx.textAlign = 'center'
+  fx.textBaseline = 'middle'
+  fx.fillStyle = '#ff0000'
+  if (next.days === 0) {
+    ctx.fillStyle = '#ffffff'
+    fitFont(ctx, next.greeting, SCRIPT, '400', 150, room)
+    ctx.fillText(next.greeting, cx, 360)
+  } else {
+    ctx.fillStyle = '#dbeafe'
+    const top = next.days === 1 ? 'ONLY ONE DAY UNTIL' : 'DAYS UNTIL'
+    fitFont(ctx, top, CAPS, '700', 50, room)
+    ctx.fillText(top, cx, next.days === 1 ? 210 : 470)
+    if (next.days > 1) {
+      const n = String(next.days)
+      fitFont(ctx, n, DISPLAY, '900', 330, room)
+      ctx.fillStyle = gold(ctx, 120, 420, color2)
+      ctx.fillText(n, cx, 280)
+      fx.font = ctx.font
+      fx.fillText(n, cx, 280)
+    }
+    ctx.fillStyle = '#ffffff'
+    fitFont(ctx, next.name, SCRIPT, '400', 130, room)
+    ctx.fillText(next.name, cx, next.days === 1 ? 360 : 590)
+  }
+  if (then) {
+    const line = `Then ${then.name} in ${then.days} days`
+    ctx.fillStyle = '#94a3b8'
+    fitFont(ctx, line, CAPS, '700', 36, w - 200)
+    ctx.fillText(line, w / 2, 790)
+  }
+}
+
+// -- New Year's countdown ------------------------------------------------------------------------
+
+/** What the New Year's board shows now: days to go, the last day's hours to midnight, or the greeting. */
+export function newYearNow(nowMs: number) {
+  const now = new Date(nowMs)
+  const year = now.getFullYear()
+  if (now.getMonth() === 0 && now.getDate() === 1) return { phase: 'arrived' as const, year, days: 0, left: 0 }
+  const midnight = new Date(year + 1, 0, 1).getTime()
+  const today = Date.UTC(year, now.getMonth(), now.getDate())
+  const days = Math.round((Date.UTC(year + 1, 0, 1) - today) / 86_400_000)
+  if (days === 1) return { phase: 'eve' as const, year: year + 1, days, left: Math.max(0, Math.ceil((midnight - nowMs) / 1000)) }
+  return { phase: 'days' as const, year: year + 1, days, left: 0 }
+}
+
+function paintNewYear(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: string) {
+  const { w, h } = BOARD['new-year']
+  panel(ctx, fx, w, h, color, color2)
+  const ny = newYearNow(nowMs)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  fx.textAlign = 'center'
+  fx.textBaseline = 'middle'
+  fx.fillStyle = '#ff0000'
+  holidayIcon(ctx, 'burst', 170, 160, 90, color2)
+  holidayIcon(ctx, 'burst', w - 170, 160, 90, '#f472b6')
+  if (ny.phase === 'arrived') {
+    ctx.fillStyle = '#ffffff'
+    fitFont(ctx, 'Happy New Year', SCRIPT, '400', 190, w - 200)
+    ctx.fillText('Happy New Year', w / 2, 380)
+    ctx.fillStyle = gold(ctx, 520, 760, color2)
+    fitFont(ctx, String(ny.year), DISPLAY, '900', 240, w - 300)
+    ctx.fillText(String(ny.year), w / 2, 640)
+    fx.font = ctx.font
+    fx.fillText(String(ny.year), w / 2, 640)
+    return
+  }
+  ctx.fillStyle = '#dbeafe'
+  const title = ny.phase === 'eve' ? `COUNTDOWN TO ${ny.year}` : `DAYS UNTIL ${ny.year}`
+  fitFont(ctx, title, CAPS, '700', 60, w - 460)
+  ctx.fillText(title, w / 2, 160)
+  const big = ny.phase === 'eve'
+    ? [Math.floor(ny.left / 3600), Math.floor((ny.left % 3600) / 60), ny.left % 60]
+      .map((v, i) => (i ? String(v).padStart(2, '0') : String(v))).join(':')
+    : String(ny.days)
+  fitFont(ctx, big, DISPLAY, '900', 360, w - 200)
+  ctx.fillStyle = gold(ctx, 280, 600, color2)
+  ctx.fillText(big, w / 2, 450)
+  fx.font = ctx.font
+  fx.fillText(big, w / 2, 450)
+  ctx.fillStyle = '#ffffff'
+  const caption = ny.phase === 'eve' ? 'until midnight' : 'New Year’s Eve is coming'
+  fitFont(ctx, caption, SCRIPT, '400', 110, w - 200)
+  ctx.fillText(caption, w / 2, 720)
+}
+
 // -- placing --------------------------------------------------------------------------------------
 
 const TARGET_KINDS: Record<string, SurfaceKind[]> = {
@@ -795,6 +1242,13 @@ void main() {
     }
   }
 
+  // The clock's colon blinks once a second.
+  if (uKind == 4 && fx.g > 0.5) {
+    float on = 0.35 + 0.65 * step(0.5, fract(uTime));
+    col *= on;
+    a *= on;
+  }
+
   float kk = clamp(uStrength, 0.0, 1.0);
   outColor = vec4(max(col, vec3(0.0)) * kk, clamp(a, 0.0, 1.0) * kk);
 }`
@@ -943,6 +1397,18 @@ export class InfoDrawer {
     } else if (style === 'days') {
       const left = daysUntil(layer.date, d.clockMs)
       words = [layer.text, layer.date, left?.days].join('|')
+    } else if (style === 'clock') {
+      words = JSON.stringify(clockWords(d.clockMs))
+    } else if (style === 'moon') {
+      // Repainted as the moon changes, a few times a day.
+      words = String(Math.floor(moonNow(d.clockMs).age * 8))
+    } else if (style === 'holiday') {
+      const [next] = nextHolidays(d.clockMs)
+      words = [next.name, next.days].join('|')
+    } else if (style === 'new-year') {
+      // Once a day, or once a second on New Year's Eve while it counts the hours.
+      const ny = newYearNow(d.clockMs)
+      words = [ny.phase, ny.days, ny.left].join('|')
     }
     const artKey = [style, layer.color, layer.color2, words, scale, fonts].join('|')
     if (b.key !== artKey) {
@@ -961,6 +1427,10 @@ export class InfoDrawer {
       if (santa) paintSanta(ctx, fx, santa, d.clockMs, layer.color, layer.color2)
       else if (style === 'weather') paintWeather(ctx, fx, weatherView(layer), layer.color, layer.color2)
       else if (style === 'days') paintDays(ctx, fx, layer, d.clockMs)
+      else if (style === 'clock') paintClock(ctx, fx, d.clockMs, layer.color, layer.color2)
+      else if (style === 'moon') paintMoon(ctx, fx, d.clockMs, layer.color, layer.color2)
+      else if (style === 'holiday') paintHoliday(ctx, fx, d.clockMs, layer.color, layer.color2)
+      else if (style === 'new-year') paintNewYear(ctx, fx, d.clockMs, layer.color, layer.color2)
       else paintMessageBoard(ctx, fx, layer.color2)
       this.upload(b.artTex, b.art, true)
       this.upload(b.fxTex, b.fx, false)
