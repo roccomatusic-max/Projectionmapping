@@ -26,7 +26,7 @@ import {
   type CalendarEntry,
   type CalendarSlot,
 } from '@/lib/calendar'
-import { DAY_NAMES, clockText, describeDays, timeOf, tonightApi, type SceneGroup, type Tonight } from '@/lib/tonight'
+import { DAY_NAMES, clockText, describeDays, timeOf, tonightApi, type Playlist, type SceneGroup, type Tonight } from '@/lib/tonight'
 import { mappingApi } from '@/mapping/api'
 import type { ShowSummary } from '@/mapping/types'
 import { EntryEditor } from './EntryEditor'
@@ -51,6 +51,11 @@ const PLAIN = { bar: 'bg-slate-400', pill: 'bg-white/[0.06] text-slate-200 ring-
 
 function swatch(groupId: number | null) {
   return groupId == null ? PLAIN : SWATCHES[groupId % SWATCHES.length]
+}
+
+/** Playlists take the colours from the other end, so they rarely match a group's. */
+function playlistSwatch(playlistId: number) {
+  return SWATCHES[SWATCHES.length - 1 - (playlistId % SWATCHES.length)]
 }
 
 /** Whether this device's clock reads the same as the show computer's zone. */
@@ -112,6 +117,7 @@ export function CalendarBoard({
   const [selected, setSelected] = useState<string>(isoDate(today))
   const [data, setData] = useState<CalendarData | null>(null)
   const [groups, setGroups] = useState<SceneGroup[]>([])
+  const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [shows, setShows] = useState<ShowSummary[]>([])
   const [tonight, setTonight] = useState<Tonight | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -133,7 +139,10 @@ export function CalendarBoard({
       setError(errorText(err, 'The calendar could not be loaded'))
     }
   }, [startKey, range.days])
-  const loadGroups = useCallback(() => tonightApi.groups().then(setGroups).catch(() => undefined), [])
+  const loadGroups = useCallback(() => {
+    tonightApi.groups().then(setGroups).catch(() => undefined)
+    tonightApi.playlists().then(setPlaylists).catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     void load()
@@ -147,7 +156,7 @@ export function CalendarBoard({
     if (subscribe) {
       return subscribe((message) => {
         if (message.type === 'calendar' || message.type === 'tonight') void load()
-        else if (message.type === 'scene_groups') {
+        else if (message.type === 'scene_groups' || message.type === 'playlists') {
           void loadGroups()
           void load()
         } else if (message.type === 'mapping_shows') mappingApi.listShows().then(setShows).catch(() => undefined)
@@ -301,6 +310,7 @@ export function CalendarBoard({
           today={data.today}
           tonight={tonight}
           groups={groups}
+          playlists={playlists}
           showPast={showPast}
           onShowPast={setShowPast}
           onOpen={(entry) => canEdit && setEditing({ entry })}
@@ -318,6 +328,7 @@ export function CalendarBoard({
           date={editing.date}
           kind={editing.kind}
           groups={groups}
+          playlists={playlists}
           shows={showOptions}
           defaultShowId={tonight?.show_id ?? null}
           onClose={() => setEditing(null)}
@@ -431,7 +442,7 @@ function SlotRow({
   small: boolean
   phone: boolean
 }) {
-  const color = swatch(slot.group_id)
+  const color = slot.playlist_id != null ? playlistSwatch(slot.playlist_id) : swatch(slot.group_id)
   const weekly = slot.source === 'weekly'
   const body = (
     <>
@@ -448,8 +459,11 @@ function SlotRow({
         {!small && (
           <span className="block truncate text-2xs text-slate-500">
             {weekly ? 'Weekly show time' : entry ? entryWhen(entry, describeDays) : 'Calendar'}
-            {slot.group_name && slot.group_name !== slot.title && ` · ${slot.group_name}`}
-            {!slot.group_name && !weekly && ' · scenes the cues have'}
+            {slot.playlist_name
+              ? slot.playlist_name !== slot.title && ` · ${slot.playlist_name}`
+              : slot.group_name && slot.group_name !== slot.title && ` · ${slot.group_name}`}
+            {slot.playlist_id != null && ' (playlist)'}
+            {!slot.group_name && slot.playlist_id == null && !weekly && ' · scenes the cues have'}
           </span>
         )}
         {!small && entry?.note && <span className="block truncate text-2xs italic text-slate-500">{entry.note}</span>}
@@ -537,7 +551,7 @@ function MonthGrid({
               {/* A phone gets dots; a wider screen the show names. */}
               <span className={classNames('flex flex-wrap gap-0.5', !phone && 'sm:hidden')}>
                 {d.slots.map((s) => (
-                  <span key={s.key} className={classNames('h-1.5 w-1.5 rounded-full', swatch(s.group_id).dot, s.state === 'done' && 'opacity-50')} />
+                  <span key={s.key} className={classNames('h-1.5 w-1.5 rounded-full', (s.playlist_id != null ? playlistSwatch(s.playlist_id) : swatch(s.group_id)).dot, s.state === 'done' && 'opacity-50')} />
                 ))}
                 {d.cancelled_by && d.slots.length === 0 && <span className="h-1.5 w-1.5 rounded-full border border-red-400" />}
               </span>
@@ -546,7 +560,7 @@ function MonthGrid({
                   {d.slots.slice(0, 2).map((s) => (
                     <span
                       key={s.key}
-                      className={classNames('truncate rounded px-1 py-px text-2xs ring-1', swatch(s.group_id).pill, s.state === 'done' && 'opacity-50')}
+                      className={classNames('truncate rounded px-1 py-px text-2xs ring-1', (s.playlist_id != null ? playlistSwatch(s.playlist_id) : swatch(s.group_id)).pill, s.state === 'done' && 'opacity-50')}
                     >
                       <span className="tnum text-[10px] opacity-75">{timeOf(s.starts_at).replace(':00', '')}</span> {s.title}
                     </span>
@@ -605,6 +619,7 @@ function Plans({
   today,
   tonight,
   groups,
+  playlists,
   showPast,
   onShowPast,
   onOpen,
@@ -615,6 +630,7 @@ function Plans({
   today: string
   tonight: Tonight | null
   groups: SceneGroup[]
+  playlists: Playlist[]
   showPast: boolean
   onShowPast: (show: boolean) => void
   onOpen: (entry: CalendarEntry) => void
@@ -622,12 +638,15 @@ function Plans({
   phone: boolean
 }) {
   const groupName = (id: number | null) => groups.find((g) => g.id === id)?.name ?? null
+  const playlistName = (id: number | null) => playlists.find((p) => p.id === id)?.name ?? null
+  const looks = (entry: CalendarEntry) =>
+    entry.playlist_id != null && playlistName(entry.playlist_id) ? `${playlistName(entry.playlist_id)} (playlist)` : groupName(entry.group_id)
   const sorted = [...entries].sort((a, b) => a.start_date.localeCompare(b.start_date) || a.id - b.id)
   const past = sorted.filter((e) => e.end_date != null && e.end_date < today)
   const current = sorted.filter((e) => !(e.end_date != null && e.end_date < today))
   const shown = showPast ? [...current, ...past] : current
   // Off the calendar's nights, tonight's group is the weekly show time's.
-  const weeklyGroup = tonight && tonight.source !== 'calendar' ? tonight.group_name : null
+  const weeklyGroup = tonight && tonight.source !== 'calendar' ? (tonight.playlist_name ? `${tonight.playlist_name} (playlist)` : tonight.group_name) : null
 
   return (
     <section aria-label="Everything planned" className="space-y-2 pt-2">
@@ -652,7 +671,7 @@ function Plans({
         </li>
         {shown.map((entry) => {
           const isPast = entry.end_date != null && entry.end_date < today
-          const name = entry.title || (entry.kind === 'off' ? 'No show' : groupName(entry.group_id) ?? 'Show')
+          const name = entry.title || (entry.kind === 'off' ? 'No show' : playlistName(entry.playlist_id) ?? groupName(entry.group_id) ?? 'Show')
           return (
             <li key={entry.id}>
               <button
@@ -664,7 +683,7 @@ function Plans({
                 {entry.kind === 'off' ? (
                   <BlackoutIcon size={15} className="mt-0.5 shrink-0 text-red-300" aria-hidden />
                 ) : (
-                  <span className={classNames('mt-1 h-2.5 w-2.5 shrink-0 rounded-full', swatch(entry.group_id).dot)} />
+                  <span className={classNames('mt-1 h-2.5 w-2.5 shrink-0 rounded-full', (entry.playlist_id != null ? playlistSwatch(entry.playlist_id) : swatch(entry.group_id)).dot)} />
                 )}
                 <span className="min-w-0 flex-1 text-sm">
                   <span className="block truncate font-medium text-slate-100">{name}</span>
@@ -672,8 +691,8 @@ function Plans({
                     {entryWhen(entry, describeDays)}
                     {entry.kind === 'show' && ` · ${clockText(entry.start_at)} to ${clockText(entry.end_at)}`}
                   </span>
-                  {entry.kind === 'show' && entry.title && groupName(entry.group_id) && (
-                    <span className="block truncate text-2xs text-slate-500">{groupName(entry.group_id)}</span>
+                  {entry.kind === 'show' && (entry.title || entry.playlist_id != null) && looks(entry) && (
+                    <span className="block truncate text-2xs text-slate-500">{looks(entry)}</span>
                   )}
                 </span>
                 {canEdit && <EditIcon size={13} className="mt-1 shrink-0 text-slate-500" aria-hidden />}

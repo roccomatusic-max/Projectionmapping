@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import { Banner, ConfirmDialog, Modal } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { calendarApi, isoDate, type CalendarEntry, type EntryBody } from '@/lib/calendar'
-import { DAY_NAMES, describeDays, type SceneGroup } from '@/lib/tonight'
+import { DAY_NAMES, describeDays, type Playlist, type SceneGroup } from '@/lib/tonight'
 
 type Repeat = 'once' | 'range' | 'weekly'
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
@@ -63,6 +63,7 @@ export function EntryEditor({
   date,
   kind: startKind = 'show',
   groups,
+  playlists = [],
   shows,
   defaultShowId,
   onClose,
@@ -74,6 +75,7 @@ export function EntryEditor({
   date?: string
   kind?: 'show' | 'off'
   groups: SceneGroup[]
+  playlists?: Playlist[]
   shows: { id: number; name: string }[]
   defaultShowId: number | null
   onClose: () => void
@@ -83,6 +85,7 @@ export function EntryEditor({
   const [kind, setKind] = useState<'show' | 'off'>(entry?.kind ?? startKind)
   const [repeat, setRepeat] = useState<Repeat>(repeatOf(entry))
   const [groupId, setGroupId] = useState<number | null>(entry ? entry.group_id : groups.find((g) => g.show_id === defaultShowId)?.id ?? groups[0]?.id ?? null)
+  const [playlistId, setPlaylistId] = useState<number | null>(entry?.playlist_id ?? null)
   const [showId, setShowId] = useState<number | null>(entry?.show_id ?? defaultShowId ?? shows[0]?.id ?? null)
   const [title, setTitle] = useState(entry?.title ?? '')
   const [first, setFirst] = useState(entry?.start_date ?? date ?? today)
@@ -97,18 +100,20 @@ export function EntryEditor({
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const group = groups.find((g) => g.id === groupId) ?? null
+  const playlist = playlists.find((p) => p.id === playlistId) ?? null
+  const group = playlist ? null : groups.find((g) => g.id === groupId) ?? null
   const multipleShows = shows.length > 1
   const showName = (id: number) => shows.find((s) => s.id === id)?.name ?? ''
-  const placeholder = kind === 'off' ? 'No show' : group?.name ?? 'Show'
+  const placeholder = kind === 'off' ? 'No show' : playlist?.name ?? group?.name ?? 'Show'
 
   const body = useMemo((): EntryBody => {
     const endDate = repeat === 'once' ? first : repeat === 'range' ? last : hasEnd ? last : null
     return {
       kind,
       title: title.trim(),
-      show_id: kind === 'show' ? group?.show_id ?? showId : null,
-      group_id: kind === 'show' ? groupId : null,
+      show_id: kind === 'show' ? playlist?.show_id ?? group?.show_id ?? showId : null,
+      group_id: kind === 'show' && !playlist ? groupId : null,
+      playlist_id: kind === 'show' ? playlist?.id ?? null : null,
       start_date: first,
       end_date: endDate,
       days: repeat === 'once' ? ALL_DAYS : days,
@@ -117,7 +122,7 @@ export function EntryEditor({
       power,
       note: note.trim(),
     }
-  }, [kind, title, group, showId, groupId, first, last, repeat, hasEnd, days, start, end, power, note])
+  }, [kind, title, group, playlist, showId, groupId, first, last, repeat, hasEnd, days, start, end, power, note])
 
   const problem =
     !first
@@ -185,19 +190,48 @@ export function EntryEditor({
         />
 
         {kind === 'show' && (
-          <Field label="Scene group" hint={group ? undefined : 'Without a group the projectors play what the cues already have.'}>
-            <select className="input w-full" value={groupId ?? ''} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                  {multipleShows ? ` (${showName(g.show_id)})` : ''}
-                </option>
-              ))}
+          <Field
+            label={playlists.length ? 'Scene group or playlist' : 'Scene group'}
+            hint={
+              playlist
+                ? 'The playlist’s scene groups take turns at their times, with a fade between them.'
+                : group
+                  ? undefined
+                  : 'Without a group the projectors play what the cues already have.'
+            }
+          >
+            <select
+              className="input w-full"
+              value={playlist ? `p${playlist.id}` : groupId != null ? `g${groupId}` : ''}
+              onChange={(e) => {
+                const value = e.target.value
+                setPlaylistId(value.startsWith('p') ? Number(value.slice(1)) : null)
+                setGroupId(value.startsWith('g') ? Number(value.slice(1)) : null)
+              }}
+            >
+              <optgroup label="Scene groups">
+                {groups.map((g) => (
+                  <option key={g.id} value={`g${g.id}`}>
+                    {g.name}
+                    {multipleShows ? ` (${showName(g.show_id)})` : ''}
+                  </option>
+                ))}
+              </optgroup>
+              {playlists.length > 0 && (
+                <optgroup label="Playlists (groups taking turns)">
+                  {playlists.map((p) => (
+                    <option key={p.id} value={`p${p.id}`}>
+                      {p.name}
+                      {multipleShows ? ` (${showName(p.show_id)})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
               <option value="">Keep the scenes the cues have</option>
             </select>
           </Field>
         )}
-        {kind === 'show' && !group && multipleShows && (
+        {kind === 'show' && !group && !playlist && multipleShows && (
           <Field label="Show">
             <select className="input w-full" value={showId ?? ''} onChange={(e) => setShowId(Number(e.target.value))}>
               {shows.map((s) => (

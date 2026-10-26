@@ -79,6 +79,7 @@ COUNTED = {
     "cues": "mapping_cues",
     "scenes": "mapping_scenes",
     "scene_groups": "mapping_scene_groups",
+    "playlists": "mapping_playlists",
     "saved_maps": "mapping_maps",
     "calendar": "show_calendar",
     "players": "mapping_players",
@@ -94,8 +95,8 @@ Projector Control backup
 ========================
 
 This file holds everything the server was set up with: projectors, shows,
-cues, scenes, scene groups, saved maps, the calendar, mini PCs, automations,
-users and settings{media}.
+cues, scenes, scene groups, playlists, saved maps, the calendar, mini PCs,
+automations, users and settings{media}.
 
 KEEP IT PRIVATE. It also holds the projector passwords, the AI and phone
 alert keys and the server's secret key. Keep it on a USB stick or in your own cloud storage; do not post

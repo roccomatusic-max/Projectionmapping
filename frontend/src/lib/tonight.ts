@@ -14,6 +14,39 @@ export interface SceneGroup {
   updated_at: string
 }
 
+/** From ``at`` ("HH:MM"), play ``group_id``, fading in over ``fade_seconds``. */
+export interface PlaylistStep {
+  at: string
+  group_id: number
+  fade_seconds: number
+}
+
+/** Scene groups taking turns through the night. Mirrors PlaylistOut. */
+export interface Playlist {
+  id: number
+  show_id: number
+  name: string
+  position: number
+  steps: PlaylistStep[]
+  updated_at: string
+}
+
+export interface PlaylistBody {
+  name: string
+  show_id?: number | null
+  steps: PlaylistStep[]
+}
+
+/** One step of tonight's playlist, placed on the night. */
+export interface PlaylistStepTonight {
+  group_id: number | null
+  group_name: string | null
+  starts_at: string
+  fade_seconds: number
+  /** never: its time falls after the show time ends. */
+  state: 'done' | 'now' | 'later' | 'never'
+}
+
 export type PlanState = 'off' | 'later' | 'running' | 'done' | 'not_tonight'
 
 export interface Tonight {
@@ -42,6 +75,13 @@ export interface Tonight {
   cancelled_by: string | null
   /** The name of the next show to start. */
   next_title: string | null
+  /** The playlist the show time plays (group_id is then its step on now), and its steps tonight. */
+  playlist_id: number | null
+  playlist_name: string | null
+  playlist_steps: PlaylistStepTonight[]
+  /** What the weekly show time plays: a group, or a playlist instead. */
+  plan_group_id: number | null
+  plan_playlist_id: number | null
   last_message: string
   timezone: string
 }
@@ -58,6 +98,8 @@ export interface Slot {
   starts_at: string
   ends_at: string
   power: boolean
+  playlist_id: number | null
+  playlist_name: string | null
 }
 
 export interface PlanChanges {
@@ -89,6 +131,34 @@ export const tonightApi = {
     request<SceneGroup>(`/mapping/scene-groups/${id}`, { method: 'PATCH', body }),
   deleteGroup: (id: number) => request<void>(`/mapping/scene-groups/${id}`, { method: 'DELETE' }),
   useGroup: (id: number) => request<Tonight>(`/mapping/scene-groups/${id}/use`, { method: 'POST' }),
+  playlists: () => request<Playlist[]>('/mapping/playlists'),
+  createPlaylist: (body: PlaylistBody) => request<Playlist>('/mapping/playlists', { method: 'POST', body }),
+  updatePlaylist: (id: number, body: PlaylistBody) => request<Playlist>(`/mapping/playlists/${id}`, { method: 'PUT', body }),
+  deletePlaylist: (id: number) => request<void>(`/mapping/playlists/${id}`, { method: 'DELETE' }),
+  usePlaylist: (id: number) => request<Tonight>(`/mapping/playlists/${id}/use`, { method: 'POST' }),
+}
+
+/** Minutes into the night, noon to noon, so 00:30 sorts after 11:00 PM. */
+export function nightOrder(value: string): number {
+  const [h, m] = value.split(':').map(Number)
+  return ((h - 12 + 24) % 24) * 60 + m
+}
+
+/** "Now: Spooky, since 6:45 PM" and "Next: Pumpkins at 8:00 PM", for tonight's playlist. */
+export function playlistNow(tonight: Tonight): { now: string | null; next: string | null } {
+  const steps = tonight.playlist_steps
+  const name = (s: PlaylistStepTonight) => s.group_name ?? 'a deleted group'
+  const current = steps.find((s) => s.state === 'now')
+  const following = steps.find((s) => s.state === 'later')
+  return {
+    now: current ? `Now: ${name(current)}, since ${timeOf(current.starts_at)}` : null,
+    next: following ? `${current ? 'Next' : 'First'}: ${name(following)} at ${timeOf(following.starts_at)}` : null,
+  }
+}
+
+/** "Cut", "5 s fade". */
+export function fadeText(seconds: number): string {
+  return seconds > 0 ? `${seconds} s fade` : 'Cut'
 }
 
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

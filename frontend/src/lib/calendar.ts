@@ -10,6 +10,8 @@ export interface CalendarEntry {
   title: string
   show_id: number | null
   group_id: number | null
+  /** Plays instead of the group when set. */
+  playlist_id: number | null
   /** "YYYY-MM-DD", local dates. No end date keeps repeating. */
   start_date: string
   end_date: string | null

@@ -55,6 +55,50 @@ class SceneGroupOut(SceneGroupBase):
     updated_at: datetime
 
 
+class PlaylistStep(BaseModel):
+    """From ``at`` (local "HH:MM"), play ``group_id``, fading in over ``fade_seconds``."""
+
+    at: str = Field(pattern=TIME_PATTERN)
+    group_id: int
+    fade_seconds: float = Field(default=5.0, ge=0, le=30)
+
+
+class PlaylistIn(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    show_id: int | None = None
+    steps: list[PlaylistStep] = Field(min_length=1, max_length=24)
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Give the playlist a name")
+        return value
+
+
+class PlaylistOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    show_id: int
+    name: str
+    position: int
+    steps: list[PlaylistStep]
+    updated_at: datetime
+
+
+class PlaylistStepOut(BaseModel):
+    """One step of tonight's playlist, placed on the night."""
+
+    group_id: int | None
+    group_name: str | None
+    starts_at: datetime
+    fade_seconds: float
+    #: done: played already. now: on the projectors. later: still to come.
+    #: never: its time falls after the show time ends.
+    state: Literal["done", "now", "later", "never"]
+
+
 class PlanUpdate(BaseModel):
     show_id: int | None = None
     enabled: bool | None = None
@@ -92,6 +136,9 @@ class SlotOut(BaseModel):
     starts_at: datetime
     ends_at: datetime
     power: bool
+    #: A playlist plays instead of the group when set.
+    playlist_id: int | None = None
+    playlist_name: str | None = None
 
 
 class TonightOut(BaseModel):
@@ -121,6 +168,14 @@ class TonightOut(BaseModel):
     cancelled_by: str | None = None
     #: The name of the next show to start.
     next_title: str | None = None
+    #: The playlist the show time shown plays (group_id is then its step
+    #: playing now, or its first one), and its steps tonight.
+    playlist_id: int | None = None
+    playlist_name: str | None = None
+    playlist_steps: list[PlaylistStepOut] = Field(default_factory=list)
+    #: What the weekly show time plays: a group, or a playlist instead.
+    plan_group_id: int | None = None
+    plan_playlist_id: int | None = None
     last_message: str
     #: The zone the times are kept in, such as "America/New_York".
     timezone: str

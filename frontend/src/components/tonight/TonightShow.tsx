@@ -3,9 +3,10 @@
  * everything it needs is ready.
  *
  * Scene groups pick a scene for every projector at once ("Halloween
- * night"); one click on a group makes every projector follow it. Tonight's
- * show time starts and stops the show by itself (services/tonight.py on
- * the server).
+ * night"); one click on a group makes every projector follow it. Playlists
+ * play groups in turn through the night (Playlists.tsx). Tonight's show
+ * time starts and stops the show by itself (services/tonight.py on the
+ * server).
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -34,6 +35,7 @@ import {
 import { classNames, formatHours } from '@/lib/format'
 import { LiveView } from './LiveView'
 import { HistoryLine } from './HistoryLine'
+import { PlaylistTimeline, PlaylistsPanel } from './Playlists'
 import { isLive, lampTone, matchesFilter, peakLampHours } from '@/lib/status'
 import { problemText, stopLabel, useWalkInfo, walkDay, walkTime, walkVerdict } from '@/lib/walkthrough'
 import {
@@ -44,6 +46,7 @@ import {
   timeOf,
   tonightApi,
   whenText,
+  type Playlist,
   type SceneGroup,
   type Tonight,
 } from '@/lib/tonight'
@@ -57,6 +60,7 @@ function useTonightData() {
   const { subscribe } = useFleetContext()
   const [tonight, setTonight] = useState<Tonight | null>(null)
   const [groups, setGroups] = useState<SceneGroup[]>([])
+  const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [scenes, setScenes] = useState<MappingScene[]>([])
   const [shows, setShows] = useState<Record<number, Show>>({})
   const [error, setError] = useState<string | null>(null)
@@ -70,6 +74,7 @@ function useTonightData() {
     }
   }, [])
   const loadGroups = useCallback(() => tonightApi.groups().then(setGroups).catch(() => undefined), [])
+  const loadPlaylists = useCallback(() => tonightApi.playlists().then(setPlaylists).catch(() => undefined), [])
   const loadScenes = useCallback(() => mappingApi.listScenes().then(setScenes).catch(() => undefined), [])
   const loadShow = useCallback(
     (id: number) =>
@@ -83,8 +88,9 @@ function useTonightData() {
   useEffect(() => {
     void loadTonight()
     void loadGroups()
+    void loadPlaylists()
     void loadScenes()
-  }, [loadTonight, loadGroups, loadScenes])
+  }, [loadTonight, loadGroups, loadPlaylists, loadScenes])
 
   // Every show a group belongs to, and tonight's, for projector names and cues.
   const showIds = useMemo(
@@ -101,18 +107,22 @@ function useTonightData() {
       subscribe((message) => {
         const showId = (message.payload as { show_id?: number }).show_id
         if (message.type === 'tonight') void loadTonight()
-        else if (message.type === 'scene_groups') void loadGroups()
+        else if (message.type === 'scene_groups') {
+          void loadGroups()
+          void loadPlaylists()
+        } else if (message.type === 'playlists') void loadPlaylists()
         else if (message.type === 'mapping_scene') void loadScenes()
         else if (message.type === 'mapping_show' && showId != null) void loadShow(showId)
         else if (message.type === 'mapping_shows') {
           void loadTonight()
           void loadGroups()
+          void loadPlaylists()
         }
       }),
-    [subscribe, loadTonight, loadGroups, loadScenes, loadShow],
+    [subscribe, loadTonight, loadGroups, loadPlaylists, loadScenes, loadShow],
   )
 
-  return { tonight, setTonight, groups, scenes, shows, error, setError, reload: loadTonight, loadGroups }
+  return { tonight, setTonight, groups, playlists, scenes, shows, error, setError, reload: loadTonight, loadGroups, loadPlaylists }
 }
 
 /* ------------------------------------------------------------------ */
@@ -122,7 +132,8 @@ function useTonightData() {
 /** Where in tonight's show time we are, in one plain line and a tone. */
 export function timeLine(tonight: Tonight, now: Date): { chip: string; tone: Tone; line: string } {
   const when = tonight.next_starts_at ? whenText(tonight.next_starts_at, now) : null
-  const next = when && tonight.next_title && tonight.next_title !== tonight.group_name ? `${when} (${tonight.next_title})` : when
+  const shownName = tonight.playlist_name ?? tonight.group_name
+  const next = when && tonight.next_title && tonight.next_title !== shownName ? `${when} (${tonight.next_title})` : when
   const left = (iso: string | null) => (iso ? spanText(new Date(iso).getTime() - now.getTime()) : '')
   switch (tonight.state) {
     case 'running':
@@ -644,6 +655,10 @@ export function usedText(group: SceneGroup, tonight: Tonight, transport: { show_
   const live = transport?.show_id === group.show_id && transport?.status === 'playing'
   const now = live ? `Every projector is now playing ${group.name}.` : `${group.name} is set.`
   const fromCalendar = tonight.tonight_slots.find((s) => s.source === 'calendar' && new Date(s.starts_at).getTime() > Date.now())
+  const playlistNext = tonight.playlist_steps.find((s) => s.state === 'later')
+  if (tonight.playlist_name && tonight.state === 'running' && playlistNext) {
+    return { tone: 'warn', text: `${now} At ${timeOf(playlistNext.starts_at)} the playlist ${tonight.playlist_name} moves on to ${playlistNext.group_name ?? 'its next step'}.` }
+  }
   if (fromCalendar && fromCalendar.group_id !== group.id) {
     return { tone: 'warn', text: `${now} At ${timeOf(fromCalendar.starts_at)} the calendar’s ${fromCalendar.title} takes over. Change it on the Calendar page.` }
   }
@@ -656,7 +671,7 @@ export function usedText(group: SceneGroup, tonight: Tonight, transport: { show_
 
 export function TonightShow({ session }: { session: Session }) {
   const status = useShowStatus()
-  const { tonight, setTonight, groups, scenes, shows, error, setError, loadGroups } = useTonightData()
+  const { tonight, setTonight, groups, playlists, scenes, shows, error, setError, loadGroups, loadPlaylists } = useTonightData()
   const [editingTimes, setEditingTimes] = useState(false)
   const [editor, setEditor] = useState<{ group: SceneGroup | null } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -733,8 +748,9 @@ export function TonightShow({ session }: { session: Session }) {
               )}
             </div>
             <p className="mt-1.5 truncate text-2xl font-semibold tracking-tight text-slate-50">
-              {tonight?.group_name ?? (groups.length ? 'Pick tonight’s scenes below' : 'No scene group yet')}
+              {tonight?.playlist_name ?? tonight?.group_name ?? (groups.length ? 'Pick tonight’s scenes below' : 'No scene group yet')}
             </p>
+            {tonight && <PlaylistTimeline tonight={tonight} className="mt-1.5" />}
             {tonight && calendarLines(tonight).map((line, i) => (
               <p key={line} className={classNames('text-sm', i === 0 ? 'mt-0.5 font-medium text-sky-200' : 'tnum text-slate-200')}>
                 {line}
@@ -849,7 +865,9 @@ export function TonightShow({ session }: { session: Session }) {
         ) : (
           <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
             {visibleGroups.map((group) => {
-              const active = tonight?.group_id === group.id
+              // With a playlist on, its step playing now is marked instead.
+              const active = !tonight?.playlist_id && tonight?.group_id === group.id
+              const playlistNow = !!tonight?.playlist_id && tonight.state === 'running' && tonight.group_id === group.id
               const show = shows[group.show_id]
               return (
                 <div
@@ -872,6 +890,11 @@ export function TonightShow({ session }: { session: Session }) {
                       {active && (
                         <Chip tone="ok" className="shrink-0">
                           <CheckIcon size={12} aria-hidden /> Tonight
+                        </Chip>
+                      )}
+                      {playlistNow && (
+                        <Chip tone="ok" className="shrink-0" title={`${tonight?.playlist_name} is playing this now`}>
+                          Now
                         </Chip>
                       )}
                       {busy === `group-${group.id}` && <span className="text-xs text-slate-400">Setting…</span>}
@@ -900,6 +923,20 @@ export function TonightShow({ session }: { session: Session }) {
           </div>
         )}
       </section>
+
+      {groups.length > 0 && (
+        <PlaylistsPanel
+          tonight={tonight}
+          groups={groups}
+          playlists={playlists}
+          showOptions={showOptions}
+          canOperate={canOperate}
+          canEdit={canEdit}
+          onTonight={setTonight}
+          onNotice={setNotice}
+          onChanged={() => void loadPlaylists()}
+        />
+      )}
 
       {editor && (
         <GroupEditor
