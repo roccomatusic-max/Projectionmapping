@@ -716,6 +716,12 @@ uniform int uPlaceOn;
 uniform int uMotion;
 uniform int uPinCount;
 uniform vec4 uPins[64];
+// Straightened house parts (flat.ts): which part each spot is on, and each
+// part's flat space → canvas and back, in canvas heights.
+uniform sampler2D uFlatIdx;
+uniform int uFlatOn;
+uniform mat3 uFlatTo[8];
+uniform mat3 uFlatFrom[8];
 out vec2 vQ;
 out float vAA;
 flat out float vSeed;
@@ -727,6 +733,12 @@ flat out float vPhase;
 flat out float vBlink;
 flat out float vFlip;
 flat out vec2 vLook;
+// The object's part: flat space → canvas (the identity off a straightened part).
+mat3 gTo = mat3(1.0);
+vec2 onCanvas(vec2 p) {
+  vec3 r = gTo * vec3(p, 1.0);
+  return r.xy / r.z;
+}
 void main() {
   int id = gl_VertexID / 6;
   int v = gl_VertexID - id * 6;
@@ -757,6 +769,21 @@ void main() {
     if (hidden) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
+    }
+  }
+  // On a straightened part (a roof sloping away) the object moves and
+  // changes in the part's flat space and is drawn through it, so it is not
+  // stretched there. Rising objects cross everything and stay as they are.
+  int part = -1;
+  if (uFlatOn == 1 && !(uMotion == M_RISE && uPinCount == 0)) {
+    float level = textureLod(uFlatIdx, vec2(c.x / aspect, c.y), 0.0).r * 255.0 / 16.0;
+    part = int(floor(level + 0.5)) - 1;
+    if (part >= 0 && part < 8) {
+      gTo = uFlatTo[part];
+      vec3 f = uFlatFrom[part] * vec3(c, 1.0);
+      c = f.xy / f.z;
+    } else {
+      part = -1;
     }
   }
   float R = cs * 0.3 * own;
@@ -813,7 +840,7 @@ void main() {
   vec2 pc = c + off;
   vec2 away;
   float dist;
-  float k = uNear == N_NONE ? 0.0 : nearAt(pc, away, dist);
+  float k = uNear == N_NONE ? 0.0 : nearAt(onCanvas(pc), away, dist);
   if (uNear == N_LIGHT) { bright *= 1.0 + 0.8 * k; glow = k; }
   else if (uNear == N_GROW) scale *= 1.0 + 1.2 * k;
   else if (uNear == N_SHRINK) scale *= 1.0 - 0.8 * k;
@@ -843,7 +870,7 @@ void main() {
     float best = 1e9;
     for (int i = 0; i < 16; i++) {
       if (i >= uSpots) break;
-      vec2 d = toH(uSpot[i].xy) - pc;
+      vec2 d = toH(uSpot[i].xy) - onCanvas(pc);
       float dd = length(d);
       if (dd < best && uSpot[i].w > 0.2) { best = dd; look = d / max(dd, 1e-4) * min(1.0, dd / (R * 3.0)); }
     }
@@ -855,10 +882,25 @@ void main() {
   float cr = cos(rot);
   float sr = sin(rot);
   vec2 pH = pc + vec2(cr * corner.x - sr * corner.y, sr * corner.x + cr * corner.y) * size;
-  vec2 uv = (vec2(pH.x / aspect, pH.y) - uRect.xy) / uRect.zw;
-  gl_Position = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0);
+  // Through the part's perspective; w carries it so the look inside the
+  // quad is perspective-correct too (w is 1 off a straightened part).
+  vec3 hc = gTo * vec3(pH, 1.0);
+  if (hc.z <= 1e-6) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
+  vec2 uv = (vec2(hc.x / hc.z / aspect, hc.y / hc.z) - uRect.xy) / uRect.zw;
+  gl_Position = vec4((uv.x * 2.0 - 1.0) * hc.z, (1.0 - uv.y * 2.0) * hc.z, 0.0, hc.z);
+  // How much the part's perspective grows or shrinks the object here, for its soft edge.
+  float js = 1.0;
+  if (part >= 0) {
+    vec2 o = onCanvas(pc);
+    vec2 ex = onCanvas(pc + vec2(R, 0.0)) - o;
+    vec2 ey = onCanvas(pc + vec2(0.0, R)) - o;
+    js = sqrt(abs(ex.x * ey.y - ex.y * ey.x)) / max(R, 1e-5);
+  }
   vQ = corner * 1.4;
-  vAA = 1.5 / max(R * max(scale, 0.05) * uPx, 1.0);
+  vAA = 1.5 / max(R * max(scale, 0.05) * js * uPx, 1.0);
   vSeed = hash(cell + 5.5);
   vTint = tint;
   vBright = bright;

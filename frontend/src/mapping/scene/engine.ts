@@ -17,6 +17,7 @@ import type { PersonSpot } from '../people'
 import type { LayerBlend, MappingScene, ReactsTo, SceneLayer, SourceRect, Surface } from '../types'
 import { CHANGES, changeOf, KIND, MOTIONS, motionOf, NEARS, nearOf } from './catalog'
 import { CountdownDrawer } from './countdown'
+import { CHECKER_FRAGMENT, CHECKER_VERTEX, flatParts, flatTesting, glMat3, MAX_FLAT, rasteriseFlatIndex, type FlatPart } from './flat'
 import { maskKey, rasteriseLayerMask } from './masks'
 import {
   LAYER_VERTEX,
@@ -87,6 +88,8 @@ export interface SceneFrame {
   people: PersonSpot[]
   /** Any steady clock, seconds; used for how long each frame took. */
   time: number
+  /** Now on the server's clock, epoch ms: whether a part's checkerboard is still wanted. */
+  now?: number
 }
 
 interface Target {
@@ -141,6 +144,13 @@ export class SceneEngine {
   private moveData = new Float32Array(MAX_PEOPLE * 4)
   private surfacesKey = ''
   private surfacesRef: Surface[] | null = null
+  /** Straightened house parts (flat.ts) and the image saying which part each spot is on. */
+  private flat: FlatPart[] = []
+  private flatKey = ''
+  private flatTex: WebGLTexture | null = null
+  private flatCanvas: HTMLCanvasElement | null = null
+  private flatTo = new Float32Array(MAX_FLAT * 9)
+  private flatFrom = new Float32Array(MAX_FLAT * 9)
   /** Pictures for "picture" layers, by media id; drawn once loaded. */
   private pictures = new Map<number, { tex: WebGLTexture; ready: boolean }>()
   /** Failed loads per picture, for backing off its retries. */
@@ -354,7 +364,8 @@ export class SceneEngine {
     this.distortStrength = 0
 
     const drawable = frame.items.filter((item) => item.weight > 0.001 && item.scene.layers.some((l) => l.enabled))
-    if (drawable.length === 0) {
+    const testing = frame.now != null ? frame.surfaces.filter((s) => flatTesting(s, frame.now!)) : []
+    if (drawable.length === 0 && testing.length === 0) {
       this.forgetUnused(new Set())
       return null
     }
@@ -376,6 +387,7 @@ export class SceneEngine {
       this.surfacesRef = frame.surfaces
       this.surfacesKey = JSON.stringify(frame.surfaces)
     }
+    this.updateFlat(frame.surfaces, aspect)
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.target.fbo)
     gl.viewport(0, 0, w, h)
@@ -429,11 +441,61 @@ export class SceneEngine {
       }
     }
 
+    if (testing.length) this.drawCheckers(testing, frame, aspect, w, h)
+
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     this.forgetUnused(used)
     return this.target.tex
+  }
+
+  /** Keep the straightened parts and their image in step with the house parts. */
+  private updateFlat(surfaces: Surface[], aspect: number) {
+    const key = `${this.surfacesKey}|${aspect.toFixed(5)}`
+    if (key === this.flatKey) return
+    this.flatKey = key
+    this.flat = flatParts(surfaces, aspect)
+    this.flatTo.fill(0)
+    this.flatFrom.fill(0)
+    this.flat.forEach((part, i) => {
+      this.flatTo.set(glMat3(part.toCanvas), i * 9)
+      this.flatFrom.set(glMat3(part.toFlat), i * 9)
+    })
+    if (!this.flat.length) return
+    const gl = this.gl
+    const ph = Math.max(64, Math.round(PLACEMENT_WIDTH / aspect))
+    this.flatCanvas = rasteriseFlatIndex(this.flat, PLACEMENT_WIDTH, ph, this.flatCanvas ?? undefined)
+    if (!this.flatTex) {
+      this.flatTex = gl.createTexture()!
+      gl.bindTexture(gl.TEXTURE_2D, this.flatTex)
+      // Part numbers: never blended between neighbours.
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.flatTex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.flatCanvas)
+  }
+
+  /** The checkerboard square of each part whose corners are being set. */
+  private drawCheckers(testing: Surface[], frame: SceneFrame, aspect: number, w: number, h: number) {
+    const gl = this.gl
+    const p = this.program('flat:checker', CHECKER_VERTEX, () => CHECKER_FRAGMENT)
+    gl.useProgram(p.program)
+    gl.viewport(0, 0, w, h)
+    const r = frame.rect
+    gl.uniform4f(this.u(p, 'uRect'), r.x, r.y, r.w, r.h)
+    gl.uniform1f(this.u(p, 'uAspect'), aspect)
+    this.blend('normal')
+    for (const surface of testing) {
+      const part = flatParts([surface], aspect)[0]
+      if (!part) continue
+      gl.uniformMatrix3fv(this.u(p, 'uTo'), false, glMat3(part.toCanvas))
+      gl.uniform1f(this.u(p, 'uSide'), part.side)
+      gl.drawArrays(gl.TRIANGLES, 0, 6)
+    }
   }
 
   private state(key: string): LayerState {
@@ -575,6 +637,14 @@ export class SceneEngine {
       gl.bindTexture(gl.TEXTURE_2D, state.maskUsed ? state.maskTex : this.empty)
       gl.uniform1i(this.u(p, 'uPlace'), 3)
       gl.uniform1i(this.u(p, 'uPlaceOn'), state.maskUsed ? 1 : 0)
+      gl.activeTexture(gl.TEXTURE4)
+      gl.bindTexture(gl.TEXTURE_2D, this.flat.length ? this.flatTex : this.empty)
+      gl.uniform1i(this.u(p, 'uFlatIdx'), 4)
+      gl.uniform1i(this.u(p, 'uFlatOn'), this.flat.length ? 1 : 0)
+      if (this.flat.length) {
+        gl.uniformMatrix3fv(this.u(p, 'uFlatTo'), false, this.flatTo)
+        gl.uniformMatrix3fv(this.u(p, 'uFlatFrom'), false, this.flatFrom)
+      }
       gl.activeTexture(gl.TEXTURE0)
       gl.uniform1i(this.u(p, 'uMotion'), Math.max(0, MOTIONS.findIndex((m) => m.id === motionOf(layer))))
       // Placed by hand (a list, even an empty one) or spread over an area.
@@ -644,6 +714,8 @@ export class SceneEngine {
     this.states.clear()
     this.dropTarget(this.target)
     this.target = null
+    if (this.flatTex) gl.deleteTexture(this.flatTex)
+    this.flatTex = null
     for (const { tex } of this.pictures.values()) gl.deleteTexture(tex)
     this.pictures.clear()
     this.countdown?.dispose()

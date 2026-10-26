@@ -62,6 +62,7 @@ from app.db.models import (
     Event,
     MappingOutput,
     MappingPlayer,
+    MappingShow,
     Projector,
     Role,
     Severity,
@@ -90,6 +91,8 @@ from app.schemas.mapping import (
     PlayerUpdate,
     ScreenControl,
     ScreenControlResult,
+    ScreenFlat,
+    SurfaceFlat,
 )
 from app.services import minipc_updates
 from app.services.alerts import alerting
@@ -847,6 +850,47 @@ async def screen_control(payload: ScreenControl, session: SessionDep,
         return ScreenControlResult(ok=True, message=f"Turning the projector {state}.")
     return ScreenControlResult(ok=False, message=f"The projector did not turn {state}: "
                                                  f"{result.error or outcome.value.replace('_', ' ')}.")
+
+
+#: How long the checkerboard square stays on the projectors after the last drag.
+FLAT_TEST_MS = 10 * 60 * 1000
+
+
+@router.post("/me/flat", response_model=ScreenControlResult,
+             dependencies=[Depends(write_rate_limit)])
+async def screen_flat(payload: ScreenFlat, session: SessionDep,
+                      user: CurrentUser) -> ScreenControlResult:
+    """Corners of a house part dragged with the mouse on the mini PC's status screen.
+
+    Only the mini PC's own show, and only a part's flat view (what makes
+    things drawn on a sloped roof look right): nothing else of the show.
+    """
+    player = await _own_player(session, user)
+    show_id = (await _player_out(session, player)).show_id
+    show = await session.get(MappingShow, show_id) if show_id is not None else None
+    if show is None:
+        return ScreenControlResult(ok=False, message="This mini PC has no show yet.")
+    surfaces = list(show.surfaces or [])
+    index = next((i for i, s in enumerate(surfaces) if s.get("id") == payload.surface_id), None)
+    if index is None:
+        return ScreenControlResult(ok=False, message="That house part is gone. Trace it again on Scenes → House parts.")
+    part = dict(surfaces[index])
+    if payload.corners is None:
+        part.pop("flat", None)
+        message = f"{part.get('name') or 'The part'} is no longer straightened."
+    else:
+        try:
+            flat = SurfaceFlat(corners=payload.corners,
+                               test_until=time.time() * 1000 + FLAT_TEST_MS if payload.test else None)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        part["flat"] = flat.model_dump(mode="json")
+        message = "Saved." if payload.test else f"Saved. The checkerboard on {part.get('name') or 'the part'} is off."
+    surfaces[index] = part
+    show.surfaces = surfaces
+    await session.commit()
+    _touch(show.id)
+    return ScreenControlResult(ok=True, message=message)
 
 
 @router.get("/{player_id}/picture", response_model=None,

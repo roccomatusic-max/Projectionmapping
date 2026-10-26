@@ -446,6 +446,55 @@ async def test_the_status_screen_finds_the_only_projector_and_can_link_one(api):
     assert again.json()["ok"] is False and await projector_for() == (second, False)
 
 
+async def test_the_status_screen_straightens_a_house_part_with_the_mouse(api):
+    import time
+
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    flat = {"surface_id": "roof", "corners": [[0.4, 0.1], [0.6, 0.1], [0.7, 0.3], [0.3, 0.3]]}
+    # No show yet: nothing to straighten.
+    alone = await api.post("/api/mapping/players/me/flat", headers=token, json=flat)
+    assert alone.json()["ok"] is False
+
+    show = (await api.post("/api/mapping/shows", headers=headers, json={"name": "House"})).json()
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Roof"})).json()
+    await api.patch(f"/api/mapping/players/{player_id}", headers=headers,
+                    json={"output_id": output["id"]})
+    roof = {"id": "roof", "name": "Roof", "kind": "roof",
+            "points": [[0.1, 0.05], [0.9, 0.05], [0.8, 0.35], [0.2, 0.35]]}
+    await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers, json={"surfaces": [roof]})
+
+    async def part():
+        return (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()["surfaces"][0]
+
+    # While dragging the checkerboard stays on for a while; Done turns it off.
+    dragged = await api.post("/api/mapping/players/me/flat", headers=token, json=flat)
+    assert dragged.json()["ok"] is True, dragged.text
+    now = (await part())["flat"]
+    assert now["corners"] == flat["corners"]
+    assert now["test_until"] > time.time() * 1000 + 60_000
+    done = await api.post("/api/mapping/players/me/flat", headers=token, json={**flat, "test": False})
+    assert done.json()["ok"] is True
+    assert (await part())["flat"]["test_until"] is None
+    assert (await part())["points"] == roof["points"]
+
+    # A part that is gone, or corners that are not four, are refused.
+    gone = await api.post("/api/mapping/players/me/flat", headers=token, json={**flat, "surface_id": "x"})
+    assert gone.json()["ok"] is False
+    three = await api.post("/api/mapping/players/me/flat", headers=token,
+                           json={**flat, "corners": flat["corners"][:3]})
+    assert three.status_code == 422
+    # Taken away.
+    removed = await api.post("/api/mapping/players/me/flat", headers=token,
+                             json={"surface_id": "roof", "corners": None})
+    assert removed.json()["ok"] is True
+    assert (await part())["flat"] is None
+    # Only a mini PC's own account.
+    person = await api.post("/api/mapping/players/me/flat", headers=headers, json=flat)
+    assert person.status_code == 403
+
+
 async def test_the_status_screen_buttons_run_the_show_and_its_projector(api):
     from tests.test_api import add_projector
 

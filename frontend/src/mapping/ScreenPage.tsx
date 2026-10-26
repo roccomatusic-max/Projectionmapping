@@ -6,6 +6,7 @@ import { classNames, formatHours } from '@/lib/format'
 import { activeInput, attentionItems, isLive, lampReadings } from '@/lib/status'
 import { clockText, spanText, whenText, type Tonight } from '@/lib/tonight'
 import type { Player } from './editor/PlayersPanel'
+import { StraightenBar, StraightenHandles, useStraighten } from './ScreenStraighten'
 import type { MappingScene, Show, TransportState } from './types'
 
 /**
@@ -291,6 +292,7 @@ export default function ScreenPage() {
   const tonight = usePoll(signedIn ? tonightLoader : null, TONIGHT_MS).value
   const scenes = usePoll(signedIn ? scenesLoader : null, SCENES_MS).value
   const { picture, tried } = usePicture(signedIn ? playerId : null)
+  const straighten = useStraighten(signedIn ? show : null)
 
   const lost = now - lastAnswer > LOST_MS
   const { busy, said, press, pressEmergency } = useButtons()
@@ -396,7 +398,9 @@ export default function ScreenPage() {
             online={player?.online ?? false}
             emergency={emergency != null}
             aspect={output ? output.width / output.height : 16 / 10}
+            overlay={output && <StraightenHandles straighten={straighten} output={output} />}
           />
+          <StraightenBar straighten={straighten} show={show} />
           <PlayerFacts player={player} />
         </Card>
 
@@ -729,6 +733,7 @@ function OutputPicture({
   online,
   emergency,
   aspect,
+  overlay,
 }: {
   picture: Picture | null
   tried: boolean
@@ -736,6 +741,8 @@ function OutputPicture({
   online: boolean
   emergency: boolean
   aspect: number
+  /** Over the picture and taking the mouse: corners being dragged. */
+  overlay?: ReactNode
 }) {
   const age = picture ? (now - picture.drawnAt) / 1000 : null
   const stale = age != null && age > STALE_SECONDS
@@ -771,6 +778,7 @@ function OutputPicture({
             {emergency ? 'Black: the emergency stop is on' : note}
           </span>
         )}
+        {overlay}
       </div>
     </div>
   )
