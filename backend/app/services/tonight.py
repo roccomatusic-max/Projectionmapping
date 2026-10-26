@@ -49,6 +49,7 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.drivers import CommandOutcome
+from app.services import show_history
 from app.services.mapping import TransportError, transport
 from app.services.show_calendar import Planner, Slot
 
@@ -244,6 +245,7 @@ async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
         group = await session.get(MappingSceneGroup, group_id) if group_id else None
         if group is not None and group.show_id == show_id:
             await apply_group(session, group)
+        group_name = group.name if group is not None and group.show_id == show_id else None
         ids = await _projector_ids(session, show_id) if power else []
     bus.publish("mapping_show", {"show_id": show_id})
 
@@ -266,6 +268,8 @@ async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
     message = " ".join(p for p in parts if p)
     await _record(f"Started by {by} at {clock(datetime.now(settings.tz))}. {message}",
                   severity=Severity.INFO if ok else Severity.WARNING, kind="tonight_started")
+    await show_history.recorder.note_start(slot=slot, show_id=show_id, group_name=group_name,
+                                           by=by, ok=ok, message=message)
     return ok, message
 
 
@@ -286,6 +290,7 @@ async def stop_show(*, by: str, power_off: bool, show_id: int | None = None) -> 
     message = " ".join(p for p in parts if p)
     await _record(f"Stopped by {by} at {clock(datetime.now(settings.tz))}. {message}",
                   severity=Severity.INFO, kind="tonight_stopped")
+    await show_history.recorder.note_stop(by=by)
     return True, message
 
 
@@ -351,9 +356,9 @@ class TonightScheduler:
                 return  # already going (started by hand, or before a page reload)
             await self._mark(start=current)
             if state.emergency is not None:
-                await _record(
-                    f"Not started at {clock(current.start)} because the emergency stop is on.",
-                    severity=Severity.WARNING, kind="tonight_held")
+                held = f"Not started at {clock(current.start)} because the emergency stop is on."
+                await _record(held, severity=Severity.WARNING, kind="tonight_held")
+                await show_history.recorder.note_held(current, held)
                 return
             await start_show(by="the schedule", slot=current)
         elif ending is not None:

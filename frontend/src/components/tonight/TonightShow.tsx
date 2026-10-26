@@ -33,6 +33,7 @@ import {
 } from '@/components/icons'
 import { classNames, formatHours } from '@/lib/format'
 import { LiveView } from './LiveView'
+import { HistoryLine } from './HistoryLine'
 import { isLive, lampTone, matchesFilter, peakLampHours } from '@/lib/status'
 import {
   DAY_NAMES,
@@ -742,6 +743,7 @@ export function TonightShow({ session }: { session: Session }) {
               </p>
             )}
             {tonight?.last_message && <p className="mt-1 text-xs text-slate-500">Last: {tonight.last_message}</p>}
+            <HistoryLine />
           </div>
           {canOperate && (
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">

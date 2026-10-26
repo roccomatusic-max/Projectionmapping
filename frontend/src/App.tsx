@@ -19,6 +19,7 @@ import Calendar from '@/pages/Calendar'
 // Monitoring pulls in the charting library; keep it out of the initial
 // bundle so the dashboard loads fast on a tablet over site wifi.
 const Monitoring = lazy(() => import('@/pages/Monitoring'))
+const ShowHistory = lazy(() => import('@/pages/ShowHistory'))
 // The mapping editor carries the WebGL renderer; output windows and players
 // load only what they draw.
 const Mapping = lazy(() => import('@/pages/Mapping'))
@@ -116,6 +117,14 @@ export default function App() {
               element={
                 <Suspense fallback={<Spinner label="Loading monitoring…" />}>
                   <Monitoring session={session} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/history"
+              element={
+                <Suspense fallback={<Spinner label="Loading show history…" />}>
+                  <ShowHistory session={session} />
                 </Suspense>
               }
             />

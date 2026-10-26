@@ -661,6 +661,57 @@ with the weekly show time and every entry (past ones folded away).
 `entry_id`, `tonight_slots`, `cancelled_by` and `next_title`. Changes go out
 as `calendar` and `tonight` messages.
 
+## 6d. Show history, energy report and season wrap-up (Health → Show history)
+
+Every show time is written down (`backend/app/services/show_history.py`,
+table `show_nights`). The recorder listens to the show transport: the moment
+the show plays, by the show time, Start now, GO on Run the show, the phone,
+Home Assistant or an automation, a record opens; each cue and scene it goes
+through is noted; it closes when the show stops, blacks out or the
+emergency stop is pressed. Tonight's show adds the show time's name, its
+planned times, the scene group and who started and stopped it. A show that
+starts again within 15 minutes (a blackout by mistake, a server restart
+mid-show) carries on the same record. A planned show time that ends with no
+show is recorded as "Did not play" (with the emergency stop as the reason
+when it held the show), and a start that failed as "Could not start".
+
+While the show plays the recorder checks the show's mini PCs every 30
+seconds: one out of touch for a minute is a problem ("lost its connection
+at 7:57 PM, came back after 3 minutes"). When the record closes, the hours
+each projector was on, the hottest temperature of each sensor and the
+problems in the event log (projector stopped answering, switched off by
+itself, projector warnings, emergency stop, automation failed, intake close
+to its limit) are worked out and kept with the record, since temperature
+samples are pruned after 30 days.
+
+Hours on come from the power samples of the operational poll, counted per
+hour: the share of samples that said on, times the part of the hour the
+samples cover (so late polls and a server that was off do not skew it).
+Energy is hours × watts: 1,000 W for the PT-DZ13K series and 830 W for
+the DZ770 / DW740 / DX810 (Panasonic spec sheets, 120 V), 500 W for other
+makes until set; price $0.17 per kWh until set. Both are set on the Energy
+tab (table `history_settings`). Weeks run Monday to Sunday; hours before 6
+AM count on the night before.
+
+Seasons: Halloween (September 1 to October 31), Christmas (November 15 to
+January 6), and any named run of nights on the calendar. For 21 days after
+a season with shows ends, the Show history page and Tonight's show say so
+and link the wrap-up: nights with a show, hours, problems, energy and cost,
+the hottest night (air intake), longest show, nights that did not play,
+what played most, and every show as a strip. Shows under 10 minutes (a
+test) are listed but not counted as nights. On first start the last 30
+days of Tonight's show log lines are turned into records.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/history/nights?days=60` | Viewer: every show time, newest first, with timeline, problems, hours, temperatures, kWh and cost |
+| GET | `/api/history/energy?weeks=8` | Viewer: hours, kWh and cost per projector per week, per night, totals |
+| PUT | `/api/history/energy/settings` | Operator: price per kWh, currency sign, watts per projector |
+| GET | `/api/history/seasons` | Viewer: seasons with shows, and the one that just finished |
+| GET | `/api/history/wrapup?start=&end=&name=` | Viewer: the wrap-up for any run of nights (up to 400) |
+
+Changes go out as `show_history` messages.
+
 ## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`

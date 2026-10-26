@@ -38,6 +38,7 @@ from app.api.routes import (
     monitoring,
     projectors,
     show_calendar,
+    show_history,
     system,
     tonight,
     updates,
@@ -58,6 +59,7 @@ from app.services.emergency import emergency as emergency_stop
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
+from app.services.show_history import recorder as history_recorder
 from app.services.tonight import scheduler as tonight_scheduler
 from app.services.updates import start_auto_updates
 
@@ -147,6 +149,7 @@ async def lifespan(_: FastAPI):
     await monitor.start()
     await alerting.start()
     await automation_engine.start()
+    await history_recorder.start()
     await tonight_scheduler.start()
     await mqtt_publisher.start()
     if settings.advertise_port:
@@ -168,6 +171,7 @@ async def lifespan(_: FastAPI):
         await discovery.stop()
         await automation_engine.stop()
         await tonight_scheduler.stop()
+        await history_recorder.stop()
         await mapping_transport.stop_service()
         await monitor.stop()
         await alerting.stop()
@@ -247,7 +251,7 @@ for router in (
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
     mapping_maps.router, tonight.router, show_calendar.router, updates.router, emergency.router,
-    ws.router,
+    show_history.router, ws.router,
 ):
     app.include_router(router, prefix="/api")
 
