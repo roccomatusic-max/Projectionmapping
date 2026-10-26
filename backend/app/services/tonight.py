@@ -21,6 +21,10 @@ for. The scheduler here checks both every 20 seconds:
   ends exactly as the next starts, the show keeps playing with the next
   one's scene group and the projectors stay on.
 
+A show time can play a playlist instead of one group (services/playlists.py):
+"Spooky from 6:45, Pumpkins from 8:00, Quiet from 9:30". The scheduler moves
+the projectors on to each step as its time comes, crossfading the scenes.
+
 The emergency stop wins: while it is on, a start is skipped (and not tried
 again that night) and nothing is turned on.
 """
@@ -50,6 +54,7 @@ from app.db.models import (
 from app.db.session import session_scope
 from app.drivers import CommandOutcome
 from app.services.mapping import TransportError, transport
+from app.services.playlists import TimedStep, active, timeline
 from app.services.show_calendar import Planner, Slot
 
 log = logging.getLogger(__name__)
@@ -88,7 +93,8 @@ async def load_plan(session) -> ShowPlan:
     return plan
 
 
-def _slot_out(slot: Slot, group_names: dict[int, str]) -> dict[str, Any]:
+def _slot_out(slot: Slot, group_names: dict[int, str],
+              playlist_names: dict[int, str] | None = None) -> dict[str, Any]:
     return {
         "key": slot.key,
         "source": slot.source,
@@ -100,7 +106,33 @@ def _slot_out(slot: Slot, group_names: dict[int, str]) -> dict[str, Any]:
         "starts_at": slot.start,
         "ends_at": slot.end,
         "power": slot.power,
+        "playlist_id": slot.playlist_id,
+        "playlist_name": (playlist_names or {}).get(slot.playlist_id or 0),
     }
+
+
+def _steps_out(planner: Planner, slot: Slot, now: datetime) -> list[dict[str, Any]]:
+    """A show time's playlist steps, with which one plays now."""
+    steps = planner.steps(slot)
+    playing = active(steps, now) if slot.start <= now < slot.end else None
+    out = []
+    for place_in_list, step in enumerate(steps):
+        if step.at >= slot.end:
+            state = "never"  # after the show time ends
+        elif now >= slot.end or (playing is not None and place_in_list < playing):
+            state = "done"
+        elif place_in_list == playing:
+            state = "now"
+        else:
+            state = "later"
+        out.append({
+            "group_id": step.group_id,
+            "group_name": planner.group_names.get(step.group_id or 0),
+            "starts_at": max(step.at, slot.start),
+            "fade_seconds": step.fade_seconds,
+            "state": state,
+        })
+    return out
 
 
 async def describe(session, now: datetime | None = None) -> dict[str, Any]:
@@ -122,11 +154,14 @@ async def describe(session, now: datetime | None = None) -> dict[str, Any]:
     else:
         state, shown = "not_tonight", None
     show_id = shown.show_id if shown and shown.show_id else plan.show_id
-    group_id = shown.group_id if shown else plan.group_id
+    group_id = planner.group_at(shown, now)[0] if shown else plan.group_id
+    playlist_id = shown.playlist_id if shown else (
+        plan.playlist_id if plan.playlist_id in planner.playlists else None)
     show = await session.get(MappingShow, show_id) if show_id else None
     group = await session.get(MappingSceneGroup, group_id) if group_id else None
     following = planner.next_start(now) if state != "off" else None
     names = planner.group_names
+    playlist_names = planner.playlist_names
     return {
         "show_id": show.id if show else None,
         "show_name": show.name if show else None,
@@ -144,7 +179,12 @@ async def describe(session, now: datetime | None = None) -> dict[str, Any]:
         "source": shown.source if shown else None,
         "title": shown.title if shown else None,
         "entry_id": shown.entry_id if shown else None,
-        "tonight_slots": [_slot_out(slot, names) for slot in tonight.slots],
+        "tonight_slots": [_slot_out(slot, names, playlist_names) for slot in tonight.slots],
+        "playlist_id": playlist_id,
+        "playlist_name": playlist_names.get(playlist_id or 0),
+        "playlist_steps": _steps_out(planner, shown, now) if shown else [],
+        "plan_group_id": plan.group_id,
+        "plan_playlist_id": plan.playlist_id if plan.playlist_id in planner.playlists else None,
         "cancelled_by": (tonight.cancelled_by.title or "No show") if tonight.cancelled_by else None,
         "next_title": following.title if following else None,
         "last_message": plan.last_message or "",
@@ -161,13 +201,23 @@ async def show_time(session, now: datetime | None = None) -> tuple[Slot | None, 
 
 
 async def tonights_group_ids(session) -> set[int]:
-    """The scene groups the plan plays now or later today."""
+    """The scene groups the plan plays now or later today.
+
+    Of a playlist, only the step playing now counts: changing a group that
+    plays later in the night waits for its turn.
+    """
     plan = await load_plan(session)
     planner = await Planner.load(session, plan)
     now = datetime.now(settings.tz)
-    ids = {s.group_id for s in planner.recent(now) if s.end > now and s.group_id}
     current = planner.current(now)
-    if plan.group_id and (current is None or current.source == "weekly"):
+    ids = {s.group_id for s in planner.recent(now)
+           if s.end > now and s.group_id and s.playlist_id is None}
+    if current is not None and current.playlist_id is not None:
+        live = planner.group_at(current, now)[0]
+        if live:
+            ids.add(live)
+    if (plan.group_id and plan.playlist_id is None
+            and (current is None or current.source == "weekly")):
         ids.add(plan.group_id)
     return ids
 
@@ -220,30 +270,39 @@ async def _power(ids: list[int], state: str) -> str:
             f"{', '.join(failed)} did not answer.")
 
 
-async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
+async def start_show(*, by: str, slot: Slot | None = None,
+                     now: datetime | None = None) -> tuple[bool, str]:
     """Use tonight's group, GO on the first cue, turn the projectors on.
 
     Without a show time given, it plays the one on now, else the next one
-    later today, else the weekly plan's show and group.
+    later today, else the weekly plan's show and group. A playlist starts
+    on the step its time says, or its first step before then.
     """
     if transport.snapshot().emergency is not None:
         return False, "The emergency stop is on, so the show was not started. Clear it first."
+    now = now or datetime.now(settings.tz)
     async with session_scope() as session:
         plan = await load_plan(session)
+        planner = await Planner.load(session, plan)
         if slot is None:
-            planner = await Planner.load(session, plan)
-            now = datetime.now(settings.tz)
             slot = planner.current(now) or next(
                 (s for s in planner.slots(now.date(), now.tzinfo) if s.start > now), None)
+        step: TimedStep | None = None
         if slot is not None and slot.show_id is not None:
-            show_id, group_id, power = slot.show_id, slot.group_id, slot.power
+            show_id, power = slot.show_id, slot.power
+            group_id, step = planner.group_at(slot, now)
         else:
             show_id, group_id, power = plan.show_id, plan.group_id, plan.power
+            if plan.playlist_id in planner.playlists:
+                steps = timeline(planner.playlists[plan.playlist_id][1], now)
+                group_id = steps[0].group_id if steps else group_id
         if show_id is None:
             return False, "Pick tonight's scenes first."
         group = await session.get(MappingSceneGroup, group_id) if group_id else None
         if group is not None and group.show_id == show_id:
             await apply_group(session, group)
+        if step is not None and slot is not None and slot.start <= now < slot.end:
+            scheduler.note_step(slot.key, step.index, group_id)
         ids = await _projector_ids(session, show_id) if power else []
     bus.publish("mapping_show", {"show_id": show_id})
 
@@ -298,6 +357,60 @@ async def _record(message: str, *, severity: Severity, kind: str) -> None:
     changed()
 
 
+async def switch_group(show_id: int, group_id: int | None, fade_seconds: float) -> str | None:
+    """Put a group on the show's cues, crossfading the scenes when it plays.
+
+    Returns the group's name, or None when it is not one of the show's.
+    """
+    state = transport.snapshot()
+    async with session_scope() as session:
+        group = await session.get(MappingSceneGroup, group_id) if group_id else None
+        if group is None or group.show_id != show_id:
+            return None
+        live = state.current if state.show_id == show_id else None
+        cue = (await session.get(MappingCue, live.id)
+               if live is not None and live.id > 0 else None)
+        before = (cue.scene_id, dict(cue.output_scenes or {})) if cue else None
+        await apply_group(session, group)
+        after = (group.scene_id, {str(k): v for k, v in (group.output_scenes or {}).items()})
+        name = group.name
+    # The outputs hear of the fade first, then of the new scenes, so they
+    # never cut straight to the new ones.
+    if before is not None and before != after:
+        await transport.fade_scenes(show_id=show_id, scene_id=before[0],
+                                    output_scenes=before[1], fade_seconds=fade_seconds)
+    bus.publish("mapping_show", {"show_id": show_id})
+    return name
+
+
+async def use_playlist_now(playlist_id: int) -> None:
+    """A playlist just picked for the weekly show time: put its step on now.
+
+    During the show time that is the step due now, faded in; otherwise its
+    first step, so the projectors are ready when the show starts. A show
+    time from the calendar playing now keeps going.
+    """
+    now = datetime.now(settings.tz)
+    async with session_scope() as session:
+        plan = await load_plan(session)
+        planner = await Planner.load(session, plan)
+        current = planner.current(now)
+        if current is not None and current.playlist_id != playlist_id:
+            return
+        if current is not None:
+            group_id, step = planner.group_at(current, now)
+        else:
+            steps = timeline(planner.playlists.get(playlist_id, ("", []))[1], now)
+            step = steps[0] if steps else None
+            group_id = step.group_id if step else None
+        show_id = plan.show_id
+    if step is None or show_id is None:
+        return
+    if current is not None:
+        scheduler.note_step(current.key, step.index, group_id)
+    await switch_group(show_id, group_id, step.fade_seconds)
+
+
 class TonightScheduler:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
@@ -305,6 +418,8 @@ class TonightScheduler:
         #: The show time this server process started (or found playing); a
         #: restart forgets it, which is what lets a show resume after one.
         self._started_key: str | None = None
+        #: The playlist step on the projectors: (show time key, step, group).
+        self._step: tuple[str, int, int | None] | None = None
 
     async def start(self) -> None:
         if self._task is not None:
@@ -320,6 +435,10 @@ class TonightScheduler:
     def mark_started(self, key: str | None) -> None:
         """A start by hand during a show time counts as that show time's start."""
         self._started_key = key
+
+    def note_step(self, key: str, index: int, group_id: int | None) -> None:
+        """This playlist step is what the projectors play now."""
+        self._step = (key, index, group_id)
 
     async def _loop(self) -> None:
         while True:
@@ -342,6 +461,7 @@ class TonightScheduler:
                 current = None
             ending = self._due_end(planner, plan, now)
             last_start = plan.last_start_key
+            group_id, step = planner.group_at(current, now) if current else (None, None)
 
         if current is not None and self._started_key != current.key:
             state = transport.snapshot()
@@ -355,10 +475,32 @@ class TonightScheduler:
                     f"Not started at {clock(current.start)} because the emergency stop is on.",
                     severity=Severity.WARNING, kind="tonight_held")
                 return
-            await start_show(by="the schedule", slot=current)
+            await start_show(by="the schedule", slot=current, now=now)
         elif ending is not None:
             await self._mark(end=ending)
             await stop_show(by="the schedule", power_off=ending.power, show_id=ending.show_id)
+        elif (current is not None and step is not None
+              and self._step != (current.key, step.index, group_id)):
+            await self._next_step(current, step, group_id)
+
+    async def _next_step(self, slot: Slot, step: TimedStep, group_id: int | None) -> None:
+        """Move a playing show on to the playlist step whose time has come.
+
+        Only while the show plays (or is paused): a show stopped by hand
+        stays stopped, and Start now picks the right step anyway.
+        """
+        state = transport.snapshot()
+        if (state.emergency is not None or state.show_id != slot.show_id
+                or state.status not in ("playing", "paused")):
+            return
+        self._step = (slot.key, step.index, group_id)
+        name = await switch_group(slot.show_id, group_id, step.fade_seconds)
+        if name is None:
+            return
+        fade = (f", fading over {step.fade_seconds:g} seconds" if step.fade_seconds > 0
+                else "")
+        await _record(f"{slot.title}: {name} from {clock(max(step.at, slot.start))}{fade}.",
+                      severity=Severity.INFO, kind="tonight_playlist")
 
     @staticmethod
     def _due_end(planner: Planner, plan: ShowPlan, now: datetime) -> Slot | None:

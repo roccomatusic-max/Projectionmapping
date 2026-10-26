@@ -4,15 +4,17 @@ import { CalendarIcon, CheckIcon, ClockIcon, RunShowIcon, StopIcon } from '@/com
 import { TimesEditor, calendarLines, groupLines, timeLine, usedText } from '@/components/tonight/TonightShow'
 import { TONE_DOT, TONE_TEXT, type Tone } from '@/components/tone'
 import { classNames } from '@/lib/format'
-import { clockText, describeDays, tonightApi, type SceneGroup, type Tonight } from '@/lib/tonight'
+import { usedPlaylistText } from '@/components/tonight/Playlists'
+import { clockText, describeDays, playlistNow, timeOf, tonightApi, type Playlist, type SceneGroup, type Tonight } from '@/lib/tonight'
 import { mappingApi } from '@/mapping/api'
 import type { MappingScene, Show, ShowSummary, TransportState } from '@/mapping/types'
 
 /**
  * Tonight's show on the phone: the same plan as the Dashboard's card
  * (components/tonight/TonightShow.tsx), laid out for one thumb. Shows what
- * plays tonight and when, picks tonight's scene group, starts or stops the
- * show, and sets the show time.
+ * plays tonight and when (a playlist's step on now and the next one),
+ * picks tonight's scene group or playlist, starts or stops the show, and
+ * sets the show time.
  */
 
 function errorText(err: unknown, fallback: string) {
@@ -28,6 +30,7 @@ export default function TonightTab({ session, transport, onCalendar }: {
   const canRun = session.role === 'admin' || session.role === 'operator'
   const [tonight, setTonight] = useState<Tonight | null>(null)
   const [groups, setGroups] = useState<SceneGroup[]>([])
+  const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [scenes, setScenes] = useState<MappingScene[]>([])
   const [shows, setShows] = useState<ShowSummary[]>([])
   const [fullShows, setFullShows] = useState<Record<number, Show>>({})
@@ -39,9 +42,10 @@ export default function TonightTab({ session, transport, onCalendar }: {
 
   const load = useCallback(async () => {
     try {
-      const [plan, list] = await Promise.all([tonightApi.get(), tonightApi.groups()])
+      const [plan, list, lists] = await Promise.all([tonightApi.get(), tonightApi.groups(), tonightApi.playlists()])
       setTonight(plan)
       setGroups(list)
+      setPlaylists(lists)
       setError(null)
     } catch (err) {
       setError(errorText(err, "Tonight's show could not be loaded"))
@@ -112,6 +116,12 @@ export default function TonightTab({ session, transport, onCalendar }: {
       setTonight(next)
       setNotice(usedText(group, next, transport))
     })
+  const usePlaylist = (playlist: Playlist) =>
+    act(`playlist-${playlist.id}`, async () => {
+      const next = await tonightApi.usePlaylist(playlist.id)
+      setTonight(next)
+      setNotice(usedPlaylistText(playlist, next))
+    })
 
   const now = new Date()
   const time = tonight ? timeLine(tonight, now) : null
@@ -143,8 +153,32 @@ export default function TonightTab({ session, transport, onCalendar }: {
           </span>
           <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">Playing tonight</p>
           <p className="mt-0.5 truncate text-[22px] font-semibold leading-tight text-slate-50">
-            {tonight.group_name ?? (groups.length ? 'Pick tonight’s scenes below' : 'No scene group yet')}
+            {tonight.playlist_name ?? tonight.group_name ?? (groups.length ? 'Pick tonight’s scenes below' : 'No scene group yet')}
           </p>
+          {tonight.playlist_name && (playlistNow(tonight).now || playlistNow(tonight).next) && (
+            <div className="mt-2 space-y-0.5 text-[15px]">
+              {playlistNow(tonight).now && <p className="font-medium text-emerald-200">{playlistNow(tonight).now}</p>}
+              {playlistNow(tonight).next && <p className="text-slate-300">{playlistNow(tonight).next}</p>}
+            </div>
+          )}
+          {tonight.playlist_steps.length > 0 && (
+            <ol className="mt-3 space-y-1 text-sm">
+              {tonight.playlist_steps.map((step, i) => (
+                <li
+                  key={`${step.starts_at}-${i}`}
+                  className={classNames(
+                    'tnum flex items-center gap-3',
+                    step.state === 'now' ? 'font-semibold text-emerald-200' : step.state === 'later' ? 'text-slate-200' : 'text-slate-500',
+                    step.state === 'never' && 'line-through',
+                  )}
+                >
+                  <span className="w-20 shrink-0">{timeOf(step.starts_at)}</span>
+                  <span className="min-w-0 flex-1 truncate">{step.group_name ?? 'Deleted group'}</span>
+                  {step.state === 'now' && <span className="text-2xs uppercase tracking-wide text-emerald-300">now</span>}
+                </li>
+              ))}
+            </ol>
+          )}
           <div className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[15px]">
             {calendarLines(tonight).map((line, i) => (
               <p key={line} className={i === 0 ? 'font-medium text-sky-200' : 'text-slate-200'}>
@@ -248,7 +282,7 @@ export default function TonightTab({ session, transport, onCalendar }: {
         ) : (
           <ul className="overflow-hidden rounded-3xl bg-panel-900 ring-1 ring-white/[0.06]">
             {groups.map((group, i) => {
-              const active = tonight?.group_id === group.id
+              const active = !tonight?.playlist_id && tonight?.group_id === group.id
               return (
                 <li key={group.id} className={classNames(i > 0 && 'border-t border-white/[0.05]', active && 'bg-sky-500/[0.08]')}>
                   <button
@@ -282,6 +316,47 @@ export default function TonightTab({ session, transport, onCalendar }: {
           </ul>
         )}
       </section>
+
+      {playlists.length > 0 && (
+        <section>
+          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Or a playlist</h2>
+          <ul className="overflow-hidden rounded-3xl bg-panel-900 ring-1 ring-white/[0.06]">
+            {playlists.map((playlist, i) => {
+              const active = tonight?.plan_playlist_id === playlist.id || (tonight?.playlist_id === playlist.id && tonight.state === 'running')
+              const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? 'Deleted group'
+              return (
+                <li key={playlist.id} className={classNames(i > 0 && 'border-t border-white/[0.05]', active && 'bg-sky-500/[0.08]')}>
+                  <button
+                    className="flex w-full items-center gap-3 px-4 py-4 text-left active:bg-white/[0.03] disabled:cursor-default"
+                    disabled={!canRun || busy != null}
+                    aria-pressed={active}
+                    onClick={() => void usePlaylist(playlist)}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className={classNames('block truncate text-[16px]', active ? 'font-semibold text-sky-100' : 'text-slate-200')}>{playlist.name}</span>
+                      {playlist.steps.map((step, j) => (
+                        <span key={`${step.at}-${j}`} className="tnum block truncate text-xs text-slate-500">
+                          {clockText(step.at)} · {groupName(step.group_id)}
+                        </span>
+                      ))}
+                    </span>
+                    {busy === `playlist-${playlist.id}` ? (
+                      <span className="text-xs text-slate-400">Setting…</span>
+                    ) : (
+                      active && (
+                        <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
+                          <CheckIcon size={12} aria-hidden /> Tonight
+                        </span>
+                      )
+                    )}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="mt-2 px-1 text-xs text-slate-500">Make and change playlists on the Dashboard of Projector Control.</p>
+        </section>
+      )}
     </div>
   )
 }

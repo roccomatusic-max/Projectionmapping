@@ -35,6 +35,11 @@ EMERGENCY_HELD = ("The emergency stop is on. Clear it first (the red bar at the 
                   "the page), then press GO.")
 
 
+#: Ids of the scenes fading out when a playlist moves on count down from
+#: here, well clear of saved cues and of scenes played alone (-scene id).
+FADING_ID = -1_000_000_000
+
+
 def now_ms() -> float:
     return time.time() * 1000.0
 
@@ -44,6 +49,7 @@ class MappingTransport:
         self._state = TransportState()
         self._lock = asyncio.Lock()
         self._follow_task: asyncio.Task | None = None
+        self._follow_revision = -1
 
     # -- reading -----------------------------------------------------------
 
@@ -82,6 +88,39 @@ class MappingTransport:
                 case _:
                     raise TransportError(f"unknown transport action {action!r}")
             return self._publish()
+
+    async def fade_scenes(self, *, show_id: int, scene_id: int | None,
+                          output_scenes: dict, fade_seconds: float) -> bool:
+        """Crossfade the live cue's scenes from what it showed before.
+
+        Call it after the cue's saved scenes have changed (a playlist moving
+        on) and before the outputs hear of that change: the scenes the cue
+        had, given here, go out as the one fading out. Its id is one no
+        saved cue has, so outputs draw the scenes it carries; it has no
+        media, so videos keep playing untouched. Returns False when nothing
+        of this show's cues is playing.
+        """
+        async with self._lock:
+            state = self._state
+            current = state.current
+            if (state.emergency is not None or state.status != "playing" or current is None
+                    or state.show_id != show_id or current.position < 0):
+                return False
+            fade = max(0.0, min(float(fade_seconds), 30.0))
+            if fade <= 0:
+                return False
+            state.previous = current.model_copy(update={
+                "id": FADING_ID - state.revision, "scene_id": scene_id,
+                "output_scenes": dict(output_scenes or {}), "media_id": None,
+                "output_media": {},
+            })
+            state.current = current.model_copy(update={"fade_seconds": fade})
+            state.fade_started_at_ms = now_ms()
+            following = self._state.revision == self._follow_revision
+            self._publish()
+            if following:
+                self._follow_revision = self._state.revision  # the cue still moves on
+            return True
 
     async def emergency_stop(self, *, by: str | None, at_ms: float | None = None) -> TransportState:
         """Black on every output at once, and hold the show until cleared."""
@@ -217,11 +256,13 @@ class MappingTransport:
             hold = duration
         if hold is None or position + 1 >= cue_count:
             return
-        revision = self._state.revision + 1  # the revision _publish is about to set
+        # The revision _publish is about to set; any other change cancels it.
+        self._follow_revision = self._state.revision + 1
 
         async def follow() -> None:
             await asyncio.sleep(hold)
-            if self._state.revision != revision or self._state.status != "playing":
+            if (self._state.revision != self._follow_revision
+                    or self._state.status != "playing"):
                 return
             try:
                 await self.command("go")

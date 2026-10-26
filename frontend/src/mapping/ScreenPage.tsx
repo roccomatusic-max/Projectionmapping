@@ -4,7 +4,7 @@ import { HOLD_MS, useHold } from '@/components/EmergencyStop'
 import type { Projector, TemperatureReading } from '@/api/types'
 import { classNames, formatHours } from '@/lib/format'
 import { activeInput, attentionItems, isLive, lampReadings } from '@/lib/status'
-import { clockText, spanText, whenText, type Tonight } from '@/lib/tonight'
+import { clockText, playlistNow, spanText, whenText, type Tonight } from '@/lib/tonight'
 import type { Player } from './editor/PlayersPanel'
 import type { MappingScene, Show, TransportState } from './types'
 
@@ -687,6 +687,9 @@ function TonightLine({ tonight, now }: { tonight: Tonight | null; now: number })
         ? `${clockText(tonight.start_at)} to ${clockText(tonight.end_at)}`
         : null
   const name = today ? tonight.title ?? tonight.group_name : null
+  // A playlist: the step on now and the next one.
+  const steps = playlistNow(tonight)
+  const playlist = today && tonight.playlist_name ? [steps.now, steps.next].filter(Boolean).join(' · ') : ''
   let text: string
   let tone = 'text-slate-300'
   if (tonight.state === 'running') {
@@ -718,6 +721,7 @@ function TonightLine({ tonight, now }: { tonight: Tonight | null; now: number })
         {when && <span className="font-semibold text-white">{when} · </span>}
         <span className={tone}>{text}</span>
       </p>
+      {playlist && <p className="truncate text-[length:calc(var(--u)*2.2)] text-slate-300">{playlist}</p>}
     </div>
   )
 }

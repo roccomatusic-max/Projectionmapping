@@ -677,6 +677,31 @@ class MappingSceneGroup(Base):
     )
 
 
+class MappingPlaylist(Base):
+    """Scene groups that take turns through the night, at set times.
+
+    "Halloween night" might be Spooky from 6:45, Pumpkins from 8:00 and
+    Quiet from 9:30, each fading in over a few seconds. A show time (the
+    weekly one or a calendar entry) plays a playlist instead of a single
+    group; see services/playlists.py.
+    """
+
+    __tablename__ = "mapping_playlists"
+    __table_args__ = (UniqueConstraint("show_id", "name", name="uq_playlist_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("mapping_shows.id", ondelete="CASCADE"),
+                                         index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    #: [{"at": "HH:MM", "group_id": 3, "fade_seconds": 5}], in the night's order.
+    steps: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class ShowPlan(Base):
     """Tonight's show: which show and scene group, and when it runs.
 
@@ -693,6 +718,10 @@ class ShowPlan(Base):
     )
     group_id: Mapped[int | None] = mapped_column(
         ForeignKey("mapping_scene_groups.id", ondelete="SET NULL")
+    )
+    #: A playlist plays instead of the group when set.
+    playlist_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_playlists.id", ondelete="SET NULL")
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     start_at: Mapped[str | None] = mapped_column(String(5))
@@ -735,6 +764,10 @@ class ShowCalendarEntry(Base):
     )
     group_id: Mapped[int | None] = mapped_column(
         ForeignKey("mapping_scene_groups.id", ondelete="SET NULL")
+    )
+    #: A playlist plays instead of the group when set.
+    playlist_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mapping_playlists.id", ondelete="SET NULL")
     )
     #: Local dates, "YYYY-MM-DD". No end date means it keeps repeating.
     start_date: Mapped[str] = mapped_column(String(10))

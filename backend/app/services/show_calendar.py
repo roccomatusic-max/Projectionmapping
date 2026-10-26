@@ -27,6 +27,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import select
 
 from app.db.models import ShowCalendarEntry, ShowPlan
+from app.services.playlists import TimedStep, active, timeline
 
 #: How far ahead "next show" looks for a calendar entry.
 LOOKAHEAD_DAYS = 400
@@ -46,6 +47,8 @@ class Slot:
     group_id: int | None
     power: bool
     title: str
+    #: A playlist plays instead of the group when set.
+    playlist_id: int | None = None
 
     @property
     def key(self) -> str:
@@ -98,35 +101,42 @@ def _rank(entry: ShowCalendarEntry) -> tuple[int, int]:
     return length, -(entry.id or 0)
 
 
-def entry_title(entry: ShowCalendarEntry, group_names: dict[int, str]) -> str:
+def entry_title(entry: ShowCalendarEntry, group_names: dict[int, str],
+                playlist_names: dict[int, str] | None = None) -> str:
     if entry.title:
         return entry.title
     if entry.kind == "off":
         return "No show"
+    if entry.playlist_id and playlist_names and entry.playlist_id in playlist_names:
+        return playlist_names[entry.playlist_id]
     return group_names.get(entry.group_id or 0) or "Show"
 
 
-def weekly_slot(plan: ShowPlan, night: date, tz, group_names: dict[int, str]) -> Slot | None:
+def weekly_slot(plan: ShowPlan, night: date, tz, group_names: dict[int, str],
+                playlist_names: dict[int, str] | None = None) -> Slot | None:
     start_t, end_t = parse_time(plan.start_at), parse_time(plan.end_at)
     if (not plan.enabled or start_t is None or end_t is None
             or night.weekday() not in (plan.days or [])):
         return None
     start, end = span(start_t, end_t, night, tz)
+    playlist = (playlist_names or {}).get(plan.playlist_id or 0)
     return Slot(night, start, end, "weekly", None, plan.show_id, plan.group_id, plan.power,
-                group_names.get(plan.group_id or 0) or "Weekly show time")
+                playlist or group_names.get(plan.group_id or 0) or "Weekly show time",
+                plan.playlist_id if playlist else None)
 
 
 def resolve_night(plan: ShowPlan, entries: list[ShowCalendarEntry], night: date, tz,
-                  group_names: dict[int, str]) -> Night:
+                  group_names: dict[int, str],
+                  playlist_names: dict[int, str] | None = None) -> Night:
     out = Night(night)
     here = sorted((e for e in entries if applies(e, night)), key=_rank)
     if not here:
-        weekly = weekly_slot(plan, night, tz, group_names)
+        weekly = weekly_slot(plan, night, tz, group_names, playlist_names)
         if weekly is not None:
             out.slots.append(weekly)
         return out
     for entry in here:
-        title = entry_title(entry, group_names)
+        title = entry_title(entry, group_names, playlist_names)
         if out.cancelled_by is not None:
             out.skipped.append((entry.id, title,
                                 f"{entry_title(out.cancelled_by, group_names)}: no show"))
@@ -142,8 +152,9 @@ def resolve_night(plan: ShowPlan, entries: list[ShowCalendarEntry], night: date,
         if clash is not None:
             out.skipped.append((entry.id, title, f"overlaps {clash.title}"))
             continue
+        playlist_id = entry.playlist_id if entry.playlist_id in (playlist_names or {}) else None
         out.slots.append(Slot(night, start, end, "calendar", entry.id, entry.show_id,
-                              entry.group_id, entry.power, title))
+                              entry.group_id, entry.power, title, playlist_id))
     if weekly_slot(plan, night, tz, group_names) is not None:
         out.skipped.append((None, "Weekly show time", "the calendar has this night"))
     out.slots.sort(key=lambda s: s.start)
@@ -151,26 +162,47 @@ def resolve_night(plan: ShowPlan, entries: list[ShowCalendarEntry], night: date,
 
 
 class Planner:
-    """Everything a night needs, read once: the plan, entries and group names."""
+    """Everything a night needs, read once: the plan, entries, groups and playlists."""
 
     def __init__(self, plan: ShowPlan, entries: list[ShowCalendarEntry],
-                 group_names: dict[int, str]) -> None:
+                 group_names: dict[int, str],
+                 playlists: dict[int, tuple[str, list]] | None = None) -> None:
         self.plan = plan
         self.entries = entries
         self.group_names = group_names
+        #: {playlist id: (name, steps)}.
+        self.playlists = playlists or {}
+        self.playlist_names = {pid: name for pid, (name, _) in self.playlists.items()}
 
     @classmethod
     async def load(cls, session, plan: ShowPlan) -> Planner:
-        from app.db.models import MappingSceneGroup
+        from app.db.models import MappingPlaylist, MappingSceneGroup
 
         entries = list((await session.execute(
             select(ShowCalendarEntry).order_by(ShowCalendarEntry.id))).scalars().all())
         names = dict((await session.execute(
             select(MappingSceneGroup.id, MappingSceneGroup.name))).all())
-        return cls(plan, entries, names)
+        playlists = {pid: (name, list(steps or [])) for pid, name, steps in (await session.execute(
+            select(MappingPlaylist.id, MappingPlaylist.name, MappingPlaylist.steps))).all()}
+        return cls(plan, entries, names, playlists)
 
     def night(self, night: date, tz) -> Night:
-        return resolve_night(self.plan, self.entries, night, tz, self.group_names)
+        return resolve_night(self.plan, self.entries, night, tz, self.group_names,
+                             self.playlist_names)
+
+    def steps(self, slot: Slot) -> list[TimedStep]:
+        """The playlist steps of a show time, placed on its night; [] without one."""
+        if slot.playlist_id is None or slot.playlist_id not in self.playlists:
+            return []
+        return timeline(self.playlists[slot.playlist_id][1], slot.start)
+
+    def group_at(self, slot: Slot, now: datetime) -> tuple[int | None, TimedStep | None]:
+        """The scene group a show time plays at ``now``, and the playlist step it comes from."""
+        steps = self.steps(slot)
+        index = active(steps, now)
+        if index is None:
+            return slot.group_id, None
+        return steps[index].group_id, steps[index]
 
     def slots(self, night: date, tz) -> list[Slot]:
         return self.night(night, tz).slots

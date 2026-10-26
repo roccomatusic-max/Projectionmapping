@@ -16,7 +16,13 @@ from app.api.deps import RequireOperator, RequireViewer, SessionDep, write_rate_
 from app.api.routes.mapping import _load_show
 from app.config import settings
 from app.core.events import bus
-from app.db.models import Event, MappingSceneGroup, Severity, ShowCalendarEntry
+from app.db.models import (
+    Event,
+    MappingPlaylist,
+    MappingSceneGroup,
+    Severity,
+    ShowCalendarEntry,
+)
 from app.schemas.show_calendar import (
     CalendarDay,
     CalendarOut,
@@ -61,14 +67,22 @@ async def _checked(session, payload: EntryIn) -> dict:
     fields["start_date"] = payload.start_date.isoformat()
     fields["end_date"] = payload.end_date.isoformat() if payload.end_date else None
     if payload.kind == "off":
-        fields.update(show_id=None, group_id=None, start_at=None, end_at=None)
+        fields.update(show_id=None, group_id=None, playlist_id=None, start_at=None, end_at=None)
         return fields
     if not (payload.start_at and payload.end_at):
         raise _bad("Set both a start time and an end time")
     if payload.start_at == payload.end_at:
         raise _bad("The end time has to be different from the start time")
     show_id = payload.show_id
-    if payload.group_id is not None:
+    if payload.playlist_id is not None:
+        playlist = await session.get(MappingPlaylist, payload.playlist_id)
+        if playlist is None:
+            raise _bad(f"Unknown playlist {payload.playlist_id}")
+        if show_id is not None and playlist.show_id != show_id:
+            raise _bad("That playlist belongs to another show")
+        show_id = playlist.show_id
+        fields["group_id"] = None
+    elif payload.group_id is not None:
         group = await session.get(MappingSceneGroup, payload.group_id)
         if group is None:
             raise _bad(f"Unknown scene group {payload.group_id}")
@@ -82,6 +96,11 @@ async def _checked(session, payload: EntryIn) -> dict:
     await _load_show(session, show_id)
     fields["show_id"] = show_id
     return fields
+
+
+async def _title(session, entry: ShowCalendarEntry) -> str:
+    planner = await Planner.load(session, await service.load_plan(session))
+    return entry_title(entry, planner.group_names, planner.playlist_names)
 
 
 def _when(entry: ShowCalendarEntry) -> str:
@@ -107,7 +126,8 @@ async def get_calendar(session: SessionDep, _: RequireViewer,
             if slot.source == "weekly" and night.night < now.date():
                 continue  # the weekly time today stands for the future, not past nights
             state = "done" if slot.end <= now else "running" if slot.start <= now else "later"
-            slots.append(CalendarSlot(state=state, **service._slot_out(slot, planner.group_names)))
+            slots.append(CalendarSlot(state=state, **service._slot_out(
+                slot, planner.group_names, planner.playlist_names)))
         cancelled = night.cancelled_by
         out.append(CalendarDay(
             date=night.night,
@@ -135,9 +155,9 @@ async def create_entry(payload: EntryIn, session: SessionDep,
     entry = ShowCalendarEntry(**await _checked(session, payload))
     session.add(entry)
     await session.flush()
-    names = (await Planner.load(session, await service.load_plan(session))).group_names
+    title = await _title(session, entry)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="calendar_added",
-                      message=f"{user.username} put {entry_title(entry, names)} on the "
+                      message=f"{user.username} put {title} on the "
                               f"calendar ({_when(entry)})"))
     await session.commit()
     await session.refresh(entry)
@@ -152,9 +172,9 @@ async def update_entry(entry_id: int, payload: EntryIn, session: SessionDep,
     entry = await _load_entry(session, entry_id)
     for field, value in (await _checked(session, payload)).items():
         setattr(entry, field, value)
-    names = (await Planner.load(session, await service.load_plan(session))).group_names
+    title = await _title(session, entry)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="calendar_changed",
-                      message=f"{user.username} changed {entry_title(entry, names)} on the "
+                      message=f"{user.username} changed {title} on the "
                               f"calendar ({_when(entry)})"))
     await session.commit()
     await session.refresh(entry)
@@ -166,9 +186,9 @@ async def update_entry(entry_id: int, payload: EntryIn, session: SessionDep,
                response_model=None, dependencies=[Depends(write_rate_limit)])
 async def delete_entry(entry_id: int, session: SessionDep, user: RequireOperator) -> None:
     entry = await _load_entry(session, entry_id)
-    names = (await Planner.load(session, await service.load_plan(session))).group_names
+    title = await _title(session, entry)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="calendar_removed",
-                      message=f"{user.username} took {entry_title(entry, names)} off the "
+                      message=f"{user.username} took {title} off the "
                               f"calendar ({_when(entry)})"))
     await session.delete(entry)
     await session.commit()

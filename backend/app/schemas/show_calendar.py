@@ -16,6 +16,8 @@ class EntryIn(BaseModel):
     title: str = Field(default="", max_length=128)
     show_id: int | None = None
     group_id: int | None = None
+    #: Plays instead of the group when set.
+    playlist_id: int | None = None
     start_date: date
     #: The last night; None keeps repeating with no end.
     end_date: date | None = None
@@ -45,6 +47,7 @@ class EntryOut(BaseModel):
     title: str
     show_id: int | None
     group_id: int | None
+    playlist_id: int | None = None
     start_date: str
     end_date: str | None
     days: list[int]

@@ -661,6 +661,51 @@ with the weekly show time and every entry (past ones folded away).
 `entry_id`, `tonight_slots`, `cancelled_by` and `next_title`. Changes go out
 as `calendar` and `tonight` messages.
 
+## 6d. Scene playlists (Dashboard, Playlists)
+
+A playlist is scene groups taking turns through the night: "Spooky from
+6:45 PM, Pumpkins from 8:00 PM, Quiet from 9:30 PM", each step with a fade
+(cut, or 2 to 30 seconds). Make them in **Playlists** under "Pick tonight's
+scenes" on the Dashboard; clicking one plays it at the weekly show time
+(picking a single group again takes it off). A calendar entry can pick a
+playlist instead of a scene group. The phone's Tonight tab can pick one too.
+
+How steps are placed on a night (`backend/app/services/playlists.py`):
+
+- A time on or after the show time's start plays that evening. A time up to
+  six hours before the start counts as the start (6:30 in a 6:45 show).
+  Any other earlier time is after midnight (00:30 in a 6 PM to 1 AM show).
+- Before the first step's time the first step plays; a step after the show
+  time ends never plays (shown struck through).
+- Steps are kept in the night's order, noon to noon. Deleting a scene group
+  removes its steps; a playlist left with none is deleted.
+
+The scheduler (services/tonight.py) starts a show time on the step due then
+(a power cut mid-show comes back on the right step). Every 20 seconds it
+checks whether the next step's time has come; if the show is playing it
+writes that group into every cue, as "Use" does, and crossfades: the
+transport sends the scenes the live cue had as `previous` with an id below
+-1,000,000,000 and no media, and `fade_started_at_ms`, then the outputs hear
+`mapping_show` and load the new scenes. Videos keep playing untouched; only
+the scenes fade, over the step's fade. Auto-follow of the live cue carries
+on. A show stopped by hand is not moved on, and Start now picks the step
+due now. Changing a group that plays later waits for its turn; the step on
+now changes the projectors at once.
+
+| Method | Path | |
+|---|---|---|
+| GET/POST | `/api/mapping/playlists` | List (`?show_id=`); make one (admin): `name`, `steps` [{`at` "HH:MM", `group_id`, `fade_seconds` 0 to 30}] |
+| PUT/DELETE | `/api/mapping/playlists/{id}` | Admin: change (whole playlist) or delete |
+| POST | `/api/mapping/playlists/{id}/use` | Operator: play it at the weekly show time |
+
+Calendar entries and slots carry `playlist_id` (and slots `playlist_name`).
+`/api/tonight` adds `playlist_id`, `playlist_name`, `playlist_steps`
+(`starts_at`, `group_name`, `fade_seconds`, `state` done/now/later/never),
+and `plan_group_id` / `plan_playlist_id` for what the weekly show time plays;
+`group_id`/`group_name` are then the step on now. Changes go out as
+`playlists` messages. Nothing on the mini PCs changes: the player pages
+already draw a crossfade between the scenes of `previous` and `current`.
+
 ## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`
