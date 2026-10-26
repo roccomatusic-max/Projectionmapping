@@ -349,7 +349,8 @@ export default function BackupPanel({
               )}
             </button>
             <Banner tone="warn" title="Keep backup files private">
-              A backup holds your projector passwords and the server's secret key. Save it on a USB
+              A backup holds your projector passwords, your AI and phone alert keys and the server's
+              secret key. Save it on a USB
               stick or in your own cloud storage. Do not post it or send it to anyone.
             </Banner>
           </div>

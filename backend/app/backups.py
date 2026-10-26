@@ -7,7 +7,8 @@ A backup is one zip file:
 - ``projector-control.db``: a consistent copy of the database, taken with
   SQLite's own backup while the server runs, without the reading history
   (``HISTORY_TABLES``) that makes up most of its size;
-- ``keys/``: the optional AI and GitHub keys from Settings;
+- ``keys/``: the optional AI and GitHub keys and the phone alert settings
+  (with their Pushover keys) from Settings;
 - ``media/``: the pictures and videos, when asked for;
 - ``READ-ME.txt`` and ``SETUP-GUIDE.txt``: how to put it back, and the
   printable setup guide as text, for when the server itself is gone.
@@ -62,7 +63,7 @@ GUIDE = "SETUP-GUIDE.txt"
 #: Readings and logs rather than settings, and most of the database's size.
 HISTORY_TABLES = ("telemetry", "command_log", "enclosure_readings")
 #: Key files kept beside the media folder (services/api_keys.py, services/updates.py).
-KEY_FILES = ("anthropic-api-key", "openai-api-key", "github-token")
+KEY_FILES = ("anthropic-api-key", "openai-api-key", "github-token", "phone-alerts.json")
 #: How many of each kind are kept; the oldest go first.
 KEEP = {"nightly": 14, "manual": 10, "before-restore": 5, "uploaded": 5}
 KINDS = tuple(KEEP)
@@ -95,8 +96,8 @@ This file holds everything the server was set up with: projectors, shows,
 cues, scenes, scene groups, saved maps, the calendar, mini PCs, automations,
 users and settings{media}.
 
-KEEP IT PRIVATE. It also holds the projector passwords and the server's
-secret key. Keep it on a USB stick or in your own cloud storage; do not post
+KEEP IT PRIVATE. It also holds the projector passwords, the AI and phone
+alert keys and the server's secret key. Keep it on a USB stick or in your own cloud storage; do not post
 it or send it to anyone.
 
 To put it back, on the same server or a new one:

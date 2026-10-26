@@ -321,6 +321,7 @@ def test_restoring_onto_another_server(tmp_path, keeps_key_in_file):
     old = _server(tmp_path, "old")
     _add(old, "House Left", "web-login", "old-secret")
     (old.folder / "anthropic-api-key").write_text("sk-ant", encoding="utf-8")
+    (old.folder / "phone-alerts.json").write_text('{"service": "ntfy"}', encoding="utf-8")
     (old.media / "show.mp4").write_bytes(b"video")
     entry = backups.create(old, kind="manual", include_media=True, secret_key="old-secret",
                            app_version="1.0.300")
@@ -353,6 +354,7 @@ def test_restoring_onto_another_server(tmp_path, keeps_key_in_file):
         assert secret_file.read_text(encoding="utf-8") == "new-secret"
         assert _projectors(new, "new-secret") == {"House Left": "web-login"}
     assert (new.folder / "anthropic-api-key").read_text(encoding="utf-8") == "sk-ant"
+    assert (new.folder / "phone-alerts.json").read_text(encoding="utf-8") == '{"service": "ntfy"}'
     assert (new.media / "show.mp4").read_bytes() == b"video"
     assert (new.media / "kept.png").exists()
     assert backups.last_restore(new)["ok"] is True
