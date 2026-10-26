@@ -30,6 +30,7 @@ import type { AiStatus, LayerType, MappingScene, MediaAsset, Point, SceneLayer, 
 import { Slider } from './controls'
 import { CornerPicker } from './CornerPicker'
 import { CountdownColorPickers, countdownLook } from './CountdownColors'
+import { HousePhotoPanel } from './HousePhoto'
 import { PaintHouse } from './PaintHouse'
 import { ProjectorScenes, sceneOn } from './ProjectorScenes'
 import { type Backdrop, type Drawing, type PeopleSource, ScenePreview, SURFACE_KINDS } from './ScenePreview'
@@ -44,12 +45,13 @@ const FLAT_TEST_MS = 10 * 60 * 1000
 const FLAT_SEND_MS = 600
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
 
-type ScenePart = 'edit' | 'house' | 'projectors' | 'paint'
+type ScenePart = 'edit' | 'photo' | 'house' | 'projectors' | 'paint'
 
 /** The Scenes tab, one part at a time; the preview stays beside the part that needs it. */
 export const SCENE_PARTS: Array<{ id: ScenePart; label: string; hint: string }> = [
   { id: 'edit', label: 'Make and change scenes', hint: 'Your scenes, their layers, and a live preview' },
   { id: 'projectors', label: 'Scenes on each projector', hint: 'A different scene, or none, on one projector in a cue' },
+  { id: 'photo', label: 'Start from a photo', hint: 'Snap the house; Claude finds the walls, roof, windows and doors, and a scene decorates them' },
   { id: 'house', label: 'House parts', hint: 'Trace the walls, roof, windows and doors so scenes can decorate each one' },
   { id: 'paint', label: 'Paint the house (Beta)', hint: 'An AI repaints a photo of your house as you describe it' },
 ]
@@ -117,6 +119,24 @@ export function ScenesPanel({
   const [sendToProjectors, setSendToProjectors] = useState(false)
   const [backdrop, setBackdrop] = useState<Backdrop>(() => (show.camera_view ? { kind: 'camera' } : { kind: 'none' }))
   const [fps, setFps] = useState<{ fps: number; scale: number | null } | null>(null)
+  // The show's photo of the house, lined up on Start from a photo, is a backdrop too.
+  const [hasHousePhoto, setHasHousePhoto] = useState(false)
+  useEffect(() => {
+    if (part === 'photo') return
+    let cancelled = false
+    mappingApi.getHousePhoto(show.id).then(
+      (saved) => {
+        if (cancelled) return
+        setHasHousePhoto(saved != null)
+        if (saved) setBackdrop((b) => (b.kind === 'none' ? { kind: 'house' } : b))
+        else setBackdrop((b) => (b.kind === 'house' ? { kind: 'none' } : b))
+      },
+      () => undefined,
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [show.id, part])
 
   // House parts.
   const [surfaces, setSurfaces] = useState<Surface[]>(show.surfaces)
@@ -343,6 +363,25 @@ export function ScenesPanel({
         <ProjectorScenes show={show} scenes={list} canEdit={canEdit} onChanged={onShowChanged} onError={onError} />
       )}
 
+      {part === 'photo' && (
+        <HousePhotoPanel
+          show={show}
+          surfaces={surfaces}
+          ai={ai}
+          canEdit={canEdit}
+          busy={busy != null}
+          onSurfacesChange={setSurfaces}
+          onSurfacesSaved={onShowChanged}
+          onDescribe={(prompt) => {
+            setPart('edit')
+            void describe(prompt, null)
+          }}
+          onStartNew={() => setStarting(true)}
+          reloadMedia={reloadMedia}
+          onError={onError}
+        />
+      )}
+
       {part === 'paint' && canEdit && (
         <PaintHouse show={{ ...show, surfaces }} media={media} busy={busy != null}
           onPainted={async (asset, prompt) => {
@@ -356,6 +395,11 @@ export function ScenesPanel({
           <div className="min-w-0 space-y-4">
             {part === 'edit' && (
               <>
+                {busy === 'describe' && (
+                  <p className="rounded-md bg-sky-500/10 px-3 py-2 text-sm text-sky-100 ring-1 ring-sky-500/30">
+                    Claude is designing the scene. It appears here in up to a minute.
+                  </p>
+                )}
                 <Panel
                   title="Your scenes"
                   description="Pick one to change it and see it in the preview. Add to cues makes it play when GO reaches it."
@@ -579,7 +623,13 @@ export function ScenesPanel({
                   </div>
                 )}
                 {surfaces.length === 0 ? (
-                  !tracing && <p className="text-xs text-slate-500">Nothing traced yet.</p>
+                  !tracing && (
+                    <p className="text-xs text-slate-500">
+                      Nothing traced yet. Have a photo of the house?{' '}
+                      <button className="text-sky-300 hover:underline" onClick={() => setPart('photo')}>Start from a photo</button> and
+                      Claude finds the parts for you.
+                    </p>
+                  )
                 ) : (
                   <ul className="space-y-1">
                     {surfaces.map((s, i) => (
@@ -751,11 +801,12 @@ export function ScenesPanel({
                     value={backdrop.kind === 'media' ? `m${backdrop.id}` : backdrop.kind}
                     onChange={(e) => {
                       const v = e.target.value
-                      setBackdrop(v === 'none' || v === 'camera' ? { kind: v } : { kind: 'media', id: Number(v.slice(1)) })
+                      setBackdrop(v === 'none' || v === 'camera' || v === 'house' ? { kind: v } : { kind: 'media', id: Number(v.slice(1)) })
                     }}
                   >
                     <option value="none">Black</option>
                     {show.camera_view && <option value="camera">Camera photo of the house</option>}
+                    {hasHousePhoto && <option value="house">Your photo of the house, lined up</option>}
                     {media.map((m) => (
                       <option key={m.id} value={`m${m.id}`}>
                         {m.name}

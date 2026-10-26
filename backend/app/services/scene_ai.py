@@ -368,7 +368,11 @@ def surfaces_text(surfaces: list[dict]) -> str:
     for surface in surfaces:
         counts[surface.get("kind", "other")] = counts.get(surface.get("kind", "other"), 0) + 1
     parts = ", ".join(f"{n} {kind}{'s' if n > 1 else ''}" for kind, n in counts.items())
-    return f"The building has these traced parts: {parts}."
+    names = [str(s.get("name") or "").strip() for s in surfaces]
+    named = ", ".join(f"{name} ({s.get('kind', 'other')})" for name, s in zip(names, surfaces, strict=True)
+                      if name)
+    text = f"The building has these traced parts: {parts}."
+    return text + (f" They are called: {named}." if named else "")
 
 
 def _clamp(value, low=0.0, high=1.0, default=0.5) -> float:

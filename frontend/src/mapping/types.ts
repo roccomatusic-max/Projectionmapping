@@ -390,6 +390,26 @@ export interface MappingScene {
   updated_at: string
 }
 
+/** A part of the building Claude found on a photo, in fractions of the photo. */
+export interface TracedPart {
+  kind: SurfaceKind
+  name: string
+  points: Point[]
+}
+
+export interface TracedHouse {
+  /** The house in a sentence or two, for designing its scene. */
+  description: string
+  parts: TracedPart[]
+}
+
+/** The show's photo of the house and where the canvas's corners are on it (TL, TR, BR, BL). */
+export interface HousePhoto {
+  media_id: number
+  corners: Point[]
+  description: string
+}
+
 export interface AiStatus {
   available: boolean
   key_hint: string | null

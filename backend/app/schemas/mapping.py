@@ -1048,6 +1048,44 @@ class PaintHouse(BaseModel):
     show_id: int
 
 
+class TraceHousePhoto(BaseModel):
+    """A photo of the house for Claude to trace, as base64 JPEG, PNG or WebP."""
+    image: str = Field(min_length=100, max_length=15_000_000)
+    width: int = Field(ge=64, le=8000)
+    height: int = Field(ge=64, le=8000)
+
+
+class TracedPart(BaseModel):
+    kind: SurfaceKind
+    name: str
+    #: Outline in fractions of the photo.
+    points: list[Point]
+
+
+class TracedHouse(BaseModel):
+    #: The house in a sentence or two, for designing its scene.
+    description: str = ""
+    parts: list[TracedPart]
+
+
+class HousePhoto(BaseModel):
+    """The show's photo of the house and how it lines up with the canvas."""
+    media_id: int
+    #: Where the canvas's corners are on the photo (TL, TR, BR, BL), in
+    #: fractions of the photo; outside it when the canvas reaches past it.
+    corners: list[Point]
+    description: str = Field(default="", max_length=600)
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point]) -> list[Point]:
+        if len(corners) != 4:
+            raise ValueError("the photo needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "corner")
+        return corners
+
+
 # -- emergency stop --------------------------------------------------------------
 
 
