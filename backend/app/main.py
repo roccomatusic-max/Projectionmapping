@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.routes import (
     auth,
     automation,
+    backups,
     emergency,
     enclosure,
     groups,
@@ -52,6 +53,7 @@ from app.db.migrate import upgrade_to_head
 from app.db.models import Role, User
 from app.db.session import create_all, engine, session_scope
 from app.paths import static_dir
+from app.services import backups as backup_service
 from app.services import minipc_updates
 from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
@@ -145,6 +147,12 @@ async def lifespan(_: FastAPI):
             "(python -c \"import secrets; print(secrets.token_urlsafe(48))\").",
             len(settings.secret_key),
         )
+    if not settings.is_memory_sqlite:
+        # A backup restored from Settings → Backup, when the desktop launcher
+        # (which normally does this) did not start this server.
+        restored = await asyncio.to_thread(backup_service.apply_at_start)
+        if restored:
+            log.warning("restore: %s", restored["message"])
     await prepare_database()
     await bootstrap_admin()
     await load_projectors()
@@ -161,12 +169,13 @@ async def lifespan(_: FastAPI):
         await discovery.start(port=settings.discovery_port, http_port=settings.advertise_port)
     auto_updates = start_auto_updates()
     minipc_update_task = minipc_updates.start()
+    nightly_backups = backup_service.start()
     log.info("startup complete")
     try:
         yield
     finally:
         log.info("shutting down")
-        for task in (auto_updates, minipc_update_task):
+        for task in (auto_updates, minipc_update_task, nightly_backups):
             if task:
                 task.cancel()
                 # gather keeps the task's own cancellation, not one aimed at us.
@@ -257,7 +266,7 @@ for router in (
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
     mapping_maps.router, tonight.router, show_calendar.router, updates.router, emergency.router,
-    phone_alerts.router, heaters.router, walkthrough.router, ws.router,
+    phone_alerts.router, heaters.router, backups.router, walkthrough.router, ws.router,
 ):
     app.include_router(router, prefix="/api")
 
