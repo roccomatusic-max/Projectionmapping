@@ -277,6 +277,7 @@ def _server(tmp_path: Path, name: str) -> backups.Place:
         INSERT INTO alembic_version VALUES ('abc');
         CREATE TABLE projectors (id INTEGER PRIMARY KEY, name TEXT, password_enc TEXT,
                                  pjlink_password_enc TEXT);
+        CREATE TABLE heaters (id INTEGER PRIMARY KEY, plug_secret_enc TEXT);
         CREATE TABLE telemetry (id INTEGER PRIMARY KEY, value_num REAL);
         CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT);
         INSERT INTO telemetry (value_num) VALUES (1), (2);
@@ -303,6 +304,22 @@ def _projectors(place: backups.Place, secret: str) -> dict[str, str]:
     return {name: fernet.decrypt(value.encode()).decode() for name, value in rows}
 
 
+def _add_heater(place: backups.Place, password: str, secret: str) -> None:
+    conn = sqlite3.connect(place.database)
+    conn.execute("INSERT INTO heaters (plug_secret_enc) VALUES (?)",
+                 (Fernet(backups.fernet_key(secret)).encrypt(password.encode()).decode(),))
+    conn.commit()
+    conn.close()
+
+
+def _heater_secrets(place: backups.Place, secret: str) -> list[str]:
+    conn = sqlite3.connect(place.database)
+    rows = conn.execute("SELECT plug_secret_enc FROM heaters").fetchall()
+    conn.close()
+    fernet = Fernet(backups.fernet_key(secret))
+    return [fernet.decrypt(value.encode()).decode() for (value,) in rows]
+
+
 def _known(revision):
     return revision == "abc"
 
@@ -320,6 +337,7 @@ def test_the_password_key_matches_the_servers():
 def test_restoring_onto_another_server(tmp_path, keeps_key_in_file):
     old = _server(tmp_path, "old")
     _add(old, "House Left", "web-login", "old-secret")
+    _add_heater(old, "plug-pass", "old-secret")
     (old.folder / "anthropic-api-key").write_text("sk-ant", encoding="utf-8")
     (old.folder / "phone-alerts.json").write_text('{"service": "ntfy"}', encoding="utf-8")
     (old.media / "show.mp4").write_bytes(b"video")
@@ -349,10 +367,12 @@ def test_restoring_onto_another_server(tmp_path, keeps_key_in_file):
         # The Mac and Windows apps: the old key comes along, so nothing needs signing in again.
         assert secret_file.read_text(encoding="utf-8") == "old-secret"
         assert _projectors(new, "old-secret") == {"House Left": "web-login"}
+        assert _heater_secrets(new, "old-secret") == ["plug-pass"]
     else:
         # A key from the environment stays; the passwords are encrypted with it.
         assert secret_file.read_text(encoding="utf-8") == "new-secret"
         assert _projectors(new, "new-secret") == {"House Left": "web-login"}
+        assert _heater_secrets(new, "new-secret") == ["plug-pass"]
     assert (new.folder / "anthropic-api-key").read_text(encoding="utf-8") == "sk-ant"
     assert (new.folder / "phone-alerts.json").read_text(encoding="utf-8") == '{"service": "ntfy"}'
     assert (new.media / "show.mp4").read_bytes() == b"video"

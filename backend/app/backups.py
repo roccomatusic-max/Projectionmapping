@@ -61,7 +61,7 @@ DATABASE = "projector-control.db"
 README = "READ-ME.txt"
 GUIDE = "SETUP-GUIDE.txt"
 #: Readings and logs rather than settings, and most of the database's size.
-HISTORY_TABLES = ("telemetry", "command_log", "enclosure_readings")
+HISTORY_TABLES = ("telemetry", "command_log", "enclosure_readings", "heater_readings")
 #: Key files kept beside the media folder (services/api_keys.py, services/updates.py).
 KEY_FILES = ("anthropic-api-key", "openai-api-key", "github-token", "phone-alerts.json")
 #: How many of each kind are kept; the oldest go first.
@@ -85,8 +85,9 @@ COUNTED = {
     "automations": "automations",
     "media": "media_assets",
 }
-#: Columns holding projector passwords encrypted with the secret key.
-ENCRYPTED = (("projectors", "password_enc"), ("projectors", "pjlink_password_enc"))
+#: Columns holding passwords (projectors, heater smart plugs) encrypted with the secret key.
+ENCRYPTED = (("projectors", "password_enc"), ("projectors", "pjlink_password_enc"),
+             ("heaters", "plug_secret_enc"))
 
 README_TEXT = """\
 Projector Control backup
