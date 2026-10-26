@@ -45,10 +45,12 @@ const newId = () => Math.random().toString(36).slice(2, 10)
 
 /** A part with every canvas point moved, its flat-object corners too when it has them. */
 function moveSurface(surface: Surface, move: (p: Point) => Point): Surface {
-  const next: Surface = { ...surface, points: surface.points.map((p) => onCanvas(move(p))) }
-  const flat = (surface as { flat?: { corners?: Point[] } | null }).flat
-  if (flat?.corners) Object.assign(next, { flat: { ...flat, corners: flat.corners.map((p) => onCanvas(move(p))) } })
-  return next
+  const { flat } = surface
+  return {
+    ...surface,
+    points: surface.points.map((p) => onCanvas(move(p))),
+    ...(flat ? { flat: { ...flat, corners: flat.corners.map((p) => onCanvas(move(p))) } } : {}),
+  }
 }
 
 /** The picture drawn onto a canvas no bigger than ``side``, and its size. */
