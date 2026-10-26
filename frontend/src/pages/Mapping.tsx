@@ -18,13 +18,22 @@ import { SavedMaps } from '@/mapping/editor/SavedMaps'
 import { ScenesPanel } from '@/mapping/editor/ScenesPanel'
 import { TransportBar } from '@/mapping/editor/TransportBar'
 import { sideBySide, withDefaults } from '@/mapping/geometry'
-import { useLocalChannel } from '@/mapping/live'
+import { EditSender, useLocalChannel } from '@/mapping/live'
 import type { Cue, MediaAsset, Output, SavedMap, ShowSummary, TransportAction } from '@/mapping/types'
 import { useShowRuntime } from '@/mapping/useShowRuntime'
 
 const SHOW_KEY = 'pc.mapping.show'
 /** Geometry is saved this long after the last change while dragging. */
 const SAVE_DELAY_MS = 250
+
+/** What the server takes for an output: everything but its place in the show. */
+function outputBody(output: Output): Partial<Output> {
+  const { id: _id, show_id: _show, position: _position, ...body } = output
+  void _id
+  void _show
+  void _position
+  return body
+}
 
 type Section = 'show' | 'scenes' | 'camera' | 'players' | 'remote'
 
@@ -139,11 +148,34 @@ export default function Mapping({ session }: { session: Session }) {
   )
   const output = outputs.find((o) => o.id === selectedOutput) ?? outputs[0] ?? null
 
+  // Each output's edits go out live while a handle moves, so the mini PCs
+  // move the picture on the house straight away, and are saved once it stops.
+  const senders = useRef(new Map<number, EditSender>())
+  const sender = useCallback((id: number) => {
+    let found = senders.current.get(id)
+    if (!found) {
+      found = new EditSender(
+        (output) => mappingApi.liveOutput(output.id, outputBody(output)),
+        async (output) => withDefaults(await mappingApi.updateOutput(output.id, outputBody(output))),
+      )
+      senders.current.set(id, found)
+    }
+    return found
+  }, [])
+  useEffect(() => {
+    const map = senders.current
+    return () => {
+      map.forEach((s) => s.dispose())
+      map.clear()
+    }
+  }, [])
+
   const changeOutput = useCallback(
     (target: Output, patch: Partial<Output>) => {
       const next = withDefaults({ ...target, ...patch })
       setOverrides((map) => new Map(map).set(next.id, next))
       broadcast({ type: 'output', output: next })
+      sender(next.id).live(next)
       const serial = (editSerial.current.get(next.id) ?? 0) + 1
       editSerial.current.set(next.id, serial)
       window.clearTimeout(saveTimers.current.get(next.id))
@@ -151,18 +183,16 @@ export default function Mapping({ session }: { session: Session }) {
         next.id,
         window.setTimeout(async () => {
           try {
-            const { id, show_id: _s, position: _p, ...body } = next
-            void _s
-            void _p
-            const saved = withDefaults(await mappingApi.updateOutput(id, body))
+            const saved = await sender(next.id).save(next)
+            if (!saved) return
             setShow((current) =>
               current ? { ...current, outputs: current.outputs.map((o) => (o.id === saved.id ? saved : o)) } : current,
             )
             // Drop the override only if nothing changed while saving.
-            if (editSerial.current.get(id) === serial) {
+            if (editSerial.current.get(saved.id) === serial) {
               setOverrides((map) => {
                 const copy = new Map(map)
-                copy.delete(id)
+                copy.delete(saved.id)
                 return copy
               })
             }
@@ -172,7 +202,7 @@ export default function Mapping({ session }: { session: Session }) {
         }, SAVE_DELAY_MS),
       )
     },
-    [broadcast, setShow],
+    [broadcast, sender, setShow],
   )
 
   const guard = async (work: () => Promise<unknown>) => {

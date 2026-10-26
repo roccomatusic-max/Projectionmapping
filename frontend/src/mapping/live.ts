@@ -165,3 +165,80 @@ export function useLocalChannel(onMessage?: (message: LocalMessage) => void) {
   }, [])
   return (message: LocalMessage) => channel.current?.postMessage(message)
 }
+
+/** Shortest gap between two live geometry sends for one output (about 25 a second). */
+export const LIVE_GAP_MS = 40
+
+type Pending = {
+  output: Output
+  save: boolean
+  done: (saved: Output | null) => void
+  fail: (reason: unknown) => void
+}
+
+/**
+ * Sends one output's edits to the server, in order: live positions while a
+ * handle moves (players across the network follow them at once), then the
+ * saved copy once it stops. One request at a time, and a newer edit
+ * replaces one still waiting, so a slow link skips positions in between
+ * rather than falling behind. Nothing sent live can land after the save.
+ */
+export class EditSender {
+  private busy = false
+  private waiting: Pending | null = null
+  private lastLive = -Infinity
+  private gapTimer: number | undefined
+
+  constructor(
+    private sendLive: (output: Output) => Promise<void>,
+    private sendSave: (output: Output) => Promise<Output>,
+  ) {}
+
+  live(output: Output) {
+    this.queue({ output, save: false, done: () => undefined, fail: () => undefined })
+  }
+
+  /** The saved output, or null when a newer edit took its place first. */
+  save(output: Output): Promise<Output | null> {
+    return new Promise((done, fail) => this.queue({ output, save: true, done, fail }))
+  }
+
+  dispose() {
+    window.clearTimeout(this.gapTimer)
+    this.waiting?.done(null)
+    this.waiting = null
+  }
+
+  private queue(next: Pending) {
+    // A save still waiting is dropped for a newer edit: the editor saves
+    // again after that one anyway.
+    this.waiting?.done(null)
+    this.waiting = next
+    this.pump()
+  }
+
+  private pump() {
+    window.clearTimeout(this.gapTimer)
+    if (this.busy || !this.waiting) return
+    const next = this.waiting
+    const wait = next.save ? 0 : this.lastLive + LIVE_GAP_MS - performance.now()
+    if (wait > 0) {
+      this.gapTimer = window.setTimeout(() => this.pump(), wait)
+      return
+    }
+    this.waiting = null
+    this.busy = true
+    let work: Promise<unknown>
+    if (next.save) {
+      work = this.sendSave(next.output).then(next.done, next.fail)
+    } else {
+      this.lastLive = performance.now()
+      // A live position that does not arrive is overtaken by the next one, or the save.
+      work = this.sendLive(next.output).catch(() => undefined)
+    }
+    void work.finally(() => {
+      this.busy = false
+      this.pump()
+    })
+  }
+}
