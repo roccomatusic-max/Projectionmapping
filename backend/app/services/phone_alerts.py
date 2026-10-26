@@ -15,7 +15,8 @@ the server's own account, like the AI keys (services/api_keys.py). The
 Pushover keys are never sent back to a browser.
 
 What is sent: an alert when it first opens or gets worse (never the hourly
-reminders the dashboard keeps), and "all clear" when it ends.
+reminders the dashboard keeps), "all clear" when it ends, and a note when
+the show starts and when it stops.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
 TOPIC_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"
 
 #: The groups the person turns on and off, in the order Settings shows them.
-TOPICS = ("hot", "offline", "minipc", "show", "other")
+TOPICS = ("hot", "offline", "minipc", "show", "other", "showtime")
 
 #: Alert kinds by group. A kind not listed is "other", except QUIET ones.
 _KINDS = {
@@ -185,6 +186,13 @@ class PhoneAlerts:
         self._spawn(values, title="All clear", message=message, level="clear",
                     tag="white_check_mark")
 
+    def show_event(self, *, title: str, message: str, tag: str) -> None:
+        """The show started or stopped: news, not a problem."""
+        values = self.load()
+        if not self.ready(values) or not values["topics"]["showtime"]:
+            return
+        self._spawn(values, title=title, message=message, level="info", tag=tag)
+
     def _spawn(self, values: dict[str, Any], **kwargs: Any) -> None:
         # Alerting must never wait on the internet.
         task = asyncio.create_task(self._deliver(values, **kwargs), name="phone-alert")
@@ -216,7 +224,7 @@ class PhoneAlerts:
             elif values["service"] == "pushover":
                 form = {"token": values["pushover_token"], "user": values["pushover_user"],
                         "title": title, "message": message,
-                        "priority": str({"critical": 1, "warning": 0}.get(level, -1))}
+                        "priority": str({"critical": 1, "warning": 0, "info": 0}.get(level, -1))}
                 if link:
                     form.update(url=link, url_title="Open the Alerts page")
                 response = await post(PUSHOVER_URL, data=form)

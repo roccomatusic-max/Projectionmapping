@@ -245,7 +245,10 @@ through a service with its own phone app:
 The choice is saved in `phone-alerts.json` beside the media folder,
 readable only by the server's account (backend/app/services/phone_alerts.py).
 
-What is sent, in five groups that can each be turned off: a projector
+What is sent, in six groups that can each be turned off: the show
+starting and stopping (when, who if it was Tonight's show or its schedule,
+what plays, how long it ran; the emergency stop and Blackout say so; the
+next cue, Pause and Resume are not sent), a projector
 running hot (intake air within `TEMPERATURE_WARN_MARGIN_C` of
 `TEMPERATURE_INTAKE_LIMIT_C`, or the projector's own heat warning), a
 projector offline or shutting down unexpectedly, a mini PC whose output

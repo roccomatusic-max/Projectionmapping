@@ -148,7 +148,7 @@ export type HomeAssistantSetupStatus = {
   local_only: boolean
 }
 
-export type PhoneAlertTopic = 'hot' | 'offline' | 'minipc' | 'show' | 'other'
+export type PhoneAlertTopic = 'hot' | 'offline' | 'minipc' | 'show' | 'other' | 'showtime'
 
 export type PhoneAlertsStatus = {
   service: 'off' | 'ntfy' | 'pushover'

@@ -254,6 +254,7 @@ async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
             await apply_group(session, group)
         ids = await _projector_ids(session, show_id) if power else []
     bus.publish("mapping_show", {"show_id": show_id})
+    _say_who(by)
 
     parts: list[str] = []
     ok = True
@@ -287,6 +288,13 @@ async def start_show(*, by: str, slot: Slot | None = None) -> tuple[bool, str]:
     return ok, message
 
 
+def _say_who(by: str) -> None:
+    """The phone's "show started/stopped" note says who did it."""
+    from app.services.alerts import alerting
+
+    alerting.note_show_command(by)
+
+
 async def _start_went_wrong(message: str, *, severity: Severity) -> None:
     from app.services.alerts import alerting
 
@@ -308,6 +316,7 @@ async def stop_show(*, by: str, power_off: bool, show_id: int | None = None) -> 
         ids = await _projector_ids(session, show_id) if power_off and show_id else []
     parts: list[str] = []
     if transport.snapshot().status in ("playing", "paused"):
+        _say_who(by)
         await transport.command("stop")
         parts.append("The show is stopped.")
     else:
