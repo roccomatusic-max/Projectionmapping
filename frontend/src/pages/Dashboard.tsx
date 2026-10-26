@@ -10,6 +10,7 @@ import { Banner, EmptyState, PageHeader, Panel, Spinner, StatusDot } from '@/com
 import { FleetBar, type FleetSegmentKind } from '@/components/graphics'
 import { TONE_TEXT } from '@/components/tone'
 import { TonightShow } from '@/components/tonight/TonightShow'
+import { HeaterStatus } from '@/components/heater/HeaterStatus'
 import {
   AddIcon,
   AlertsIcon,
@@ -320,6 +321,8 @@ export default function Dashboard({ session }: { session: Session }) {
       />
 
       <TonightShow session={session} />
+
+      <HeaterStatus session={session} />
 
       {loading ? (
         <div className="panel p-6">
