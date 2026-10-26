@@ -349,6 +349,42 @@ viewers can watch it; only administrators can change it.
 
 The same buttons are on **Mapping → Run the show** in the full app.
 
+### Walk the yard: checking every projector from the phone
+
+**Walk the yard** (Show Remote → Tonight or Projectors tab) checks every
+mini PC's projector in turn before a show. The projector being checked shows
+its ID test picture (its output's name, a crosshair, TL/TR/BL/BR corners and
+five focus stars over the canvas grid) and every other projector on the walk
+goes black, so the lit one cannot be mistaken. The phone shows that
+projector's mini PC (connected or not), power, shutter, hottest sensor, lamp
+hours and any fault, with Turn it on / Open the shutter when needed, and a
+Grid and name / All white switch. **Looks good** lights the next one;
+**Something's wrong** asks what (blurry, off target, too dark, wrong
+projector lit up, nothing showing, something else, a note). Previous and
+Skip for now move around the walk. When every projector is answered, each
+output gets back the test picture it had before (normally the show) and the
+walk is saved as an event (`walkthrough`, a warning when one needs a look).
+The Dashboard's Tonight's show has a **Last checked** tile and the phone
+shows "Last checked Today 5:40 PM · all 3 looked good".
+
+A walk never gets in the way of a show (services/walkthrough.py). Starting
+one while a show plays is refused unless the phone confirms stopping it; the
+show starting by any means, the emergency stop, End walk, or 20 minutes
+without a tap end it where it is and put every picture back. The outputs'
+earlier pictures are saved with the walk's start (`walkthrough_started`
+event), so a server restart mid-walk puts them back at start-up too. A mini
+PC whose projector shows a test picture does not update its app, so none
+updates during a walk.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/walkthrough` | Viewer: the walk going on (`active`) and the last one (`last`) |
+| POST | `/api/walkthrough/start` | Operator: `{stop_show}`; picks up a walk already going on |
+| POST | `/api/walkthrough/answer` | Operator: `{index, result: good/wrong, problems, note}` |
+| POST | `/api/walkthrough/go` | Operator: `{index}`, light another stop |
+| POST | `/api/walkthrough/picture` | Operator: `{picture: id/white}` |
+| POST | `/api/walkthrough/stop` | Operator: end it now |
+
 ## 6. Cameras: calibration and people
 
 A camera pointed at the building runs a small program,

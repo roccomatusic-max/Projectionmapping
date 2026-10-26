@@ -889,3 +889,20 @@ async def test_the_status_screen_fits_its_picture_onto_the_driveway(api):
     # Only a mini PC's own account.
     person = await api.post("/api/mapping/players/me/warp", headers=headers, json=fit)
     assert person.status_code == 403
+
+
+async def test_a_mini_pc_showing_the_show_may_update(api, release, monkeypatch):
+    """"none" is the show, not a test picture: an assigned mini PC still updates."""
+    headers = await login(api)
+    player_id, _ = await paired(api, headers)
+    show = (await api.post("/api/mapping/shows", headers=headers, json={"name": "House"})).json()
+    output_id = show["outputs"][0]["id"] if show.get("outputs") else (await api.post(
+        f"/api/mapping/shows/{show['id']}/outputs", headers=headers, json={"name": "Left"})).json()["id"]
+    await api.patch(f"/api/mapping/players/{player_id}", headers=headers, json={"output_id": output_id})
+    await release.service.refresh(force=True)
+    monkeypatch.setattr(release.module, "busy_reason", lambda: _async(None))
+    assert (await app_checkin(api, version="1.0.50"))["update"] is not None
+
+    await api.post(f"/api/mapping/players/{player_id}/screen", headers=headers, json={"pattern": "grid"})
+    reply = await app_checkin(api, version="1.0.50", update={"state": "ready", "version": "1.0.60"})
+    assert reply["update"] is None

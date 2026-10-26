@@ -42,6 +42,7 @@ from app.api.routes import (
     system,
     tonight,
     updates,
+    walkthrough,
     ws,
 )
 from app.config import settings
@@ -61,6 +62,7 @@ from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
 from app.services.tonight import scheduler as tonight_scheduler
 from app.services.updates import start_auto_updates
+from app.services.walkthrough import walkthrough as walk_the_yard
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -145,11 +147,13 @@ async def lifespan(_: FastAPI):
     await bootstrap_admin()
     await load_projectors()
     await emergency_stop.restore()
+    await walk_the_yard.restore()
     await monitor.start()
     await alerting.start()
     await automation_engine.start()
     await tonight_scheduler.start()
     await mqtt_publisher.start()
+    await walk_the_yard.start_service()
     if settings.advertise_port:
         await discovery.start(port=settings.discovery_port, http_port=settings.advertise_port)
     auto_updates = start_auto_updates()
@@ -169,6 +173,7 @@ async def lifespan(_: FastAPI):
         await discovery.stop()
         await automation_engine.stop()
         await tonight_scheduler.stop()
+        await walk_the_yard.stop_service()
         await mapping_transport.stop_service()
         await monitor.stop()
         await alerting.stop()
@@ -248,7 +253,7 @@ for router in (
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
     mapping_maps.router, tonight.router, show_calendar.router, updates.router, emergency.router,
-    phone_alerts.router, ws.router,
+    phone_alerts.router, walkthrough.router, ws.router,
 ):
     app.include_router(router, prefix="/api")
 
