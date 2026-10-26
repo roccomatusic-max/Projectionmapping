@@ -46,7 +46,7 @@ export function wholeCanvasOutput(showId: number, id: number, name: string, widt
 }
 
 export type PeopleSource = 'simulated' | 'camera'
-export type Backdrop = { kind: 'none' } | { kind: 'camera' } | { kind: 'media'; id: number }
+export type Backdrop = { kind: 'none' } | { kind: 'camera' } | { kind: 'house' } | { kind: 'media'; id: number }
 
 export interface Drawing {
   kind: SurfaceKind
@@ -130,8 +130,19 @@ function turnHandle(turn: (lx: number, ly: number) => [number, number], half: nu
 export async function straightenedPhoto(show: Show, version: number): Promise<HTMLImageElement | null> {
   const view = show.camera_view
   if (!view) return null
+  return straightened(show, snapshotUrl(view.camera_id, version), view.corners)
+}
+
+/** The show's own photo of the house (Scenes → Start from a photo), straightened with its four corners. */
+export async function straightenedHousePhoto(show: Show): Promise<HTMLImageElement | null> {
+  const saved = await mappingApi.getHousePhoto(show.id).catch(() => null)
+  return saved ? straightened(show, mediaUrl(saved.media_id), saved.corners) : null
+}
+
+/** The part of a picture inside ``corners`` (TL, TR, BR, BL), stretched to the canvas's shape. */
+async function straightened(show: Show, url: string, corners: Point[]): Promise<HTMLImageElement | null> {
   const photo = new Image()
-  photo.src = snapshotUrl(view.camera_id, version)
+  photo.src = url
   try {
     await photo.decode()
   } catch {
@@ -152,7 +163,7 @@ export async function straightenedPhoto(show: Show, version: number): Promise<HT
   out.height = h
   const octx = out.getContext('2d')!
   const image = octx.createImageData(w, h)
-  const H = squareToQuad(view.corners)
+  const H = squareToQuad(corners)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const [u, v] = applyHomography(H, (x + 0.5) / w, (y + 0.5) / h)
@@ -182,8 +193,8 @@ function useBackdrop(show: Show, backdrop: Backdrop, media: MediaAsset[]): Textu
   useEffect(() => {
     let cancelled = false
     setSource(null)
-    if (backdrop.kind === 'camera') {
-      void straightenedPhoto(show, Date.now()).then((img) => {
+    if (backdrop.kind === 'camera' || backdrop.kind === 'house') {
+      void (backdrop.kind === 'camera' ? straightenedPhoto(show, Date.now()) : straightenedHousePhoto(show)).then((img) => {
         if (!cancelled && img) setSource({ element: img, width: img.naturalWidth, height: img.naturalHeight, fit: 'stretch' })
       })
     } else if (asset) {

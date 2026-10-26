@@ -6,6 +6,7 @@ import type {
   CameraCommandName,
   CameraView,
   Cue,
+  HousePhoto,
   MapApplied,
   MapParts,
   MappingScene,
@@ -16,6 +17,7 @@ import type {
   ShowSummary,
   Surface,
   TransportAction,
+  TracedHouse,
   TransportState,
 } from './types'
 
@@ -78,6 +80,13 @@ export const mappingApi = {
     showId: number,
     people: Array<{ id: number; x: number; y: number; z: number | null; size: number }>,
   ) => request<void>('/mapping/simulated-people', { method: 'POST', body: { show_id: showId, people } }),
+  /** Claude's outline of the house's parts on a photo (base64 JPEG, width × height pixels). */
+  traceHousePhoto: (body: { image: string; width: number; height: number }) =>
+    request<TracedHouse>('/mapping/house-photo/trace', { method: 'POST', body }),
+  getHousePhoto: (showId: number) => request<HousePhoto | null>(`/mapping/shows/${showId}/house-photo`),
+  saveHousePhoto: (showId: number, body: HousePhoto) =>
+    request<HousePhoto>(`/mapping/shows/${showId}/house-photo`, { method: 'PUT', body }),
+  forgetHousePhoto: (showId: number) => request<void>(`/mapping/shows/${showId}/house-photo`, { method: 'DELETE' }),
   aiStatus: () => request<AiStatus>('/mapping/ai'),
   setAiKey: (key: string) => request<AiStatus>('/mapping/ai/key', { method: 'PUT', body: { key } }),
   removeAiKey: () => request<AiStatus>('/mapping/ai/key', { method: 'DELETE' }),
