@@ -405,6 +405,31 @@ function drawIdOverlay(canvas: HTMLCanvasElement, output: Output) {
   ctx.fillText('TR', w - pad * 1.2, pad)
   ctx.fillText('BR', w - pad * 1.2, h - pad)
   ctx.fillText('BL', pad * 1.2, h - pad)
+  // Focus stars: fine wedges that blur into grey when the lens is off,
+  // in the middle and towards each corner, where focus usually goes first.
+  const r = h * 0.075
+  for (const [x, y] of [[0.5, 0.5], [0.2, 0.32], [0.8, 0.32], [0.2, 0.68], [0.8, 0.68]]) focusStar(ctx, w * x, h * y, r)
+}
+
+function focusStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  const wedges = 36
+  ctx.save()
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+  for (let i = 0; i < wedges; i += 2) {
+    const a = (i / wedges) * Math.PI * 2
+    const b = ((i + 1) / wedges) * Math.PI * 2
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.arc(x, y, r, a, b)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.strokeStyle = 'rgba(56, 189, 248, 1)'
+  ctx.lineWidth = Math.max(1.5, r / 30)
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
 }
 
 export class OutputRenderer {

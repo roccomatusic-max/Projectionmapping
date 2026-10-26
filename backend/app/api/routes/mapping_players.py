@@ -708,7 +708,8 @@ async def _update_busy(session, player: MappingPlayer) -> str | None:
     if player.output_id is not None:
         pattern = await session.scalar(
             select(MappingOutput.test_pattern).where(MappingOutput.id == player.output_id))
-        if pattern:
+        # "none" is the show itself.
+        if pattern and pattern != "none":
             return "its projector is showing a test picture"
     return await minipc_updates.busy_reason()
 

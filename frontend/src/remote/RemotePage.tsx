@@ -22,6 +22,7 @@ import {
 import { useFleet } from '@/hooks/useLiveData'
 import { OUTCOME_LABEL, classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
+import { useWalkInfo } from '@/lib/walkthrough'
 import { formatDuration } from '@/mapping/editor/controls'
 import { ServerClock, useMappingFeed } from '@/mapping/live'
 import type { Show, ShowSummary, TransportAction, TransportState } from '@/mapping/types'
@@ -29,6 +30,7 @@ import { addHomeScreenTags, onHomeScreen, phoneKind } from './homeScreen'
 import TonightTab from './TonightTab'
 import CalendarTab from './CalendarTab'
 import MessageBoards from './MessageBoards'
+import WalkTheYard, { WalkCard } from './WalkTheYard'
 
 /**
  * Show Remote: run the show and switch the projectors from a phone.
@@ -85,6 +87,8 @@ function SignedIn({ session, tab, onTab, onSignOut }: {
   const [showId, setShowId] = useState<number | null>(() => Number(localStorage.getItem(SHOW_KEY)) || null)
   // One live link for both tabs: the emergency stop is on either.
   const live = useTransport(showId)
+  const [walking, setWalking] = useState(false)
+  const walkInfo = useWalkInfo(walking ? 60_000 : 15_000)
 
   useEffect(() => {
     if (showId != null) localStorage.setItem(SHOW_KEY, String(showId))
@@ -98,15 +102,22 @@ function SignedIn({ session, tab, onTab, onSignOut }: {
           <EmergencyStopButton variant="remote" usePower={usePhonePower} />
         </div>
       )}
+      {walkInfo?.active && !walking && (
+        <div className="px-4 pt-2">
+          <WalkCard info={walkInfo} onWalk={() => setWalking(true)} />
+        </div>
+      )}
       <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {tab === 'show'
           ? <ShowTab session={session} onSignOut={onSignOut} showId={showId} onShowId={setShowId} live={live} />
           : tab === 'tonight'
-            ? <TonightTab session={session} transport={live.transport} onCalendar={() => onTab('calendar')} />
+            ? <TonightTab session={session} transport={live.transport} onCalendar={() => onTab('calendar')}
+                walk={<WalkCard info={walkInfo} onWalk={() => setWalking(true)} />} />
             : tab === 'calendar'
               ? <CalendarTab session={session} />
-              : <ProjectorsTab session={session} />}
+              : <ProjectorsTab session={session} walk={<WalkCard info={walkInfo} onWalk={() => setWalking(true)} />} />}
       </main>
+      {walking && <WalkTheYard session={session} onClose={() => setWalking(false)} />}
       <nav className="grid grid-cols-4 border-t border-white/[0.06] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
         <TabButton active={tab === 'show'} onClick={() => onTab('show')} icon={<SceneIcon size={22} />} label="Show" />
         <TabButton active={tab === 'tonight'} onClick={() => onTab('tonight')} icon={<ClockIcon size={22} />} label="Tonight" />
@@ -545,7 +556,7 @@ const POWER_LABEL: Record<Projector['state']['power'], string> = {
 
 type Pending = { title: string; body: string; run: () => Promise<void> }
 
-function ProjectorsTab({ session }: { session: Session }) {
+function ProjectorsTab({ session, walk }: { session: Session; walk?: ReactNode }) {
   const canControl = session.role === 'admin' || session.role === 'operator'
   const { projectors, loading, error, refresh, wsStatus } = useFleet(10000)
   const [busy, setBusy] = useState(false)
@@ -594,6 +605,8 @@ function ProjectorsTab({ session }: { session: Session }) {
           {note ?? error}
         </button>
       )}
+
+      {walk}
 
       {canControl && enabled.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
