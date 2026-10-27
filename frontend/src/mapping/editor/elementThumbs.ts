@@ -107,7 +107,7 @@ function stamp(ctx: CanvasRenderingContext2D, style: string, layer: SceneLayer, 
   ctx.restore()
 }
 
-const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees', 'dragonflies', 'hummingbirds', 'pufferfish', 'koi', 'ladybugs', 'moths'])
+const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees', 'dragonflies', 'hummingbirds', 'pufferfish', 'koi', 'ladybugs', 'moths', 'clownfish'])
 /** Small things that come many at a time: shown as a scatter. */
 const SCATTER = new Set([
   'snowfall', 'leaves', 'petals', 'confetti', 'falling-hearts', 'clovers', 'fireflies', 'rising-bubbles', 'falling-presents',
@@ -116,10 +116,10 @@ const SCATTER = new Set([
 /** Ones that float up: three of them. */
 const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons', 'floating-candles'])
 /** Ones that sit on the roofline, or hang under it. */
-const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls'])
+const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls', 'wolves', 'robins'])
 /** Ones that peek over a window sill. */
 const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes'])
-const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats'])
+const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas'])
 
 function hash(n: number) {
   const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453
@@ -216,7 +216,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
         ctx.translate(W * x, top)
         ctx.rotate(swing)
         stamp(ctx, style, layer, 'thread', 0, 0, len / 2, len)
-        stamp(ctx, style, layer, 'main', style === 'stockings' ? i : f + i, 0, len + H * 0.14, H * 0.32)
+        stamp(ctx, style, layer, 'main', style === 'stockings' ? i : style === 'pinatas' ? 0 : f + i, 0, len + H * 0.14, H * 0.32)
         ctx.restore()
       }
     })
@@ -269,7 +269,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     if (up > 0.02) stamp(ctx, style, layer, 'main', f, W / 2, top - jh * up + jh / 2, jh, false, up)
     return
   }
-  if (style === 'moles') {
+  if (style === 'moles' || style === 'burrow-bunnies') {
     ;[[0.25, 0.4], [0.52, 1], [0.78, 0.7]].forEach(([x, up], i) => {
       const k = Math.min(1, Math.max(0, up + Math.sin(time * 1.4 + i * 2) * 0.3))
       const mh = H * 0.5
@@ -362,6 +362,115 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
   if (style === 'ufo') {
     stamp(ctx, style, layer, 'beam', 0, W / 2, H * 0.68, H * 0.6)
     stamp(ctx, style, layer, 'main', Math.floor(time * 4), W / 2, H * 0.36, H * 0.48)
+    return
+  }
+  if (style === 'helicopter') {
+    stamp(ctx, style, layer, 'search', 0, W * 0.6 + Math.sin(time) * W * 0.05, H * 0.72, H * 0.6)
+    stamp(ctx, style, layer, 'main', f, W / 2, H * 0.3, H * 0.5)
+    return
+  }
+  if (style === 'icicles' || style === 'web-spiders') {
+    // Under the gutter: a row of icicles dripping, or webs with their spiders going round.
+    ctx.fillStyle = 'rgba(148,163,184,0.8)'
+    ctx.fillRect(0, H * 0.06, W, H * 0.04)
+    if (style === 'icicles') {
+      ;[0.2, 0.5, 0.8].forEach((x, i) => {
+        stamp(ctx, style, layer, 'main', i, W * x, H * 0.1 + H * 0.28, H * 0.56)
+        const k = (time * 0.6 + i * 0.37) % 1
+        stamp(ctx, style, layer, 'drop', 0, W * x, H * (0.7 + 0.28 * k * k), H * 0.08)
+      })
+      return
+    }
+    stamp(ctx, style, layer, 'main', 0, W * 0.5, H * 0.48, H * 0.76)
+    const a = time * 0.8
+    stamp(ctx, style, layer, 'spider', f, W * 0.5 + Math.cos(a) * H * 0.18, H * 0.48 + Math.sin(a) * H * 0.18, H * 0.22)
+    return
+  }
+  if (style === 'cuckoo-clock' || style === 'moon') {
+    // The real time on the clock (the cuckoo out on the minute), or tonight's moon.
+    const now = new Date()
+    if (style === 'moon') {
+      const age = ((((now.getTime() - Date.UTC(2000, 0, 6, 18, 14)) / 86_400_000) % 29.530588853) + 29.530588853) % 29.530588853
+      stamp(ctx, style, layer, 'main', Math.round((age / 29.530588853) * main.frames) % main.frames, W / 2, H / 2, H * 0.9)
+      return
+    }
+    const ch = H * 0.94
+    const u = ch / 300
+    stamp(ctx, style, layer, 'main', 0, W / 2, H / 2, ch)
+    const min = now.getMinutes() + now.getSeconds() / 60
+    const hours = (now.getHours() % 12) + min / 60
+    for (const [a, frame] of [[(hours / 12) * Math.PI * 2, 0], [(min / 60) * Math.PI * 2, 1]] as const) {
+      ctx.save()
+      ctx.translate(W / 2, H / 2 + (136 - 150) * u)
+      ctx.rotate(a)
+      stamp(ctx, style, layer, 'hand', frame, 0, -21 * u, 42 * u)
+      ctx.restore()
+    }
+    if (now.getSeconds() < 3) stamp(ctx, style, layer, 'cuckoo', Math.floor(time * 3), W / 2, H / 2 + (55 - 150) * u, 36 * u)
+    return
+  }
+  if (style === 'sprinklers') {
+    const a = Math.sin(time * 0.9) * 0.9
+    ctx.save()
+    ctx.translate(W / 2, H * 0.68)
+    ctx.rotate(a * 0.35)
+    stamp(ctx, style, layer, 'spray', f, 0, -H * 0.26, H * 0.6, a < 0)
+    ctx.restore()
+    stamp(ctx, style, layer, 'main', 0, W / 2, H * 0.8, H * 0.3)
+    return
+  }
+  if (style === 'cauldrons') {
+    stamp(ctx, style, layer, 'main', f, W / 2, H * 0.55, H * 0.8)
+    for (let j = 0; j < 4; j++) {
+      const q = (time * 0.6 + j / 4) % 1
+      stamp(ctx, style, layer, 'brew', 0, W * (0.42 + 0.16 * hash(j)), H * (0.32 - q * 0.28), H * (0.06 + q * 0.06))
+    }
+    return
+  }
+  if (style === 'pot-of-gold') {
+    ctx.save()
+    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(time * 0.8)
+    stamp(ctx, style, layer, 'rainbow', 0, W * 0.62, H * 0.5, H * 0.66)
+    ctx.restore()
+    stamp(ctx, style, layer, 'main', f, W * 0.3, H * 0.72, H * 0.48)
+    return
+  }
+  if (style === 'leaf-piles' || style === 'puddles') {
+    const k = (time * 0.4) % 1
+    if (style === 'puddles') {
+      stamp(ctx, style, layer, 'main', f, W / 2, H * 0.78, H * 0.3)
+      if (k < 0.3) stamp(ctx, style, layer, 'splash', 0, W / 2, H * 0.62, H * 0.4 * Math.sin((k / 0.3) * Math.PI))
+      return
+    }
+    stamp(ctx, style, layer, 'main', 0, W / 2, H * 0.78, H * 0.4)
+    for (let j = 0; j < 8; j++) {
+      const a = k * 1.4
+      const x = W * 0.5 + (hash(j) - 0.5) * W * 0.8 * a
+      const y = H * 0.62 - H * (0.6 + 0.4 * hash(j + 4)) * a + H * 0.7 * a * a
+      if (y < H * 0.85) stamp(ctx, style, layer, 'leaf', j, x, y, H * 0.08)
+    }
+    return
+  }
+  if (style === 'easter-eggs' || style === 'diyas') {
+    const xs = style === 'diyas' ? [0.14, 0.38, 0.62, 0.86] : [0.2, 0.5, 0.8]
+    xs.forEach((x, i) => {
+      const hop = style === 'easter-eggs' && i === Math.floor(time * 0.7) % 3 ? Math.abs(Math.sin(time * 4)) * H * 0.12 : 0
+      stamp(ctx, style, layer, 'main', style === 'diyas' ? f + i * 2 : i, W * x, H * 0.66 - hop, H * (style === 'diyas' ? 0.36 : 0.44))
+    })
+    return
+  }
+  if (style === 'glowing-pumpkins') {
+    stamp(ctx, style, layer, Math.floor(time * 0.5) % 2 ? 'boo' : 'main', f, W / 2, H / 2, H * 0.86)
+    return
+  }
+  if (style === 'snow-globes' || style === 'gift-boxes') {
+    // Snow whirling up and settling; a present going from wrapped to open.
+    const frame = style === 'snow-globes' ? main.frames - 1 - (Math.floor(time * 1.5) % main.frames) : Math.floor(time * 0.8) % main.frames
+    stamp(ctx, style, layer, 'main', frame, W / 2, H / 2, H * 0.88)
+    return
+  }
+  if (style === 'peacocks') {
+    stamp(ctx, style, layer, Math.floor(time * 0.3) % 2 ? 'wave' : 'main', f, W / 2, H / 2, H * 0.92)
     return
   }
   // One, as big as fits.

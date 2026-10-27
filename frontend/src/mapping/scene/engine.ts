@@ -438,7 +438,8 @@ export class SceneEngine {
           this.movers ??= new MoverDrawer(gl)
           this.movers.draw(key, {
             layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, h, surfaces: frame.surfaces,
-            surfacesKey: this.surfacesKey, people: frame.people, strength, time: item.time, dt, detail: this.scale,
+            surfacesKey: this.surfacesKey, people: frame.people, strength, time: item.time, clockMs: item.clock ?? Date.now(), dt,
+            detail: this.scale,
             blend: (mode) => this.blend(mode),
           })
           continue

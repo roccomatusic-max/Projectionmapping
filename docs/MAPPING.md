@@ -862,6 +862,50 @@ Ready-made scenes added: Restless graveyard, Peekaboo ghosts, Elves on watch,
 Snow day, Birthday surprise, Garden visitors, Welcome baby, Seaside, Stars and
 stripes and Make-believe.
 
+Sixth batch (34 more; several show something real):
+
+- Real data: tonight's moon (`sky` motion) in its real phase, rising on the
+  left in the evening and crossing over the house through the night by the
+  server's clock (one pin placed by hand keeps it there); a cuckoo clock whose
+  hands show the real time and whose cuckoo comes out of its door to call the
+  hours (once on the half hour, and once for whoever walks up); icicles along
+  the gutter that hang still and glint below freezing and drip above it (the
+  weather where the server is, from the same Open-Meteo feed as the weather
+  board), a drop falling on whoever stands under them; flags that ripple as
+  hard as the real wind is blowing; puddles that get raindrops in them when it
+  is really raining.
+- Standing on the ground (`stand` motion, spots along the bottom of the house
+  or the line drawn, `many` how many the How many dial adds): jack-o'-lanterns
+  that shout "Boo!" with a jump; a cauldron bubbling over more for people;
+  lawn sprinklers sweeping to and fro that turn to spray whoever walks by
+  (near "hide": they shut off for them); snow globes shaken now and then and
+  by people, the snow whirling up and settling; firework fountains that spray
+  higher for people (near "grow"); leaf piles that burst up when someone walks
+  through them (a few leaves in a gust now and then); a pot of gold with a
+  rainbow arcing up for people ("Lucky you!"); Easter eggs hidden along the
+  bottom that light up and hop when someone finds them ("Found one!"); a row
+  of diyas with a wave of light running along them.
+- On and under the roofline: wolves that watch people and howl ("Awooo!");
+  robins that sing; piñatas that swing as people dance under them and, after a
+  couple of seconds of it, burst into candy and are hung again later;
+  ornaments that glint in turn; spiders in their webs that drop down a thread
+  to people (near "hide": they scuttle to the top of the web).
+- Walking: gnomes that freeze mid-step when anyone comes near and carry on
+  when they leave (`shy` without a hiding picture); peacocks that stop and fan
+  their tails for people (near "dance"); surfers ("Cowabunga!"), sailboats and
+  a pirate ship that rock on the waves (`rock`), the pirate ship firing its
+  cannon at people ("Arr!"); a snowplow ("Beep beep!"), starfish and teddy
+  bears holding hearts ("Hugs!").
+- Coming up: presents that shake, open and show a teddy bear ("Surprise!");
+  bunnies poking up out of their burrows.
+- Flying: a helicopter whose searchlight sweeps the ground and swings onto
+  whoever comes near; manta rays, an anglerfish with a glowing lure and
+  Rudolph with his nose lighting up; clownfish are a flock.
+
+Ready-made scenes added: Howl at the moon, Deep freeze, Rudolph's night,
+Fiesta, Coral reef, Lazy summer, Garden party, Egg hunt, End of the rainbow,
+Diyas and fireworks, Rainy autumn day, Hugs and Hometown heroes.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

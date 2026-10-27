@@ -115,3 +115,16 @@ def test_batch_five_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "peeking-ghosts", "window-eyes", "snowball-kids", "birthday-cakes", "skunks", "moths"]
+
+
+def test_batch_six_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "wolves", "near": "light"},
+        {"type": "movers", "style": "moon"},
+        {"type": "movers", "style": "pinatas", "near": "dance"},
+        {"type": "movers", "style": "cuckoo-clock", "near": "jump"},
+        {"type": "movers", "style": "gnomes", "near": "hide"},
+        {"type": "movers", "style": "diyas", "near": "light"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "wolves", "moon", "pinatas", "cuckoo-clock", "gnomes", "diyas"]
