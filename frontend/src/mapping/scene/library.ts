@@ -18,9 +18,9 @@ import { countdownNeedsDate } from './countdown'
 import { moverWalks } from './movers'
 
 export type Occasion =
-  | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'groundhog-day' | 'super-bowl' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'april-fools' | 'easter'
+  | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'groundhog-day' | 'super-bowl' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'april-fools' | 'passover' | 'easter' | 'eid'
   | 'earth-day' | 'cinco-de-mayo' | 'mothers-day' | 'memorial-day' | 'graduation' | 'fathers-day' | 'juneteenth' | 'fourth-of-july'
-  | 'back-to-school' | 'labor-day' | 'halloween' | 'day-of-the-dead' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
+  | 'back-to-school' | 'labor-day' | 'grandparents-day' | 'rosh-hashanah' | 'indigenous-peoples-day' | 'halloween' | 'day-of-the-dead' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
   | 'winter' | 'spring' | 'summer' | 'autumn' | 'birthday' | 'party' | 'sea' | 'driveway' | 'any'
 
 /** The holidays in calendar order, then the seasons and the rest. */
@@ -35,7 +35,9 @@ export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = 
   { id: 'mardi-gras', label: 'Mardi Gras', words: 'mardi gras fat tuesday carnival new orleans' },
   { id: 'st-patricks', label: 'St Patrick’s', words: 'st patricks paddy irish luck march green' },
   { id: 'april-fools', label: 'April Fools’', words: 'april fools day prank joke april 1' },
+  { id: 'passover', label: 'Passover', words: 'passover pesach seder jewish matzah spring' },
   { id: 'easter', label: 'Easter', words: 'april spring' },
+  { id: 'eid', label: 'Ramadan and Eid', words: 'ramadan eid al fitr mubarak muslim islamic crescent moon iftar' },
   { id: 'earth-day', label: 'Earth Day', words: 'earth day planet nature green april' },
   { id: 'cinco-de-mayo', label: 'Cinco de Mayo', words: 'cinco de mayo fiesta mexico may' },
   { id: 'mothers-day', label: 'Mother’s Day', words: 'mothers day mom mum may' },
@@ -46,6 +48,9 @@ export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = 
   { id: 'fourth-of-july', label: 'Fourth of July', words: '4th july independence usa america patriotic' },
   { id: 'back-to-school', label: 'Back to school', words: 'back to school first day teacher class august september' },
   { id: 'labor-day', label: 'Labor Day', words: 'labor labour day september workers' },
+  { id: 'grandparents-day', label: 'Grandparents Day', words: 'grandparents day grandma grandpa nana papa september' },
+  { id: 'rosh-hashanah', label: 'High Holy Days', words: 'rosh hashanah jewish new year shanah tovah yom kippur sukkot shofar september october' },
+  { id: 'indigenous-peoples-day', label: 'Indigenous Peoples’ Day', words: 'indigenous peoples day native american october columbus' },
   { id: 'halloween', label: 'Halloween', words: 'spooky scary october trick treat' },
   { id: 'day-of-the-dead', label: 'Day of the Dead', words: 'dia de los muertos dia de muertos november calavera mexican' },
   { id: 'veterans-day', label: 'Veterans Day', words: 'veterans day november patriotic military' },
@@ -581,6 +586,25 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'team-mascot': [['super-bowl', 'autumn', 'back-to-school'], 'mascot bear team football game day'],
   'snake-can': [['april-fools'], 'april fools prank spring snakes can nuts joke'],
   'squirting-flower': [['april-fools', 'birthday'], 'april fools prank clown squirting flower water joke'],
+  'seder-table': [['passover'], 'passover seder table four questions haggadah family jewish wine cups'],
+  'afikomen-hunt': [['passover'], 'afikomen hunt matzah hidden passover seder kids'],
+  'elijahs-door': [['passover'], 'elijah door cup prophet passover seder open'],
+  'sea-parting': [['passover'], 'red sea parting exodus moses passover waters'],
+  'shofar-blower': [['rosh-hashanah'], 'shofar ram horn rosh hashanah yom kippur blowing tallit'],
+  'apples-and-honey': [['rosh-hashanah'], 'apples honey sweet new year rosh hashanah'],
+  tashlich: [['rosh-hashanah'], 'tashlich bread crumbs ducks stream rosh hashanah'],
+  sukkah: [['rosh-hashanah', 'autumn'], 'sukkah sukkot lulav etrog booth harvest'],
+  'moon-sighting': [['eid'], 'moon sighting crescent ramadan eid telescope real moon phase tonight'],
+  iftar: [['eid'], 'iftar ramadan breaking fast dates family dinner'],
+  'eid-gifts': [['eid'], 'eid gifts eidi money envelopes grandma kids mubarak'],
+  'fanous-kid': [['eid'], 'fanous lantern ramadan child walking light'],
+  'three-sisters-garden': [['indigenous-peoples-day', 'autumn', 'thanksgiving'], 'three sisters corn beans squash garden native american harvest'],
+  'canoe-paddlers': [['indigenous-peoples-day', 'summer'], 'canoe birchbark paddlers paddling river lake native american'],
+  'story-time': [['grandparents-day'], 'grandpa story book reading grandchild once upon a time'],
+  'knitting-grandma': [['grandparents-day', 'winter'], 'grandma knitting scarf rocking chair yarn'],
+  'porch-swing': [['grandparents-day'], 'grandparents porch swing grandma grandpa lemonade'],
+  'whoopee-cushion': [['april-fools'], 'whoopee cushion prank april fools joke uncle'],
+  'touchdown-dance': [['super-bowl', 'autumn'], 'touchdown dance football player spike end zone game day'],
 }
 
 const INFO_TAGS: Record<string, [Occasion[], string]> = {

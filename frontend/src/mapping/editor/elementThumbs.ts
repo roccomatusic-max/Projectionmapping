@@ -11,6 +11,8 @@
 
 import { OutputRenderer } from '../renderer'
 import { CLASS_FIRST_YEAR, CLASS_POSES, CLASS_TOSS, CLASS_YEARS } from '../scene/celebrationSprites'
+import { MOON_PHASES } from '../scene/faithSprites'
+import { moonPhase } from '../scene/holidays'
 import type { LibraryItem } from '../scene/library'
 import { paintAtlas } from '../scene/movers'
 import { BOARD_HELLO, BOARD_POSES } from '../scene/schoolGameSprites'
@@ -134,7 +136,8 @@ const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 's
   'scaredy-ghost', 'nice-list', 'star-topper', 'light-tangle', 'ugly-sweater', 'present-puppy', 'reindeer-food', 'stair-peekers', 'cookie-baker',
   'bounce-house', 'magician', 'balloon-twister', 'party-horns', 'musical-chairs', 'pin-the-tail', 'face-painter', 'karaoke', 'dj-booth',
   'diploma-walk', 'valedictorian', 'crossing-guard', 'spelling-bee', 'science-volcano', 'referee', 'cheerleaders', 'stadium-wave',
-  'field-goal', 'team-mascot', 'snake-can', 'squirting-flower'])
+  'field-goal', 'team-mascot', 'snake-can', 'squirting-flower', 'seder-table', 'afikomen-hunt', 'shofar-blower', 'apples-and-honey',
+  'tashlich', 'sukkah', 'iftar', 'eid-gifts', 'story-time', 'porch-swing', 'whoopee-cushion', 'touchdown-dance'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
   'hanging-skeletons', 'star-lanterns', 'singing-wreath', 'mistletoe'])
 
@@ -622,6 +625,14 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     stamp(ctx, style, layer, acting ? 'act' : 'main', slot * poses + (Math.floor(time * 5) % poses), W / 2, H / 2, H * 0.9)
     return
   }
+  if (style === 'moon-sighting') {
+    // Tonight's real moon, the family now watching, now cheering.
+    const acting = Math.floor(time * 0.35) % 2 === 1
+    const phase = Math.round(moonPhase(Date.now()) * MOON_PHASES) % MOON_PHASES
+    const poses = acting ? 4 : 2
+    stamp(ctx, style, layer, acting ? 'act' : 'main', (Math.floor(time * 4) % poses) * MOON_PHASES + phase, W / 2, H / 2, H * 0.9)
+    return
+  }
   if (ACTORS.has(style)) {
     // Now doing its thing for people, now waiting.
     stamp(ctx, style, layer, Math.floor(time * 0.35) % 2 ? 'act' : 'main', Math.floor(time * 7), W / 2, H / 2, H * 0.9)
@@ -700,7 +711,8 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     || style === 'candy-bowl' || style === 'creaky-gate' || style === 'ofrenda' || style === 'rangoli' || style === 'gingerbread-house'
     || style === 'nativity' || style === 'blow-up-santa' || style === 'lights-elf' || style === 'strutting-tom' || style === 'tree-planters' || style === 'mom-garden'
     || style === 'statue-of-liberty' || style === 'sandcastle' || style === 'sarcophagus' || style === 'werewolf-change'
-    || style === 'snowman-builders' || style === 'advent-calendar' || style === 'limbo') {
+    || style === 'snowman-builders' || style === 'advent-calendar' || style === 'limbo' || style === 'elijahs-door' || style === 'sea-parting'
+    || style === 'three-sisters-garden' || style === 'knitting-grandma') {
     // Lighting up (the tree, the candles in their order) or opening, as people come.
     const frames = main.frames
     const k = Math.min(1, ((time * 0.3) % 1.3))

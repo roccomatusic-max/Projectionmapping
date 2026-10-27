@@ -7,6 +7,8 @@
 import { AUTUMN_ROWS } from './autumnSprites'
 import { CELEBRATION_ROWS } from './celebrationSprites'
 import { CHRISTMAS_ROWS } from './christmasSprites'
+import { FAITH_ROWS } from './faithSprites'
+import { FAMILY_ROWS } from './familySprites'
 import { HALLOWEEN_ROWS } from './halloweenSprites'
 import { HANUKKAH_KWANZAA_ROWS } from './hanukkahKwanzaaSprites'
 import { LATE_WINTER_ROWS } from './lateWinterSprites'
@@ -25,5 +27,5 @@ export type { SpriteColors, SpriteRow } from './sprites'
 export const SPRITE_ROWS: Record<string, SpriteRow[]> = {
   ...FIRST_ROWS, ...HALLOWEEN_ROWS, ...AUTUMN_ROWS, ...CHRISTMAS_ROWS, ...THANKSGIVING_ROWS,
   ...HANUKKAH_KWANZAA_ROWS, ...NEW_YEAR_ROWS, ...LATE_WINTER_ROWS, ...SPRING_ROWS, ...MAY_JUNE_ROWS, ...SUMMER_ROWS, ...HALLOWEEN_EXTRA_ROWS, ...CHRISTMAS_EXTRA_ROWS,
-  ...CELEBRATION_ROWS, ...SCHOOL_GAME_ROWS,
+  ...CELEBRATION_ROWS, ...SCHOOL_GAME_ROWS, ...FAITH_ROWS, ...FAMILY_ROWS,
 }

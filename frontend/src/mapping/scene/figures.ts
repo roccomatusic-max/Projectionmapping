@@ -115,3 +115,38 @@ export function standing(ctx: Ctx, x: number, g: number, dir: number, d: Dress, 
   }
 }
 
+/** Someone drawn at a scale s with their feet at (x, g); arms is painted in their own units (shoulders at ∓10, -98). */
+export function person(ctx: Ctx, x: number, g: number, s: number, dir: number, d: Dress, o: Parameters<typeof standing>[5] = {}, arms?: () => void) {
+  ctx.save()
+  ctx.translate(x, g)
+  ctx.scale(s, s)
+  standing(ctx, 0, 0, dir, d, o)
+  arms?.()
+  ctx.restore()
+}
+
+/** Hair over a head redrawn at (x, y). */
+export function hair(ctx: Ctx, x: number, y: number, dir: number, color: string) {
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.arc(x, y - 2, 17, Math.PI * 1.02, Math.PI * 1.98)
+  ctx.quadraticCurveTo(x, y - 12, x - dir * 14, y)
+  ctx.fill()
+}
+
+/** A child sitting on a seat at height seatY above (x, g), facing dir, at scale s. */
+export function seated(ctx: Ctx, x: number, g: number, seatY: number, s: number, dir: number, d: Dress, open = 0) {
+  ctx.save()
+  ctx.translate(x, g)
+  ctx.scale(s, s)
+  const sy = -seatY / s
+  const pants = d.pants ?? '#64748b'
+  arm(ctx, [0, sy, dir * 26, sy, dir * 28, -6], 11, pants)
+  ctx.fillStyle = d.shoes ?? '#475569'
+  rr(ctx, dir > 0 ? dir * 28 - 6 : dir * 28 - 12, -8, 18, 8, 3)
+  ctx.fillStyle = d.shirt
+  rr(ctx, -15, sy - 50, 30, 52, 10)
+  head(ctx, dir * 2, sy - 62, 16, d.skin, dir, { open })
+  hair(ctx, dir * 2, sy - 62, dir, d.hair)
+  ctx.restore()
+}

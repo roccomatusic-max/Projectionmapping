@@ -109,3 +109,74 @@ export function zodiacOf(year: number) {
 
 /** The seven principles of Kwanzaa, one for each day from 26 December. */
 export const KWANZAA_PRINCIPLES = ['Umoja', 'Kujichagulia', 'Ujima', 'Ujamaa', 'Nia', 'Kuumba', 'Imani']
+
+/** The evening of the first Passover seder (the eve of 15 Nisan) in a Gregorian year: 163 days before the next Rosh Hashanah. */
+export function passoverEve(year: number) {
+  const nisan15 = roshHashanah(year + 3761) - 163
+  const d = new Date((nisan15 - 1 - RD_UNIX) * 86_400_000)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+}
+
+/** The evening Rosh Hashanah begins (the eve of 1 Tishrei) in a Gregorian year. */
+export function roshHashanahEve(year: number) {
+  const d = new Date((roshHashanah(year + 3761) - 1 - RD_UNIX) * 86_400_000)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+}
+
+/**
+ * The first day of Ramadan and of Eid al-Fitr, one after another (month from 0), by the Umm al-Qura calendar; in
+ * the US a mosque may start a day later when it goes by the moon being seen. Past the table they are carried on
+ * by the lunar year.
+ */
+const RAMADAN_STARTS: Array<[number, number, number]> = [
+  [2025, 2, 1], [2026, 1, 18], [2027, 1, 8], [2028, 0, 28], [2029, 0, 16], [2030, 0, 5], [2030, 11, 26], [2031, 11, 16],
+  [2032, 11, 4], [2033, 10, 23], [2034, 10, 12], [2035, 10, 1], [2036, 9, 21], [2037, 9, 10], [2038, 8, 30], [2039, 8, 19],
+  [2040, 8, 8],
+]
+const EID_AL_FITR: Array<[number, number, number]> = [
+  [2025, 2, 30], [2026, 2, 20], [2027, 2, 9], [2028, 1, 26], [2029, 1, 14], [2030, 1, 4], [2031, 0, 24], [2032, 0, 14],
+  [2033, 0, 3], [2033, 11, 23], [2034, 11, 12], [2035, 11, 1], [2036, 10, 19], [2037, 10, 9], [2038, 9, 29], [2039, 9, 19],
+]
+const LUNAR_YEAR_DAYS = 354.367
+
+/** The nth of a run of lunar dates (n 0 is the first in the table), carried on by whole lunar years past either end. */
+function lunarRun(run: Array<[number, number, number]>, n: number): Date {
+  const i = Math.max(0, Math.min(run.length - 1, n))
+  const [y, m, d] = run[i]
+  return new Date(y, m, d + Math.round((n - i) * LUNAR_YEAR_DAYS))
+}
+
+/** Eid al-Fitr, counted as the one for each Gregorian year from 2025 (two fall in 2033, so later ones run a year behind). */
+export function eidAlFitr(year: number) {
+  return lunarRun(EID_AL_FITR, year - 2025)
+}
+
+/** Today's day of Ramadan (1 to 30, until Eid), or 0. */
+export function ramadanDay(now: Date) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  for (let n = 0; n < RAMADAN_STARTS.length + 40; n++) {
+    const start = lunarRun(RAMADAN_STARTS, n).getTime()
+    if (start > today) return 0
+    const eid = EID_AL_FITR.findIndex(([y, m, d]) => new Date(y, m, d).getTime() > start)
+    const end = eid >= 0 ? new Date(...EID_AL_FITR[eid]).getTime() : start + 30 * 86_400_000
+    if (today < end) return Math.round((today - start) / 86_400_000) + 1
+  }
+  return 0
+}
+
+/** True on the three days of Eid al-Fitr. */
+export function isEid(now: Date) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  for (const year of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
+    const days = Math.round((today - eidAlFitr(year).getTime()) / 86_400_000)
+    if (days >= 0 && days < 3) return true
+  }
+  return false
+}
+
+/** How far through its cycle the moon is: 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter. */
+export function moonPhase(ms: number) {
+  const NEW_MOON = Date.UTC(2000, 0, 6, 18, 14)
+  const days = (ms - NEW_MOON) / 86_400_000
+  return (((days / 29.530588853) % 1) + 1) % 1
+}

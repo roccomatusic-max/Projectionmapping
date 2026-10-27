@@ -5,7 +5,8 @@
  * orange or ghostly green; and every other US holiday a look of its own
  * (fireworks or champagne for New Year, a dove for MLK Day, hearts for
  * Valentine's, stars and stripes in the number for the Fourth, a dreidel for
- * Hanukkah, a kinara for Kwanzaa…), plus a birthday and a day of your own,
+ * Hanukkah, a kinara for Kwanzaa, matzah for Passover, apples and honey for
+ * Rosh Hashanah, a crescent moon for Eid…), plus a birthday and a day of your own,
  * which count to the layer's date. The holidays' dates are worked out by
  * the calendar (holidays.ts); the decorations are in countdownDecor.ts.
  * Like the other objects it answers people who come near: it lights up
@@ -36,13 +37,18 @@ import type { CountdownColors, LayerBlend, SceneLayer, SourceRect, Surface, Surf
 import { applyHomography } from '../geometry'
 import { nearOf } from './catalog'
 import {
-  acorn, arrowHeart, balloonBunch, beads, blossom, bowTie, clinkingFlutes, confetti, cupcake, type Ctx, diya, dove, dreidel,
+  acorn, apple, arrowHeart, balloonBunch, beads, beanVine, blossom, bowTie, brassLantern, clinkingFlutes, confetti, crescentStar,
+  cupcake, type Ctx, diya, dove, dreidel, football, goalposts, honeyPot, jesterHat, kiddushCup, matzah, readingGlasses, shofar,
+  squash, yarnBall,
   earOfCorn, facetStar, fireworkBurst, gearAndTools, globe, glossyHeart, goldCoin, groundhog, hardHat, juneteenthStar, kinara,
   laurel, leaf, mapleLeaf, maraca, mardiMask, medal, necktie, paintedEgg, paperLantern, poppy, rgba, rose, shade, shamrock,
   shootingStar, sparkle, star5Path, starOfDavid,
 } from './countdownDecor'
 import { flatAt, glMat3, type FlatPart } from './flat'
-import { diwali, easter, hanukkahStart, KWANZAA_PRINCIPLES, lastWeekday, lunarNewYear, nthWeekday, zodiacOf } from './holidays'
+import {
+  diwali, easter, eidAlFitr, hanukkahStart, KWANZAA_PRINCIPLES, lastWeekday, lunarNewYear, nthWeekday, passoverEve, roshHashanahEve,
+  zodiacOf,
+} from './holidays'
 import { LAYER_VERTEX } from './shaders'
 
 // -- the count ----------------------------------------------------------------------------
@@ -51,7 +57,8 @@ export type Holiday =
   | 'christmas' | 'halloween' | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'groundhog-day' | 'valentines'
   | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'easter' | 'earth-day' | 'cinco-de-mayo' | 'mothers-day'
   | 'memorial-day' | 'fathers-day' | 'juneteenth' | 'fourth-of-july' | 'labor-day' | 'veterans-day' | 'thanksgiving'
-  | 'diwali' | 'hanukkah' | 'kwanzaa' | 'birthday' | 'own-day'
+  | 'diwali' | 'hanukkah' | 'kwanzaa' | 'super-bowl' | 'april-fools' | 'passover' | 'rosh-hashanah' | 'eid'
+  | 'indigenous-peoples-day' | 'grandparents-day' | 'birthday' | 'own-day'
 
 interface HolidayInfo {
   /** The big day in a year: a fixed day, or worked out (Thanksgiving, Easter, Hanukkah…). */
@@ -149,6 +156,33 @@ const HOLIDAYS: Record<Exclude<Holiday, 'birthday' | 'own-day'>, HolidayInfo> = 
   kwanzaa: {
     on: fixed(11, 26), lasts: 7, name: 'Kwanzaa', eve: 'Kwanzaa starts tomorrow', greeting: ['Happy', 'Kwanzaa'],
     wish: (c) => `Day ${c.day}: ${KWANZAA_PRINCIPLES[c.day - 1]}`,
+  },
+  'super-bowl': {
+    on: (y) => nthWeekday(y, 1, 0, 2), name: 'the Super Bowl', eve: 'The big game is tomorrow', greeting: ["It's", 'Game Day!'],
+    wish: 'Go team!',
+  },
+  'april-fools': {
+    on: fixed(3, 1), name: "April Fools' Day", eve: "April Fools' is tomorrow", greeting: ['April', "Fools' Day"],
+    wish: 'Watch your back!',
+  },
+  passover: {
+    on: passoverEve, lasts: 8, name: 'Passover', eve: 'Passover starts tomorrow', greeting: ['Happy', 'Passover'],
+    wish: (c) => (c.day <= 2 ? `Tonight: the ${c.day === 1 ? 'first' : 'second'} seder` : `Chag sameach · day ${c.day} of 8`),
+  },
+  'rosh-hashanah': {
+    on: roshHashanahEve, lasts: 3, name: 'Rosh Hashanah', eve: 'Rosh Hashanah starts tomorrow', greeting: ['Shanah', 'Tovah'],
+    wish: (c) => `A good and sweet ${c.year + 3761}`,
+  },
+  eid: {
+    on: eidAlFitr, lasts: 3, name: 'Eid al-Fitr', eve: 'Eid is tomorrow', greeting: ['Eid', 'Mubarak'], wish: 'Blessed Eid to you and yours',
+  },
+  'indigenous-peoples-day': {
+    on: (y) => nthWeekday(y, 9, 1, 2), name: "Indigenous Peoples' Day", eve: "Indigenous Peoples' Day is tomorrow",
+    greeting: ['Indigenous', "Peoples' Day"], wish: 'Honoring the first peoples of this land',
+  },
+  'grandparents-day': {
+    on: (y) => { const l = nthWeekday(y, 8, 1, 1); return new Date(y, 8, l.getDate() + 6) },
+    name: 'Grandparents Day', eve: 'Grandparents Day is tomorrow', greeting: ['Happy', 'Grandparents Day'], wish: 'We love you, Grandma and Grandpa',
   },
 }
 
@@ -298,6 +332,7 @@ export const COUNTDOWN_STYLES = [
   'fireworks', 'champagne', 'dream', 'lantern', 'groundhog', 'sweetheart', 'presidential', 'mardi-gras', 'shamrock',
   'easter-egg', 'earth', 'fiesta', 'roses', 'poppy', 'dad', 'juneteenth', 'stars-stripes', 'labor', 'salute',
   'harvest', 'diya', 'dreidel', 'kinara', 'birthday', 'big-day',
+  'game-day', 'jester', 'seder', 'apples-honey', 'crescent', 'three-sisters', 'grandparents',
 ] as const
 export type CountdownStyle = (typeof COUNTDOWN_STYLES)[number]
 
@@ -690,6 +725,83 @@ const LOOKS: Record<CountdownStyle, Look> = {
     ends: (ctx, x, y, flip, deco, glow) => {
       shootingStar(ctx, x, y - 40, 90, flip, deco, glow)
       sparkleCluster(ctx, x + (flip ? 105 : -105), y - 160, 28, glow)
+    },
+  },
+  'game-day': {
+    holiday: 'super-bowl', deco: '#facc15', light: '#f1f5f9', scatter: 'confetti', extra: ['#f8fafc', '#facc15', '#60a5fa', '#f87171'],
+    pal: withTrim(withDepth(SILVER, ['#14532d', '#04170b']), ['#ffffff', '#e2e8f0', '#94a3b8']),
+    ends: (ctx, x, y, flip, deco) => {
+      football(ctx, x, y - 40, 82, flip ? 0.5 : -0.5)
+      goalposts(ctx, x + (flip ? 110 : -110), y - 150, 42, deco)
+    },
+  },
+  jester: {
+    holiday: 'april-fools', deco: '#a855f7', light: '#fef9c3', scatter: 'confetti', extra: ['#a855f7', '#22c55e', '#facc15', '#f472b6'],
+    pal: {
+      face: ['#faf5ff', '#e9d5ff', '#a855f7', '#4c1d95', '#7e22ce', '#d8b4fe', '#faf5ff'],
+      depth: ['#14532d', '#04170b'],
+      trim: ['#fef9c3', '#facc15', '#a16207'],
+      edge: 'rgba(250,245,255,0.9)',
+    },
+    ends: (ctx, x, y, flip, deco) => {
+      jesterHat(ctx, x, y - 40, 84, deco, '#22c55e', flip)
+      jesterHat(ctx, x + (flip ? 110 : -110), y - 160, 34, '#22c55e', deco, !flip)
+    },
+  },
+  seder: {
+    holiday: 'passover', deco: '#9f1239', light: '#e0f2fe', paleCaption: true, scatter: 'stars',
+    pal: {
+      face: ['#ffffff', '#e0f2fe', '#93c5fd', '#1e3a8a', '#3b82f6', '#bfdbfe', '#ffffff'],
+      depth: ['#172554', '#060c22'],
+      trim: ['#ffffff', '#e2e8f0', '#94a3b8'],
+      edge: 'rgba(255,255,255,0.9)',
+    },
+    ends: (ctx, x, y, flip, deco) => {
+      matzah(ctx, x, y - 30, 70, flip ? 0.2 : -0.2)
+      kiddushCup(ctx, x + (flip ? 105 : -105), y - 140, 42, deco)
+    },
+  },
+  'apples-honey': {
+    holiday: 'rosh-hashanah', pal: GOLD, deco: '#dc2626', light: WARM_LIGHT, scatter: 'stars',
+    ends: (ctx, x, y, flip, deco) => {
+      apple(ctx, x, y - 34, 74, deco)
+      honeyPot(ctx, x + (flip ? 104 : -104), y - 130, 40)
+      shofar(ctx, x + (flip ? 30 : -30), y - 170, 40, !flip)
+    },
+  },
+  crescent: {
+    holiday: 'eid', pal: withDepth(GOLD, ['#134e4a', '#042f2e']), deco: '#fde68a', light: WARM_LIGHT, flicker: true, scatter: 'stars',
+    ends: (ctx, x, y, flip, deco, glow) => {
+      crescentStar(ctx, x, y - 40, 82, deco, rgba(glow, 0.9), flip)
+      brassLantern(ctx, x + (flip ? 108 : -108), y - 150, 44, '#f59e0b', rgba(glow, 0.9))
+    },
+  },
+  'three-sisters': {
+    holiday: 'indigenous-peoples-day', deco: '#ea580c', light: '#fef3c7', scatter: 'leaves', extra: ['#ea580c', '#facc15', '#65a30d', '#a16207'],
+    pal: {
+      face: ['#fffbeb', '#fde68a', '#d97706', '#78350f', '#b45309', '#fcd34d', '#fffbeb'],
+      depth: ['#3f2a0c', '#140c02'],
+      trim: ['#fef3c7', '#fbbf24', '#b45309'],
+      edge: 'rgba(255,251,235,0.9)',
+    },
+    ends: (ctx, x, y, flip, deco) => {
+      const s = flip ? -1 : 1
+      earOfCorn(ctx, x - s * 18, y - 60, 72, -0.35 * s)
+      squash(ctx, x + s * 26, y - 6, 52, deco)
+      beanVine(ctx, x + (flip ? 100 : -100), y - 130, 42)
+    },
+  },
+  grandparents: {
+    holiday: 'grandparents-day', deco: '#a78bfa', light: '#ffe4e6', paleCaption: true, scatter: 'hearts',
+    pal: {
+      face: ['#fff1f2', '#fecdd3', '#fb7185', '#881337', '#e11d48', '#fda4af', '#fff1f2'],
+      depth: ['#4c0519', '#1a0108'],
+      trim: ['#ffffff', '#ffe4e6', '#fda4af'],
+      edge: 'rgba(255,241,242,0.9)',
+    },
+    ends: (ctx, x, y, flip, deco) => {
+      yarnBall(ctx, x, y - 34, 66, deco)
+      readingGlasses(ctx, x + (flip ? 104 : -104), y - 140, 40, '#cbd5e1')
     },
   },
 }

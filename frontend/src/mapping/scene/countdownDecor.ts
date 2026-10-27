@@ -1892,3 +1892,514 @@ export function shootingStar(ctx: Ctx, x: number, y: number, r: number, flip: bo
   facetStar(ctx, 0, 0, 0.62 * r, color, rgba(glow, 0.9))
   ctx.restore()
 }
+
+// -- Super Bowl ----------------------------------------------------------------------------------
+
+/** A leather football with its white laces, turned by tilt. */
+export function football(ctx: Ctx, x: number, y: number, r: number, tilt: number) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(tilt)
+  shadow(ctx, r * 0.25, r * 0.08)
+  ctx.fillStyle = radial(ctx, 0, 0, r, ['#d9894a', '#9a4a1c', '#4a1f08'], -0.3, -0.45)
+  ctx.beginPath()
+  ctx.moveTo(-r, 0)
+  ctx.quadraticCurveTo(-0.15 * r, -0.95 * r, r, 0)
+  ctx.quadraticCurveTo(-0.15 * r, 0.95 * r, -r, 0)
+  ctx.fill()
+  noShadow(ctx)
+  ctx.strokeStyle = '#f8fafc'
+  ctx.lineCap = 'round'
+  for (const s of [-1, 1]) {
+    ctx.lineWidth = r * 0.06
+    ctx.beginPath()
+    ctx.moveTo(s * 0.72 * r, -0.2 * r)
+    ctx.quadraticCurveTo(s * 0.8 * r, 0, s * 0.72 * r, 0.2 * r)
+    ctx.stroke()
+  }
+  ctx.lineWidth = r * 0.06
+  ctx.beginPath()
+  ctx.moveTo(-0.32 * r, -0.04 * r)
+  ctx.lineTo(0.32 * r, -0.04 * r)
+  ctx.stroke()
+  ctx.lineWidth = r * 0.05
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath()
+    ctx.moveTo(i * 0.09 * r, -0.13 * r)
+    ctx.lineTo(i * 0.09 * r, 0.05 * r)
+    ctx.stroke()
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+  ctx.lineWidth = r * 0.05
+  ctx.beginPath()
+  ctx.ellipse(-0.1 * r, -0.28 * r, 0.5 * r, 0.12 * r, -0.1, Math.PI * 1.1, Math.PI * 1.9)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** Goalposts: the yellow uprights on their post. */
+export function goalposts(ctx: Ctx, x: number, y: number, r: number, color: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  shadow(ctx, r * 0.2, r * 0.06)
+  const g = ctx.createLinearGradient(-r, 0, r, 0)
+  g.addColorStop(0, shade(color, -0.3))
+  g.addColorStop(0.5, shade(color, 0.4))
+  g.addColorStop(1, shade(color, -0.3))
+  ctx.strokeStyle = g
+  ctx.lineWidth = r * 0.12
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(0, r)
+  ctx.lineTo(0, 0.1 * r)
+  ctx.moveTo(-0.6 * r, 0.1 * r)
+  ctx.lineTo(0.6 * r, 0.1 * r)
+  ctx.moveTo(-0.6 * r, 0.1 * r)
+  ctx.lineTo(-0.6 * r, -r)
+  ctx.moveTo(0.6 * r, 0.1 * r)
+  ctx.lineTo(0.6 * r, -r)
+  ctx.stroke()
+  ctx.restore()
+}
+
+// -- April Fools' --------------------------------------------------------------------------------
+
+/** A jester's cap of three floppy points, each with a gold bell. */
+export function jesterHat(ctx: Ctx, x: number, y: number, r: number, color: string, color2: string, flip: boolean) {
+  ctx.save()
+  ctx.translate(x, y)
+  if (flip) ctx.scale(-1, 1)
+  shadow(ctx, r * 0.25, r * 0.08)
+  const points: Array<[number, number, string]> = [[-0.95, -0.2, color], [0.05, -1.0, color2], [0.95, -0.25, color]]
+  for (const [px, py, c] of points) {
+    ctx.fillStyle = radial(ctx, px * r * 0.5, py * r * 0.5, r, [shade(c, 0.45), c, shade(c, -0.45)])
+    ctx.beginPath()
+    ctx.moveTo(-0.45 * r, 0.35 * r)
+    ctx.quadraticCurveTo(px * r * 0.4, py * r * 0.2, px * r, py * r)
+    ctx.quadraticCurveTo(px * r * 0.6 + 0.1 * r, py * r * 0.2 + 0.2 * r, 0.45 * r, 0.35 * r)
+    ctx.closePath()
+    ctx.fill()
+  }
+  // The band, in diamonds.
+  ctx.fillStyle = radial(ctx, 0, 0.42 * r, 0.6 * r, ['#fef3c7', '#fbbf24', '#92400e'])
+  ctx.beginPath()
+  ctx.ellipse(0, 0.42 * r, 0.55 * r, 0.14 * r, 0, 0, Math.PI * 2)
+  ctx.fill()
+  noShadow(ctx)
+  ctx.fillStyle = shade(color, -0.2)
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath()
+    ctx.moveTo(i * 0.2 * r, 0.32 * r)
+    ctx.lineTo(i * 0.2 * r + 0.06 * r, 0.42 * r)
+    ctx.lineTo(i * 0.2 * r, 0.52 * r)
+    ctx.lineTo(i * 0.2 * r - 0.06 * r, 0.42 * r)
+    ctx.fill()
+  }
+  for (const [px, py] of points) {
+    ctx.fillStyle = radial(ctx, px * r, py * r, 0.16 * r, ['#fffbeb', '#facc15', '#a16207'])
+    ctx.beginPath()
+    ctx.arc(px * r, py * r, 0.14 * r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#713f12'
+    ctx.fillRect(px * r - 0.06 * r, py * r + 0.02 * r, 0.12 * r, 0.03 * r)
+  }
+  ctx.restore()
+}
+
+// -- Passover ------------------------------------------------------------------------------------
+
+/** A square of matzah, toasted in stripes and pricked with rows of holes. */
+export function matzah(ctx: Ctx, x: number, y: number, r: number, tilt: number) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(tilt)
+  shadow(ctx, r * 0.25, r * 0.08)
+  ctx.fillStyle = radial(ctx, 0, 0, 1.2 * r, ['#fff7e0', '#f2d39b', '#c99a55'])
+  ctx.beginPath()
+  ctx.moveTo(-0.85 * r, -0.8 * r)
+  for (let i = 0; i <= 8; i++) ctx.lineTo(-0.85 * r + (i * 1.7 * r) / 8, -0.8 * r + (i % 2 ? 0.03 * r : 0))
+  ctx.lineTo(0.85 * r, 0.8 * r)
+  for (let i = 8; i >= 0; i--) ctx.lineTo(-0.85 * r + (i * 1.7 * r) / 8, 0.8 * r - (i % 2 ? 0.03 * r : 0))
+  ctx.closePath()
+  ctx.fill()
+  noShadow(ctx)
+  for (let row = -3; row <= 3; row++) {
+    ctx.fillStyle = 'rgba(146,84,30,0.28)'
+    ctx.fillRect(-0.8 * r, row * 0.22 * r - 0.05 * r, 1.6 * r, 0.06 * r)
+    ctx.fillStyle = 'rgba(92,46,10,0.55)'
+    for (let col = -6; col <= 6; col++) {
+      ctx.beginPath()
+      ctx.arc(col * 0.12 * r, row * 0.22 * r, 0.018 * r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+  ctx.fillStyle = 'rgba(120,60,10,0.35)'
+  for (let i = 0; i < 9; i++) {
+    ctx.beginPath()
+    ctx.arc(-0.6 * r + ((i * 37) % 12) * 0.1 * r, -0.6 * r + ((i * 53) % 12) * 0.1 * r, 0.05 * r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+/** A silver kiddush cup of wine (Elijah's cup). */
+export function kiddushCup(ctx: Ctx, x: number, y: number, r: number, wine: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  shadow(ctx, r * 0.25, r * 0.08)
+  const silver = ctx.createLinearGradient(-0.6 * r, 0, 0.6 * r, 0)
+  silver.addColorStop(0, '#64748b')
+  silver.addColorStop(0.35, '#f8fafc')
+  silver.addColorStop(0.6, '#cbd5e1')
+  silver.addColorStop(1, '#475569')
+  ctx.fillStyle = silver
+  ctx.beginPath()
+  ctx.moveTo(-0.55 * r, -0.85 * r)
+  ctx.lineTo(0.55 * r, -0.85 * r)
+  ctx.quadraticCurveTo(0.55 * r, -0.05 * r, 0.1 * r, 0.05 * r)
+  ctx.lineTo(0.08 * r, 0.6 * r)
+  ctx.quadraticCurveTo(0.5 * r, 0.7 * r, 0.5 * r, 0.9 * r)
+  ctx.lineTo(-0.5 * r, 0.9 * r)
+  ctx.quadraticCurveTo(-0.5 * r, 0.7 * r, -0.08 * r, 0.6 * r)
+  ctx.lineTo(-0.1 * r, 0.05 * r)
+  ctx.quadraticCurveTo(-0.55 * r, -0.05 * r, -0.55 * r, -0.85 * r)
+  ctx.fill()
+  noShadow(ctx)
+  ctx.fillStyle = radial(ctx, 0, -0.85 * r, 0.55 * r, [shade(wine, 0.3), wine, shade(wine, -0.5)])
+  ctx.beginPath()
+  ctx.ellipse(0, -0.83 * r, 0.52 * r, 0.12 * r, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = '#94a3b8'
+  ctx.lineWidth = r * 0.04
+  for (const k of [-0.6, -0.4]) {
+    ctx.beginPath()
+    ctx.moveTo(-0.52 * r, k * r)
+    ctx.lineTo(0.52 * r, k * r)
+    ctx.stroke()
+  }
+  ctx.fillStyle = '#94a3b8'
+  ctx.beginPath()
+  ctx.ellipse(0, 0.35 * r, 0.14 * r, 0.06 * r, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+// -- Rosh Hashanah --------------------------------------------------------------------------------
+
+/** A shiny apple with its leaf. */
+export function apple(ctx: Ctx, x: number, y: number, r: number, color: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  shadow(ctx, r * 0.25, r * 0.08)
+  ctx.fillStyle = radial(ctx, 0, 0, r, [shade(color, 0.55), color, shade(color, -0.5)])
+  ctx.beginPath()
+  ctx.moveTo(0, -0.6 * r)
+  ctx.bezierCurveTo(0.5 * r, -0.95 * r, 1.05 * r, -0.45 * r, 0.85 * r, 0.2 * r)
+  ctx.bezierCurveTo(0.7 * r, 0.75 * r, 0.3 * r, 0.95 * r, 0, 0.8 * r)
+  ctx.bezierCurveTo(-0.3 * r, 0.95 * r, -0.7 * r, 0.75 * r, -0.85 * r, 0.2 * r)
+  ctx.bezierCurveTo(-1.05 * r, -0.45 * r, -0.5 * r, -0.95 * r, 0, -0.6 * r)
+  ctx.fill()
+  noShadow(ctx)
+  ctx.fillStyle = 'rgba(255,255,255,0.45)'
+  ctx.beginPath()
+  ctx.ellipse(-0.42 * r, -0.3 * r, 0.12 * r, 0.24 * r, 0.5, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = '#5b3a1a'
+  ctx.lineWidth = r * 0.08
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(0, -0.55 * r)
+  ctx.quadraticCurveTo(0.02 * r, -0.85 * r, 0.12 * r, -0.98 * r)
+  ctx.stroke()
+  ctx.fillStyle = radial(ctx, 0.35 * r, -0.85 * r, 0.3 * r, ['#bbf7d0', '#22c55e', '#14532d'])
+  ctx.beginPath()
+  ctx.ellipse(0.32 * r, -0.86 * r, 0.26 * r, 0.11 * r, -0.4, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** A pot of honey with the dipper in it, honey running down its side. */
+export function honeyPot(ctx: Ctx, x: number, y: number, r: number) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.strokeStyle = '#a16207'
+  ctx.lineWidth = r * 0.1
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(0.1 * r, -0.4 * r)
+  ctx.lineTo(0.55 * r, -1.05 * r)
+  ctx.stroke()
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = '#d97706'
+    ctx.beginPath()
+    ctx.ellipse(0.62 * r + i * 0.05 * r, -1.1 * r - i * 0.08 * r, 0.12 * r, 0.06 * r, -0.9, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  shadow(ctx, r * 0.25, r * 0.08)
+  ctx.fillStyle = radial(ctx, 0, 0.1 * r, 0.9 * r, ['#fef3c7', '#fbbf24', '#b45309'])
+  ctx.beginPath()
+  ctx.moveTo(-0.5 * r, -0.45 * r)
+  ctx.quadraticCurveTo(-0.95 * r, 0.1 * r, -0.6 * r, 0.75 * r)
+  ctx.lineTo(0.6 * r, 0.75 * r)
+  ctx.quadraticCurveTo(0.95 * r, 0.1 * r, 0.5 * r, -0.45 * r)
+  ctx.closePath()
+  ctx.fill()
+  noShadow(ctx)
+  ctx.fillStyle = '#b45309'
+  ctx.beginPath()
+  ctx.ellipse(0, -0.48 * r, 0.56 * r, 0.12 * r, 0, 0, Math.PI * 2)
+  ctx.fill()
+  // A drip of honey down the side.
+  ctx.fillStyle = 'rgba(245,158,11,0.95)'
+  ctx.beginPath()
+  ctx.moveTo(-0.35 * r, -0.45 * r)
+  ctx.quadraticCurveTo(-0.38 * r, -0.05 * r, -0.3 * r, 0.05 * r)
+  ctx.arc(-0.3 * r, 0.05 * r, 0.07 * r, Math.PI, 0, true)
+  ctx.quadraticCurveTo(-0.2 * r, -0.2 * r, -0.15 * r, -0.45 * r)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(120,53,15,0.45)'
+  ctx.lineWidth = r * 0.04
+  for (const k of [0.15, 0.45]) {
+    ctx.beginPath()
+    ctx.moveTo(-0.78 * r, k * r)
+    ctx.quadraticCurveTo(0, k * r + 0.08 * r, 0.78 * r, k * r)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+/** A ram's horn shofar, curling up at its wide end. */
+export function shofar(ctx: Ctx, x: number, y: number, r: number, flip: boolean) {
+  ctx.save()
+  ctx.translate(x, y)
+  if (flip) ctx.scale(-1, 1)
+  shadow(ctx, r * 0.25, r * 0.08)
+  const g = ctx.createLinearGradient(-r, 0, r, 0)
+  g.addColorStop(0, '#fef3c7')
+  g.addColorStop(0.5, '#e7c58a')
+  g.addColorStop(1, '#8a5a2b')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(-0.95 * r, 0.25 * r)
+  ctx.quadraticCurveTo(0, 0.45 * r, 0.65 * r, -0.2 * r)
+  ctx.quadraticCurveTo(0.75 * r, -0.55 * r, 0.6 * r, -0.85 * r)
+  ctx.lineTo(1.0 * r, -0.85 * r)
+  ctx.quadraticCurveTo(1.05 * r, -0.2 * r, 0.7 * r, 0.15 * r)
+  ctx.quadraticCurveTo(0, 0.7 * r, -0.95 * r, 0.38 * r)
+  ctx.closePath()
+  ctx.fill()
+  noShadow(ctx)
+  ctx.fillStyle = '#6b4423'
+  ctx.beginPath()
+  ctx.ellipse(0.8 * r, -0.85 * r, 0.2 * r, 0.07 * r, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(107,68,35,0.4)'
+  ctx.lineWidth = r * 0.03
+  for (let i = 0; i < 5; i++) {
+    const t = 0.2 + i * 0.15
+    ctx.beginPath()
+    ctx.moveTo(-0.95 * r + t * 1.6 * r, 0.32 * r + Math.sin(t * 3) * 0.1 * r)
+    ctx.lineTo(-0.95 * r + t * 1.6 * r + 0.05 * r, 0.45 * r + Math.sin(t * 3) * 0.1 * r)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+// -- Eid al-Fitr --------------------------------------------------------------------------------
+
+/** A glowing crescent moon with a star inside its curve. */
+export function crescentStar(ctx: Ctx, x: number, y: number, r: number, color: string, glow: string, flip: boolean) {
+  ctx.save()
+  ctx.translate(x, y)
+  if (flip) ctx.scale(-1, 1)
+  ctx.shadowColor = glow
+  ctx.shadowBlur = r * 0.5
+  ctx.fillStyle = radial(ctx, -0.2 * r, 0, r, [shade(color, 0.7), color, shade(color, -0.35)])
+  ctx.beginPath()
+  ctx.arc(0, 0, r, Math.PI * 0.3, Math.PI * 1.7)
+  ctx.arc(0.38 * r, -0.08 * r, 0.82 * r, Math.PI * 1.62, Math.PI * 0.38, true)
+  ctx.closePath()
+  ctx.fill()
+  star5Path(ctx, 0.62 * r, -0.05 * r, 0.26 * r)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** A brass lantern (fanous) with coloured glass panes, lit inside. */
+export function brassLantern(ctx: Ctx, x: number, y: number, r: number, glass: string, glow: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.strokeStyle = '#b45309'
+  ctx.lineWidth = r * 0.05
+  ctx.beginPath()
+  ctx.arc(0, -1.05 * r, 0.16 * r, Math.PI, 0)
+  ctx.stroke()
+  ctx.shadowColor = glow
+  ctx.shadowBlur = r * 0.6
+  ctx.fillStyle = radial(ctx, 0, 0, 0.6 * r, ['#fff7d6', glass, shade(glass, -0.4)], 0, 0)
+  ctx.beginPath()
+  ctx.moveTo(-0.32 * r, -0.55 * r)
+  ctx.lineTo(0.32 * r, -0.55 * r)
+  ctx.lineTo(0.42 * r, 0.35 * r)
+  ctx.lineTo(0, 0.7 * r)
+  ctx.lineTo(-0.42 * r, 0.35 * r)
+  ctx.closePath()
+  ctx.fill()
+  ctx.shadowBlur = 0
+  const brass = ctx.createLinearGradient(-0.5 * r, 0, 0.5 * r, 0)
+  brass.addColorStop(0, '#78350f')
+  brass.addColorStop(0.5, '#fcd34d')
+  brass.addColorStop(1, '#78350f')
+  ctx.fillStyle = brass
+  ctx.beginPath()
+  ctx.moveTo(-0.38 * r, -0.55 * r)
+  ctx.lineTo(0, -0.95 * r)
+  ctx.lineTo(0.38 * r, -0.55 * r)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = brass
+  ctx.lineWidth = r * 0.05
+  ctx.beginPath()
+  ctx.moveTo(0, -0.55 * r)
+  ctx.lineTo(0, 0.7 * r)
+  ctx.moveTo(-0.37 * r, -0.1 * r)
+  ctx.lineTo(0.37 * r, -0.1 * r)
+  ctx.stroke()
+  ctx.fillStyle = brass
+  ctx.beginPath()
+  ctx.arc(0, 0.75 * r, 0.08 * r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+// -- Indigenous Peoples' Day ---------------------------------------------------------------------
+
+/** A ribbed winter squash with its curly stem. */
+export function squash(ctx: Ctx, x: number, y: number, r: number, color: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  shadow(ctx, r * 0.25, r * 0.08)
+  for (const [dx, w] of [[-0.45, 0.42], [0.45, 0.42], [-0.18, 0.4], [0.18, 0.4]] as const) {
+    ctx.fillStyle = radial(ctx, dx * r, 0, 0.8 * r, [shade(color, 0.45), color, shade(color, -0.45)])
+    ctx.beginPath()
+    ctx.ellipse(dx * r, 0.05 * r, w * r, 0.62 * r, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  noShadow(ctx)
+  ctx.strokeStyle = '#4d7c0f'
+  ctx.lineWidth = r * 0.12
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(0, -0.5 * r)
+  ctx.quadraticCurveTo(0.05 * r, -0.8 * r, 0.25 * r, -0.85 * r)
+  ctx.stroke()
+  ctx.lineWidth = r * 0.03
+  ctx.beginPath()
+  ctx.arc(0.38 * r, -0.85 * r, 0.12 * r, Math.PI, Math.PI * 2.6)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** A bean vine climbing in a curl, with a pod and leaves. */
+export function beanVine(ctx: Ctx, x: number, y: number, r: number) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.strokeStyle = '#65a30d'
+  ctx.lineWidth = r * 0.06
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  for (let i = 0; i <= 30; i++) {
+    const t = i / 30
+    ctx.lineTo(Math.sin(t * Math.PI * 3) * 0.3 * r, r - t * 2 * r)
+  }
+  ctx.stroke()
+  for (const [lx, ly, a] of [[0.25, 0.4, 0.6], [-0.25, -0.1, -0.6], [0.22, -0.6, 0.5]] as const) {
+    ctx.fillStyle = radial(ctx, lx * r, ly * r, 0.3 * r, ['#d9f99d', '#4d7c0f', '#1a2e05'])
+    ctx.beginPath()
+    ctx.ellipse(lx * r, ly * r, 0.25 * r, 0.12 * r, a, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.fillStyle = '#84cc16'
+  ctx.beginPath()
+  ctx.ellipse(-0.3 * r, 0.45 * r, 0.07 * r, 0.32 * r, 0.3, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+// -- Grandparents Day ---------------------------------------------------------------------------
+
+/** A ball of yarn with two knitting needles through it. */
+export function yarnBall(ctx: Ctx, x: number, y: number, r: number, color: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.strokeStyle = '#e2e8f0'
+  ctx.lineWidth = r * 0.07
+  ctx.lineCap = 'round'
+  for (const a of [-0.5, -0.9]) {
+    ctx.beginPath()
+    ctx.moveTo(Math.cos(a) * -1.1 * r, Math.sin(a) * -1.1 * r)
+    ctx.lineTo(Math.cos(a) * 1.0 * r, Math.sin(a) * 1.0 * r)
+    ctx.stroke()
+  }
+  shadow(ctx, r * 0.25, r * 0.08)
+  ctx.fillStyle = radial(ctx, 0, 0, r, [shade(color, 0.45), color, shade(color, -0.45)])
+  ctx.beginPath()
+  ctx.arc(0, 0, 0.8 * r, 0, Math.PI * 2)
+  ctx.fill()
+  noShadow(ctx)
+  ctx.strokeStyle = rgba(shade(color, -0.4), 0.7)
+  ctx.lineWidth = r * 0.035
+  for (let i = 0; i < 6; i++) {
+    ctx.beginPath()
+    ctx.ellipse(0, 0, 0.78 * r, (0.2 + i * 0.1) * r, i * 0.5, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  for (const a of [-0.5, -0.9]) {
+    ctx.fillStyle = '#f8fafc'
+    ctx.beginPath()
+    ctx.arc(Math.cos(a) * -1.1 * r, Math.sin(a) * -1.1 * r, 0.07 * r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  // A loose end trailing away.
+  ctx.strokeStyle = color
+  ctx.lineWidth = r * 0.05
+  ctx.beginPath()
+  ctx.moveTo(0.6 * r, 0.5 * r)
+  ctx.bezierCurveTo(1.0 * r, 0.9 * r, 0.5 * r, 1.1 * r, 1.1 * r, 1.2 * r)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** A pair of round reading glasses. */
+export function readingGlasses(ctx: Ctx, x: number, y: number, r: number, frame: string) {
+  ctx.save()
+  ctx.translate(x, y)
+  shadow(ctx, r * 0.2, r * 0.06)
+  ctx.strokeStyle = frame
+  ctx.lineWidth = r * 0.1
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = 'rgba(224,242,254,0.35)'
+    ctx.beginPath()
+    ctx.arc(s * 0.5 * r, 0, 0.38 * r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+  }
+  ctx.beginPath()
+  ctx.arc(0, 0.02 * r, 0.14 * r, Math.PI * 1.15, Math.PI * 1.85)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(-0.88 * r, -0.05 * r)
+  ctx.lineTo(-1.05 * r, -0.2 * r)
+  ctx.moveTo(0.88 * r, -0.05 * r)
+  ctx.lineTo(1.05 * r, -0.2 * r)
+  ctx.stroke()
+  noShadow(ctx)
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'
+  ctx.lineWidth = r * 0.05
+  for (const s of [-1, 1]) {
+    ctx.beginPath()
+    ctx.arc(s * 0.5 * r, 0, 0.26 * r, Math.PI * 1.1, Math.PI * 1.45)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
