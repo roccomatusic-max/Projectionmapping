@@ -35,7 +35,7 @@ export function InfoFields({ layer, canEdit, onChange }: {
   const about: Partial<Record<typeof style, string>> = {
     clock: 'Shows the time and date on this computer’s clock, with the colon blinking each second.',
     moon: 'Shows tonight’s moon as it really is, how much of it is lit and when it is next full. Worked out from the date, so it needs no internet.',
-    holiday: 'Counts the days to the next holiday (New Year’s, Valentine’s, St Patrick’s, Easter, Mother’s and Father’s Day, the Fourth, Halloween, Thanksgiving, Christmas) and says the greeting on the day. It moves on to the next one by itself.',
+    holiday: 'Counts the days to the next holiday (New Year’s, MLK Day, Valentine’s, Presidents’ Day, St Patrick’s, Easter, Mother’s Day, Memorial Day, Father’s Day, Juneteenth, the Fourth, Labor Day, Halloween, Veterans Day, Thanksgiving, Diwali, Hanukkah, Christmas, Kwanzaa) and says the greeting on the day. It moves on to the next one by itself.',
     'new-year': 'Counts the days to New Year, then on New Year’s Eve the hours, minutes and seconds to midnight, and says Happy New Year on the first.',
     menorah: 'Lights the right number of candles for tonight’s night of Hanukkah, worked out from the Hebrew calendar, with the flames flickering. The rest of the year it counts the days to the first night.',
     advent: 'Opens one door for each day of December up to Christmas Eve, with today’s door lit up. Before December it counts down to the first door.',

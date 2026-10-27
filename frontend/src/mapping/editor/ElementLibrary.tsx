@@ -10,6 +10,8 @@ import {
   OCCASIONS,
   searchLibrary,
 } from '../scene/library'
+import { COUNTDOWN_PRESETS } from '../scene/catalog'
+import { holidayOf, untilHoliday } from '../scene/countdown'
 import type { SceneLayer } from '../types'
 import { paintThumb, THUMB_H, THUMB_W } from './elementThumbs'
 
@@ -28,7 +30,20 @@ function seasonNow(): Occasion | null {
   if (m === 1 && d <= 15) return 'valentines'
   if ((m === 1 && d > 15) || (m === 2 && d <= 17)) return 'st-patricks'
   if (m === 6 && d <= 5) return 'fourth-of-july'
-  return null
+  // Otherwise the next holiday in the coming two weeks, if there is one.
+  let soonest: Occasion | null = null
+  let best = 15
+  for (const p of COUNTDOWN_PRESETS) {
+    const occasion = p.occasions[0] as Occasion
+    if (p.id === 'birthday' || p.id === 'big-day' || occasion === 'winter') continue
+    const c = untilHoliday(now.getTime(), holidayOf(p.style))
+    const days = c.arrived ? 0 : c.days
+    if (days < best) {
+      best = days
+      soonest = occasion
+    }
+  }
+  return soonest
 }
 
 /**

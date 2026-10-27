@@ -14,31 +14,46 @@
 
 import type { LayerType, SceneLayer } from '../types'
 import { COUNTDOWN_COLORS, COUNTDOWN_PRESETS, INFO_LOOKS, KIND, MOVER_LOOKS, newLayer, STARTERS } from './catalog'
+import { countdownNeedsDate } from './countdown'
 import { moverWalks } from './movers'
 
 export type Occasion =
-  | 'halloween' | 'thanksgiving' | 'christmas' | 'winter' | 'new-year' | 'valentines' | 'st-patricks' | 'easter'
-  | 'spring' | 'fourth-of-july' | 'summer' | 'autumn' | 'birthday' | 'party' | 'hanukkah' | 'diwali' | 'lunar-new-year' | 'sea'
-  | 'driveway' | 'any'
+  | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'easter'
+  | 'earth-day' | 'cinco-de-mayo' | 'mothers-day' | 'memorial-day' | 'fathers-day' | 'juneteenth' | 'fourth-of-july'
+  | 'labor-day' | 'halloween' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
+  | 'winter' | 'spring' | 'summer' | 'autumn' | 'birthday' | 'party' | 'sea' | 'driveway' | 'any'
 
+/** The holidays in calendar order, then the seasons and the rest. */
 export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = [
-  { id: 'halloween', label: 'Halloween', words: 'spooky scary october trick treat' },
-  { id: 'thanksgiving', label: 'Thanksgiving', words: 'fall harvest november' },
-  { id: 'christmas', label: 'Christmas', words: 'xmas santa holiday december' },
-  { id: 'winter', label: 'Winter', words: 'snow cold ice' },
   { id: 'new-year', label: 'New Year’s', words: 'new years eve nye midnight january' },
+  { id: 'mlk-day', label: 'MLK Day', words: 'martin luther king jr day january dream' },
+  { id: 'lunar-new-year', label: 'Lunar New Year', words: 'chinese new year spring festival zodiac' },
   { id: 'valentines', label: 'Valentine’s', words: 'valentines love february' },
+  { id: 'presidents-day', label: 'Presidents’ Day', words: 'presidents day washington lincoln february patriotic' },
+  { id: 'mardi-gras', label: 'Mardi Gras', words: 'mardi gras fat tuesday carnival new orleans' },
   { id: 'st-patricks', label: 'St Patrick’s', words: 'st patricks paddy irish luck march green' },
   { id: 'easter', label: 'Easter', words: 'april spring' },
-  { id: 'spring', label: 'Spring', words: 'garden may' },
+  { id: 'earth-day', label: 'Earth Day', words: 'earth day planet nature green april' },
+  { id: 'cinco-de-mayo', label: 'Cinco de Mayo', words: 'cinco de mayo fiesta mexico may' },
+  { id: 'mothers-day', label: 'Mother’s Day', words: 'mothers day mom mum may' },
+  { id: 'memorial-day', label: 'Memorial Day', words: 'memorial day remember may patriotic' },
+  { id: 'fathers-day', label: 'Father’s Day', words: 'fathers day dad june' },
+  { id: 'juneteenth', label: 'Juneteenth', words: 'juneteenth freedom day june' },
   { id: 'fourth-of-july', label: 'Fourth of July', words: '4th july independence usa america patriotic' },
+  { id: 'labor-day', label: 'Labor Day', words: 'labor labour day september workers' },
+  { id: 'halloween', label: 'Halloween', words: 'spooky scary october trick treat' },
+  { id: 'veterans-day', label: 'Veterans Day', words: 'veterans day november patriotic military' },
+  { id: 'thanksgiving', label: 'Thanksgiving', words: 'fall harvest november' },
+  { id: 'diwali', label: 'Diwali', words: 'festival of lights' },
+  { id: 'hanukkah', label: 'Hanukkah', words: 'chanukah' },
+  { id: 'christmas', label: 'Christmas', words: 'xmas santa holiday december' },
+  { id: 'kwanzaa', label: 'Kwanzaa', words: 'kwanzaa december' },
+  { id: 'winter', label: 'Winter', words: 'snow cold ice' },
+  { id: 'spring', label: 'Spring', words: 'garden may' },
   { id: 'summer', label: 'Summer', words: 'sun beach' },
   { id: 'autumn', label: 'Autumn', words: 'fall leaves' },
   { id: 'birthday', label: 'Birthdays', words: 'birthday party cake' },
   { id: 'party', label: 'Parties', words: 'celebrate celebration fun' },
-  { id: 'hanukkah', label: 'Hanukkah', words: 'chanukah' },
-  { id: 'diwali', label: 'Diwali', words: 'festival of lights' },
-  { id: 'lunar-new-year', label: 'Lunar New Year', words: 'chinese new year spring festival zodiac' },
   { id: 'sea', label: 'Under the sea', words: 'ocean water underwater' },
   { id: 'driveway', label: 'On the driveway', words: 'ground path floor' },
   { id: 'any', label: 'Any time', words: '' },
@@ -95,7 +110,7 @@ const SHAPE_TAGS: Record<string, [Occasion[], string]> = {
   candles: [['christmas', 'hanukkah'], 'flame light'],
   shamrocks: [['st-patricks'], 'clover luck green'],
   eggs: [['easter', 'spring'], 'painted'],
-  flowers: [['spring', 'easter', 'summer'], 'garden bloom'],
+  flowers: [['spring', 'easter', 'mothers-day', 'summer'], 'garden bloom'],
   butterflies: [['spring', 'summer'], 'garden'],
   bunnies: [['easter', 'spring'], 'rabbit'],
   balloons: [['birthday', 'party'], ''],
@@ -132,7 +147,7 @@ const SHAPE_TAGS: Record<string, [Occasion[], string]> = {
   pies: [['thanksgiving', 'autumn'], 'pumpkin pie dessert'],
   'party-hats': [['new-year', 'birthday', 'party'], 'hat'],
   champagne: [['new-year', 'party'], 'glass toast cheers drink'],
-  flags: [['fourth-of-july'], 'usa american stars stripes'],
+  flags: [['fourth-of-july', 'memorial-day', 'veterans-day', 'presidents-day', 'juneteenth'], 'usa american stars stripes'],
   cupcakes: [['birthday', 'party'], 'cake candle dessert'],
   chicks: [['easter', 'spring'], 'baby bird hatching egg'],
   'pots-of-gold': [['st-patricks'], 'leprechaun treasure coins'],
@@ -175,10 +190,10 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   cupid: [['valentines'], 'love arrow angel heart'],
   leprechauns: [['st-patricks'], 'irish jig dance'],
   bunnies: [['easter', 'spring'], 'rabbit hop hopping'],
-  eagles: [['fourth-of-july'], 'bald eagle usa america bird'],
-  rockets: [['new-year', 'fourth-of-july', 'party'], 'fireworks firework burst bang'],
+  eagles: [['fourth-of-july', 'memorial-day', 'veterans-day', 'presidents-day'], 'bald eagle usa america bird'],
+  rockets: [['new-year', 'fourth-of-july', 'juneteenth', 'party'], 'fireworks firework burst bang'],
   balloons: [['birthday', 'party', 'any'], 'float floating'],
-  butterflies: [['spring', 'summer'], 'monarch garden'],
+  butterflies: [['spring', 'summer', 'earth-day'], 'monarch garden'],
   fish: [['sea', 'summer'], 'clownfish swimming school'],
   snowfall: [['winter', 'christmas'], 'snow snowflakes flakes falling let it snow'],
   leaves: [['autumn', 'thanksgiving', 'halloween'], 'fall falling maple oak leaf'],
@@ -192,7 +207,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'rising-bubbles': [['sea', 'party', 'summer', 'birthday'], 'bubbles soap pop'],
   'hot-air-balloons': [['summer', 'any', 'birthday'], 'balloon ride sky'],
   fireflies: [['summer', 'spring'], 'lightning bugs glow night'],
-  bees: [['spring', 'summer'], 'bumblebee buzz honey garden'],
+  bees: [['spring', 'summer', 'earth-day'], 'bumblebee buzz honey garden'],
   dragon: [['halloween', 'lunar-new-year', 'any'], 'fire breathing dragon fantasy'],
   owls: [['halloween', 'autumn'], 'owl hoot night bird'],
   angels: [['christmas'], 'angel trumpet halo heavenly nativity'],
@@ -235,7 +250,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'lion-dance': [['lunar-new-year'], 'lion dance chinese new year festival parade'],
   'red-envelopes': [['lunar-new-year'], 'red envelope hongbao money luck chinese new year falling'],
   crows: [['halloween', 'autumn'], 'crow crows raven ravens black bird roof caw spooky perched'],
-  doves: [['christmas', 'winter', 'valentines'], 'dove doves peace olive branch white bird roof perched'],
+  doves: [['mlk-day', 'christmas', 'winter', 'valentines'], 'dove doves peace olive branch white bird roof perched'],
   cardinals: [['christmas', 'winter'], 'cardinal cardinals red bird roof perched snow'],
   'hanging-bats': [['halloween'], 'bat bats hanging upside down roof gutter'],
   sledders: [['christmas', 'winter'], 'sled sledding sledge toboggan kids children slide snow roof'],
@@ -255,7 +270,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'ice-cream-truck': [['summer', 'any'], 'ice cream van truck cone'],
   'fire-truck': [['any', 'fourth-of-july'], 'fire truck engine firefighter siren lights parade'],
   'race-cars': [['any', 'birthday'], 'race car cars racing fast'],
-  drummers: [['fourth-of-july', 'christmas', 'any'], 'drummer drum drums marching band parade'],
+  drummers: [['fourth-of-july', 'memorial-day', 'veterans-day', 'christmas', 'any'], 'drummer drum drums marching band parade'],
   scarecrows: [['autumn', 'thanksgiving', 'halloween'], 'scarecrow scarecrows straw farm harvest'],
   'love-letters': [['valentines'], 'love letter letters envelope heart flying wings'],
   seahorses: [['sea', 'summer'], 'seahorse seahorses sea horse ocean'],
@@ -284,7 +299,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   tortoises: [['spring', 'summer', 'any'], 'tortoise tortoises turtle shell slow shy'],
   hedgehogs: [['autumn', 'any'], 'hedgehog hedgehogs prickly ball curl shy'],
   skunks: [['autumn', 'any', 'halloween'], 'skunk skunks stink smell spray funny'],
-  'uncle-sam': [['fourth-of-july'], 'uncle sam stilts stilt walker parade independence day july 4th patriotic'],
+  'uncle-sam': [['fourth-of-july', 'presidents-day'], 'uncle sam stilts stilt walker parade independence day july 4th patriotic'],
   'football-players': [['autumn', 'thanksgiving', 'party'], 'football player players touchdown sport game super bowl'],
   storks: [['spring', 'any'], 'stork storks baby bundle delivery new baby welcome'],
   'flying-pigs': [['any', 'party'], 'flying pig pigs when pigs fly funny wings'],
@@ -296,10 +311,10 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   moths: [['summer', 'autumn'], 'moth moths night light insect wings porch light'],
   wolves: [['halloween', 'autumn', 'winter'], 'wolf wolves howl howling roof full moon werewolf spooky'],
   moon: [['halloween', 'any', 'autumn', 'winter'], 'moon tonight phase full moon crescent real night sky'],
-  pinatas: [['birthday', 'party', 'summer'], 'pinata piñata candy party birthday cinco de mayo fiesta burst donkey'],
+  pinatas: [['cinco-de-mayo', 'birthday', 'party', 'summer'], 'pinata piñata candy party birthday cinco de mayo fiesta burst donkey'],
   ornaments: [['christmas', 'winter'], 'ornament ornaments bauble baubles christmas tree decorations hanging shiny'],
   icicles: [['winter', 'christmas'], 'icicle icicles ice frozen drip gutter winter cold temperature freezing'],
-  flags: [['fourth-of-july', 'any', 'summer'], 'flag flags american stars stripes wind memorial day veterans patriotic'],
+  flags: [['fourth-of-july', 'memorial-day', 'veterans-day', 'presidents-day', 'labor-day', 'any', 'summer'], 'flag flags american stars stripes wind memorial day veterans patriotic'],
   'gift-boxes': [['christmas', 'birthday', 'party'], 'present presents gift gifts box surprise teddy open christmas birthday'],
   cauldrons: [['halloween'], 'cauldron witch brew potion bubble bubbles hubble fire spooky'],
   'glowing-pumpkins': [['halloween', 'autumn'], 'pumpkin pumpkins jack-o-lantern jack o lantern carved glowing boo scare'],
@@ -316,7 +331,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   snowplow: [['winter', 'christmas'], 'snowplow snow plow plough truck snow winter beep'],
   'pirate-ship': [['halloween', 'sea', 'any'], 'pirate pirates ship cannon arr sea treasure'],
   rudolph: [['christmas', 'winter'], 'rudolph red nosed reindeer nose glow christmas santa'],
-  fountains: [['fourth-of-july', 'new-year', 'diwali', 'party'], 'firework fireworks fountain sparks fourth july new year celebration'],
+  fountains: [['fourth-of-july', 'new-year', 'diwali', 'juneteenth', 'party'], 'firework fireworks fountain sparks fourth july new year celebration'],
   'web-spiders': [['halloween', 'autumn'], 'spider spiders web webs cobweb spooky creepy halloween'],
   'leaf-piles': [['autumn', 'thanksgiving'], 'leaf leaves pile piles fall autumn kick jump'],
   puddles: [['spring', 'any'], 'puddle puddles rain splash water rainy weather jump'],
@@ -326,7 +341,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   peacocks: [['spring', 'summer', 'any'], 'peacock peacocks bird tail fan feathers display strut'],
   'pot-of-gold': [['st-patricks'], 'pot of gold rainbow leprechaun luck lucky coins st patricks'],
   'easter-eggs': [['easter', 'spring'], 'easter egg eggs hunt hidden find painted'],
-  'teddy-bears': [['valentines', 'christmas', 'any'], 'teddy bear bears hug hugs heart cuddly valentine'],
+  'teddy-bears': [['valentines', 'mothers-day', 'christmas', 'any'], 'teddy bear bears hug hugs heart cuddly valentine'],
   diyas: [['diwali'], 'diya diyas lamp lamps oil light lights diwali deepavali festival'],
   'santa-chimney': [['christmas'], 'santa claus chimney roof christmas eve ho ho ho wave pop up'],
   'roof-reindeer': [['christmas', 'winter'], 'reindeer roof rooftop prancing christmas santa hooves'],
@@ -337,7 +352,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   champagne: [['new-year', 'party', 'birthday'], 'champagne bottle cork pop cheers toast celebration midnight new year'],
   firecrackers: [['lunar-new-year', 'new-year', 'fourth-of-july'], 'firecracker firecrackers fireworks bang pop chinese new year lunar string'],
   'graduation-caps': [['party', 'summer'], 'graduation grad cap caps mortarboard toss congrats school class'],
-  'school-bus': [['any', 'autumn'], 'school bus yellow stop sign back to school kids'],
+  'school-bus': [['labor-day', 'any', 'autumn'], 'school bus yellow stop sign back to school kids'],
   tractors: [['autumn', 'thanksgiving', 'any'], 'tractor farm farmer harvest howdy country'],
   deer: [['winter', 'autumn', 'christmas', 'any'], 'deer buck doe antlers woods forest wildlife'],
   foxes: [['winter', 'autumn', 'any'], 'fox foxes red fox pounce snow woods wildlife'],
@@ -349,16 +364,16 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   tumbleweeds: [['summer', 'autumn', 'any'], 'tumbleweed tumbleweeds wind western desert real wind'],
   bigfoot: [['halloween', 'any'], 'bigfoot sasquatch yeti monster woods legend funny'],
   'skeleton-dogs': [['halloween'], 'skeleton dog dogs bones spooky puppy glowing eyes'],
-  sunflowers: [['summer', 'autumn'], 'sunflower sunflowers flower flowers garden sun field'],
-  tulips: [['spring', 'easter'], 'tulip tulips flower flowers spring garden bloom open'],
-  'bird-feeder': [['spring', 'winter', 'any'], 'bird feeder birds seed garden songbirds finch'],
-  beehive: [['spring', 'summer'], 'bee bees beehive hive skep honey swarm buzz'],
+  sunflowers: [['summer', 'autumn', 'earth-day', 'mothers-day'], 'sunflower sunflowers flower flowers garden sun field'],
+  tulips: [['spring', 'easter', 'mothers-day', 'earth-day'], 'tulip tulips flower flowers spring garden bloom open'],
+  'bird-feeder': [['spring', 'winter', 'earth-day', 'any'], 'bird feeder birds seed garden songbirds finch'],
+  beehive: [['spring', 'summer', 'earth-day'], 'bee bees beehive hive skep honey swarm buzz'],
   'wind-chimes': [['spring', 'summer', 'any'], 'wind chime chimes breeze ring real wind porch'],
   campfire: [['summer', 'autumn', 'any'], 'campfire camp fire flames sparks embers camping cozy'],
-  kinara: [['christmas', 'winter'], 'kinara kwanzaa candles seven principles habari gani december'],
+  kinara: [['kwanzaa', 'christmas', 'winter'], 'kinara kwanzaa candles seven principles habari gani december'],
   fanous: [['any'], 'fanous fanoos lantern lanterns ramadan eid kareem moon star'],
   'hula-dancers': [['summer', 'party'], 'hula dancer dancers hawaii hawaiian aloha luau grass skirt lei'],
-  mariachi: [['party', 'summer', 'any'], 'mariachi band guitar sombrero mexico cinco de mayo fiesta music ole'],
+  mariachi: [['cinco-de-mayo', 'party', 'summer', 'any'], 'mariachi band guitar sombrero mexico cinco de mayo fiesta music ole'],
   bagpipers: [['st-patricks', 'any'], 'bagpipe bagpiper bagpipes scotland scottish kilt piper march'],
   pilgrims: [['thanksgiving', 'autumn'], 'pilgrim pilgrims thanksgiving harvest mayflower basket'],
   cornucopia: [['thanksgiving', 'autumn'], 'cornucopia horn of plenty harvest fruit vegetables thanksgiving'],
@@ -405,13 +420,13 @@ const VERSIONS: Version[] = [
   { type: 'movers', style: 'rockets', id: 'pink', name: 'Pink and purple fireworks', occasions: ['valentines', 'birthday', 'party'], words: 'rockets', look: { color: '#ec4899', color2: '#a855f7' } },
   { type: 'movers', style: 'rockets', id: 'halloween', name: 'Orange and green fireworks', occasions: ['halloween'], words: 'rockets', look: { color: '#f97316', color2: '#84cc16' } },
   { type: 'movers', style: 'balloons', id: 'hearts', name: 'Red and pink balloons', occasions: ['valentines'], words: 'float love', look: { color: '#dc2626', color2: '#f472b6' } },
-  { type: 'movers', style: 'balloons', id: 'usa', name: 'Red, white and blue balloons', occasions: ['fourth-of-july'], words: 'float usa', look: { color: '#dc2626', color2: '#1d4ed8' } },
+  { type: 'movers', style: 'balloons', id: 'usa', name: 'Red, white and blue balloons', occasions: ['fourth-of-july', 'memorial-day', 'labor-day'], words: 'float usa', look: { color: '#dc2626', color2: '#1d4ed8' } },
   { type: 'movers', style: 'balloons', id: 'halloween', name: 'Orange and black balloons', occasions: ['halloween'], words: 'float', look: { color: '#f97316', color2: '#1f2937' } },
   { type: 'movers', style: 'butterflies', id: 'blue', name: 'Blue butterflies', occasions: ['spring', 'summer'], words: 'morpho', look: { color: '#3b82f6', color2: '#e0f2fe' } },
   { type: 'movers', style: 'fish', id: 'blue-tang', name: 'Blue tang fish', occasions: ['sea', 'summer'], words: 'swimming school', look: { color: '#2563eb', color2: '#facc15' } },
   { type: 'movers', style: 'fish', id: 'goldfish', name: 'Goldfish', occasions: ['sea', 'summer'], words: 'swimming school', look: { color: '#f59e0b', color2: '#fde68a' } },
   { type: 'shapes', style: 'hearts', id: 'pink', name: 'Pink hearts', occasions: ['valentines'], words: 'love', look: { color: '#f472b6', color2: '#fbcfe8' } },
-  { type: 'shapes', style: 'stars', id: 'usa', name: 'Red, white and blue stars', occasions: ['fourth-of-july'], words: 'patriotic', look: { color: '#dc2626', color2: '#2563eb' } },
+  { type: 'shapes', style: 'stars', id: 'usa', name: 'Red, white and blue stars', occasions: ['fourth-of-july', 'memorial-day', 'veterans-day', 'presidents-day'], words: 'patriotic', look: { color: '#dc2626', color2: '#2563eb' } },
   { type: 'shapes', style: 'stars', id: 'gold', name: 'Gold stars', occasions: ['christmas', 'new-year'], words: 'twinkle', look: { color: '#fbbf24', color2: '#fde68a', change: 'twinkle' } },
   { type: 'shapes', style: 'party-hats', id: 'gold', name: 'Gold and silver party hats', occasions: ['new-year'], words: 'hat', look: { color: '#fbbf24', color2: '#cbd5e1' } },
   { type: 'shapes', style: 'ornaments', id: 'blue', name: 'Blue and silver Hanukkah ornaments', occasions: ['hanukkah'], words: 'baubles', look: { color: '#3b82f6', color2: '#e5e7eb' } },
@@ -432,6 +447,12 @@ function infoLayer(style: string, name: string): SceneLayer {
     ...INFO_LOOKS[style], style, name,
     size: style === 'message' ? 0.5 : 0.6, pins: [{ x: 0.5, y: style === 'message' ? 0.3 : 0.42, size: 1, rotation: 0 }],
   })
+}
+
+/** A date some days from today, as YYYY-MM-DD. */
+function dateFromNow(days: number) {
+  const d = new Date(Date.now() + days * 86_400_000)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function build(): LibraryItem[] {
@@ -471,10 +492,13 @@ function build(): LibraryItem[] {
   }
   for (const p of COUNTDOWN_PRESETS) {
     items.push({
-      id: `countdown:${p.id}`, name: p.label, kind: 'countdown', occasions: [p.id as Occasion], words: 'days until clock',
+      id: `countdown:${p.id}`, name: p.label, kind: 'countdown', occasions: p.occasions as Occasion[],
+      words: `days until clock ${p.words ?? ''}`.trim(),
       drawing: `countdown:${p.style}`, type: 'countdown', style: p.style,
       make: () => newLayer('countdown', {
         ...COUNTDOWN_COLORS[p.style], style: p.style, name: p.label, pins: [{ x: 0.5, y: 0.42, size: 1, rotation: 0 }],
+        // A birthday or own day starts three weeks from now, to be changed in its settings.
+        ...(countdownNeedsDate(p.style) ? { date: dateFromNow(21), text: '' } : {}),
       }),
     })
   }

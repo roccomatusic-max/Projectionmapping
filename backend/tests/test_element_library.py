@@ -27,7 +27,7 @@ def _frontend_styles(layer_type: str) -> list[str]:
 
 
 @pytest.mark.skipif(not CATALOG_TS.exists(), reason="needs the frontend sources")
-@pytest.mark.parametrize("layer_type", ["shapes", "movers", "info"])
+@pytest.mark.parametrize("layer_type", ["shapes", "movers", "info", "countdown"])
 def test_describe_a_scene_knows_every_style_the_editor_offers(layer_type):
     assert scene_ai.CATALOG[layer_type]["styles"] == _frontend_styles(layer_type)
 
@@ -141,3 +141,26 @@ def test_batch_seven_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "santa-chimney", "ball-drop", "rain-clouds", "school-bus", "kinara", "cows"]
+
+
+def test_every_holiday_countdown_survives_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "countdown", "style": "stars-stripes"},
+        {"type": "countdown", "style": "dreidel"},
+        {"type": "countdown", "style": "big-day"},
+        {"type": "countdown", "style": "no-such-look"},
+    ])
+    assert [layer.style for layer in layers] == ["stars-stripes", "dreidel", "big-day", "gold"]
+
+
+async def test_a_birthday_countdown_keeps_its_name_and_date(api):
+    headers = await login(api)
+    scene = {
+        "name": "Emma's birthday",
+        "layers": [{"type": "countdown", "style": "birthday", "text": "Emma", "date": "2026-11-14",
+                    "pins": [{"x": 0.5, "y": 0.4}]}],
+    }
+    created = await api.post("/api/mapping/scenes", headers=headers, json=scene)
+    assert created.status_code == 201, created.text
+    layer = created.json()["layers"][0]
+    assert (layer["style"], layer["text"], layer["date"]) == ("birthday", "Emma", "2026-11-14")

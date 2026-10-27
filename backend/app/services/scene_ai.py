@@ -144,18 +144,31 @@ CATALOG: dict[str, dict] = {
         "nears": _AREA_NEARS,
     },
     "countdown": {
-        "about": "a big 'days until Christmas' or 'days until Halloween' countdown "
-                 "with a ribbon and a ticking clock, centred on the target area; it "
-                 "greets on the day. gold, frost, candy and marquee count to Christmas; "
+        "about": "a big 'days until' countdown with a ribbon and a ticking clock, "
+                 "centred on the target area; it greets on the day. The style picks "
+                 "the holiday: gold, frost, candy and marquee count to Christmas; "
                  "pumpkin (ribbon #3b0764, glow #ff7a18) and ghostly (ribbon #111827, "
-                 "glow #84cc16) count to Halloween",
-        "styles": ["gold", "frost", "candy", "marquee", "pumpkin", "ghostly"],
+                 "glow #84cc16) to Halloween; fireworks (ribbon #0f172a, glow #fbbf24) "
+                 "and champagne (ribbon #111827, glow #f5d77a) to New Year; dream to "
+                 "MLK Day; lantern to Lunar New Year; groundhog to Groundhog Day; "
+                 "sweetheart to Valentine's; presidential to Presidents' Day; mardi-gras; "
+                 "shamrock to St. Patrick's; easter-egg to Easter; earth to Earth Day; "
+                 "fiesta to Cinco de Mayo; roses to Mother's Day; poppy to Memorial "
+                 "Day; dad to Father's Day; juneteenth; stars-stripes to the Fourth of "
+                 "July; labor to Labor Day; salute to Veterans Day; harvest to "
+                 "Thanksgiving; diya to Diwali; dreidel to Hanukkah; kinara to Kwanzaa; "
+                 "birthday and big-day count to a date the person picks in its settings",
+        "styles": ["gold", "frost", "candy", "marquee", "pumpkin", "ghostly",
+                   "fireworks", "champagne", "dream", "lantern", "groundhog", "sweetheart",
+                   "presidential", "mardi-gras", "shamrock", "easter-egg", "earth", "fiesta",
+                   "roses", "poppy", "dad", "juneteenth", "stars-stripes", "labor", "salute",
+                   "harvest", "diya", "dreidel", "kinara", "birthday", "big-day"],
         "dials": "size: how much of the area it fills; fade: height (1 is the top); "
                  "speed: how fast light sweeps across it; amount: how much it sparkles",
         "nears": ["none", "light", "grow", "jump"],
         "notes": "color is the ribbon, color2 the glow; use blend normal and reacts_to "
                  "always so it stays readable; only add it when the person asks for a "
-                 "countdown",
+                 "countdown, in the look of the holiday they name",
     },
     "movers": {
         "about": "things that travel across the building on a path of their own: "

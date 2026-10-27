@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { COUNTDOWN_COLORS, KIND } from '../scene/catalog'
-import { COUNTDOWN_PARTS, countdownLookColors } from '../scene/countdown'
+import { COUNTDOWN_PARTS, countdownLookColors, countdownNeedsDate, holidayOf } from '../scene/countdown'
 import type { CountdownColors, SceneLayer } from '../types'
 
 type Part = (typeof COUNTDOWN_PARTS)[number]['id']
@@ -45,6 +46,7 @@ export function CountdownColorPickers({
 
   return (
     <div className="space-y-2">
+      {countdownNeedsDate(layer.style) && <CountdownDay layer={layer} canEdit={canEdit} onChange={onChange} />}
       <div className="flex flex-wrap items-end gap-3">
         {withLook && (
           <label className="block">
@@ -77,6 +79,41 @@ export function CountdownColorPickers({
           </label>
         ))}
       </div>
+    </div>
+  )
+}
+
+/** A birthday's or own day's name and date; the countdown comes round to it every year. */
+function CountdownDay({ layer, canEdit, onChange }: {
+  layer: SceneLayer
+  canEdit: boolean
+  onChange: (patch: Partial<SceneLayer>) => void
+}) {
+  const birthday = holidayOf(layer.style) === 'birthday'
+  // Typed words are kept here while typing so a slow save does not jump the cursor.
+  const [text, setText] = useState(layer.text ?? '')
+  useEffect(() => setText(layer.text ?? ''), [layer.id, layer.text])
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="block">
+        <span className="label">{birthday ? 'Whose birthday' : 'Counts down to'}</span>
+        <input className="input py-1 text-sm" value={text} disabled={!canEdit} maxLength={40}
+          placeholder={birthday ? 'Emma' : 'Grandma’s visit'}
+          onChange={(e) => {
+            setText(e.target.value)
+            onChange({ text: e.target.value })
+          }} />
+      </label>
+      <label className="block">
+        <span className="label">{birthday ? 'Birthday (comes round every year)' : 'Date (comes round every year)'}</span>
+        <input type="date" className="input py-1 text-sm" value={layer.date ?? ''} disabled={!canEdit}
+          onChange={(e) => onChange({ date: e.target.value || null })} />
+      </label>
+      <p className="text-xs text-slate-500 sm:col-span-2">
+        {birthday
+          ? 'Shows “Days until Emma’s birthday”, then “Happy Birthday” and “Make a wish, Emma!” on the day.'
+          : 'Shows “Days until Grandma’s visit”, then “Today is Grandma’s visit” on the day.'}
+      </p>
     </div>
   )
 }
