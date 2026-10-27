@@ -289,7 +289,7 @@ export function CanvasElements({
             ? 'It flies or walks on a path of its own. To pick its path, click points on the picture in order (two or more).'
             : 'Click to add a point to the end of the path. Drag a point to move it; pick one and pull its square corner to make it bigger or smaller there.'
           : layer.type === 'snowcap'
-            ? 'Snow settles by itself on the level edges of the traced house parts (Scenes → House parts), and melts where people stand.'
+            ? 'Snow settles by itself on the level edges of the traced house parts (Scenes → Your house), and melts where people stand.'
             : `Click the picture to put ${layerLabel(layer).toLowerCase()} there. Drag one to move it; click one to pick it, then use its handles to size or turn it.`
 
   return (
