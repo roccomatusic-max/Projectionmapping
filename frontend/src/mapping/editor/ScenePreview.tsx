@@ -137,7 +137,7 @@ export async function straightenedPhoto(show: Show, version: number): Promise<HT
   return straightened(show, snapshotUrl(view.camera_id, version), view.corners)
 }
 
-/** The show's own photo of the house (Scenes → Start from a photo), straightened with its four corners. */
+/** The show's own photo of the house (Scenes → Your house → Start from a photo), straightened with its four corners. */
 export async function straightenedHousePhoto(show: Show): Promise<HTMLImageElement | null> {
   const saved = await mappingApi.getHousePhoto(show.id).catch(() => null)
   return saved ? straightened(show, mediaUrl(saved.media_id), saved.corners) : null

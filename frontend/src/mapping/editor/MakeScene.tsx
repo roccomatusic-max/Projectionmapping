@@ -592,7 +592,7 @@ export function MakeScene({
                   ) : (
                     <p className="mt-1 text-xs text-slate-500">
                       All of it. To put a scene on just the roof, the windows or the driveway, trace them once
-                      in <Link className="text-sky-300 hover:underline" to="/mapping/scenes?part=house">House parts</Link> or
+                      in <Link className="text-sky-300 hover:underline" to="/mapping/scenes?part=house">Your house</Link> or
                       let Claude find them in <Link className="text-sky-300 hover:underline" to="/mapping/scenes?part=photo">Start from a photo</Link>.
                     </p>
                   )}

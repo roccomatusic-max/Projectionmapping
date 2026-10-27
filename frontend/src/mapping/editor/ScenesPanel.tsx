@@ -48,17 +48,18 @@ const FLAT_TEST_MS = 10 * 60 * 1000
 const FLAT_SEND_MS = 600
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
 
-type ScenePart = 'make' | 'edit' | 'photo' | 'house' | 'projectors' | 'paint'
+type ScenePart = 'make' | 'edit' | 'projectors' | 'house'
 
 /** The Scenes tab, one part at a time; the preview stays beside the part that needs it. */
 export const SCENE_PARTS: Array<{ id: ScenePart; label: string; hint: string }> = [
   { id: 'make', label: 'Make a scene', hint: 'Step by step: pick the projector, pick how it looks, put things in place, put it on the house' },
   { id: 'edit', label: 'Change a scene', hint: 'Every setting of your scenes, their layers, and a live preview' },
   { id: 'projectors', label: 'Cue by cue', hint: 'A different scene, or none, on one projector in one cue' },
-  { id: 'photo', label: 'Start from a photo', hint: 'Snap the house; Claude finds the walls, roof, windows and doors, and a scene decorates them' },
-  { id: 'house', label: 'House parts', hint: 'Trace the walls, roof, windows and doors so scenes can decorate each one' },
-  { id: 'paint', label: 'Paint the house (Beta)', hint: 'An AI repaints a photo of your house as you describe it' },
+  { id: 'house', label: 'Your house', hint: 'The walls, roof, windows and doors: from a photo, traced by hand, or painted by an AI' },
 ]
+
+/** Old addresses of parts of Your house (?part=photo, ?part=paint), each now a box on that tab. */
+const HOUSE_BOXES = ['photo', 'house', 'paint'] as const
 
 /** Layers whose things can be placed by hand on the preview (for flying and walking ones, the points of their path). */
 export const PLACEABLE = new Set<LayerType>(['shapes', 'countdown', 'info', 'movers'])
@@ -118,7 +119,19 @@ export function ScenesPanel({
   onShowChanged: () => Promise<void> | void
 }) {
   const [search, setSearch] = useSearchParams()
-  const part: ScenePart = SCENE_PARTS.find((p) => p.id === search.get('part'))?.id ?? 'make'
+  const asked = search.get('part')
+  // Start from a photo, House parts and Paint the house share the Your house tab now.
+  const houseBox = HOUSE_BOXES.find((box) => box === asked) ?? null
+  const part: ScenePart = houseBox ? 'house' : SCENE_PARTS.find((p) => p.id === asked)?.id ?? 'make'
+  // An old link to one of them lands on its box.
+  useEffect(() => {
+    if (!houseBox || houseBox === 'house') return
+    const id = window.requestAnimationFrame(() =>
+      document.getElementById(`house-${houseBox}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+    return () => window.cancelAnimationFrame(id)
+  }, [houseBox])
+  const showHouseBox = (box: (typeof HOUSE_BOXES)[number]) =>
+    document.getElementById(`house-${box}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   const setPart = (id: ScenePart) => setSearch(id === 'make' ? {} : { part: id }, { replace: true })
   // "Put it on a projector" opens Make a scene with the scene (and maybe a projector) picked.
   const startWith = useMemo(() => ({
@@ -146,8 +159,9 @@ export function ScenesPanel({
   const [fps, setFps] = useState<{ fps: number; scale: number | null } | null>(null)
   // The show's photo of the house, lined up on Start from a photo, is a backdrop too.
   const [hasHousePhoto, setHasHousePhoto] = useState(false)
+  // Counts saves on Start from a photo, so the preview beside it picks up the new photo.
+  const [photoSaves, setPhotoSaves] = useState(0)
   useEffect(() => {
-    if (part === 'photo') return
     let cancelled = false
     mappingApi.getHousePhoto(show.id).then(
       (saved) => {
@@ -161,7 +175,7 @@ export function ScenesPanel({
     return () => {
       cancelled = true
     }
-  }, [show.id, part])
+  }, [show.id, part, photoSaves])
 
   // House parts.
   const [surfaces, setSurfaces] = useState<Surface[]>(show.surfaces)
@@ -376,7 +390,7 @@ export function ScenesPanel({
 
   return (
     <div className="space-y-4">
-      <SectionBar label="Scenes sections" value={part} onChange={setPart} sections={SCENE_PARTS.filter((p) => p.id !== 'paint' || canEdit)} />
+      <SectionBar label="Scenes sections" value={part} onChange={setPart} sections={SCENE_PARTS} />
 
       {part === 'make' && (
         <MakeScene
@@ -405,35 +419,32 @@ export function ScenesPanel({
         <ProjectorScenes show={show} scenes={list} canEdit={canEdit} onChanged={onShowChanged} onError={onError} />
       )}
 
-      {part === 'photo' && (
-        <HousePhotoPanel
-          show={show}
-          surfaces={surfaces}
-          ai={ai}
-          canEdit={canEdit}
-          busy={busy != null}
-          onSurfacesChange={setSurfaces}
-          onSurfacesSaved={onShowChanged}
-          onDescribe={(prompt) => {
-            setPart('edit')
-            void describe(prompt, null)
-          }}
-          onStartNew={startNew}
-          reloadMedia={reloadMedia}
-          onError={onError}
-        />
-      )}
-
-      {part === 'paint' && canEdit && (
-        <PaintHouse show={{ ...show, surfaces }} media={media} busy={busy != null}
-          onPainted={async (asset, prompt) => {
-            await addPainting(asset, prompt)
-            setPart('edit')
-          }} onError={onError} />
+      {part === 'house' && (
+        <div id="house-photo" className="scroll-mt-28">
+          <HousePhotoPanel
+            show={show}
+            surfaces={surfaces}
+            ai={ai}
+            canEdit={canEdit}
+            busy={busy != null}
+            onSurfacesChange={setSurfaces}
+            onSurfacesSaved={async () => {
+              setPhotoSaves((n) => n + 1)
+              await onShowChanged()
+            }}
+            onDescribe={(prompt) => {
+              setPart('edit')
+              void describe(prompt, null)
+            }}
+            onStartNew={startNew}
+            reloadMedia={reloadMedia}
+            onError={onError}
+          />
+        </div>
       )}
 
       {(part === 'edit' || part === 'house') && (
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <div id={part === 'house' ? 'house-house' : undefined} className="grid scroll-mt-28 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
           <div className="min-w-0 space-y-4">
             {part === 'edit' && (
               <>
@@ -673,7 +684,7 @@ export function ScenesPanel({
                   !tracing && (
                     <p className="text-xs text-slate-500">
                       Nothing traced yet. Have a photo of the house?{' '}
-                      <button className="text-sky-300 hover:underline" onClick={() => setPart('photo')}>Start from a photo</button> and
+                      <button className="text-sky-300 hover:underline" onClick={() => showHouseBox('photo')}>Start from a photo</button> (above) and
                       Claude finds the parts for you.
                     </p>
                   )
@@ -866,6 +877,16 @@ export function ScenesPanel({
               </div>
             </Panel>
           </div>
+        </div>
+      )}
+
+      {part === 'house' && canEdit && (
+        <div id="house-paint" className="scroll-mt-28">
+          <PaintHouse show={{ ...show, surfaces }} media={media} busy={busy != null}
+            onPainted={async (asset, prompt) => {
+              await addPainting(asset, prompt)
+              setPart('edit')
+            }} onError={onError} />
         </div>
       )}
 
