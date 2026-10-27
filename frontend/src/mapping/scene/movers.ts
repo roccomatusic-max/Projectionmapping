@@ -60,6 +60,10 @@ export const MOVER_STYLES = [
   'rocking-chair', 'swamp-monster', 'gargoyles', 'monster-mailbox', 'hanging-skeletons', 'bush-eyes', 'wall-spiders',
   'snakes', 'tentacles', 'fortune-teller', 'dancing-zombies', 'creaky-gate', 'pumpkin-tower', 'catrinas', 'sugar-skulls',
   'ofrenda', 'honor-guard', 'buglers', 'fighter-jets', 'perched-eagles', 'rangoli', 'star-lanterns', 'elephants',
+  'nutcracker', 'singing-wreath', 'mistletoe', 'gingerbread-house', 'workshop-elves', 'melting-snowman', 'window-santa',
+  'stuck-santa', 'krampus', 'snow-angels', 'yeti', 'north-pole-mailbox', 'bell-ringer', 'cookies-for-santa', 'moose',
+  'sugar-plum-fairies', 'nativity', 'ice-fishing-penguins', 'lawn-reindeer', 'blow-up-santa', 'lights-elf', 'horse-sleigh',
+  'parade-balloons', 'tuba-players', 'mayflower', 'wishbone', 'geese', 'strutting-tom', 'sign-turkey', 'turkey-trot',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -337,6 +341,37 @@ const STYLE: Record<MoverStyle, {
   rangoli: { motion: 'stand', ground: true, height: 0.7, many: 2 },
   'star-lanterns': { motion: 'dangle', ground: false, height: 0.6, still: true, animate: true, under: true },
   elephants: { motion: 'walker', ground: true, height: 1.1, pace: 1.6 },
+  // Christmas and Thanksgiving.
+  nutcracker: { motion: 'stand', ground: true, height: 1.4, many: 1 },
+  'singing-wreath': { motion: 'dangle', ground: false, height: 0.8, still: true, animate: true, under: true },
+  mistletoe: { motion: 'dangle', ground: false, height: 0.55, still: true, animate: true, under: true },
+  'gingerbread-house': { motion: 'stand', ground: true, height: 1.3, many: 0 },
+  'workshop-elves': { motion: 'stand', ground: true, height: 0.9, many: 2 },
+  'melting-snowman': { motion: 'stand', ground: true, height: 1.25, many: 1 },
+  'window-santa': { motion: 'peek', ground: false, height: 0.75 },
+  'stuck-santa': { motion: 'stand', ground: false, height: 1, many: 0 },
+  krampus: { motion: 'walker', ground: true, height: 1.3, pace: 1.3 },
+  'snow-angels': { motion: 'stand', ground: true, height: 0.65, many: 2 },
+  yeti: { motion: 'walker', ground: true, height: 1.45, pace: 1.5 },
+  'north-pole-mailbox': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'bell-ringer': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'cookies-for-santa': { motion: 'stand', ground: true, height: 0.55, many: 0 },
+  moose: { motion: 'walker', ground: true, height: 1.3, pace: 1.7 },
+  'sugar-plum-fairies': { motion: 'flyer', ground: false, height: 0.5, trail: true },
+  nativity: { motion: 'stand', ground: true, height: 1.35, many: 0 },
+  'ice-fishing-penguins': { motion: 'stand', ground: true, height: 0.7, many: 2 },
+  'lawn-reindeer': { motion: 'stand', ground: true, height: 1, many: 3 },
+  'blow-up-santa': { motion: 'stand', ground: true, height: 1.7, many: 1 },
+  'lights-elf': { motion: 'stand', ground: true, height: 1.3, many: 0 },
+  'horse-sleigh': { motion: 'walker', ground: true, height: 1, pace: 1.8 },
+  'parade-balloons': { motion: 'flyer', ground: false, height: 1.1 },
+  'tuba-players': { motion: 'walker', ground: true, height: 1, pace: 1.4 },
+  mayflower: { motion: 'walker', ground: true, height: 1.4, pace: 2.4, rock: true },
+  wishbone: { motion: 'stand', ground: true, height: 0.6, many: 0 },
+  geese: { motion: 'flyer', ground: false, height: 0.5 },
+  'strutting-tom': { motion: 'stand', ground: true, height: 0.95, many: 1 },
+  'sign-turkey': { motion: 'stand', ground: true, height: 1, many: 1 },
+  'turkey-trot': { motion: 'walker', ground: true, height: 1, pace: 0.5 },
 }
 
 /**
@@ -344,7 +379,8 @@ const STYLE: Record<MoverStyle, {
  * (act plays the 'act' row when it has one), level picks the frame by how near people are (from shut to wide open,
  * asleep to awake, unlit to lit) with peek waking it a little now and then by itself, looks turns it to watch
  * whoever is near (frames left, ahead, right, and a fourth for a blink or a laugh), faces turns it towards them,
- * variants gives each its own picture (rows main, v1, v2), notes sends music up from it, and together has them
+ * variants gives each its own picture (rows main, v1, v2), notes sends music (or hearts, or letters) up from it
+ * (lit: only for people), and together has them
  * fall into step with each other for people.
  */
 interface Act {
@@ -355,7 +391,7 @@ interface Act {
   looks?: boolean
   faces?: boolean
   variants?: number
-  notes?: boolean
+  notes?: boolean | 'lit'
   together?: boolean
 }
 const ACTS: Partial<Record<MoverStyle, Act>> = {
@@ -373,8 +409,25 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   catrinas: { idle: 5, act: 9 },
   'sugar-skulls': { idle: 1, act: 8 },
   ofrenda: { level: 0.25 },
-  buglers: { idle: 0.5, act: 3, notes: true },
+  buglers: { idle: 0.5, act: 3, notes: 'lit' },
   rangoli: { level: 0.3 },
+  nutcracker: { idle: 2, act: 8, faces: true },
+  'singing-wreath': { idle: 3, act: 8, notes: true },
+  mistletoe: { idle: 2, notes: 'lit' },
+  'gingerbread-house': { level: 0.1, peek: true },
+  'workshop-elves': { idle: 5, act: 10 },
+  'stuck-santa': { idle: 4, act: 10 },
+  'snow-angels': { idle: 1, act: 6 },
+  'north-pole-mailbox': { idle: 1, act: 6, notes: 'lit' },
+  'bell-ringer': { idle: 3, act: 10, notes: 'lit' },
+  nativity: { level: 0.2, peek: true },
+  'ice-fishing-penguins': { idle: 3, act: 6, faces: true },
+  'lawn-reindeer': { looks: true },
+  'blow-up-santa': { level: 0, peek: true },
+  'lights-elf': { level: 0.15, peek: true },
+  wishbone: { idle: 2, act: 5 },
+  'strutting-tom': { level: 0.1, peek: true, faces: true },
+  'sign-turkey': { idle: 4, act: 5, faces: true },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -383,14 +436,14 @@ const FLOAT: Partial<Record<MoverStyle, number>> = {
   'grim-reaper': 0.2, whales: 0.1, octopus: 0.3, astronauts: 0.3, 'paper-planes': 0.35, 'rocket-ship': 0.12,
   'love-letters': 0.25, seahorses: 0.3, mermaids: 0.18, submarines: 0.1, 'origami-cranes': 0.2,
   storks: 0.1, 'flying-pigs': 0.2, unicorns: 0.12, 'magic-carpet': 0.25, superheroes: 0.1,
-  helicopter: 0.15, 'manta-rays': 0.2, anglerfish: 0.15, rudolph: 0.08,
+  helicopter: 0.15, 'manta-rays': 0.2, anglerfish: 0.15, rudolph: 0.08, 'sugar-plum-fairies': 0.25, 'parade-balloons': 0.12,
 }
 const BEAT: Partial<Record<MoverStyle, number>> = {
   ghosts: 6, ufo: 4, 'sea-turtles': 4, angels: 5, sharks: 6, dragon: 7,
   'grim-reaper': 4, whales: 3, octopus: 5, astronauts: 3, 'rocket-ship': 12,
   'love-letters': 8, seahorses: 5, mermaids: 5, submarines: 6, 'origami-cranes': 6,
   storks: 6, 'flying-pigs': 10, unicorns: 9, 'magic-carpet': 6, superheroes: 8,
-  helicopter: 16, 'manta-rays': 3, anglerfish: 5, rudolph: 9,
+  helicopter: 16, 'manta-rays': 3, anglerfish: 5, rudolph: 9, 'sugar-plum-fairies': 10, 'parade-balloons': 3,
 }
 
 /** Width over height of a style's main picture. */
@@ -655,6 +708,19 @@ function heading(dx: number, dy: number, limit: number): { angle: number; flip: 
 }
 
 /** A speech bubble over one ("Ho ho ho!"), showing as someone comes near. */
+/** Music (or hearts, or letters) floating up from (x, y) on one side of it, more of it the more lit. */
+function rising(out: Sprite[], x: number, y: number, size: number, dir: number, lit: number, onlyLit: boolean, t: number, ph: number) {
+  const count = 2 + Math.round(lit * 3)
+  for (let j = 0; j < count; j++) {
+    const q = (t * 0.45 + j / count + ph) % 1
+    out.push({
+      x: x + dir * size * 0.3 + Math.sin(q * 6 + j) * size * 0.15, y: y - q * size,
+      hw: size * 0.09, hh: size * 0.09, angle: Math.sin(q * 5 + j) * 0.3, flip: false,
+      alpha: Math.sin(q * Math.PI) * (onlyLit ? lit : 0.5 + 0.5 * lit), glow: 0.3, row: 'note', frame: j,
+    })
+  }
+}
+
 function bubble(s: Sprite, size: number, flip: boolean, k: number): Sprite {
   const bh = size * 0.32
   return {
@@ -863,17 +929,20 @@ export function moverSprites(f: MoverFrame): Sprite[] {
     return out
   }
 
-  if (style === 'fighter-jets') {
+  if (style === 'fighter-jets' || style === 'geese') {
     // Three jets in a V flying straight over the house now and then (each pass from one side or the other),
     // trailing red, white and blue smoke; for people they dip their wings in salute (Dance), light their
-    // afterburners (Light up) or stay away (Hide).
+    // afterburners (Light up) or stay away (Hide). Geese fly over the same way, five to a V, slower, honking
+    // at people.
+    const geese = style === 'geese'
+    const birds = geese ? 5 : 3
     const n = 1 + Math.round(layer.amount * 2)
     const ratio = ratioOf(style)
     let top = Infinity
     for (let k = 0; k <= 24; k++) top = Math.min(top, path.at((L * k) / 24).y)
-    const v = 0.25 + 0.8 * layer.speed
+    const v = geese ? 0.1 + 0.35 * layer.speed : 0.25 + 0.8 * layer.speed
     const span = aspect + 1.2
-    const period = (span + 2.5) / v
+    const period = (span + (geese ? 1.4 : 2.5)) / v
     for (let i = 0; i < n; i++) {
       const u = (t + (i / n) * period + hash(i + own) * period) / period
       const cycle = Math.floor(u)
@@ -881,19 +950,28 @@ export function moverSprites(f: MoverFrame): Sprite[] {
       if (lead > span) continue
       const fromLeft = hash(cycle * 3.7 + i) < 0.5
       const dir = fromLeft ? 1 : -1
-      const y0 = Math.max(H * 1.3, top - H * (1 + 0.8 * hash(cycle * 1.9 + i)))
+      const y0 = geese
+        ? Math.max(H * 2.6, top - H * (0.3 + 0.6 * hash(cycle * 1.9 + i)))
+        : Math.max(H * 1.3, top - H * (1 + 0.8 * hash(cycle * 1.9 + i)))
       const lx = fromLeft ? lead : aspect - lead
       const near = nearAt(lx, y0, H * 2, people, reach, aspect)
       if (action === 'hide' && near.k > 0.3) continue
       const salute = action === 'dance' || action === 'jump' ? smoothstep(0.1, 0.5, near.k) : 0
-      for (let w = 0; w < 3; w++) {
-        // The leader in front, wingmen behind either side of it.
-        const x = lx - dir * (w === 0 ? 0 : H * 1.7)
-        const y = y0 + (w === 0 ? 0 : (w === 1 ? -1 : 1) * H * 0.7) - (x / aspect) * H * 0.3 * dir
+      for (let w = 0; w < birds; w++) {
+        // The leader in front, the rest behind either side of it.
+        const rank = Math.ceil(w / 2)
+        const side = w === 0 ? 0 : w % 2 ? -1 : 1
+        const x = lx - dir * rank * H * (geese ? 1.3 : 1.7)
+        const y = y0 + side * rank * H * (geese ? 0.55 : 0.7) - (x / aspect) * H * 0.3 * dir
         if (x < -0.6 || x > aspect + 0.6) continue
         const jet: Sprite = {
           x, y, hw: (H * ratio) / 2, hh: H / 2, angle: Math.sin(t * 7 + w) * 0.3 * salute - 0.05 * dir, flip: !fromLeft, alpha: 1,
-          glow: action === 'light' ? near.k : 0, row: 'main', frame: Math.floor(t * 12 + w),
+          glow: action === 'light' ? near.k : 0, row: 'main', frame: Math.floor(t * (geese ? 9 : 12) + w * (geese ? 1.7 : 1)),
+        }
+        if (geese) {
+          out.push(jet)
+          if (w === 0 && near.k > 0.2 && action !== 'none') out.push(bubble(jet, H * 2.2, !fromLeft, near.k))
+          continue
         }
         // The smoke, drifting down and spreading behind.
         const puffs = 12 + Math.round(layer.fade * 24)
@@ -1647,8 +1725,19 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         }
       }
       if (pinata && f.scared[i] > 0.1) sprite.angle += Math.sin(t * 13 + ph * 7) * 0.2 * Math.min(1, f.scared[i])
-      react(sprite, drops || rings > 0 ? 'none' : action, near, t, ph * 6, reach)
+      const act = ACTS[style]
+      let lit = 0
+      if (act) {
+        // A wreath that sings for people (its act), mistletoe sending up hearts for whoever is under it.
+        lit = action !== 'none' && action !== 'hide' && action !== 'appear' ? smoothstep(0.1, 0.6, near.k) : 0
+        const acting = lit > 0.3 && hasRow(style, 'act')
+        if (acting) sprite.row = 'act'
+        sprite.frame = Math.floor(t * (acting ? act.act ?? 8 : act.idle ?? 3) * (0.6 + 0.8 * layer.speed) + ph * 8)
+      }
+      react(sprite, drops || rings > 0 || act ? (action === 'light' || action === 'grow' ? action : 'none') : action, near, t, ph * 6, reach)
       out.push(sprite, ...extra)
+      if (act?.notes && (act.notes !== 'lit' || lit > 0.3)) rising(out, x, y - size * 0.3, size, ph < 0.5 ? -1 : 1, lit, act.notes === 'lit', t, ph)
+      if (act && hasRow(style, 'bubble') && lit > 0.3) out.push(bubble(sprite, size, false, Math.max(near.k, 0.6)))
       if (style === 'fanous' && near.k > 0.2) out.push(bubble(sprite, size, false, near.k))
     }
     return out
@@ -2362,7 +2451,7 @@ export function moverSprites(f: MoverFrame): Sprite[] {
     const now = new Date(f.clock ?? Date.now())
     const hour = now.getHours() + now.getMinutes() / 60
     // Santa's chimney stands at the peak of the roof (along the line drawn, at its middle); people are down below it.
-    const onRoof = style === 'santa-chimney'
+    const onRoof = style === 'santa-chimney' || style === 'stuck-santa'
     let peak = L / 2
     if (onRoof && !drawn) {
       let best = Infinity
@@ -2916,6 +3005,41 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         sprite.glow = level >= 1 ? 0.2 : 0
         if (action === 'light') sprite.glow = Math.max(sprite.glow, near.k * 0.5)
         out.push(sprite)
+      } else if (style === 'melting-snowman') {
+        // Melting as the real temperature where the server is goes above freezing: proud and tall at 32°F or
+        // colder, a puddle with his hat in it by 60°F. While he still can, he waves and tips his hat to people.
+        const temp = sky?.temperature_f
+        const melt = temp == null ? 0 : Math.max(0, Math.min(1, (temp - 32) / 28))
+        const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
+        sprite.flip = false
+        sprite.frame = Math.round(melt * 7)
+        if (k > 0.3 && melt < 0.45) {
+          sprite.row = 'act'
+          sprite.frame = Math.floor(t * 5 + ph * 4)
+        }
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (k > 0.3) {
+          const said = bubble(sprite, size, false, near.k)
+          if (melt >= 0.45) said.row = 'melt'
+          out.push(said)
+        }
+      } else if (style === 'cookies-for-santa') {
+        // Cookies, milk and a carrot left out for Santa (warm and steaming for people, and all Christmas Eve);
+        // from midnight on Christmas morning to the end of the 26th, crumbs, an empty glass and his thank-you.
+        const eaten = now.getMonth() === 11 && (now.getDate() === 25 || now.getDate() === 26)
+        const eve = now.getMonth() === 11 && now.getDate() === 24 && hour >= 16
+        const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
+        sprite.flip = false
+        sprite.frame = eaten ? 2 : k > 0.3 || eve ? 1 : 0
+        if (eve) sprite.glow = 0.15 + 0.1 * Math.sin(t * 2 + ph * 6)
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (k > 0.3) {
+          const said = bubble(sprite, size, false, near.k)
+          if (eaten) said.row = 'thanks'
+          out.push(said)
+        }
       } else if (ACTS[style]) {
         const act = ACTS[style]!
         const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
@@ -2969,18 +3093,9 @@ export function moverSprites(f: MoverFrame): Sprite[] {
           }
         }
         out.push(sprite)
-        if (act.notes && (style !== 'buglers' || lit > 0.3)) {
-          // Music floating up off it, more of it for people.
-          const count = 2 + Math.round(lit * 3)
-          const dir = sprite.flip ? -1 : 1
-          for (let j = 0; j < count; j++) {
-            const q = (t * 0.45 + j / count + ph) % 1
-            out.push({
-              x: p.x + dir * size * 0.3 + Math.sin(q * 6 + j) * size * 0.15, y: p.y - size * 0.85 - q * size,
-              hw: size * 0.09, hh: size * 0.09, angle: Math.sin(q * 5 + j) * 0.3, flip: false,
-              alpha: Math.sin(q * Math.PI) * (style === 'buglers' ? lit : 0.5 + 0.5 * lit), glow: 0.3, row: 'note', frame: j,
-            })
-          }
+        if (act.notes && (act.notes !== 'lit' || lit > 0.3)) {
+          // Music floating up off it (letters off to the North Pole), more of it for people.
+          rising(out, p.x, p.y - size * 0.85, size, sprite.flip ? -1 : 1, lit, act.notes === 'lit', t, ph)
         }
         if (hasRow(style, 'bubble') && lit > 0.3) out.push(bubble(sprite, size, sprite.flip, Math.max(near.k, 0.6)))
       } else {

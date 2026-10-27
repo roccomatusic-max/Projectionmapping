@@ -308,7 +308,26 @@ CATALOG: dict[str, dict] = {
                  "white and blue smoke and dip their wings (near dance); perched-eagles "
                  "watch from the roof (near light); rangoli is drawn on the ground for "
                  "people (near follow); star-lanterns hang from the gutter (near light); "
-                 "elephants raise their trunks (near dance)",
+                 "elephants raise their trunks (near dance); nutcracker cracks a walnut "
+                 "(near follow); singing-wreath sings under the gutter (near follow); "
+                 "mistletoe sends up hearts for whoever is under it (near follow); "
+                 "gingerbread-house lights up and the door opens (near follow); "
+                 "workshop-elves hammer toys (near follow); melting-snowman melts when it "
+                 "is really warm and waves (near follow); window-santa peeks out (near "
+                 "follow); stuck-santa kicks in a chimney on the roof (near follow); krampus "
+                 "stops to stare (near follow); snow-angels (near follow); yeti roars (near "
+                 "dance); north-pole-mailbox sends letters off (near follow); bell-ringer "
+                 "(near follow); cookies-for-santa are eaten on Christmas morning (near "
+                 "follow); moose with antler lights (near follow); sugar-plum-fairies fly "
+                 "(near follow); nativity star blazes (near follow); ice-fishing-penguins "
+                 "catch a fish (near follow); lawn-reindeer turn their heads (near follow); "
+                 "blow-up-santa inflates (near follow); lights-elf lights the lights (near "
+                 "follow); horse-sleigh riders wave (near dance); parade-balloons float "
+                 "over (near follow); tuba-players march and play (near dance); mayflower "
+                 "sails by (near follow); wishbone snaps (near follow); geese fly south in "
+                 "a V and honk (near follow); strutting-tom fans his tail (near follow); "
+                 "sign-turkey holds up a sign (near follow); turkey-trot runners cheer "
+                 "(near dance)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -358,7 +377,14 @@ CATALOG: dict[str, dict] = {
                    "bush-eyes", "wall-spiders", "snakes", "tentacles", "fortune-teller",
                    "dancing-zombies", "creaky-gate", "pumpkin-tower", "catrinas",
                    "sugar-skulls", "ofrenda", "honor-guard", "buglers", "fighter-jets",
-                   "perched-eagles", "rangoli", "star-lanterns", "elephants"],
+                   "perched-eagles", "rangoli", "star-lanterns", "elephants",
+                   "nutcracker", "singing-wreath", "mistletoe", "gingerbread-house",
+                   "workshop-elves", "melting-snowman", "window-santa", "stuck-santa",
+                   "krampus", "snow-angels", "yeti", "north-pole-mailbox", "bell-ringer",
+                   "cookies-for-santa", "moose", "sugar-plum-fairies", "nativity",
+                   "ice-fishing-penguins", "lawn-reindeer", "blow-up-santa", "lights-elf",
+                   "horse-sleigh", "parade-balloons", "tuba-players", "mayflower",
+                   "wishbone", "geese", "strutting-tom", "sign-turkey", "turkey-trot"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
