@@ -26,6 +26,7 @@ import type { LayerBlend, ObjectPin, SceneLayer, SourceRect, Surface } from '../
 import { nearOf } from './catalog'
 import { CLASS_FIRST_YEAR, CLASS_POSES, CLASS_TOSS, CLASS_YEARS } from './celebrationSprites'
 import { MOON_PHASES } from './faithSprites'
+import { KITE_POSES, windBand } from './harvestSprites'
 import { BOARD_HELLO, BOARD_POSES } from './schoolGameSprites'
 import { SPRITE_ROWS, type SpriteRow } from './spriteRows'
 import { hanukkahEve, isEid, lastWeekday, lunarNewYear, moonPhase, ramadanDay } from './holidays'
@@ -91,6 +92,10 @@ export const MOVER_STYLES = [
   'seder-table', 'afikomen-hunt', 'elijahs-door', 'sea-parting', 'shofar-blower', 'apples-and-honey', 'tashlich',
   'sukkah', 'moon-sighting', 'iftar', 'eid-gifts', 'fanous-kid', 'three-sisters-garden', 'canoe-paddlers', 'story-time',
   'knitting-grandma', 'porch-swing', 'whoopee-cushion', 'touchdown-dance',
+  'pie-thief', 'turkey-carver', 'thanks-table', 'leaf-jumper', 'apple-picker', 'hayride', 'cider-press',
+  'giant-pumpkin', 'turkey-disguise', 'candy-chute', 'trunk-or-treat', 'costume-parade', 'parade-watchers',
+  'kite-flyer', 'snow-shoveler', 'igloo-builder', 'snowflake-catcher', 'ice-sculptor', 'snowshoe-hiker', 'ski-lift',
+  'sled-dogs', 'chestnut-roaster', 'tree-lot', 'proposal', 'valentine-mailbox', 'egg-dyeing', 'maple-tapping',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -552,6 +557,33 @@ const STYLE: Record<MoverStyle, {
   'porch-swing': { motion: 'stand', ground: true, height: 1.15, many: 0 },
   'whoopee-cushion': { motion: 'stand', ground: true, height: 1.15, many: 0 },
   'touchdown-dance': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'pie-thief': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'turkey-carver': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'thanks-table': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'leaf-jumper': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  'apple-picker': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  hayride: { motion: 'walker', ground: true, height: 0.95, pace: 0.7 },
+  'cider-press': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'giant-pumpkin': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'turkey-disguise': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'candy-chute': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'trunk-or-treat': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  'costume-parade': { motion: 'walker', ground: true, height: 0.95, pace: 0.9 },
+  'parade-watchers': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'kite-flyer': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'snow-shoveler': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'igloo-builder': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  'snowflake-catcher': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'ice-sculptor': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'snowshoe-hiker': { motion: 'walker', ground: true, height: 0.95, pace: 0.6 },
+  'ski-lift': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'sled-dogs': { motion: 'walker', ground: true, height: 0.9, pace: 1.4 },
+  'chestnut-roaster': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'tree-lot': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  proposal: { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'valentine-mailbox': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'egg-dyeing': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'maple-tapping': { motion: 'stand', ground: true, height: 1.15, many: 0 },
   'fanous-kid': { motion: 'walker', ground: true, height: 0.95, pace: 0.8 },
   'canoe-paddlers': { motion: 'walker', ground: true, height: 0.9, pace: 1 },
 }
@@ -724,6 +756,27 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   'porch-swing': { idle: 2, act: 4 },
   'whoopee-cushion': { idle: 2, act: 5, text: true },
   'touchdown-dance': { idle: 3, act: 6, text: true },
+  'pie-thief': { idle: 2, act: 5 },
+  'turkey-carver': { idle: 2, act: 5 },
+  'thanks-table': { idle: 2, act: 4 },
+  'leaf-jumper': { idle: 3, act: 6 },
+  'apple-picker': { idle: 2, act: 5 },
+  'cider-press': { idle: 3, act: 4 },
+  'giant-pumpkin': { level: 0.1, peek: true },
+  'turkey-disguise': { idle: 0.5, act: 2, text: true },
+  'candy-chute': { idle: 2, act: 5 },
+  'trunk-or-treat': { idle: 2, act: 4 },
+  'parade-watchers': { idle: 2, act: 5 },
+  'igloo-builder': { level: 0.1, peek: true },
+  'snowflake-catcher': { idle: 2, act: 4 },
+  'ice-sculptor': { level: 0.1, peek: true },
+  'ski-lift': { idle: 1, act: 1.5 },
+  'chestnut-roaster': { idle: 3, act: 4 },
+  'tree-lot': { idle: 2, act: 4, text: true },
+  proposal: { idle: 2, act: 5 },
+  'valentine-mailbox': { idle: 2, act: 5 },
+  'egg-dyeing': { idle: 2, act: 4 },
+  'maple-tapping': { idle: 2, act: 4 },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -3497,6 +3550,32 @@ export function moverSprites(f: MoverFrame): Sprite[] {
           if (ramadanDay(now)) said.row = 'ramadan'
           else if (isEid(now)) said.row = 'eid'
           out.push(said)
+        }
+      } else if (style === 'kite-flyer' || style === 'snow-shoveler') {
+        // Following the real weather where the server is: the kite flies as high and pulls as hard as today's
+        // wind (and needs a run to get up when it's still), and the neighbour shovels while it really snows and
+        // otherwise leans on the shovel looking up hopefully. Both wave or cheer for people.
+        sprite.flip = false
+        const acting = busy && smoothstep(0.1, 0.6, near.k) > 0.3
+        const sky = weatherFor('').data
+        let said: string | null = null
+        if (style === 'kite-flyer') {
+          const band = windBand(sky?.wind_mph)
+          sprite.row = acting ? 'act' : 'main'
+          sprite.frame = band * KITE_POSES + (Math.floor(t * (2 + band * 1.5) + ph * 8) % KITE_POSES)
+          if (band === 0) said = 'calm'
+        } else {
+          const snowing = !!sky && weatherLook(sky.code).icon === 'snow'
+          sprite.row = snowing ? (acting ? 'snowact' : 'snow') : acting ? 'act' : 'main'
+          sprite.frame = Math.floor(t * (snowing && !acting ? 5 : 3) + ph * 8)
+          if (snowing) said = 'snowsay'
+        }
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (acting) {
+          const bub = bubble(sprite, size, false, near.k)
+          if (said) bub.row = said
+          out.push(bub)
         }
       } else if (style === 'lawn-chair-skeleton') {
         // Dressed for the real temperature where the server is: sunglasses and a cold drink when it's mild, a

@@ -12,11 +12,13 @@
 import { OutputRenderer } from '../renderer'
 import { CLASS_FIRST_YEAR, CLASS_POSES, CLASS_TOSS, CLASS_YEARS } from '../scene/celebrationSprites'
 import { MOON_PHASES } from '../scene/faithSprites'
+import { KITE_POSES, windBand } from '../scene/harvestSprites'
 import { moonPhase } from '../scene/holidays'
 import type { LibraryItem } from '../scene/library'
 import { paintAtlas } from '../scene/movers'
 import { BOARD_HELLO, BOARD_POSES } from '../scene/schoolGameSprites'
 import { SPRITE_ROWS, type SpriteRow } from '../scene/spriteRows'
+import { weatherFor, weatherLook } from '../scene/weather'
 import type { MappingScene, SceneLayer, Surface } from '../types'
 import { wholeCanvasOutput } from './ScenePreview'
 
@@ -137,7 +139,9 @@ const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 's
   'bounce-house', 'magician', 'balloon-twister', 'party-horns', 'musical-chairs', 'pin-the-tail', 'face-painter', 'karaoke', 'dj-booth',
   'diploma-walk', 'valedictorian', 'crossing-guard', 'spelling-bee', 'science-volcano', 'referee', 'cheerleaders', 'stadium-wave',
   'field-goal', 'team-mascot', 'snake-can', 'squirting-flower', 'seder-table', 'afikomen-hunt', 'shofar-blower', 'apples-and-honey',
-  'tashlich', 'sukkah', 'iftar', 'eid-gifts', 'story-time', 'porch-swing', 'whoopee-cushion', 'touchdown-dance'])
+  'tashlich', 'sukkah', 'iftar', 'eid-gifts', 'story-time', 'porch-swing', 'whoopee-cushion', 'touchdown-dance', 'pie-thief',
+  'turkey-carver', 'thanks-table', 'leaf-jumper', 'apple-picker', 'cider-press', 'candy-chute', 'trunk-or-treat', 'parade-watchers',
+  'snowflake-catcher', 'ski-lift', 'chestnut-roaster', 'tree-lot', 'proposal', 'valentine-mailbox', 'egg-dyeing', 'maple-tapping'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
   'hanging-skeletons', 'star-lanterns', 'singing-wreath', 'mistletoe'])
 
@@ -625,6 +629,19 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     stamp(ctx, style, layer, acting ? 'act' : 'main', slot * poses + (Math.floor(time * 5) % poses), W / 2, H / 2, H * 0.9)
     return
   }
+  if (style === 'kite-flyer' || style === 'snow-shoveler') {
+    // Today's real wind or snow, now waiting, now doing its thing for people.
+    const acting = Math.floor(time * 0.35) % 2 === 1
+    const sky = weatherFor('').data
+    if (style === 'kite-flyer') {
+      const frame = windBand(sky?.wind_mph) * KITE_POSES + (Math.floor(time * 4) % KITE_POSES)
+      stamp(ctx, style, layer, acting ? 'act' : 'main', frame, W / 2, H / 2, H * 0.9)
+    } else {
+      const snowing = !!sky && weatherLook(sky.code).icon === 'snow'
+      stamp(ctx, style, layer, snowing ? (acting ? 'snowact' : 'snow') : acting ? 'act' : 'main', Math.floor(time * 6), W / 2, H / 2, H * 0.9)
+    }
+    return
+  }
   if (style === 'moon-sighting') {
     // Tonight's real moon, the family now watching, now cheering.
     const acting = Math.floor(time * 0.35) % 2 === 1
@@ -712,7 +729,8 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     || style === 'nativity' || style === 'blow-up-santa' || style === 'lights-elf' || style === 'strutting-tom' || style === 'tree-planters' || style === 'mom-garden'
     || style === 'statue-of-liberty' || style === 'sandcastle' || style === 'sarcophagus' || style === 'werewolf-change'
     || style === 'snowman-builders' || style === 'advent-calendar' || style === 'limbo' || style === 'elijahs-door' || style === 'sea-parting'
-    || style === 'three-sisters-garden' || style === 'knitting-grandma') {
+    || style === 'three-sisters-garden' || style === 'knitting-grandma'
+    || style === 'giant-pumpkin' || style === 'igloo-builder' || style === 'ice-sculptor') {
     // Lighting up (the tree, the candles in their order) or opening, as people come.
     const frames = main.frames
     const k = Math.min(1, ((time * 0.3) % 1.3))

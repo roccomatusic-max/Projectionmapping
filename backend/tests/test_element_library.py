@@ -268,3 +268,16 @@ def test_faith_and_family_holiday_styles_and_countdowns_survive_describe_a_scene
     assert [layer.style for layer in layers] == [
         "moon-sighting", "seder-table", "sea-parting", "canoe-paddlers", "knitting-grandma",
         "seder", "crescent", "grandparents"]
+
+
+def test_autumn_and_winter_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "kite-flyer", "near": "follow"},
+        {"type": "movers", "style": "snow-shoveler", "near": "follow"},
+        {"type": "movers", "style": "giant-pumpkin", "near": "follow"},
+        {"type": "movers", "style": "hayride", "near": "dance"},
+        {"type": "movers", "style": "turkey-disguise", "near": "follow"},
+        {"type": "movers", "style": "proposal", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "kite-flyer", "snow-shoveler", "giant-pumpkin", "hayride", "turkey-disguise", "proposal"]
