@@ -20,7 +20,7 @@ import { moverWalks } from './movers'
 export type Occasion =
   | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'easter'
   | 'earth-day' | 'cinco-de-mayo' | 'mothers-day' | 'memorial-day' | 'fathers-day' | 'juneteenth' | 'fourth-of-july'
-  | 'labor-day' | 'halloween' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
+  | 'labor-day' | 'halloween' | 'day-of-the-dead' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
   | 'winter' | 'spring' | 'summer' | 'autumn' | 'birthday' | 'party' | 'sea' | 'driveway' | 'any'
 
 /** The holidays in calendar order, then the seasons and the rest. */
@@ -42,6 +42,7 @@ export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = 
   { id: 'fourth-of-july', label: 'Fourth of July', words: '4th july independence usa america patriotic' },
   { id: 'labor-day', label: 'Labor Day', words: 'labor labour day september workers' },
   { id: 'halloween', label: 'Halloween', words: 'spooky scary october trick treat' },
+  { id: 'day-of-the-dead', label: 'Day of the Dead', words: 'dia de los muertos dia de muertos november calavera mexican' },
   { id: 'veterans-day', label: 'Veterans Day', words: 'veterans day november patriotic military' },
   { id: 'thanksgiving', label: 'Thanksgiving', words: 'fall harvest november' },
   { id: 'diwali', label: 'Diwali', words: 'festival of lights' },
@@ -183,7 +184,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   ghosts: [['halloween'], 'boo spirit'],
   witch: [['halloween'], 'broom broomstick cackle'],
   ufo: [['halloween', 'any'], 'alien flying saucer space spaceship beam'],
-  skeletons: [['halloween'], 'bones dance dancing day of the dead'],
+  skeletons: [['halloween', 'day-of-the-dead'], 'bones dance dancing day of the dead'],
   zombies: [['halloween'], 'undead walking dead monster'],
   'black-cats': [['halloween'], 'cat kitty'],
   turkeys: [['thanksgiving', 'autumn'], 'gobble'],
@@ -193,7 +194,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   eagles: [['fourth-of-july', 'memorial-day', 'veterans-day', 'presidents-day'], 'bald eagle usa america bird'],
   rockets: [['new-year', 'fourth-of-july', 'juneteenth', 'party'], 'fireworks firework burst bang'],
   balloons: [['birthday', 'party', 'any'], 'float floating'],
-  butterflies: [['spring', 'summer', 'earth-day'], 'monarch garden'],
+  butterflies: [['spring', 'summer', 'earth-day', 'day-of-the-dead'], 'monarch garden'],
   fish: [['sea', 'summer'], 'clownfish swimming school'],
   snowfall: [['winter', 'christmas'], 'snow snowflakes flakes falling let it snow'],
   leaves: [['autumn', 'thanksgiving', 'halloween'], 'fall falling maple oak leaf'],
@@ -262,7 +263,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'falling-candy': [['halloween', 'party', 'birthday'], 'candy sweets lollipop candy corn peppermint falling treats'],
   'parachute-presents': [['christmas', 'birthday'], 'presents gifts parachute parachutes drop delivery'],
   sparklers: [['fourth-of-july', 'new-year', 'diwali', 'birthday'], 'sparkler sparklers sparks fire light celebration'],
-  'floating-candles': [['halloween', 'christmas', 'hanukkah', 'diwali'], 'candle candles floating flame magic wizard'],
+  'floating-candles': [['halloween', 'day-of-the-dead', 'christmas', 'hanukkah', 'diwali'], 'candle candles floating flame magic wizard'],
   'rolling-pumpkins': [['halloween', 'autumn'], 'pumpkin pumpkins jack o lantern rolling roll'],
   snowmen: [['christmas', 'winter'], 'snowman snowmen snow walking carrot'],
   'santa-walking': [['christmas'], 'santa claus father christmas walking sack presents'],
@@ -345,7 +346,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   diyas: [['diwali'], 'diya diyas lamp lamps oil light lights diwali deepavali festival'],
   'santa-chimney': [['christmas'], 'santa claus chimney roof christmas eve ho ho ho wave pop up'],
   'roof-reindeer': [['christmas', 'winter'], 'reindeer roof rooftop prancing christmas santa hooves'],
-  'window-candles': [['christmas', 'winter', 'hanukkah', 'any'], 'candle candles window windows electric lights welcome glow'],
+  'window-candles': [['christmas', 'winter', 'hanukkah', 'day-of-the-dead', 'any'], 'candle candles window windows electric lights welcome glow'],
   'disco-ball': [['party', 'birthday', 'new-year'], 'disco ball mirror ball party dance lights spots glitter 70s'],
   searchlights: [['party', 'new-year', 'any'], 'searchlight searchlights spotlight spotlights beams sky premiere hollywood grand opening'],
   'ball-drop': [['new-year'], 'new year ball drop times square countdown midnight real time clock hour'],
@@ -363,7 +364,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   lighthouse: [['sea', 'summer', 'any'], 'lighthouse beacon beam light sea coast nautical'],
   tumbleweeds: [['summer', 'autumn', 'any'], 'tumbleweed tumbleweeds wind western desert real wind'],
   bigfoot: [['halloween', 'any'], 'bigfoot sasquatch yeti monster woods legend funny'],
-  'skeleton-dogs': [['halloween'], 'skeleton dog dogs bones spooky puppy glowing eyes'],
+  'skeleton-dogs': [['halloween', 'day-of-the-dead'], 'skeleton dog dogs bones spooky puppy glowing eyes'],
   sunflowers: [['summer', 'autumn', 'earth-day', 'mothers-day'], 'sunflower sunflowers flower flowers garden sun field'],
   tulips: [['spring', 'easter', 'mothers-day', 'earth-day'], 'tulip tulips flower flowers spring garden bloom open'],
   'bird-feeder': [['spring', 'winter', 'earth-day', 'any'], 'bird feeder birds seed garden songbirds finch'],
@@ -379,6 +380,36 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   cornucopia: [['thanksgiving', 'autumn'], 'cornucopia horn of plenty harvest fruit vegetables thanksgiving'],
   'christmas-tree': [['christmas', 'winter'], 'christmas tree lights star light up decorated evergreen'],
   cows: [['any', 'summer'], 'cow cows moo farm cattle dairy grazing'],
+  'headless-horseman': [['halloween'], 'headless horseman sleepy hollow horse rider pumpkin head ichabod gallop'],
+  'haunted-tree': [['halloween', 'autumn'], 'haunted tree spooky face eyes branches wakes up groan woods'],
+  'candy-bowl': [['halloween'], 'candy bowl hand grab take one trick or treat monster hand sweets'],
+  'skeleton-band': [['halloween', 'day-of-the-dead'], 'skeleton band music guitar drums trumpet bones musicians'],
+  'tesla-coil': [['halloween', 'any'], 'tesla coil lightning mad scientist frankenstein lab electricity zap sparks'],
+  'window-hands': [['halloween'], 'hands window windows glass pressed creepy trapped handprints'],
+  'window-figures': [['halloween'], 'figure figures silhouette shadow window windows lady candle ghostly watching'],
+  'rocking-chair': [['halloween'], 'rocking chair haunted ghost grandma porch creepy knitting'],
+  'swamp-monster': [['halloween'], 'swamp monster creature lagoon muck bog rising fish man'],
+  gargoyles: [['halloween'], 'gargoyle gargoyles stone roof statue wings demon gothic'],
+  'monster-mailbox': [['halloween'], 'mailbox mail box monster teeth bite chomp letters funny'],
+  'hanging-skeletons': [['halloween'], 'skeleton skeletons hanging gutter dangling rope dance jig bones'],
+  'bush-eyes': [['halloween'], 'eyes bush bushes hedge glowing watching creepy shrubs'],
+  'wall-spiders': [['halloween'], 'spider spiders tarantula giant crawling wall creepy'],
+  snakes: [['halloween', 'any'], 'snake snakes serpent slither hiss cobra reptile'],
+  tentacles: [['halloween'], 'tentacle tentacles octopus kraken monster ground suckers'],
+  'fortune-teller': [['halloween', 'party'], 'fortune teller crystal ball psychic gypsy future madame'],
+  'dancing-zombies': [['halloween'], 'zombie zombies dancing dance thriller undead party'],
+  'creaky-gate': [['halloween'], 'cemetery graveyard gate iron creak creepy rip entrance fog'],
+  'pumpkin-tower': [['halloween', 'autumn'], 'pumpkin pumpkins jack o lantern lanterns stack tower witch hat'],
+  catrinas: [['day-of-the-dead', 'halloween'], 'catrina catrinas la calavera dancer dia de los muertos day of the dead marigold'],
+  'sugar-skulls': [['day-of-the-dead', 'halloween'], 'sugar skull skulls calavera calaveras dia de los muertos day of the dead candles'],
+  ofrenda: [['day-of-the-dead'], 'ofrenda altar candles marigolds photos remember dia de los muertos papel picado'],
+  'honor-guard': [['veterans-day', 'memorial-day', 'fourth-of-july'], 'honor guard soldier flag salute veterans military march color guard'],
+  buglers: [['veterans-day', 'memorial-day'], 'bugle bugler taps soldier military veterans remember trumpet'],
+  'fighter-jets': [['veterans-day', 'fourth-of-july', 'memorial-day'], 'jets fighter jet flyover planes air force smoke red white blue'],
+  'perched-eagles': [['veterans-day', 'fourth-of-july', 'presidents-day'], 'bald eagle eagles perched roof america patriotic bird'],
+  rangoli: [['diwali'], 'rangoli kolam pattern colors floor art diwali festival of lights'],
+  'star-lanterns': [['diwali', 'christmas'], 'star lantern lanterns akash kandil parol paper star diwali'],
+  elephants: [['diwali'], 'elephant elephants painted decorated india festival parade diwali'],
 }
 
 const INFO_TAGS: Record<string, [Occasion[], string]> = {

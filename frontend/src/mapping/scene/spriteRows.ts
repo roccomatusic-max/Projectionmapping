@@ -1,0 +1,13 @@
+/**
+ * Every style's pictures in one place: the first ones (sprites.ts) and the
+ * holiday ones added since, a file for each season, kept apart so no one
+ * file grows past what an editor opens comfortably.
+ */
+
+import { AUTUMN_ROWS } from './autumnSprites'
+import { HALLOWEEN_ROWS } from './halloweenSprites'
+import { SPRITE_ROWS as FIRST_ROWS, type SpriteRow } from './sprites'
+
+export type { SpriteColors, SpriteRow } from './sprites'
+
+export const SPRITE_ROWS: Record<string, SpriteRow[]> = { ...FIRST_ROWS, ...HALLOWEEN_ROWS, ...AUTUMN_ROWS }

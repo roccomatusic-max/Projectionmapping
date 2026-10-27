@@ -283,7 +283,32 @@ CATALOG: dict[str, dict] = {
                  "Kwanzaa (near light); fanous are Ramadan lanterns hanging from the "
                  "gutter (near light); hula-dancers and mariachi play faster for "
                  "people (near dance); cornucopia spills fruit for people (near "
-                 "jump); christmas-tree lights up for people (near light)",
+                 "jump); christmas-tree lights up for people (near light); "
+                 "headless-horseman gallops by and rears up holding his pumpkin high "
+                 "(near dance); haunted-tree wakes and reaches for people (near follow); "
+                 "candy-bowl has a monster hand grab out at people (near follow); "
+                 "skeleton-band plays guitar, drums and trumpet, faster for people (near "
+                 "dance); tesla-coil throws lightning at people (near follow); "
+                 "window-hands press on the window glass and window-figures are "
+                 "silhouettes watching from the windows (near follow); rocking-chair "
+                 "rocks with a ghost in it for people (near follow); swamp-monster rises "
+                 "out of the muck (near jump); gargoyles on the roof turn to watch and "
+                 "fly off (near flee); monster-mailbox bites at people (near follow); "
+                 "hanging-skeletons dangle from the gutter and dance a jig (near dance); "
+                 "bush-eyes watch people from the hedge (near follow); wall-spiders "
+                 "crawl over the wall to people (near follow); snakes slither and rear up "
+                 "(near follow); tentacles rise out of the ground (near jump); "
+                 "fortune-teller's crystal ball glows (near follow); dancing-zombies dance "
+                 "in step for people (near dance); creaky-gate swings open (near follow); "
+                 "pumpkin-tower jack-o'-lanterns watch and laugh (near follow); catrinas "
+                 "dance for the Day of the Dead (near dance); sugar-skulls light up "
+                 "(near light); ofrenda lights its candles for people (near follow); "
+                 "honor-guard marches with the flag and halts to salute (near light); "
+                 "buglers play taps (near follow); fighter-jets fly over trailing red, "
+                 "white and blue smoke and dip their wings (near dance); perched-eagles "
+                 "watch from the roof (near light); rangoli is drawn on the ground for "
+                 "people (near follow); star-lanterns hang from the gutter (near light); "
+                 "elephants raise their trunks (near dance)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -326,7 +351,14 @@ CATALOG: dict[str, dict] = {
                    "lighthouse", "tumbleweeds", "bigfoot", "skeleton-dogs",
                    "sunflowers", "tulips", "bird-feeder", "beehive", "wind-chimes",
                    "campfire", "kinara", "fanous", "hula-dancers", "mariachi",
-                   "bagpipers", "pilgrims", "cornucopia", "christmas-tree", "cows"],
+                   "bagpipers", "pilgrims", "cornucopia", "christmas-tree", "cows",
+                   "headless-horseman", "haunted-tree", "candy-bowl", "skeleton-band",
+                   "tesla-coil", "window-hands", "window-figures", "rocking-chair",
+                   "swamp-monster", "gargoyles", "monster-mailbox", "hanging-skeletons",
+                   "bush-eyes", "wall-spiders", "snakes", "tentacles", "fortune-teller",
+                   "dancing-zombies", "creaky-gate", "pumpkin-tower", "catrinas",
+                   "sugar-skulls", "ofrenda", "honor-guard", "buglers", "fighter-jets",
+                   "perched-eagles", "rangoli", "star-lanterns", "elephants"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",

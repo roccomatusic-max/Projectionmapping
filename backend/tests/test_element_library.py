@@ -164,3 +164,16 @@ async def test_a_birthday_countdown_keeps_its_name_and_date(api):
     assert created.status_code == 201, created.text
     layer = created.json()["layers"][0]
     assert (layer["style"], layer["text"], layer["date"]) == ("birthday", "Emma", "2026-11-14")
+
+
+def test_holiday_batch_two_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "headless-horseman", "near": "dance"},
+        {"type": "movers", "style": "tesla-coil", "near": "follow"},
+        {"type": "movers", "style": "ofrenda", "near": "follow"},
+        {"type": "movers", "style": "honor-guard", "near": "light"},
+        {"type": "movers", "style": "fighter-jets", "near": "dance"},
+        {"type": "movers", "style": "rangoli", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "headless-horseman", "tesla-coil", "ofrenda", "honor-guard", "fighter-jets", "rangoli"]
