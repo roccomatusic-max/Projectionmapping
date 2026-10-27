@@ -641,8 +641,28 @@ until the holiday as a big number with a ribbon and a ticking
 hours/minutes/seconds clock. The look picks the holiday: four Christmas looks
 (gold and holly, frosted, candy cane, marquee lights) and two Halloween looks
 (jack-o'-lantern orange with pumpkins and bats, ghostly green with ghosts and
-bats, both flickering like a candle). Editor → Elements → Find an element offers
-"Christmas countdown" and "Halloween countdown". Each part has its own
+bats, both flickering like a candle). Every other US holiday has a look of its
+own with its own decorations at the ribbon's ends and scattered round the
+number (`countdownDecor.ts`): New Year's (fireworks) and New Year's Eve
+(champagne flutes clinking, confetti), MLK Day (doves with olive branches),
+Lunar New Year (red lanterns, coins; "Year of the Goat" on the day), Groundhog
+Day, Valentine's (hearts with Cupid's arrow), Presidents' Day (laurel wreath),
+Mardi Gras (mask and beads), St. Patrick's (shamrocks and gold), Easter (painted
+eggs), Earth Day (the Earth), Cinco de Mayo (maracas), Mother's Day (roses),
+Memorial Day (poppies), Father's Day (necktie and bow tie), Juneteenth (the
+flag's star), the Fourth of July (stars and stripes inside the number,
+fireworks; "Happy 250th birthday, America"), Labor Day (gear and tools),
+Veterans Day (medal), Thanksgiving (maple leaves and an acorn), Diwali (diyas,
+marigolds), Hanukkah (dreidel, Star of David; "Tonight: night 3 of 8" through
+the eight nights) and Kwanzaa (kinara, corn; "Day 3: Ujima" through the seven
+days). A birthday look and a "your own day" look count to the layer's `date`
+(comes round every year) with its `text` as the name ("Days until Emma's
+birthday", "Make a wish, Emma!"); the fields show in the countdown's settings.
+The dates are worked out in `scene/holidays.ts` (nth weekdays, the last Monday
+of May, Easter and Mardi Gras, the Hebrew calendar for Hanukkah, tables for
+Lunar New Year and Diwali). The last minute counts in seconds. Editor →
+Elements → Find an element offers one countdown per holiday under
+Countdowns, and the holiday chips include every US holiday. Each part has its own
 colour picker (Editor → Elements → Move and colours, or the layer's card in
 Scenes): big number, its 3D side, words above the number, banner, words on the
 banner, banner stitching, clock numbers, clock words, decorations (holly,

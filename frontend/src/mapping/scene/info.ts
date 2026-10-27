@@ -15,9 +15,9 @@
  * - Clock: the time and date now, its colon blinking.
  * - Moon: tonight's moon as it really is (worked out from the date), how
  *   much is lit and when it is next full.
- * - Next holiday: days until the next one (New Year's, Valentine's, St
- *   Patrick's, Easter, Mother's and Father's Day, the Fourth, Halloween,
- *   Thanksgiving, Christmas), the one after, and the greeting on the day.
+ * - Next holiday: days until the next one (every US holiday from New
+ *   Year's to Kwanzaa, with Diwali and Hanukkah), the one after, and the
+ *   greeting on the day.
  * - New Year's: days until New Year, then on New Year's Eve the hours,
  *   minutes and seconds to midnight (repainted once a second that day).
  * - Hanukkah menorah: tonight's candles lit (worked out from the Hebrew
@@ -39,6 +39,7 @@ import type { PersonSpot } from '../people'
 import type { LayerBlend, SceneLayer, SourceRect, Surface, SurfaceKind } from '../types'
 import { nearOf } from './catalog'
 import { countdownFontsReady } from './countdown'
+import { diwali, easter, hanukkahEve, hanukkahStart, lastWeekday, LUNAR_NEW_YEAR, nthWeekday, ZODIAC } from './holidays'
 import { santaNow, santaWords, type SantaNow } from './santa'
 import { tonightNow } from './showtimes'
 import { LAYER_VERTEX } from './shaders'
@@ -777,31 +778,6 @@ interface HolidayDay {
   date: Date
 }
 
-/** The nth weekday (0 Sunday) of a month. */
-function nthWeekday(year: number, month: number, weekday: number, n: number) {
-  const first = new Date(year, month, 1).getDay()
-  return new Date(year, month, 1 + ((weekday - first + 7) % 7) + (n - 1) * 7)
-}
-
-/** Easter Sunday (the Western date). */
-function easter(year: number) {
-  const a = year % 19
-  const b = Math.floor(year / 100)
-  const c = year % 100
-  const d = Math.floor(b / 4)
-  const e = b % 4
-  const f = Math.floor((b + 8) / 25)
-  const g = Math.floor((b - f + 1) / 3)
-  const hh = (19 * a + b - d - g + 15) % 30
-  const i = Math.floor(c / 4)
-  const k = c % 4
-  const l = (32 + 2 * e + 2 * i - hh - k) % 7
-  const m = Math.floor((a + 11 * hh + 22 * l) / 451)
-  const month = Math.floor((hh + l - 7 * m + 114) / 31)
-  const day = ((hh + l - 7 * m + 114) % 31) + 1
-  return new Date(year, month - 1, day)
-}
-
 function holidaysOf(year: number): HolidayDay[] {
   return [
     { name: 'New Year’s Day', greeting: `Happy New Year ${year}!`, icon: 'burst', accent: '#fbbf24', date: new Date(year, 0, 1) },
@@ -814,6 +790,15 @@ function holidaysOf(year: number): HolidayDay[] {
     { name: 'Halloween', greeting: 'Happy Halloween!', icon: 'pumpkin', accent: '#f97316', date: new Date(year, 9, 31) },
     { name: 'Thanksgiving', greeting: 'Happy Thanksgiving!', icon: 'leaf', accent: '#ea580c', date: nthWeekday(year, 10, 4, 4) },
     { name: 'Christmas', greeting: 'Merry Christmas!', icon: 'tree', accent: '#22c55e', date: new Date(year, 11, 25) },
+    { name: 'MLK Day', greeting: 'Happy MLK Day!', icon: 'star', accent: '#60a5fa', date: nthWeekday(year, 0, 1, 3) },
+    { name: 'Presidents’ Day', greeting: 'Happy Presidents’ Day!', icon: 'star', accent: '#3b82f6', date: nthWeekday(year, 1, 1, 3) },
+    { name: 'Memorial Day', greeting: 'We remember and honor', icon: 'star', accent: '#ef4444', date: lastWeekday(year, 4, 1) },
+    { name: 'Juneteenth', greeting: 'Happy Juneteenth!', icon: 'star', accent: '#ef4444', date: new Date(year, 5, 19) },
+    { name: 'Labor Day', greeting: 'Happy Labor Day!', icon: 'star', accent: '#f59e0b', date: nthWeekday(year, 8, 1, 1) },
+    { name: 'Veterans Day', greeting: 'Thank you, veterans', icon: 'star', accent: '#22c55e', date: new Date(year, 10, 11) },
+    { name: 'Diwali', greeting: 'Happy Diwali!', icon: 'burst', accent: '#f59e0b', date: diwali(year) },
+    { name: 'Hanukkah', greeting: 'Happy Hanukkah!', icon: 'star', accent: '#60a5fa', date: hanukkahStart(year) },
+    { name: 'Kwanzaa', greeting: 'Happy Kwanzaa!', icon: 'burst', accent: '#22c55e', date: new Date(year, 11, 26) },
   ]
 }
 
@@ -1053,34 +1038,6 @@ function paintNewYear(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: s
 
 // -- Hanukkah menorah ------------------------------------------------------------------------------
 
-const RD_UNIX = 719_163
-const HEBREW_EPOCH = -1_373_427
-
-/** Days from the Hebrew epoch to the new year (Rosh Hashanah) of a Hebrew year, before the postponements. */
-function hebrewElapsed(year: number) {
-  const months = Math.floor((235 * year - 234) / 19)
-  const parts = 12084 + 13753 * months
-  const day = months * 29 + Math.floor(parts / 25920)
-  return (3 * (day + 1)) % 7 < 3 ? day + 1 : day
-}
-
-/** Rosh Hashanah of a Hebrew year, as a fixed day count (1 = 1 January of year 1). */
-function roshHashanah(year: number) {
-  const [a, b, c] = [hebrewElapsed(year - 1), hebrewElapsed(year), hebrewElapsed(year + 1)]
-  const delay = c - b === 356 ? 2 : b - a === 382 ? 1 : 0
-  return HEBREW_EPOCH + b + delay
-}
-
-/** The evening the first Hanukkah candle is lit (the eve of 25 Kislev) in a Gregorian year: [year, month, day]. */
-export function hanukkahEve(gregorianYear: number): [number, number, number] {
-  const hy = gregorianYear + 3761
-  const length = roshHashanah(hy + 1) - roshHashanah(hy)
-  const heshvan = length % 10 === 5 ? 30 : 29
-  const kislev25 = roshHashanah(hy) + 30 + heshvan + 24
-  const d = new Date((kislev25 - 1 - RD_UNIX) * 86_400_000)
-  return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]
-}
-
 /** Tonight's Hanukkah night (1 to 8), or how many days until it starts. */
 export function menorahNow(nowMs: number) {
   const now = new Date(nowMs)
@@ -1282,13 +1239,6 @@ function paintAdvent(ctx: Ctx, fx: Ctx, nowMs: number, color: string, color2: st
 }
 
 // -- Lunar New Year --------------------------------------------------------------------------------
-
-/** Lunar New Year's day in each year (month from 0, day). */
-const LUNAR_NEW_YEAR: Record<number, [number, number]> = {
-  2025: [0, 29], 2026: [1, 17], 2027: [1, 6], 2028: [0, 26], 2029: [1, 13], 2030: [1, 3], 2031: [0, 23], 2032: [1, 11],
-  2033: [0, 31], 2034: [1, 19], 2035: [1, 8], 2036: [0, 28], 2037: [1, 15], 2038: [1, 4], 2039: [0, 24], 2040: [1, 12],
-}
-const ZODIAC = ['Rat', 'Ox', 'Tiger', 'Rabbit', 'Dragon', 'Snake', 'Horse', 'Goat', 'Monkey', 'Rooster', 'Dog', 'Pig']
 
 /** Days until the next Lunar New Year and its animal; during the 15 days of the festival, which day it is. */
 export function lunarNow(nowMs: number) {
