@@ -4,7 +4,9 @@
  * Each output window runs one of these. It owns the <video>/<img> elements
  * for the live cue and the one fading out, and keeps every video at the
  * position the server clock says it should be: small drift is absorbed by
- * nudging playbackRate, large drift by seeking. Not frame-locked; see
+ * nudging playbackRate, large drift by seeking. Where the browser says
+ * which video frame it has up (requestVideoFrameCallback), that frame is
+ * what is measured, not the looser currentTime. Not frame-locked; see
  * docs/MAPPING.md for what that means across computers.
  *
  * It also says which scenes play (a cue's scene, crossfading with the
@@ -35,16 +37,33 @@ import { timelineItems, timelineTime } from './scene/timeline'
 import { type MediaWant, TimelineMedia } from './timelineMedia'
 import type { Cue, MappingScene, MediaAsset, Surface, Timeline, TransportCue, TransportState } from './types'
 
-/** Drift beyond this is corrected by a seek rather than a rate change. */
-const SEEK_THRESHOLD = 0.15
+/** Drift beyond this is corrected by a seek rather than a rate change (s). */
+const SEEK_THRESHOLD = 0.2
+/** The most playbackRate is moved from 1: 5 %, not something anyone sees. */
 const MAX_RATE_DELTA = 0.05
+/** Rate change per second of drift: half the drift taken up each second. */
+const RATE_GAIN = 0.5
+/** Closer than this the video is left at its own pace (s). */
+const DEAD_BAND = 0.004
 const CORRECT_EVERY_MS = 200
+/** Drift is the middle of this many recent readings, so one late frame does not steer. */
+const DRIFT_READINGS = 5
 
 interface Slot {
   key: string
   cue: TransportCue
   element: HTMLVideoElement | HTMLImageElement
   asset: MediaAsset
+  /** The frame on screen, from requestVideoFrameCallback: its media time (s)
+   *  and when it was put up (performance.now()). */
+  mediaTime?: number
+  mediaAt?: number
+  /** How long one frame of the video lasts (s), from the frames put up. */
+  period?: number
+  /** Recent drift readings (s), newest last. */
+  readings: number[]
+  /** A seek in flight: when it was asked for (performance.now()). */
+  seekAt?: number
 }
 
 /** The media one output plays for a cue: its own picture, or the shared one. */
@@ -92,6 +111,8 @@ export class Playback {
   private slots = new Map<string, Slot>()
   private lastCorrection = 0
   private drift: number | null = null
+  /** How long a seek takes to land (s): a seek aims that far ahead. */
+  private seekCost = 0.05
   private scenes = new Map<number, MappingScene>()
   private cues = new Map<number, Cue>()
   /** The elements each cue carries, by cue id. */
@@ -370,6 +391,7 @@ export class Playback {
       video.loop = cue.loop
       video.src = mediaUrl(asset.id)
       element = video
+      this.watchFrames(key, video)
     } else {
       const img = new Image()
       img.decoding = 'async'
@@ -390,7 +412,33 @@ export class Playback {
         if (element instanceof HTMLVideoElement) element.load()
       }, wait)
     }
-    this.slots.set(key, { key, cue, element, asset })
+    this.slots.set(key, { key, cue, element, asset, readings: [] })
+  }
+
+  /** Note each video frame as it goes up, for measuring exactly where the video is. */
+  private watchFrames(key: string, video: HTMLVideoElement) {
+    if (typeof video.requestVideoFrameCallback !== 'function') return
+    const onFrame = (_now: number, meta: VideoFrameCallbackMetadata) => {
+      const slot = this.slots.get(key)
+      if (slot?.element !== video) return
+      const step = slot.mediaTime != null ? meta.mediaTime - slot.mediaTime : 0
+      // A step much longer than a frame is a dropped frame, a seek or the loop.
+      if (step > 0 && step < 0.2 && (slot.period == null || step < slot.period * 1.5)) {
+        slot.period = slot.period == null ? step : slot.period + (step - slot.period) * 0.1
+      }
+      slot.mediaTime = meta.mediaTime
+      slot.mediaAt = performance.now()
+      video.requestVideoFrameCallback(onFrame)
+    }
+    video.requestVideoFrameCallback(onFrame)
+    video.addEventListener('seeked', () => {
+      const slot = this.slots.get(key)
+      if (slot?.element !== video || slot.seekAt == null) return
+      const took = (performance.now() - slot.seekAt) / 1000
+      this.seekCost = Math.max(0, Math.min(0.5, this.seekCost + (took - this.seekCost) * 0.5))
+      slot.seekAt = undefined
+      slot.readings = []
+    })
   }
 
   private release(slot: Slot) {
@@ -441,28 +489,51 @@ export class Playback {
     return t
   }
 
+  /** Where the video drawn now is (s): the frame up on screen when the
+   *  browser says, else currentTime. */
+  private position(slot: Slot, video: HTMLVideoElement): number {
+    const fresh = slot.mediaAt != null && performance.now() - slot.mediaAt < 250 && !video.paused
+    if (!fresh || slot.mediaTime == null) return video.currentTime
+    // A frame stays up for its whole period: compare the middle of it, so a
+    // video exactly in step reads 0 rather than half a frame behind.
+    return slot.mediaTime + (slot.period ?? 0) / 2
+  }
+
   private correct(slot: Slot, now: number, playing: boolean, measure: boolean) {
     const video = slot.element
     if (!(video instanceof HTMLVideoElement) || video.readyState < 1) return
     const duration = Number.isFinite(video.duration) ? video.duration : slot.asset.duration
     const target = this.target(slot.cue, now, duration)
-    let diff = video.currentTime - target
-    if (duration && slot.cue.loop) {
+    const wrap = (d: number) =>
       // Across the loop point 0.02 and 9.98 are 0.04 apart, not 9.96.
-      diff = ((diff + duration * 1.5) % duration) - duration / 2
-    }
-    if (measure) this.drift = diff
+      duration && slot.cue.loop ? ((d + duration * 1.5) % duration) - duration / 2 : d
     if (!playing) {
       if (!video.paused) video.pause()
+      const diff = wrap(video.currentTime - target)
+      if (measure) this.drift = diff
       if (Math.abs(diff) > 0.04 && !video.seeking) video.currentTime = target
+      slot.readings = []
       return
     }
+    // A seek in flight lands where it was aimed; measure again after it.
+    if (video.seeking) return
+    const reading = wrap(this.position(slot, video) - target)
+    slot.readings.push(reading)
+    if (slot.readings.length > DRIFT_READINGS) slot.readings.shift()
+    const sorted = [...slot.readings].sort((a, b) => a - b)
+    const diff = Math.abs(reading) > SEEK_THRESHOLD ? reading : sorted[Math.floor(sorted.length / 2)]
+    if (measure) this.drift = diff
     if (Math.abs(diff) > SEEK_THRESHOLD) {
-      if (!video.seeking) video.currentTime = target
+      // Aim where the video should be once the seek has landed.
+      let to = target + this.seekCost
+      if (duration) to = slot.cue.loop ? to % duration : Math.min(to, Math.max(0, duration - 0.04))
+      slot.seekAt = performance.now()
+      slot.readings = []
+      video.currentTime = to
       video.playbackRate = 1
     } else {
-      const rate = Math.abs(diff) < 0.01 ? 1 : 1 - Math.max(-MAX_RATE_DELTA, Math.min(MAX_RATE_DELTA, diff * 0.8))
-      if (Math.abs(video.playbackRate - rate) > 0.001) video.playbackRate = rate
+      const rate = Math.abs(diff) < DEAD_BAND ? 1 : 1 - Math.max(-MAX_RATE_DELTA, Math.min(MAX_RATE_DELTA, diff * RATE_GAIN))
+      if (Math.abs(video.playbackRate - rate) > 0.0005) video.playbackRate = rate
     }
     if (video.paused) void video.play().catch(() => undefined)
   }

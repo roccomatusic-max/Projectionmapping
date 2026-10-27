@@ -1010,6 +1010,9 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         if (near.k > 0.3) f.scared[n + i] = 2.5
         const hidden = f.scared[n + i] > 0
         f.scared[n + i] = Math.max(0, f.scared[n + i] - f.dt)
+        // Out again, it hurries a little until back where it would have been,
+        // so every projector (and one that just started) has it in one place.
+        if (!hidden) f.scared[i] = Math.max(0, f.scared[i] - f.dt * 0.3)
         if (hidden) {
           f.scared[i] += f.dt
           // Gnomes have nowhere to hide: they freeze mid-step, like garden ornaments, until nobody is looking.
@@ -1767,16 +1770,33 @@ export function moverSprites(f: MoverFrame): Sprite[] {
     const v = 0.04 + 0.2 * layer.speed
     if (style === 'tumbleweeds') {
       // Tumbleweeds bowling along one way, as fast as the real wind is blowing where the server is, in bumps
-      // and bounces; how far each has gone is kept, so a change in the wind speeds them up rather than jumps them.
+      // and bounces. Where each is follows from the show clock alone, so every projector has it in the same
+      // place; the wind is taken in steps of 5 mph, and when it changes each eases over to its new place
+      // (kept as an offset that dies away) rather than jumping there.
       const wind = weatherFor('').data?.wind_mph
-      const gust = wind == null ? 1 : 0.25 + Math.min(35, wind) / 10
-      if (f.scared.length !== n) f.scared = new Array(n).fill(0)
+      const gust = wind == null ? 1 : 0.25 + Math.round(Math.min(35, wind) / 5) / 2
+      const along = (i: number, g: number) => {
+        const ph = hash(i * 6.1 + own)
+        // The speed with its slow surge, 1 + 0.3 sin(0.7 t + 9 ph), added up over time.
+        return v * g * (0.8 + 0.4 * ph) * (t - (0.3 / 0.7) * Math.cos(t * 0.7 + ph * 9))
+      }
+      if (f.scared.length !== n + 1) f.scared = [...new Array(n).fill(0), gust]
+      const was = f.scared[n]
+      for (let i = 0; i < n; i++) {
+        const size = H * (0.8 + 0.4 * hash(i * 1.3))
+        const lap = L + size * 4
+        if (was !== gust) {
+          const jump = along(i, was) + f.scared[i] - along(i, gust)
+          f.scared[i] = (((jump % lap) + lap * 1.5) % lap) - lap / 2
+        }
+      }
+      f.scared[n] = gust
       for (let i = 0; i < n; i++) {
         const ph = hash(i * 6.1 + own)
         const size = H * (0.8 + 0.4 * hash(i * 1.3))
-        f.scared[i] += f.dt * v * gust * (0.8 + 0.4 * ph) * (1 + 0.3 * Math.sin(t * 0.7 + ph * 9))
+        f.scared[i] *= Math.exp(-f.dt / 10)
         const lap = L + size * 4
-        const u = f.scared[i] + (i / n) * lap + ph * lap
+        const u = along(i, gust) + f.scared[i] + (i / n) * lap + ph * lap
         const s = (((u % lap) + lap) % lap) - size * 2
         const sc = Math.max(0, Math.min(L, s))
         const p = path.at(sc)

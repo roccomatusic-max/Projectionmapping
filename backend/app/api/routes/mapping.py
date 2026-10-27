@@ -705,7 +705,8 @@ async def command_transport(payload: TransportCommand, session: SessionDep,
 async def clock(_: RequireViewer) -> dict:
     """Server time for the output windows' clock-offset estimate.
 
-    ``monotonic`` lets a client discard a sample taken across a server
-    clock step; ``now_ms`` is what transport timestamps are expressed in.
+    ``now_ms`` is the show clock every transport time is told in (see
+    services/mapping.ShowClock): it never jumps when the computer's time is
+    adjusted. ``monotonic`` is kept for older pages.
     """
     return {"now_ms": now_ms(), "monotonic": time.monotonic()}

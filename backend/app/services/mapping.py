@@ -40,8 +40,46 @@ EMERGENCY_HELD = ("The emergency stop is on. Clear it first (the red bar at the 
 FADING_ID = -1_000_000_000
 
 
+class ShowClock:
+    """The clock every transport time is told in, in ms since 1970.
+
+    It starts at the computer's time but then runs on the high-resolution
+    monotonic counter, so a clock adjustment (Windows or macOS setting the
+    time from the internet) never makes it jump: a jump would reach each
+    mini PC at a different moment and put them out of step with each other.
+    Any difference from the computer's time is taken up slowly, at most
+    ``SLEW`` (0.01 %), which every mini PC follows without noticing. Only a
+    large difference (the computer's time set by hand) is taken in one
+    step, and only while no show is playing.
+    """
+
+    SLEW = 1e-4
+    STEP_MS = 60_000.0
+
+    def __init__(self) -> None:
+        self._base = time.time() * 1000.0 - time.perf_counter() * 1000.0
+        self._checked = time.perf_counter()
+        self.may_step = lambda: True
+
+    def now(self) -> float:
+        counter = time.perf_counter()
+        elapsed = counter - self._checked
+        if elapsed >= 1.0:
+            self._checked = counter
+            behind = time.time() * 1000.0 - (self._base + counter * 1000.0)
+            if abs(behind) > self.STEP_MS and self.may_step():
+                self._base += behind
+            else:
+                limit = elapsed * 1000.0 * self.SLEW
+                self._base += max(-limit, min(limit, behind))
+        return self._base + counter * 1000.0
+
+
+show_clock = ShowClock()
+
+
 def now_ms() -> float:
-    return time.time() * 1000.0
+    return show_clock.now()
 
 
 class MappingTransport:
@@ -52,6 +90,9 @@ class MappingTransport:
         self._follow_revision = -1
 
     # -- reading -----------------------------------------------------------
+
+    def snapshot_status(self) -> str:
+        return self._state.status
 
     def snapshot(self) -> TransportState:
         state = self._state.model_copy(deep=True)
@@ -310,3 +351,5 @@ def _cue_out(cue: MappingCue, position: int, started_at_ms: float) -> TransportC
 
 
 transport = MappingTransport()
+# A large clock change is taken in one step only while nothing plays.
+show_clock.may_step = lambda: transport.snapshot_status() == "stopped"

@@ -58,6 +58,10 @@ MINIPC_START_GRACE = timedelta(minutes=3)
 #: Below the warning line by this much before "running hot" ends, so a
 #: reading that wobbles around the line does not send alert after alert.
 HOT_HYSTERESIS_C = 1.0
+#: A mini PC whose picture is further than this from the show clock, on two
+#: checks in a row, is out of step with the others (ms). Two frames at 60 Hz
+#: plus room for the clock's own uncertainty on a wired network.
+MINIPC_SYNC_WARN_MS = 50.0
 
 
 def _when(at: datetime, now: datetime) -> str:
@@ -93,6 +97,8 @@ class AlertingService:
         #: Mini PCs told to restart or shut down from the Players page: by
         #: player id, until when their silence is expected.
         self._expected_away: dict[int, datetime] = {}
+        #: Mini PCs found out of step on the last check, by player id.
+        self._out_of_step: set[int] = set()
         #: The show is playing or paused (as last heard), since when, and who
         #: last asked for a start or stop through Tonight's show, until when.
         self._show_running = False
@@ -616,16 +622,18 @@ class AlertingService:
         now = now or datetime.now(UTC)
         async with session_scope() as session:
             players = (await session.execute(
-                select(MappingPlayer.id, MappingPlayer.name, MappingPlayer.last_seen_at)
+                select(MappingPlayer.id, MappingPlayer.name, MappingPlayer.last_seen_at,
+                       MappingPlayer.report)
                 .where(MappingPlayer.approved.is_(True),
                        MappingPlayer.output_id.is_not(None),
                        MappingPlayer.kind == "player")
             )).all()
         updating = set(minipc_updates.get().jobs)
         watched = set()
-        for player_id, name, last_seen_at in players:
+        for player_id, name, last_seen_at, report in players:
             key = f"minipc:{player_id}"
             watched.add(key)
+            watched.add(f"minipc_sync:{player_id}")
             seen = as_utc(last_seen_at)
             if seen is None:
                 continue  # never connected yet
@@ -633,6 +641,7 @@ class AlertingService:
             if quiet <= MINIPC_SILENT:
                 self._expected_away.pop(player_id, None)
                 await self.resolve_alert(key, f"Mini PC {name} is back online")
+                await self._check_sync(player_id, name, report or {})
                 continue
             if now - self._started_at < MINIPC_START_GRACE:
                 continue
@@ -651,8 +660,33 @@ class AlertingService:
                 details={"player_id": player_id, "last_seen_at": seen.isoformat()},
             )
         # A removed mini PC takes its alert with it.
-        for key in [k for k in self._open_keys if k.startswith("minipc:") and k not in watched]:
+        for key in [k for k in self._open_keys
+                    if k.startswith(("minipc:", "minipc_sync:")) and k not in watched]:
             await self.resolve_alert(key, "Mini PC removed")
+
+    async def _check_sync(self, player_id: int, name: str, report: dict) -> None:
+        """Warn when a mini PC's picture has drifted out of step with the show
+        clock, by its own measure or by the server's check on its clock."""
+        key = f"minipc_sync:{player_id}"
+        own = report.get("sync_ms")
+        check = report.get("clock_check_ms")
+        off = max(abs(v) for v in (own, check, 0.0) if isinstance(v, int | float))
+        if off <= MINIPC_SYNC_WARN_MS:
+            self._out_of_step.discard(player_id)
+            await self.resolve_alert(key, f"Mini PC {name} is back in step with the others")
+            return
+        if player_id not in self._out_of_step:
+            # Once could be a hiccup (a seek, the network busy for a moment).
+            self._out_of_step.add(player_id)
+            return
+        await self.raise_alert(
+            dedupe_key=key, projector_id=None, kind="minipc_out_of_sync",
+            severity=Severity.WARNING,
+            message=(f"Mini PC {name} is more than {MINIPC_SYNC_WARN_MS:.0f} ms out of step "
+                     "with the show clock, so its projector may not match the others. "
+                     "See Mapping → Players."),
+            details={"player_id": player_id, "sync_ms": own, "clock_check_ms": check},
+        )
 
     # -- notification channels ---------------------------------------------
 

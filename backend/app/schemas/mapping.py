@@ -144,7 +144,7 @@ class ColorAdjust(BaseModel):
     blue: float = Field(default=1.0, ge=0, le=2)
 
 
-TestPattern = Literal["none", "grid", "id", "white", "black", "red", "green", "blue"]
+TestPattern = Literal["none", "grid", "id", "white", "black", "red", "green", "blue", "sync"]
 
 
 class OutputBase(BaseModel):
@@ -621,12 +621,28 @@ class PlayerReport(BaseModel):
     link: str | None = Field(default=None, max_length=16)
     #: Players: the status overlay is showing on the projector.
     overlay: bool | None = None
+    #: Players: what this mini PC takes the show clock to be as it sends this
+    #: report (ms). The server compares it with its own, as a check on the
+    #: mini PC's clock that does not rely on the mini PC's own sums.
+    clock_now: float | None = None
+    #: Players: how far from the show clock its picture can be, by its own
+    #: measure (ms): the clock's uncertainty plus the video's drift.
+    sync_ms: float | None = None
+    #: Players: how many times its clock had to jump rather than ease into
+    #: step (a jump is a visible skip), since the output page opened.
+    clock_steps: int | None = None
+    #: Players: frames the display had time for but the page did not draw, last second.
+    dropped: int | None = None
+    #: Players: the server version the output page was loaded from. A page
+    #: older than the server is reloaded while no show plays (mapping_players.report).
+    page_version: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def _finite(self) -> PlayerReport:
         # A Python sender writes NaN for "no measurement yet"; stored, it would
         # make the players list unreadable for everyone. Keep the report.
-        for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms", "clock_ms"):
+        for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms", "clock_ms",
+                     "clock_now", "sync_ms"):
             value = getattr(self, name)
             if value is not None and not math.isfinite(value):
                 setattr(self, name, None)
@@ -646,10 +662,19 @@ class PlayerAssignment(BaseModel):
     #: this mini PC's own second monitor is showing them.
     picture_ms: int = 3000
     picture_width: int = 480
+    #: Draw this much later (positive) or earlier (negative), ms: evens out
+    #: projectors that take different times to show a picture.
+    trim_ms: int = 0
 
 
 PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake",
                        "update", "swap_screens", "extend_screens", "send_log"]
+
+
+class PlayerTrim(BaseModel):
+    """Shift one mini PC's picture in time, ms (later is positive)."""
+
+    trim_ms: int = Field(ge=-500, le=500)
 
 
 class PlayerCommand(BaseModel):
@@ -711,6 +736,11 @@ class PlayerCommandResult(BaseModel):
     #: What it was handed to: the Mini PC app, the player page, or the network.
     via: Literal["app", "page", "network"]
     message: str
+
+
+class PlayerSyncTest(BaseModel):
+    #: True puts the sync test on every mini PC's projector; false takes it off.
+    on: bool
 
 
 class PlayerScreen(BaseModel):

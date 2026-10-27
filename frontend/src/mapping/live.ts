@@ -9,58 +9,169 @@ import type { BusMessage } from '@/api/types'
 import { mappingApi } from './api'
 import type { Output } from './types'
 
+/** One reading of the server's clock: when (performance.now()), the round
+ *  trip it took, and the offset (server ms minus performance.now()) it gave. */
+interface ClockSample {
+  at: number
+  rtt: number
+  offset: number
+}
+
+/** Readings older than this are forgotten (ms). */
+const SAMPLE_WINDOW_MS = 180_000
+/** How often a reading is taken once in step (ms). */
+const SAMPLE_EVERY_MS = 3000
+/** A difference larger than this is taken in one jump; smaller ones are eased in (ms). */
+const STEP_MS = 30
+/** How fast a small difference is eased in: 5 ms a second (0.5 %), too little to see. */
+const SLEW_PER_MS = 0.005
+/** The two clocks may run apart by at most this much (0.02 %), however the readings scatter. */
+const MAX_SKEW = 2e-4
+
 /**
- * Offset between this browser's clock and the server's.
+ * The server's show clock, as seen from this browser.
  *
- * NTP-style: several round trips, keep the one with the shortest RTT,
- * assume the server answered halfway through it. Re-sampled periodically
- * because laptop clocks drift and sleep.
+ * Built on performance.now(), which never jumps, rather than the
+ * computer's own time, which Windows may set at any moment. NTP-style
+ * readings are taken every few seconds; the quickest round trips of the
+ * last few minutes are the ones trusted (a slow one was held up on one of
+ * its two legs, which skews it), and a straight line through them gives
+ * both the offset and how fast the two clocks run apart.
+ *
+ * What the line says is eased in at 0.5 % rather than jumped to, so a new
+ * reading never makes a picture skip; only a large difference (the first
+ * reading, or after the computer slept) is taken in one step, and counted.
  */
 export class ServerClock {
-  private offset = 0
+  private samples: ClockSample[] = []
+  /** The offset in use, server ms minus performance.now(). */
+  private applied = 0
+  private appliedAt = 0
+  /** The straight line through the trusted readings: offset at ``fitAt``, and its slope. */
+  private fitOffset = 0
+  private fitAt = 0
+  private fitSkew = 0
   private bestRtt = Infinity
   private timer: number | undefined
+  private wake: (() => void) | undefined
   synced = false
+  /** Times the clock jumped rather than eased into step since the page opened. */
+  steps = 0
 
+  /** The show clock now, ms. */
   now(): number {
-    return Date.now() + this.offset
+    return this.at(performance.now())
+  }
+
+  /** The show clock at a performance.now() time, such as a frame's timestamp. */
+  at(perf: number): number {
+    if (perf > this.appliedAt) {
+      if (this.synced) {
+        const want = this.fitOffset + this.fitSkew * (perf - this.fitAt)
+        const limit = (perf - this.appliedAt) * SLEW_PER_MS
+        this.applied += Math.max(-limit, Math.min(limit, want - this.applied))
+      }
+      this.appliedAt = perf
+    }
+    return perf + this.applied
+  }
+
+  /** Half the quickest recent round trip: how far off this clock can be, at most (ms). */
+  get uncertainty(): number {
+    return this.synced ? this.bestRtt / 2 : Infinity
+  }
+
+  /** How far the clock in use still is from what the readings say (ms); eased in over time. */
+  get easing(): number {
+    if (!this.synced) return 0
+    const perf = performance.now()
+    return this.fitOffset + this.fitSkew * (perf - this.fitAt) - this.at(perf) + perf
   }
 
   async sync(samples = 6) {
-    let best = Infinity
-    let offset = this.offset
     for (let i = 0; i < samples; i++) {
-      const t0 = Date.now()
+      const t0 = performance.now()
       try {
         const { now_ms } = await mappingApi.clock()
-        const t1 = Date.now()
-        const rtt = t1 - t0
-        if (rtt < best) {
-          best = rtt
-          offset = now_ms - (t0 + t1) / 2
-        }
+        const t1 = performance.now()
+        this.samples.push({ at: (t0 + t1) / 2, rtt: t1 - t0, offset: now_ms - (t0 + t1) / 2 })
       } catch {
         /* keep the previous estimate */
       }
     }
-    if (best < Infinity) {
-      this.offset = offset
-      this.bestRtt = best
-      this.synced = true
+    this.fit()
+  }
+
+  private fit() {
+    const latest = this.samples.at(-1)?.at ?? 0
+    this.samples = this.samples.filter((s) => latest - s.at <= SAMPLE_WINDOW_MS).slice(-80)
+    if (!this.samples.length) return
+    const best = Math.min(...this.samples.map((s) => s.rtt))
+    // Readings nearly as quick as the quickest: on a wired network a
+    // millisecond or two. Anything slower waited somewhere on one leg.
+    const trusted = this.samples.filter((s) => s.rtt <= best + Math.max(1.5, best * 0.5))
+    const n = trusted.length
+    const meanAt = trusted.reduce((sum, s) => sum + s.at, 0) / n
+    const meanOffset = trusted.reduce((sum, s) => sum + s.offset, 0) / n
+    let skew = 0
+    const span = trusted[n - 1].at - trusted[0].at
+    if (n >= 4 && span >= 30_000) {
+      let num = 0
+      let den = 0
+      for (const s of trusted) {
+        num += (s.at - meanAt) * (s.offset - meanOffset)
+        den += (s.at - meanAt) ** 2
+      }
+      skew = den > 0 ? Math.max(-MAX_SKEW, Math.min(MAX_SKEW, num / den)) : 0
     }
+    this.fitOffset = meanOffset
+    this.fitAt = meanAt
+    this.fitSkew = skew
+    this.bestRtt = best
+    const perf = performance.now()
+    const want = meanOffset + skew * (perf - meanAt)
+    if (!this.synced || Math.abs(want - this.at(perf) + perf) > STEP_MS) {
+      if (this.synced) this.steps++
+      this.applied = want
+      this.appliedAt = perf
+    }
+    this.synced = true
+  }
+
+  /** Start over after a sleep or a long stall: old readings may be stale. */
+  resync() {
+    this.samples = []
+    void this.sync(6)
   }
 
   get rtt() {
     return this.bestRtt
   }
 
-  start(intervalMs = 30000) {
+  start(intervalMs = SAMPLE_EVERY_MS) {
     void this.sync()
-    this.timer = window.setInterval(() => void this.sync(3), intervalMs)
+    this.timer = window.setInterval(() => void this.sync(1), intervalMs)
+    // A computer waking from sleep, or a page brought back, may have missed
+    // a lot: performance.now() can stand still while asleep.
+    let last = performance.now()
+    const check = () => {
+      const now = performance.now()
+      if (document.visibilityState === 'visible' && now - last > 5000) this.resync()
+      last = now
+    }
+    this.wake = () => {
+      if (document.visibilityState === 'visible') this.resync()
+    }
+    document.addEventListener('visibilitychange', this.wake)
+    this.watch = window.setInterval(check, 1000)
   }
+
+  private watch: number | undefined
 
   stop() {
     window.clearInterval(this.timer)
+    window.clearInterval(this.watch)
+    if (this.wake) document.removeEventListener('visibilitychange', this.wake)
   }
 }
 

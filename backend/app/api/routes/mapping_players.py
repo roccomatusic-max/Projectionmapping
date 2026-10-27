@@ -36,6 +36,7 @@ import secrets
 import socket
 import sys
 import time
+from collections import deque
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -71,6 +72,7 @@ from app.db.models import (
     utcnow,
 )
 from app.drivers import CommandOutcome
+from app.paths import app_version
 from app.schemas.mapping import (
     NetworkInfo,
     PlayerApp,
@@ -88,6 +90,8 @@ from app.schemas.mapping import (
     PlayerReport,
     PlayerScreen,
     PlayerScreens,
+    PlayerSyncTest,
+    PlayerTrim,
     PlayerUpdate,
     ScreenControl,
     ScreenControlResult,
@@ -100,7 +104,7 @@ from app.services.alerts import alerting
 from app.services.calibration import is_convex
 from app.services.discovery import lan_address, tailscale_address
 from app.services.emergency import emergency
-from app.services.mapping import TransportError, transport
+from app.services.mapping import TransportError, now_ms, transport
 
 router = APIRouter(prefix="/mapping/players", tags=["mapping"])
 
@@ -125,6 +129,53 @@ APP_SECONDS = 15.0
 
 def _now() -> float:
     return time.monotonic()
+
+
+#: Output pages already told to reload for this server version, by player id.
+_reloaded: set[tuple[int, str]] = set()
+
+
+def _page_outdated(player_id: int, payload: PlayerReport) -> bool:
+    """An output page loaded from an older server: reload it, once, while no
+    show plays, so a server update reaches the mini PCs (which run day and
+    night) without anyone restarting them. With nothing playing the
+    projector is dark, so the reload is not seen."""
+    if payload.fps is None:
+        return False  # not an output page drawing frames
+    version = app_version()
+    if payload.page_version == version or transport.snapshot_status() != "stopped":
+        return False
+    key = (player_id, version)
+    if key in _reloaded:
+        return False
+    _reloaded.add(key)
+    return True
+
+
+#: What a heartbeat keeps from the report before it: the Mini PC app's
+#: check-in, and the time shift set on the Players page.
+KEPT_REPORT = ("app", "trim_ms")
+
+#: Recent (arrival - the mini PC's show clock as it sent), ms, by player.
+_clock_gaps: dict[int, deque[float]] = {}
+#: About a minute of heartbeats.
+CLOCK_CHECKS = 12
+
+
+def _clock_check(player_id: int, received: float, clock_now: float | None) -> int | None:
+    """How far ahead of the show clock a mini PC's clock is, as the server
+    sees it (ms; behind is negative).
+
+    Each heartbeat carries the mini PC's reading of the show clock as it was
+    sent. Arrival minus that reading is the trip over the network minus the
+    mini PC's error; the quickest trip of the last minute is close to none
+    at all on a wired network, so the smallest gap is close to the error.
+    """
+    if clock_now is None or abs(received - clock_now) > 3_600_000:
+        return None
+    gaps = _clock_gaps.setdefault(player_id, deque(maxlen=CLOCK_CHECKS))
+    gaps.append(received - clock_now)
+    return round(-min(gaps))
 
 
 #: Waiting commands by (player id, "page" or "app"): (action, when asked).
@@ -368,6 +419,42 @@ async def network(_: RequireViewer) -> NetworkInfo:
                        tailscale_address=anywhere, server_os=system)
 
 
+@router.post("/sync-test", response_model=list[PlayerOut],
+             dependencies=[Depends(write_rate_limit)])
+async def sync_test(payload: PlayerSyncTest, session: SessionDep,
+                    _: RequireAdmin) -> list[PlayerOut]:
+    """Put the sync test on every mini PC's projector at once, or take it off.
+
+    Each shows the show clock as big numbers and a bar, so one photo of two
+    projectors shows how far apart they are. Taking it off only clears the
+    outputs showing it, leaving a grid someone is lining up with.
+    """
+    players = (await session.execute(
+        select(MappingPlayer).where(MappingPlayer.approved.is_(True),
+                                    MappingPlayer.kind == "player",
+                                    MappingPlayer.output_id.is_not(None))
+    )).scalars().all()
+    changed: list[MappingOutput] = []
+    for output_id in {p.output_id for p in players}:
+        output = await session.get(MappingOutput, output_id)
+        if output is None:
+            continue
+        if payload.on and output.test_pattern != "sync":
+            output.test_pattern = "sync"
+            changed.append(output)
+        elif not payload.on and output.test_pattern == "sync":
+            output.test_pattern = "none"
+            changed.append(output)
+    await session.commit()
+    for output in changed:
+        await session.refresh(output)
+        _touch(output.show_id, kind="mapping_output",
+               payload={"output": _output_out(output).model_dump(mode="json")})
+    for player in players:
+        _changed(player.id)
+    return await list_players(session, _)
+
+
 @router.get("", response_model=list[PlayerOut])
 async def list_players(session: SessionDep, _: RequireViewer) -> list[PlayerOut]:
     players = (await session.execute(
@@ -450,6 +537,24 @@ async def delete_player(player_id: int, session: SessionDep, admin: RequireAdmin
         for target in ("page", "app"):
             _queued.pop((gone.id, target), None)
         _changed(gone.id)
+
+
+@router.post("/{player_id}/trim", response_model=PlayerOut,
+             dependencies=[Depends(write_rate_limit)])
+async def set_trim(player_id: int, payload: PlayerTrim, session: SessionDep,
+                   _: RequireAdmin) -> PlayerOut:
+    """Shift one mini PC's picture later or earlier, to even out projectors
+    that take different times to show what they are sent."""
+    player = await _load(session, player_id)
+    report = dict(player.report or {})
+    if payload.trim_ms:
+        report["trim_ms"] = payload.trim_ms
+    else:
+        report.pop("trim_ms", None)
+    player.report = report
+    await session.commit()
+    bus.publish("mapping_player", {"player_id": player_id})
+    return await _player_out(session, player)
 
 
 @router.post("/{player_id}/identify", status_code=status.HTTP_204_NO_CONTENT,
@@ -928,7 +1033,7 @@ async def screen_flat(payload: ScreenFlat, session: SessionDep,
     else:
         try:
             flat = SurfaceFlat(corners=payload.corners,
-                               test_until=time.time() * 1000 + FLAT_TEST_MS if payload.test else None)
+                               test_until=now_ms() + FLAT_TEST_MS if payload.test else None)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
         part["flat"] = flat.model_dump(mode="json")
@@ -969,6 +1074,7 @@ async def picture(player_id: int, session: SessionDep, user: RequireViewer) -> R
 async def report(payload: PlayerReport, request: Request, session: SessionDep,
                  user: CurrentUser) -> PlayerAssignment:
     """A player's heartbeat: records its health, returns its assignment."""
+    received = now_ms()
     player = (await session.execute(
         select(MappingPlayer).where(MappingPlayer.user_id == user.id)
     )).scalars().first()
@@ -976,16 +1082,23 @@ async def report(payload: PlayerReport, request: Request, session: SessionDep,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="This account is not a player")
     player.last_seen_at = utcnow()
-    kept = {k: v for k, v in (player.report or {}).items() if k == "app"}
+    kept = {k: v for k, v in (player.report or {}).items() if k in KEPT_REPORT}
     address = request.client.host if request.client else None
-    player.report = {**payload.model_dump(exclude_none=True), **kept,
+    fresh = payload.model_dump(exclude_none=True)
+    check = _clock_check(player.id, received, fresh.pop("clock_now", None))
+    player.report = {**fresh, **kept,
+                     **({"clock_check_ms": check} if check is not None else {}),
                      **({"address": address} if address else {})}
     await session.commit()
     out = await _player_out(session, player)
     close = _watched_closely(player.id)
+    commands = _take(player.id, "page") if player.kind != "camera" else []
+    if player.kind != "camera" and _page_outdated(player.id, payload) and "reload" not in commands:
+        commands.append("reload")
     return PlayerAssignment(player_id=player.id, name=player.name,
                             output_id=out.output_id, show_id=out.show_id,
-                            commands=_take(player.id, "page") if player.kind != "camera" else [],
+                            commands=commands,
                             picture=(_watching() or close) and player.kind != "camera",
                             picture_ms=CLOSE_PICTURE_MS if close else 3000,
-                            picture_width=CLOSE_PICTURE_WIDTH if close else 480)
+                            picture_width=CLOSE_PICTURE_WIDTH if close else 480,
+                            trim_ms=int(kept.get("trim_ms") or 0))

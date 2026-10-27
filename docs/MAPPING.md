@@ -118,18 +118,63 @@ to stay on its display.
 
 ## 3. Playback and sync — what this does and does not promise
 
-The server owns the transport: which cue is live, when it started (server
-clock), playing or paused. Every output window estimates its offset to the
-server clock (NTP-style, several samples, keeps the best round trip) and
-computes where its video should be. Small drift is corrected by nudging
-`playbackRate` by a few percent; drift over 150 ms is corrected by seeking.
+The server owns the transport: which cue is live, when it started, playing
+or paused, all told on the server's **show clock** (`services/mapping.py`
+`ShowClock`). The show clock runs on the server's high-resolution monotonic
+counter, so the computer's time being set (Windows or macOS syncing from the
+internet) never makes it jump; differences from the computer's time are
+taken up at 0.01 %, and a difference over a minute is taken in one step only
+while nothing plays.
 
-That keeps outputs **on one computer** within a frame or two of each other in
-practice, which is enough for most architectural content. It is not
-frame-locked, and on several computers it is limited by network jitter.
-Content where a seam crosses fast motion needs either one computer driving
-all outputs or genlocked hardware. The UI says "synchronised to the server
-clock", never "frame-accurate".
+Every output window follows it with `live.ts` `ServerClock`: a reading every
+3 s (NTP-style, against `performance.now()`, which never jumps either), the
+quickest round trips of the last 3 minutes trusted, and a straight line
+through them for both the offset and how fast the two clocks run apart. What
+the line says is eased in at 0.5 % (5 ms a second, invisible) rather than
+jumped to; only the first reading or a wake from sleep is taken in a step,
+and steps are counted and shown. In a simulation of two hours on a wired
+network with busy moments and two computers drifting 50 and -30 ppm, two
+windows stayed within 1.7 ms of each other; the old way (best of three
+readings every 30 s, jumped to) jumped up to 28 ms, and 300 ms when Windows
+set its clock.
+
+Each frame is drawn for the moment it will be on screen: the display's frame
+time from `requestAnimationFrame` plus one frame, on the show clock, plus the
+mini PC's **shift** (Mapping → Players, ±500 ms) for a projector that takes
+longer or shorter than the others to show its picture, which no clock sees.
+Scenes and elements take their time from it alone, so two outputs draw the
+same moment the same, whatever their resolution (elements are placed in
+canvas units, not pixels). The few elements that keep something over time
+(a shy walker hiding, tumbleweeds in the wind) ease back to where the clock
+says, so a mini PC that restarted mid-show matches the others again.
+
+Video: where Chrome says which frame is up (`requestVideoFrameCallback`),
+that frame is measured against the clock (the middle of the frame, the median
+of the last five readings); otherwise `currentTime`. Drift is taken up by
+moving `playbackRate` by up to 5 % (half the drift a second); drift over
+200 ms by a seek aimed where the video will be once the seek lands (seeks are
+timed and the aim follows).
+
+What this promises: on a wired network, mini PCs agree on the show clock
+within a few milliseconds, and pictures within about a frame (17 ms at
+60 Hz). It is **not frame-locked**: without genlock each computer's display
+refreshes on its own beat, so two projectors can show frames up to one
+refresh apart, and decoding a video adds its own frame of slack. Content where
+a seam crosses very fast motion is best on one computer driving both outputs.
+
+Checking it: each mini PC reports how far its picture can be from the show
+clock (clock uncertainty, easing, video drift), and every heartbeat carries
+its reading of the show clock, which the server compares with its own (the
+smallest gap of the last minute) as a check that does not rely on the mini
+PC's sums. Mapping → Players shows both per mini PC and the worst at the top;
+over 50 ms on two checks in a row opens a warning alert. **Sync test on
+every projector** draws the show clock to the millisecond, the 60 Hz frame
+number, a bar filling once a second and squares flashing on each second,
+over a line sweeping the whole canvas; one photo of two projectors shows how
+far apart they are.
+
+An output page loaded from an older server is reloaded once, while nothing
+plays, so updates reach mini PCs that run for weeks.
 
 Codec guidance for a Mac: H.264 or HEVC at the canvas resolution, constant
 frame rate, no B-frame-heavy profiles for content that must loop cleanly.
