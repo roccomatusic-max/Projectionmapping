@@ -15,9 +15,9 @@ expensive, hard to reach, and the show starts whether or not they came up.
 - **Dashboard** — live fleet state: online, powered, standby, warnings, faults
 - **Per-projector control** — power, shutter, inputs, lens, on-screen remote,
   full technical status
-- **Control Center** — select any set of projectors or a group and command
+- **Projectors → Control several** — select any set of projectors or a group and command
   them together, with a separate result for each one
-- **Groups** — named sets ("House Projection Mapping", "Front of House") with
+- **Projectors → Groups** — named sets ("House Projection Mapping", "Front of House") with
   their own control surface
 - **Monitoring** — four-tier polling, lamp-hour tracking, alerts with
   deduplication, email/webhook/MQTT notification
@@ -32,7 +32,7 @@ expensive, hard to reach, and the show starts whether or not they came up.
 - **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout,
   projector power, a Tonight tab (tonight's scene group, show time and
   nights, Start now / Stop) and a Calendar tab, from anywhere through
-  Tailscale (Phone remote page)
+  Tailscale (Settings → Phone)
 - **Show calendar** — plan shows ahead on a month, week or list: one night,
   several nights or every week, each with a scene group and start and end
   times, or nights with no show; the show starts and stops by itself

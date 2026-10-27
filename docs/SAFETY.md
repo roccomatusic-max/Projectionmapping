@@ -128,7 +128,7 @@ a projector that does not come up. Warm-up is ~30 s per unit, and the
 `wait_state` step will tell you which one failed rather than leaving you to
 find out when the content starts.
 
-**During a show**, keep the Control Center open. It shows per-projector state
+**During a show**, keep Projectors → Control several open. It shows per-projector state
 live, and a projector that drops is visible immediately rather than at the
 next glance at the building.
 

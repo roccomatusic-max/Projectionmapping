@@ -30,7 +30,7 @@ import {
 } from '../icons'
 import { ActivityPanel } from './ActivityPanel'
 import { JumpMenu, isMac } from './JumpMenu'
-import { NAV, type NavItem } from './nav'
+import { NAV, NAV_ITEMS, type NavItem } from './nav'
 import { ShowStatusChip, ShowStatusProvider, useShowStatus } from './ShowStatus'
 
 /** The phone tab bar: the four places an operator goes on site. */
@@ -97,8 +97,14 @@ function NavBadge({ badge }: { badge: BadgeInfo }) {
   )
 }
 
+/** Whether the page is on one of this entry's other tabs (Control several is under Projectors). */
+function onAlsoPath(item: NavItem, pathname: string): boolean {
+  return (item.also ?? []).some((to) => pathname === to || pathname.startsWith(`${to}/`))
+}
+
 function SideNav({ onNavigate, showHints = false }: { onNavigate?: () => void; showHints?: boolean }) {
   const badges = useBadges()
+  const { pathname } = useLocation()
   return (
     <nav className="flex flex-col gap-3" aria-label="Main">
       {NAV.map((group) => (
@@ -112,7 +118,7 @@ function SideNav({ onNavigate, showHints = false }: { onNavigate?: () => void; s
                 end={item.end}
                 onClick={onNavigate}
                 title={showHints ? undefined : item.hint}
-                className={({ isActive }) => classNames('sidebar-link', isActive && 'sidebar-link-active')}
+                className={({ isActive }) => classNames('sidebar-link', (isActive || onAlsoPath(item, pathname)) && 'sidebar-link-active')}
               >
                 <item.icon size={16} strokeWidth={1.75} className={showHints ? 'mt-0.5 self-start' : undefined} aria-hidden />
                 {showHints ? (
@@ -388,7 +394,9 @@ function Shell({
               className={({ isActive }) =>
                 classNames(
                   'relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-2xs',
-                  isActive || (item.to === '/mapping/run' && location.pathname.startsWith('/mapping'))
+                  isActive ||
+                    (item.to === '/mapping/run' && location.pathname.startsWith('/mapping')) ||
+                    NAV_ITEMS.some((entry) => entry.to === item.to && onAlsoPath(entry, location.pathname))
                     ? 'text-sky-300'
                     : 'text-slate-400',
                 )

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { clearSession, getSession, type Session } from '@/api/client'
 import { Spinner } from '@/components/ui'
 import { AppShell } from '@/components/shell/AppShell'
+import { PageGroup } from '@/components/shell/PageGroup'
 import { LiveProvider } from '@/live/LiveProvider'
 import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
@@ -14,7 +15,6 @@ import Automation from '@/pages/Automation'
 import Alerts from '@/pages/Alerts'
 import Logs from '@/pages/Logs'
 import Settings from '@/pages/Settings'
-import PhoneRemote from '@/pages/PhoneRemote'
 import Calendar from '@/pages/Calendar'
 import SetupGuide from '@/pages/SetupGuide'
 // Monitoring pulls in the charting library; keep it out of the initial
@@ -100,10 +100,10 @@ export default function App() {
         <AppShell session={session} onSignOut={signOut}>
           <Routes>
             <Route path="/" element={<Dashboard session={session} />} />
-            <Route path="/projectors" element={<Projectors session={session} />} />
+            <Route path="/projectors" element={<PageGroup id="projectors"><Projectors session={session} /></PageGroup>} />
             <Route path="/projectors/:id" element={<ProjectorDetail session={session} />} />
-            <Route path="/groups" element={<Groups session={session} />} />
-            <Route path="/control" element={<ControlCenter session={session} />} />
+            <Route path="/groups" element={<PageGroup id="projectors"><Groups session={session} /></PageGroup>} />
+            <Route path="/control" element={<PageGroup id="projectors"><ControlCenter session={session} /></PageGroup>} />
             {['/mapping', '/mapping/:section'].map((path) => (
               <Route
                 key={path}
@@ -121,17 +121,21 @@ export default function App() {
             <Route
               path="/monitoring"
               element={
-                <Suspense fallback={<Spinner label="Loading monitoring…" />}>
-                  <Monitoring session={session} />
-                </Suspense>
+                <PageGroup id="monitoring">
+                  <Suspense fallback={<Spinner label="Loading monitoring…" />}>
+                    <Monitoring session={session} />
+                  </Suspense>
+                </PageGroup>
               }
             />
             <Route
               path="/heater"
               element={
-                <Suspense fallback={<Spinner label="Loading the heaters…" />}>
-                  <Heater session={session} />
-                </Suspense>
+                <PageGroup id="monitoring">
+                  <Suspense fallback={<Spinner label="Loading the heaters…" />}>
+                    <Heater session={session} />
+                  </Suspense>
+                </PageGroup>
               }
             />
             <Route
@@ -142,8 +146,9 @@ export default function App() {
                 </Suspense>
               }
             />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/phone" element={<PhoneRemote />} />
+            <Route path="/logs" element={<PageGroup id="monitoring"><Logs /></PageGroup>} />
+            {/* The phone remote's setup moved into Settings, beside phone alerts. */}
+            <Route path="/phone" element={<Navigate to="/settings?part=phone" replace />} />
             <Route path="/settings" element={<Settings session={session} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

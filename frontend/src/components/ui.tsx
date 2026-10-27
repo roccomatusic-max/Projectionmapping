@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
 import { CloseIcon, FaultIcon, HelpIcon, InfoIcon, OkIcon, SearchIcon, WarningIcon, type LucideIcon } from './icons'
 import { TONE_BANNER, TONE_CHIP, TONE_DOT, TONE_TEXT, type Tone } from './tone'
+import { usePageGroup } from './shell/PageGroup'
 
 export type { Tone }
 
@@ -113,6 +114,19 @@ export function PageHeader({
   actions?: ReactNode
   children?: ReactNode
 }) {
+  // A tab of a page group: the group's name and tabs are already above, so
+  // only this tab's status line and buttons are left to show.
+  const group = usePageGroup()
+  if (group) {
+    if (!subtitle && !actions && !children) return null
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        {subtitle ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-slate-400">{subtitle}</div> : <span />}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {children}
+      </div>
+    )
+  }
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
       <div className="flex min-w-0 items-center gap-2.5">

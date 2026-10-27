@@ -10,7 +10,7 @@ import { CloseIcon, HistoryIcon } from '../icons'
 /**
  * Commands sent from this browser, newest first, each with where it stands
  * between the click and the projector's read-back. The full audit trail,
- * including other operators and automations, is on the Logs page.
+ * including other operators and automations, is on Monitoring → Log.
  */
 export function ActivityPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { commands, clearCommands } = useOps()

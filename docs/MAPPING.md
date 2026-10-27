@@ -324,7 +324,7 @@ Set Windows Update's active hours so it does not restart during shows.
 **Show Remote** is the phone remote: GO, pause, stop, blackout, the cue list
 and projector power, laid out for one thumb in the dark. It lives at
 `/remote` and goes on the phone's Home Screen, where it opens full screen
-with its own icon. The **Phone remote** page in the sidebar shows a QR code
+with its own icon. **Settings → Phone** shows a QR code
 for it and the steps:
 
 1. Start Projector Control with `--lan` (otherwise no phone can reach it).
