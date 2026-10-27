@@ -791,6 +791,41 @@ Ready-made scenes added: North Pole parade, Dreidel night, Monster mash,
 Trick or treat street, Easter morning, Pond life, Beach day, Deep sea, Space
 walk, Lion dance parade and Puppy parade.
 
+Fourth batch:
+
+- Sitting on the roof (`perch` motion): crows, doves and cardinals along the
+  roofline, looking round, pecking and calling; bats hanging upside down from
+  the bottom edge of the roof (`under`). Now and then one flies off and comes
+  back to its spot, and people coming near send them all off at once (near
+  "flee"); the crows call "Caw! Caw!" as they go. People below count by how
+  far along the house they are, not how far below.
+- Sliding (`slide`): kids on sleds and penguins on their bellies sliding from
+  the peak of the roof down either side, faster and faster, and off the end
+  into the air, arms up and "Wheee!" for people (or along the line drawn).
+- Hanging still (`dangle` with `still`): jingle bells and Christmas stockings
+  on ribbons under the roof edge, at staggered lengths; they swing (and the
+  bells glint) when people dance under them.
+- Falling: candy canes, gold coins that spin as they fall (`animate`), candy
+  and presents on parachutes that drift down slowly (`pace`) to whoever is
+  below (near "follow").
+- Sparklers stuck along the bottom that burn now and then and light up beside
+  people; floating candles drifting over the house, always lit (`steady`);
+  jack-o'-lanterns rolling along the bottom that people kick away (`low`).
+- Walking or driving: snowmen ("Let it snow!"), Santa on foot ("Merry
+  Christmas!", comes over to people), a hen and her chicks ("Cluck cluck!"),
+  an ice cream truck ("Ice cream!"), a fire truck with flashing lights
+  ("Wee-oo wee-oo!"), race cars, marching drummers and scarecrows ("Boo!").
+  Walkers that follow people now come over along the ground, not up the wall.
+- Flying or swimming: love letters on little wings that fly to people,
+  seahorses, a mermaid ("Hello there!"), a submarine whose portholes light
+  up and paper cranes; pufferfish (puff up near people) and koi (gather round
+  people, as koi do at feeding time) are flocks. Flocks now keep each
+  picture's own shape instead of one width for all.
+
+Ready-made scenes added: Snowy rooftop, Stockings were hung, Haunted rooftop,
+Farmyard, Love letters, Hometown parade, Lucky koi pond, Mermaid lagoon and
+Summer street.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

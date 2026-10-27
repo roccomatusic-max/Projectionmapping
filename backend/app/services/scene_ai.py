@@ -193,7 +193,22 @@ CATALOG: dict[str, dict] = {
                  "fly over the roof; dragonflies and hummingbirds are flocks; dolphins "
                  "leap out along the bottom (higher near people: near jump); beach-balls "
                  "bounce along and people kick them (near flee); kites fly on strings "
-                 "and loop over people (near jump)",
+                 "and loop over people (near jump); crows, doves and cardinals sit on "
+                 "the roofline and fly off when people come near (near flee); "
+                 "hanging-bats hang under the roof edge and fly off (near flee); "
+                 "sledders and sliding-penguins slide down the roof from its peak "
+                 "(near jump); jingle-bells and stockings hang on ribbons under the "
+                 "roof edge and swing when people dance by (near dance); candy-canes, "
+                 "gold-coins, falling-candy and parachute-presents fall (presents drift "
+                 "to people: near follow); sparklers stand along the bottom and light "
+                 "up beside people (near light); floating-candles drift over the house; "
+                 "rolling-pumpkins roll along and people kick them (near flee); "
+                 "snowmen, santa-walking, hens (a hen and her chicks in a line), "
+                 "ice-cream-truck, fire-truck, race-cars, drummers and scarecrows walk "
+                 "or drive along the bottom; love-letters (fly to people: near follow), "
+                 "seahorses, mermaids, submarines and origami-cranes fly over the roof; "
+                 "pufferfish (puff up: near grow) and koi (gather round people: near "
+                 "follow) are flocks",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -208,7 +223,14 @@ CATALOG: dict[str, dict] = {
                    "lovebirds", "hatching-eggs", "frogs", "dragonflies", "hummingbirds",
                    "dolphins", "whales", "crabs", "octopus", "beach-balls", "paper-planes",
                    "kites", "rocket-ship", "astronauts", "robots", "dogs", "dreidels",
-                   "lion-dance", "red-envelopes"],
+                   "lion-dance", "red-envelopes", "crows", "doves", "cardinals",
+                   "hanging-bats", "sledders", "sliding-penguins", "jingle-bells",
+                   "stockings", "candy-canes", "gold-coins", "falling-candy",
+                   "parachute-presents", "sparklers", "floating-candles",
+                   "rolling-pumpkins", "snowmen", "santa-walking", "hens",
+                   "ice-cream-truck", "fire-truck", "race-cars", "drummers", "scarecrows",
+                   "love-letters", "seahorses", "mermaids", "submarines", "origami-cranes",
+                   "pufferfish", "koi"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",

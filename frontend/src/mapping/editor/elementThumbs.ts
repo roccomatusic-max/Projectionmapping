@@ -106,14 +106,17 @@ function stamp(ctx: CanvasRenderingContext2D, style: string, layer: SceneLayer, 
   ctx.restore()
 }
 
-const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees', 'dragonflies', 'hummingbirds'])
+const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees', 'dragonflies', 'hummingbirds', 'pufferfish', 'koi'])
 /** Small things that come many at a time: shown as a scatter. */
 const SCATTER = new Set([
   'snowfall', 'leaves', 'petals', 'confetti', 'falling-hearts', 'clovers', 'fireflies', 'rising-bubbles', 'falling-presents',
-  'red-envelopes',
+  'red-envelopes', 'candy-canes', 'gold-coins', 'falling-candy',
 ])
 /** Ones that float up: three of them. */
-const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons'])
+const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons', 'floating-candles'])
+/** Ones that sit on the roofline, or hang under it. */
+const PERCHERS = new Set(['crows', 'doves', 'cardinals'])
+const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats'])
 
 function hash(n: number) {
   const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453
@@ -151,7 +154,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     const many = style === 'fireflies' ? 18 : 14
     const big = {
       leaves: 0.2, 'falling-hearts': 0.18, clovers: 0.17, 'rising-bubbles': 0.2, fireflies: 0.13, 'falling-presents': 0.2,
-      'red-envelopes': 0.2,
+      'red-envelopes': 0.2, 'candy-canes': 0.2, 'gold-coins': 0.15, 'falling-candy': 0.16,
     }[style] ?? 0.13
     for (let i = 0; i < many; i++) {
       const fall = style === 'fireflies' ? Math.sin(time + i) * 0.03 : ((time * 0.06 + hash(i + 9)) % 1) * (style === 'rising-bubbles' ? -1 : 1)
@@ -180,9 +183,40 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     stamp(ctx, style, layer, 'fire', Math.floor(time * 12), W * 0.84, H * 0.47, H * 0.28)
     return
   }
-  if (style === 'ducklings') {
+  if (style === 'ducklings' || style === 'hens') {
     stamp(ctx, style, layer, 'main', f, W * 0.72, H * 0.58, H * 0.5)
     ;[0.48, 0.33, 0.18].forEach((x, i) => stamp(ctx, style, layer, 'baby', f + i * 2, W * x, H * 0.7, H * 0.25))
+    return
+  }
+  if (PERCHERS.has(style) || HANGERS.has(style)) {
+    // A roofline with three on it, or under it on ribbons.
+    const roof = H * 0.3
+    ctx.strokeStyle = 'rgba(148,163,184,0.8)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(0, roof + H * 0.12)
+    ctx.lineTo(W * 0.5, roof - H * 0.05)
+    ctx.lineTo(W, roof + H * 0.12)
+    ctx.stroke()
+    const at = (x: number) => roof + H * 0.12 - (1 - Math.abs(x - 0.5) * 2) * H * 0.17
+    ;[0.24, 0.5, 0.76].forEach((x, i) => {
+      const top = at(x)
+      if (PERCHERS.has(style)) {
+        const pose = Math.floor(hash(Math.floor(time / 1.3) + i * 7) * 4)
+        stamp(ctx, style, layer, 'main', pose, W * x, top - H * 0.19, H * 0.38)
+      } else if (style === 'hanging-bats') {
+        stamp(ctx, style, layer, 'main', f + i, W * x, top + H * 0.18, H * 0.36)
+      } else {
+        const len = H * (0.18 + (i % 2) * 0.14)
+        const swing = Math.sin(time * 1.4 + i * 2) * 0.12
+        ctx.save()
+        ctx.translate(W * x, top)
+        ctx.rotate(swing)
+        stamp(ctx, style, layer, 'thread', 0, 0, len / 2, len)
+        stamp(ctx, style, layer, 'main', style === 'stockings' ? i : f + i, 0, len + H * 0.14, H * 0.32)
+        ctx.restore()
+      }
+    })
     return
   }
   if (style === 'zombie-hands') {
