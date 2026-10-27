@@ -369,7 +369,21 @@ CATALOG: dict[str, dict] = {
                  "follow); bike-parade (near dance); ironworkers wave (near follow); "
                  "cannonball (near follow); lemonade-stand turns to hot cocoa when it's "
                  "cold (near follow); sandcastle grows for people (near follow); "
-                 "cornhole (near follow)",
+                 "cornhole (near follow); pumpkin-carver (near follow); mad-scientist "
+                 "(near follow); singing-pumpkins (near follow); haunted-portrait eyes "
+                 "follow people (near follow); sarcophagus opens for people (near "
+                 "follow); apple-bobbing (near follow); grave-digger (near follow); "
+                 "phantom-organist (near follow); werewolf-change as people come (near "
+                 "follow); lawn-chair-skeleton dressed for the real temperature (near "
+                 "follow); skeleton-photographer (near follow); ghost-tea-party (near "
+                 "follow); witch-spell (near follow); scaredy-ghost hides (near follow); "
+                 "elf-on-shelf moves only when nobody is near (near follow); "
+                 "advent-calendar opened to today (near light); nice-list (near follow); "
+                 "snowman-builders (near follow); star-topper (near follow); "
+                 "light-tangle (near follow); ugly-sweater (near follow); present-puppy "
+                 "(near follow); reindeer-food (near follow); present-tower (near dance); "
+                 "sweater-dog (near dance); stair-peekers (near follow); cookie-baker "
+                 "(near follow)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -446,7 +460,15 @@ CATALOG: dict[str, dict] = {
                    "fishing-dock", "lawn-mower", "order-reader", "juneteenth-flag",
                    "double-dutch", "statue-of-liberty", "hot-dog-contest", "drum-major",
                    "picnic-ants", "sparkler-writers", "bike-parade", "ironworkers",
-                   "cannonball", "lemonade-stand", "sandcastle", "cornhole"],
+                   "cannonball", "lemonade-stand", "sandcastle", "cornhole",
+                   "pumpkin-carver", "mad-scientist", "singing-pumpkins",
+                   "haunted-portrait", "sarcophagus", "apple-bobbing", "grave-digger",
+                   "phantom-organist", "werewolf-change", "lawn-chair-skeleton",
+                   "skeleton-photographer", "ghost-tea-party", "witch-spell",
+                   "scaredy-ghost", "elf-on-shelf", "advent-calendar", "nice-list",
+                   "snowman-builders", "star-topper", "light-tangle", "ugly-sweater",
+                   "present-puppy", "reindeer-food", "present-tower", "sweater-dog",
+                   "stair-peekers", "cookie-baker"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",

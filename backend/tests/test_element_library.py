@@ -227,3 +227,15 @@ def test_spring_and_summer_holiday_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "rain-barrel", "memorial-flag", "lemonade-stand", "picnic-ants", "juneteenth-flag"]
+
+
+def test_more_halloween_and_christmas_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "lawn-chair-skeleton", "near": "follow"},
+        {"type": "movers", "style": "haunted-portrait", "near": "follow"},
+        {"type": "movers", "style": "elf-on-shelf", "near": "follow"},
+        {"type": "movers", "style": "advent-calendar", "near": "light"},
+        {"type": "movers", "style": "present-tower", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "lawn-chair-skeleton", "haunted-portrait", "elf-on-shelf", "advent-calendar", "present-tower"]

@@ -76,7 +76,11 @@ export const MOVER_STYLES = [
   'recycle-bins', 'rain-barrel', 'folklorico', 'pinata-party', 'flowers-for-mom', 'breakfast-tray', 'mom-garden',
   'saluting-soldier', 'memorial-flag', 'grill-dad', 'fishing-dock', 'lawn-mower', 'order-reader', 'juneteenth-flag',
   'double-dutch', 'statue-of-liberty', 'hot-dog-contest', 'drum-major', 'picnic-ants', 'sparkler-writers', 'bike-parade',
-  'ironworkers', 'cannonball', 'lemonade-stand', 'sandcastle', 'cornhole',
+  'ironworkers', 'cannonball', 'lemonade-stand', 'sandcastle', 'cornhole', 'pumpkin-carver', 'mad-scientist',
+  'singing-pumpkins', 'haunted-portrait', 'sarcophagus', 'apple-bobbing', 'grave-digger', 'phantom-organist',
+  'werewolf-change', 'lawn-chair-skeleton', 'skeleton-photographer', 'ghost-tea-party', 'witch-spell', 'scaredy-ghost',
+  'elf-on-shelf', 'advent-calendar', 'nice-list', 'snowman-builders', 'star-topper', 'light-tangle', 'ugly-sweater',
+  'present-puppy', 'reindeer-food', 'present-tower', 'sweater-dog', 'stair-peekers', 'cookie-baker',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -467,6 +471,33 @@ const STYLE: Record<MoverStyle, {
   'lemonade-stand': { motion: 'stand', ground: true, height: 1.05, many: 0 },
   sandcastle: { motion: 'stand', ground: true, height: 0.8, many: 0 },
   cornhole: { motion: 'stand', ground: true, height: 0.9, many: 0 },
+  'pumpkin-carver': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'mad-scientist': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'singing-pumpkins': { motion: 'stand', ground: true, height: 0.75, many: 1 },
+  'haunted-portrait': { motion: 'stand', ground: false, height: 0.8, many: 0 },
+  sarcophagus: { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'apple-bobbing': { motion: 'stand', ground: true, height: 0.9, many: 0 },
+  'grave-digger': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'phantom-organist': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'werewolf-change': { motion: 'stand', ground: true, height: 1.25, many: 0 },
+  'lawn-chair-skeleton': { motion: 'stand', ground: true, height: 0.9, many: 1 },
+  'skeleton-photographer': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'ghost-tea-party': { motion: 'stand', ground: true, height: 0.95, many: 0 },
+  'witch-spell': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'scaredy-ghost': { motion: 'stand', ground: true, height: 1, many: 1 },
+  'elf-on-shelf': { motion: 'stand', ground: false, height: 0.9, many: 0 },
+  'advent-calendar': { motion: 'stand', ground: false, height: 1, many: 0 },
+  'nice-list': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'snowman-builders': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  'star-topper': { motion: 'stand', ground: true, height: 1.3, many: 0 },
+  'light-tangle': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'ugly-sweater': { motion: 'stand', ground: true, height: 1.15, many: 1 },
+  'present-puppy': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'reindeer-food': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'present-tower': { motion: 'walker', ground: true, height: 1.25, pace: 0.8 },
+  'sweater-dog': { motion: 'walker', ground: true, height: 0.6, pace: 0.9 },
+  'stair-peekers': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'cookie-baker': { motion: 'stand', ground: true, height: 1.15, many: 0 },
 }
 
 /**
@@ -577,6 +608,28 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   cannonball: { idle: 3, act: 5 },
   sandcastle: { level: 0.1, peek: true },
   cornhole: { idle: 2, act: 5 },
+  'pumpkin-carver': { idle: 3, act: 5 },
+  'mad-scientist': { idle: 3, act: 5 },
+  'singing-pumpkins': { idle: 2, act: 6, notes: true },
+  'haunted-portrait': { looks: true },
+  sarcophagus: { level: 0, peek: true },
+  'apple-bobbing': { idle: 2, act: 4 },
+  'grave-digger': { idle: 3, act: 5 },
+  'phantom-organist': { idle: 3, act: 8, notes: true },
+  'werewolf-change': { level: 0, peek: true },
+  'skeleton-photographer': { idle: 1, act: 4 },
+  'ghost-tea-party': { idle: 2, act: 5 },
+  'witch-spell': { idle: 2, act: 4 },
+  'scaredy-ghost': { idle: 2, act: 4, text: true },
+  'nice-list': { idle: 2, act: 4 },
+  'snowman-builders': { level: 0.1, peek: true },
+  'star-topper': { idle: 2, act: 4 },
+  'light-tangle': { idle: 3, act: 4 },
+  'ugly-sweater': { idle: 3, act: 8, together: true },
+  'present-puppy': { idle: 4, act: 5 },
+  'reindeer-food': { idle: 2, act: 5 },
+  'stair-peekers': { idle: 2, act: 4 },
+  'cookie-baker': { idle: 2, act: 4 },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -859,6 +912,9 @@ function heading(dx: number, dy: number, limit: number): { angle: number; flip: 
 /** A speech bubble over one ("Ho ho ho!"), showing as someone comes near. */
 /** Music (or hearts, or letters) floating up from (x, y) on one side of it, more of it the more lit. */
 /** Tonight's night of Hanukkah (1 to 8; the candles are lit from the evening it starts), or 0. */
+/** The pose each elf on the shelf was last left in, so it stays put while people watch. */
+const elfPose = new Map<string, number>()
+
 function hanukkahNight(now: Date) {
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
   for (const year of [now.getFullYear() - 1, now.getFullYear()]) {
@@ -3315,6 +3371,42 @@ export function moverSprites(f: MoverFrame): Sprite[] {
           if (cold) said.row = 'cocoa'
           out.push(said)
         }
+      } else if (style === 'lawn-chair-skeleton') {
+        // Dressed for the real temperature where the server is: sunglasses and a cold drink when it's mild, a
+        // hat, scarf, blanket and a steaming mug (and a shiver) below 50°F. It waves to people.
+        const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
+        const acting = k > 0.3
+        const temp = weatherFor('').data?.temperature_f
+        const cold = temp != null && temp < 50
+        sprite.row = cold ? (acting ? 'coldact' : 'cold') : acting ? 'act' : 'main'
+        sprite.frame = Math.floor(t * (acting ? 6 : 2) + ph * 8)
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (acting) {
+          const said = bubble(sprite, size, sprite.flip, near.k)
+          if (cold) said.row = 'brr'
+          out.push(said)
+        }
+      } else if (style === 'elf-on-shelf') {
+        // He only moves when nobody is looking: a new pose every few seconds while the yard is empty, and frozen
+        // stock-still in whichever pose he was caught in while people are near.
+        sprite.flip = false
+        const frames = SPRITE_ROWS[style][0].frames
+        const caught = busy && near.k > 0.08
+        const key = `${layer.id}:${i}`
+        if (!caught) elfPose.set(key, Math.floor(t / 4 + ph * 6) % frames)
+        sprite.frame = elfPose.get(key) ?? 0
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+      } else if (style === 'advent-calendar') {
+        // Opened up to today's door, 1 to 24 December by the real date (all shut before December, all open from
+        // Christmas Eve to the end of the year); today's door glows for people.
+        sprite.flip = false
+        const day = now.getMonth() === 11 ? Math.min(24, now.getDate()) : 0
+        sprite.frame = day
+        sprite.glow = busy ? 0.3 * smoothstep(0.1, 0.6, near.k) : 0
+        react(sprite, action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
       } else if (style === 'midnight-toast') {
         // Chatting, glasses in hand; for people they clink them ("Cheers!"), and for the first half hour of New
         // Year's Day (by the server's clock) they kiss under a floating heart.
