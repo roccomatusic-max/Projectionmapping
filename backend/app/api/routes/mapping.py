@@ -54,6 +54,7 @@ from app.schemas.mapping import (
     ShowOut,
     ShowSummary,
     ShowUpdate,
+    Timeline,
     TransportCommand,
     TransportState,
 )
@@ -64,18 +65,31 @@ from app.services.mapping import TransportError, describe_live, now_ms, transpor
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/mapping", tags=["mapping"])
 
-#: Extensions the output renderer can play, with the type served for each.
-#: ProRes and HAP are absent on purpose: browsers do not decode them, and
-#: accepting a file that will render black is worse than refusing it.
+#: Extensions the output renderer (Chrome or Edge on the mini PCs) can play,
+#: with the type served for each. ProRes and HAP are absent on purpose:
+#: browsers do not decode them, and accepting a file that will render black
+#: is worse than refusing it. Sounds play in the show designer's timeline.
 MEDIA_TYPES: dict[str, tuple[str, str]] = {
     ".mp4": ("video", "video/mp4"),
     ".m4v": ("video", "video/mp4"),
     ".mov": ("video", "video/quicktime"),
     ".webm": ("video", "video/webm"),
+    ".ogv": ("video", "video/ogg"),
     ".png": ("image", "image/png"),
     ".jpg": ("image", "image/jpeg"),
     ".jpeg": ("image", "image/jpeg"),
     ".webp": ("image", "image/webp"),
+    ".gif": ("image", "image/gif"),
+    ".avif": ("image", "image/avif"),
+    ".bmp": ("image", "image/bmp"),
+    ".mp3": ("audio", "audio/mpeg"),
+    ".wav": ("audio", "audio/wav"),
+    ".m4a": ("audio", "audio/mp4"),
+    ".aac": ("audio", "audio/aac"),
+    ".ogg": ("audio", "audio/ogg"),
+    ".oga": ("audio", "audio/ogg"),
+    ".opus": ("audio", "audio/ogg"),
+    ".flac": ("audio", "audio/flac"),
 }
 
 #: Upload bytes gathered before each write to disk.
@@ -164,7 +178,8 @@ async def upload_media(
     asset = MediaAsset(
         name=Path(name).name, stored_name=stored_name, kind=kind,
         content_type=content_type, size_bytes=written,
-        width=width, height=height, duration=duration if kind == "video" else None,
+        width=width if kind != "audio" else None, height=height if kind != "audio" else None,
+        duration=duration if kind in ("video", "audio") else None,
     )
     session.add(asset)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="media_uploaded",
@@ -250,6 +265,11 @@ async def delete_media(media_id: int, session: SessionDep, admin: RequireAdmin) 
         if media_id in (cue.output_media or {}).values():
             cue.output_media = {output: (None if used == media_id else used)
                                 for output, used in cue.output_media.items()}
+        # Timeline clips playing it go, so the timeline still saves.
+        clips = (cue.timeline or {}).get("clips") or []
+        if any(clip.get("media_id") == media_id for clip in clips):
+            cue.timeline = {**cue.timeline,
+                            "clips": [c for c in clips if c.get("media_id") != media_id]}
     stored = asset.stored_name
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="media_deleted",
                       message=f"{admin.username} deleted {asset.name}"))
@@ -499,9 +519,15 @@ async def identify_output(output_id: int, session: SessionDep, _: RequireAdmin) 
 
 
 async def _check_media(session, media_id: int | None) -> None:
-    if media_id is not None and await session.get(MediaAsset, media_id) is None:
+    if media_id is None:
+        return
+    asset = await session.get(MediaAsset, media_id)
+    if asset is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"Unknown media id {media_id}")
+    if asset.kind == "audio":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"{asset.name} is a sound; put it on a timeline in the Show designer")
 
 
 async def _check_scene(session, scene_id: int | None) -> None:
@@ -541,6 +567,24 @@ async def _check_output_media(session, show_id: int, output_media: dict | None) 
     return {str(output_id): media_id for output_id, media_id in output_media.items()}
 
 
+async def _check_timeline(session, timeline: Timeline | None) -> None:
+    """Every file a timeline plays is in the media library, and of the right kind."""
+    if timeline is None:
+        return
+    for clip in timeline.clips:
+        if clip.media_id is None:
+            continue
+        asset = await session.get(MediaAsset, clip.media_id)
+        if asset is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Unknown media id {clip.media_id}")
+        wanted = ("audio",) if clip.kind == "sound" else ("video", "image")
+        if asset.kind not in wanted:
+            what = "a sound" if clip.kind == "sound" else "a video or picture"
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"{asset.name} is not {what}")
+
+
 async def _renumber_cues(session, show_id: int, order: list[int] | None = None) -> None:
     cues = (await session.execute(
         select(MappingCue).where(MappingCue.show_id == show_id).order_by(MappingCue.position)
@@ -562,6 +606,7 @@ async def create_cue(show_id: int, payload: CueCreate, session: SessionDep,
     fields = payload.model_dump()
     fields["output_scenes"] = await _check_output_scenes(session, show.id, payload.output_scenes)
     fields["output_media"] = await _check_output_media(session, show.id, payload.output_media)
+    await _check_timeline(session, payload.timeline)
     cue = MappingCue(show_id=show.id, position=len(show.cues), **fields)
     session.add(cue)
     await session.commit()
@@ -591,6 +636,8 @@ async def update_cue(cue_id: int, payload: CueUpdate, session: SessionDep,
     if "output_media" in changes:
         changes["output_media"] = await _check_output_media(
             session, cue.show_id, changes["output_media"])
+    if "timeline" in changes:
+        await _check_timeline(session, payload.timeline)
     for field, value in changes.items():
         setattr(cue, field, value)
     await session.commit()

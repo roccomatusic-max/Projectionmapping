@@ -570,6 +570,9 @@ class MappingCue(Base):
     #: Elements (scene layers) on this cue only, drawn over its scenes on
     #: every projector. Scene groups and playlists change the scenes, not these.
     elements: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    #: What comes and goes while the cue plays (the show designer):
+    #: {"length", "end", "tracks", "clips": [...]}, or None for no timeline.
+    timeline: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     show: Mapped[MappingShow] = relationship(back_populates="cues")
 

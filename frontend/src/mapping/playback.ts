@@ -18,6 +18,12 @@
  * A cue can give some projectors a picture of their own instead of their
  * part of the shared one (``output_media``); those are drawn over the
  * projector's own slice and take no part in blending with the others.
+ *
+ * A cue with a timeline (the show designer) draws its clips between its
+ * scenes and its elements, at the moment the cue's clock says; the clips'
+ * videos and sounds are kept in step by timelineMedia.ts. Sound plays only
+ * in windows that turn it on, and there only for the projector each sound
+ * is meant for.
  */
 
 import { mediaUrl } from './api'
@@ -25,7 +31,9 @@ import type { PeopleTracker, PersonSpot } from './people'
 import type { TextureSource } from './renderer'
 import { cueElementsScene } from './scene/cueElements'
 import type { SceneItem } from './scene/engine'
-import type { Cue, MappingScene, MediaAsset, Surface, TransportCue, TransportState } from './types'
+import { timelineItems, timelineTime } from './scene/timeline'
+import { type MediaWant, TimelineMedia } from './timelineMedia'
+import type { Cue, MappingScene, MediaAsset, Surface, Timeline, TransportCue, TransportState } from './types'
 
 /** Drift beyond this is corrected by a seek rather than a rate change. */
 const SEEK_THRESHOLD = 0.15
@@ -64,6 +72,16 @@ export interface Frame {
 
 const NONE: number[] = []
 
+/** A timeline shown whatever the transport says, at a time the designer picks. */
+export interface TimelinePreview {
+  timeline: Timeline
+  /** Seconds into the timeline now. */
+  time: () => number
+  playing: () => boolean
+  /** Play its sounds in this window. */
+  sound: boolean
+}
+
 function slotKey(cue: TransportCue, mediaId: number) {
   return `${cue.id}:${cue.started_at_ms}:${mediaId}`
 }
@@ -92,6 +110,14 @@ export class Playback {
   private only: number[] | null = null
   private separateKey = ''
   private separateIds: number[] = NONE
+  private timelineMedia = new TimelineMedia(() => this.media)
+  private timelinePreview: TimelinePreview | null = null
+  private canvasAspect = 16 / 9
+  /** Sounds play in this window (an output window or mini PC), for these projectors. */
+  private sound = false
+  private firstOutput: number | null = null
+  /** The frame the timeline's videos were last brought in step for. */
+  private mediaAt = -1
 
   setScenes(scenes: MappingScene[]) {
     this.scenes = new Map(scenes.map((scene) => [scene.id, scene]))
@@ -107,6 +133,26 @@ export class Playback {
     }
     // A projector given a picture of its own during the cue starts loading it now.
     if (this.state) this.setState(this.state, true)
+  }
+
+  /** The show's canvas size, which timeline pictures are placed against. */
+  setCanvas(width: number, height: number) {
+    this.canvasAspect = width / Math.max(1, height)
+  }
+
+  /**
+   * Whether this window plays timeline sounds: an output window does, for
+   * the projectors it draws; ``firstOutput`` is the show's first projector,
+   * which plays sounds not given to a projector of their own.
+   */
+  setSound(on: boolean, firstOutput: number | null) {
+    this.sound = on
+    this.firstOutput = firstOutput
+  }
+
+  /** Show a timeline at a time of the designer's choosing instead of the transport; null hands back. */
+  setTimelinePreview(preview: TimelinePreview | null) {
+    this.timelinePreview = preview
   }
 
   /** The show's elements on every cue (see scene/cueElements.ts), or null for none. */
@@ -185,7 +231,16 @@ export class Playback {
 
   private sceneItems(state: TransportState | null, now: number, mix: number, outputId: number | null): SceneItem[] {
     if (this.preview) {
-      return [{ scene: this.preview.scene, weight: 1, time: (performance.now() - this.preview.startedAt) / 1000, clock: now }]
+      const items: SceneItem[] = [{ scene: this.preview.scene, weight: 1, time: (performance.now() - this.preview.startedAt) / 1000, clock: now }]
+      const tl = this.timelinePreview
+      if (tl) {
+        items.push(...timelineItems({
+          timeline: tl.timeline, scope: 'preview', t: tl.time(), weight: 1, clock: now,
+          canvasAspect: this.canvasAspect, media: this.media,
+          source: (clip, local) => this.timelineMedia.source(`preview:${clip.id}`, clip, local),
+        }))
+      }
+      return items
     }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) return []
     const items: SceneItem[] = []
@@ -211,6 +266,16 @@ export class Playback {
     }
     if (mix < 1) own(state.previous, 1 - mix)
     own(current, mix)
+    // The cues' timelines, between their scenes and their elements.
+    for (const { cue, weight } of owned.values()) {
+      const run = this.timelineRun(state, cue, now)
+      if (!run) continue
+      items.push(...timelineItems({
+        timeline: run.timeline, scope: `cue${cue.id}`, t: run.t, weight: Math.min(1, weight), clock: now,
+        canvasAspect: this.canvasAspect, media: this.media,
+        source: (clip, local) => this.timelineMedia.source(`${run.key}:${clip.id}`, clip, local),
+      }))
+    }
     for (const { cue, weight } of owned.values()) {
       const scene = this.cueElements.get(cue.id)
       if (scene) items.push({ scene, weight: Math.min(1, weight), time: Math.max(0, now - cue.started_at_ms) / 1000, clock: now })
@@ -222,6 +287,48 @@ export class Playback {
       items.push({ scene: this.everyCue, weight: Math.min(1, onCues), time: Math.max(0, now - began) / 1000, clock: now })
     }
     return items
+  }
+
+  /** A cue's timeline and how far into it the cue is now; null for a cue without one. */
+  private timelineRun(state: TransportState, cue: TransportCue, now: number) {
+    const timeline = this.cues.get(cue.id)?.timeline
+    if (!timeline || !timeline.clips.length) return null
+    const paused = state.status === 'paused' && cue.id === state.current?.id
+    const elapsed = paused ? state.paused_position ?? 0 : (now - cue.started_at_ms) / 1000
+    // A cue played again over itself keeps the outgoing copy's videos apart.
+    const again = cue !== state.current && cue.id === state.current?.id
+    return { timeline, t: timelineTime(timeline, elapsed), key: `${again ? 'out' : 'cue'}${cue.id}` }
+  }
+
+  /** Keep the timeline videos and sounds in step, once a frame however many outputs draw. */
+  private syncTimelineMedia(state: TransportState | null, now: number, mix: number) {
+    const frameAt = performance.now()
+    if (frameAt - this.mediaAt < 4) return
+    this.mediaAt = frameAt
+    const wants: MediaWant[] = []
+    const tl = this.timelinePreview
+    if (this.preview && tl) {
+      const t = tl.time()
+      const playing = tl.playing()
+      for (const clip of tl.timeline.clips) {
+        if (clip.kind !== 'element') wants.push({ key: `preview:${clip.id}`, clip, t, playing, audible: tl.sound })
+      }
+    } else if (state && state.current && (state.status === 'playing' || state.status === 'paused')) {
+      const cues = mix < 1 && state.previous ? [state.current, state.previous] : [state.current]
+      for (const cue of cues) {
+        if (cue.position < 0) continue
+        const run = this.timelineRun(state, cue, now)
+        if (!run) continue
+        const playing = state.status === 'playing'
+        for (const clip of run.timeline.clips) {
+          if (clip.kind === 'element') continue
+          const to = clip.output_id ?? this.firstOutput
+          const audible = this.sound && cue === state.current && to != null && (this.only?.includes(to) ?? false)
+          wants.push({ key: `${run.key}:${clip.id}`, clip, t: run.t, playing, audible })
+        }
+      }
+    }
+    this.timelineMedia.update(wants, frameAt)
   }
 
   setMedia(assets: MediaAsset[]) {
@@ -366,11 +473,13 @@ export class Playback {
     const people = this.spots()
     const surfaces = this.surfaces
     if (this.preview) {
+      this.syncTimelineMedia(state, now, 1)
       const scenes = this.sceneItems(state, now, 1, outputId)
       // A scene being tried out in the editor, on this computer only.
       return { a: this.backdrop, b: null, mix: 1, blackout: false, drift: null, scenes, people, surfaces, separate: NONE, emergency: false }
     }
     if (!state || state.status === 'stopped' || state.status === 'blackout' || !state.current) {
+      this.syncTimelineMedia(state, now, 1)
       const scenes = this.sceneItems(state, now, 1, outputId)
       return {
         a: null, b: null, mix: 1, blackout: scenes.length === 0, drift: null, scenes, people, surfaces,
@@ -383,6 +492,7 @@ export class Playback {
       const fadeMs = Math.max(1, state.current.fade_seconds * 1000)
       mix = Math.min(1, Math.max(0, (now - state.fade_started_at_ms) / fadeMs))
     }
+    this.syncTimelineMedia(state, now, mix)
     if (now - this.lastCorrection > CORRECT_EVERY_MS) {
       this.lastCorrection = now
       const playing = state.status === 'playing'
@@ -414,5 +524,6 @@ export class Playback {
 
   dispose() {
     for (const slot of [...this.slots.values()]) this.release(slot)
+    this.timelineMedia.dispose()
   }
 }

@@ -23,7 +23,7 @@ MAPPING_TABLES = {"media_assets", "mapping_shows", "mapping_outputs", "mapping_c
                   "mapping_scene_groups", "show_plan", "show_calendar",
                   "heaters", "heater_readings", "weather_place",
                   "show_nights", "history_settings", "mapping_playlists"}
-HEAD_REVISION = "b4e8d2a6c9f3"
+HEAD_REVISION = "d7a3f9c2e5b1"
 
 
 def test_classification():

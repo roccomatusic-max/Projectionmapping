@@ -45,6 +45,10 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
   }, [playback, show?.cues])
 
   useEffect(() => {
+    if (show) playback.setCanvas(show.canvas_width, show.canvas_height)
+  }, [playback, show?.canvas_width, show?.canvas_height]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     playback.setEveryCue(show ? everyCueScene(show) : null)
   }, [playback, show?.id, show?.name, show?.every_cue_elements]) // eslint-disable-line react-hooks/exhaustive-deps
 

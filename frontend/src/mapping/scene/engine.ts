@@ -69,6 +69,28 @@ export interface SceneItem {
   time: number
   /** Now on the server's clock, epoch milliseconds (the countdowns). */
   clock?: number
+  /**
+   * A video or picture from a timeline (scene/timeline.ts), drawn by the
+   * item's one "picture" layer in a box of its own instead of over the
+   * whole canvas.
+   */
+  media?: ItemMedia
+}
+
+/** A timeline's video or picture, where it is at this moment. */
+export interface ItemMedia {
+  mediaId: number
+  /** Width over height of the picture. */
+  aspect: number
+  /** Its middle (canvas fractions), height (canvas heights) and turn (degrees clockwise). */
+  x: number
+  y: number
+  size: number
+  rotation: number
+  /** A playing video, or a moving picture's frame; none draws the still from the library. */
+  source?: TexImageSource | null
+  /** Changes when ``source`` shows a new picture; null uploads it every frame (a video). */
+  frame?: number | null
 }
 
 export interface DistortParams {
@@ -158,6 +180,8 @@ export class SceneEngine {
   private pictures = new Map<number, { tex: WebGLTexture; ready: boolean }>()
   /** Failed loads per picture, for backing off its retries. */
   private pictureFailures = new Map<number, number>()
+  /** Videos and moving pictures of timeline clips, by layer key, with the frame last uploaded. */
+  private live = new Map<string, { tex: WebGLTexture; frame: number | null | undefined; seenAt: number }>()
   private countdown: CountdownDrawer | null = null
   private movers: MoverDrawer | null = null
   private info: InfoDrawer | null = null
@@ -260,6 +284,37 @@ export class SceneEngine {
     if (mode === 'normal') gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     else if (mode === 'screen') gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ZERO, gl.ONE)
     else gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE)
+  }
+
+  /** The texture of a timeline clip's video or moving picture, brought up to date. */
+  private liveTexture(key: string, media: ItemMedia): WebGLTexture | null {
+    if (!media.source) return media.mediaId != null ? this.picture(media.mediaId) : null
+    const gl = this.gl
+    let entry = this.live.get(key)
+    if (!entry) {
+      const tex = gl.createTexture()!
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      entry = { tex, frame: undefined, seenAt: 0 }
+      this.live.set(key, entry)
+    }
+    entry.seenAt = performance.now()
+    const frame = media.frame ?? null
+    // A video seeking has no frame to give; its last one stays up meanwhile.
+    const waiting = media.source instanceof HTMLVideoElement && media.source.readyState < 2
+    if (!waiting && (frame === null || frame !== entry.frame)) {
+      gl.bindTexture(gl.TEXTURE_2D, entry.tex)
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.source)
+        entry.frame = frame
+      } catch {
+        // A video between frames (or a frame already closed): keep the last one.
+      }
+    }
+    return entry.frame === undefined ? null : entry.tex
   }
 
   private picture(mediaId: number): WebGLTexture | null {
@@ -425,6 +480,12 @@ export class SceneEngine {
         if (strength <= 0.001) continue
         const key = `${item.scene.id}:${layer.id}`
         used.add(key)
+        if (item.media && layer.type === 'picture') {
+          const state = this.state(key)
+          this.updateMask(state, layer, frame, frame.rect, w, h)
+          this.drawLayer(layer, state, { strength, count, frame, w, h, dt, pxPerHeight, time: item.time, key, media: item.media })
+          continue
+        }
         if (layer.type === 'countdown') {
           this.countdown ??= new CountdownDrawer(gl)
           this.countdown.draw(key, {
@@ -471,7 +532,7 @@ export class SceneEngine {
         } else {
           this.updateMask(state, layer, frame, frame.rect, w, h)
         }
-        this.drawLayer(layer, state, { strength, count, frame, w, h, dt, pxPerHeight, time: item.time })
+        this.drawLayer(layer, state, { strength, count, frame, w, h, dt, pxPerHeight, time: item.time, key })
       }
     }
 
@@ -549,6 +610,12 @@ export class SceneEngine {
     this.info?.forget(used)
     this.snowcap?.forget(used)
     const now = performance.now()
+    for (const [key, entry] of this.live) {
+      if (!used.has(key) && now - entry.seenAt > 2000) {
+        this.gl.deleteTexture(entry.tex)
+        this.live.delete(key)
+      }
+    }
     for (const [key, state] of this.states) {
       if (!used.has(key) && now - state.seenAt > 5000) {
         this.dropState(state)
@@ -629,6 +696,8 @@ export class SceneEngine {
       dt: number
       pxPerHeight: number
       time: number
+      key: string
+      media?: ItemMedia
     },
   ) {
     const gl = this.gl
@@ -716,8 +785,9 @@ export class SceneEngine {
     }
 
     let picture: WebGLTexture | null = null
+    const media = ctx.media
     if (layer.type === 'picture') {
-      picture = layer.media_id != null ? this.picture(layer.media_id) : null
+      picture = media ? this.liveTexture(ctx.key, media) : layer.media_id != null ? this.picture(layer.media_id) : null
       if (!picture) return
     }
     const p = this.program(layer.type, LAYER_VERTEX, () => layerFragment(layer.type))
@@ -729,6 +799,12 @@ export class SceneEngine {
       gl.bindTexture(gl.TEXTURE_2D, picture)
       gl.uniform1i(this.u(p, 'uPicture'), 2)
       gl.activeTexture(gl.TEXTURE0)
+      gl.uniform1i(this.u(p, 'uBoxOn'), media ? 1 : 0)
+      if (media) {
+        const half = Math.max(0.0005, media.size / 2)
+        gl.uniform4f(this.u(p, 'uBox'), media.x, media.y, half * media.aspect, half)
+        gl.uniform1f(this.u(p, 'uTurn'), (media.rotation * Math.PI) / 180)
+      }
     }
     this.blend(layer.blend)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
@@ -755,6 +831,8 @@ export class SceneEngine {
     this.flatTex = null
     for (const { tex } of this.pictures.values()) gl.deleteTexture(tex)
     this.pictures.clear()
+    for (const { tex } of this.live.values()) gl.deleteTexture(tex)
+    this.live.clear()
     this.countdown?.dispose()
     this.countdown = null
     this.movers?.dispose()

@@ -261,6 +261,10 @@ class MappingTransport:
         hold = cue.follow_seconds
         if hold is None and not cue.loop and duration:
             hold = duration
+        timeline = cue.timeline or {}
+        if cue.follow_seconds is None and timeline.get("end") == "next" and timeline.get("length"):
+            # A timeline set to go on to the next cue does so as it ends.
+            hold = float(timeline["length"])
         if hold is None or position + 1 >= cue_count:
             return
         # The revision _publish is about to set; any other change cancels it.

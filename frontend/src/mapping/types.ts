@@ -5,7 +5,8 @@ export type Point = [number, number]
 export interface MediaAsset {
   id: number
   name: string
-  kind: 'video' | 'image'
+  /** Sounds play only on a show designer timeline. */
+  kind: 'video' | 'image' | 'audio'
   content_type: string
   size_bytes: number
   width: number | null
@@ -127,6 +128,74 @@ export interface Cue {
    * Scene groups and playlists change the scenes, never these.
    */
   elements?: SceneLayer[]
+  /** Videos, pictures, elements and sounds that come and go while the cue plays (Show designer). */
+  timeline?: Timeline | null
+}
+
+// -- timelines (the show designer) ----------------------------------------------
+
+/** How a clip comes in or goes out. */
+export type ClipEntrance = 'none' | 'fade' | 'left' | 'right' | 'top' | 'bottom' | 'grow' | 'spin'
+
+/**
+ * Where a clip, or one of an element's objects, is at a moment: its middle
+ * in canvas fractions, its size (a picture's height in canvas heights; an
+ * object's size as on an element) and its turn in degrees clockwise.
+ */
+export interface ClipPin {
+  x: number
+  y: number
+  size: number
+  rotation?: number
+}
+
+/** Where a clip is ``t`` seconds after it starts; it glides from key to key. */
+export interface ClipKey {
+  t: number
+  pins: ClipPin[]
+  opacity: number
+}
+
+export interface TimelineClip {
+  id: string
+  kind: 'media' | 'element' | 'sound'
+  name: string
+  /** The row; higher rows draw on top. */
+  track: number
+  /** Seconds from the start of the cue. */
+  start: number
+  length: number
+  enter: ClipEntrance
+  enter_seconds: number
+  exit: ClipEntrance
+  exit_seconds: number
+  opacity: number
+  media_id?: number | null
+  /** Where a video or picture sits when it has no moves. */
+  pin?: ClipPin | null
+  /** Seconds into the video or sound where the clip starts playing. */
+  offset: number
+  loop: boolean
+  volume: number
+  /** Play a video's own sound too. */
+  sound: boolean
+  /** The projector whose mini PC plays the sound; null is the show's first. */
+  output_id?: number | null
+  /** Where a video or picture may show: all of it, or only the walls, the windows… */
+  target?: LayerTarget
+  /** An element clip's element, placed as it is when it has no moves. */
+  layer?: SceneLayer | null
+  /** Moves over time, in order of time. */
+  keys: ClipKey[]
+}
+
+export interface Timeline {
+  length: number
+  /** At the end: start again, go on to the next cue, or stay on the last moment. */
+  end: 'loop' | 'next' | 'hold'
+  /** Rows the designer shows. */
+  tracks: number
+  clips: TimelineClip[]
 }
 
 /** How people tracked by a depth camera affect a cue. */

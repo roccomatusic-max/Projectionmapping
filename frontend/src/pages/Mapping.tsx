@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import { api, type Session } from '@/api/client'
 import type { Projector } from '@/api/types'
 import { ConfirmDialog, EmptyState, ErrorBanner, InfoTip, Panel, SectionBar, Spinner, ToastStack, useToasts } from '@/components/ui'
-import { CameraIcon, EditorIcon, MiniPcIcon, RunShowIcon, ScenesIcon, type LucideIcon } from '@/components/icons'
+import { CameraIcon, DesignerIcon, EditorIcon, MiniPcIcon, RunShowIcon, ScenesIcon, type LucideIcon } from '@/components/icons'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
 import { CameraPanel } from '@/mapping/editor/CameraPanel'
@@ -16,6 +16,7 @@ import { PlayersPanel } from '@/mapping/editor/PlayersPanel'
 import { ProjectorMedia } from '@/mapping/editor/ProjectorMedia'
 import { SavedMaps } from '@/mapping/editor/SavedMaps'
 import { ScenesPanel } from '@/mapping/editor/ScenesPanel'
+import { ShowDesigner } from '@/mapping/editor/ShowDesigner'
 import { TransportBar } from '@/mapping/editor/TransportBar'
 import { sideBySide, withDefaults } from '@/mapping/geometry'
 import { EditSender, useLocalChannel } from '@/mapping/live'
@@ -35,7 +36,7 @@ function outputBody(output: Output): Partial<Output> {
   return body
 }
 
-type Section = 'show' | 'scenes' | 'camera' | 'players' | 'remote'
+type Section = 'show' | 'designer' | 'scenes' | 'camera' | 'players' | 'remote'
 
 /** The Mapping tabs, in the order of a show's life, each with its own address. */
 const SECTIONS: Array<{ id: Section; slug: string; label: string; icon: LucideIcon; hint: string }> = [
@@ -43,6 +44,8 @@ const SECTIONS: Array<{ id: Section; slug: string; label: string; icon: LucideIc
     hint: 'GO plays the next cue. Pause, Stop and Blackout act on every projector at once.' },
   { id: 'show', slug: 'editor', label: 'Editor', icon: EditorIcon,
     hint: 'Build the show: cues and media, where each projector lands on the picture, warp and blends.' },
+  { id: 'designer', slug: 'designer', label: 'Show designer', icon: DesignerIcon,
+    hint: 'A video editor for a cue: videos, pictures, elements and sounds that come in, move and go at set times.' },
   { id: 'scenes', slug: 'scenes', label: 'Scenes', icon: ScenesIcon,
     hint: 'Make a scene step by step: pick the projector it goes on, pick how it looks, then put it on the house.' },
   { id: 'camera', slug: 'camera', label: 'Camera', icon: CameraIcon,
@@ -450,6 +453,26 @@ export default function Mapping({ session }: { session: Session }) {
           {section === 'remote' && (
             <Panel title="Cues">
               <CueList show={show} media={media} scenes={scenes} transport={transport} canEdit={false} canRun={canRun} compact {...cueOps} />
+            </Panel>
+          )}
+
+          {section === 'designer' && (
+            <Panel title="Show designer"
+              description="Pick a cue and lay out what happens while it plays: videos and pictures, elements and sounds on rows, each coming in, moving and going at its own time. GO on the house plays it on every projector together.">
+              <ShowDesigner
+                show={show}
+                outputs={outputs}
+                scenes={scenes}
+                media={media}
+                clock={clock}
+                transport={transport}
+                canEdit={canEdit}
+                canRun={canRun}
+                onPlayOnHouse={(cue) => command('goto', { cue: cue.position })}
+                reloadMedia={reloadMedia}
+                onShowChanged={() => runtime.refresh()}
+                onError={setError}
+              />
             </Panel>
           )}
 

@@ -5,7 +5,7 @@ import { applyHomography, squareToQuad, withDefaults } from '../geometry'
 import type { ServerClock } from '../live'
 import { OutputView } from '../OutputView'
 import { PeopleTracker } from '../people'
-import { Playback } from '../playback'
+import { Playback, type TimelinePreview } from '../playback'
 import type { TextureSource } from '../renderer'
 import { MAX_PINS } from '../scene/engine'
 import { SimulatedCrowd } from '../scene/simulate'
@@ -66,6 +66,8 @@ export interface Placing {
   selected: number | null
   /** The pins are the points of a path, in order: a line joins them and they do not turn. */
   path?: boolean
+  /** Smallest and largest size the size handle gives (usually 0.3 to 3). */
+  sizeRange?: [number, number]
 }
 
 /** How far the turn handle sits above the top edge, in overlay units. */
@@ -260,6 +262,7 @@ export function ScenePreview({
   onStats,
   overlay,
   picker,
+  timeline = null,
 }: {
   show: Show
   scene: MappingScene | null
@@ -294,6 +297,8 @@ export function ScenePreview({
   overlay?: React.ReactNode
   /** On top and taking the pointer: the corners of a house part being straightened. */
   picker?: React.ReactNode
+  /** A cue's timeline drawn over the scene at the designer's playhead (the Show designer). */
+  timeline?: TimelinePreview | null
 }) {
   const playback = useMemo(() => new Playback(), [])
   const aspect = show.canvas_width / show.canvas_height
@@ -322,6 +327,9 @@ export function ScenePreview({
   useEffect(() => crowd.setAspect(aspect), [crowd, aspect])
   useEffect(() => crowd.setCount(count), [crowd, count])
   useEffect(() => playback.setSurfaces(surfaces), [playback, surfaces])
+  useEffect(() => playback.setCanvas(show.canvas_width, show.canvas_height), [playback, show.canvas_width, show.canvas_height])
+  useEffect(() => playback.setMedia(media), [playback, media])
+  useEffect(() => playback.setTimelinePreview(timeline), [playback, timeline])
   useEffect(() => {
     playback.setPeople(peopleSource === 'camera' ? cameraPeople : simulated)
   }, [playback, peopleSource, cameraPeople, simulated])
@@ -649,7 +657,8 @@ export function ScenePreview({
         if (d.kind === 'pin-size') {
           // The size handle's distance from the middle at size 1 is g.reach.
           const size = Math.hypot(x - g.cx, y - g.cy) / Math.max(1, g.reach)
-          next = { ...pin, size: Math.round(Math.min(3, Math.max(0.3, size)) * 100) / 100 }
+          const [least, most] = placing.sizeRange ?? [0.3, 3]
+          next = { ...pin, size: Math.round(Math.min(most, Math.max(least, size)) * 100) / 100 }
         } else {
           // The turn handle sits straight above (or below) the middle when not turned.
           let deg = (Math.atan2(y - g.cy, x - g.cx) * 180) / Math.PI + (d.below ? -90 : 90)

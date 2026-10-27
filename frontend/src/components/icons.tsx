@@ -7,6 +7,7 @@ export {
   Bell as AlertsIcon,
   Camera as CameraIcon,
   CirclePlay as RunShowIcon,
+  ChartNoAxesGantt as DesignerIcon,
   CircleHelp as HelpIcon,
   Cpu as MiniPcIcon,
   PenTool as EditorIcon,

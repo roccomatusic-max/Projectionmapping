@@ -5,6 +5,7 @@ import { type LinkStatus, useLocalChannel } from './live'
 import { type CalibrationFrame, type FrameStats, OutputView } from './OutputView'
 import type { CalibrationStepMessage, Show } from './types'
 import { liveLabel } from './types'
+import { timelineMediaIds } from './scene/timeline'
 import { useShowRuntime } from './useShowRuntime'
 
 /** A calibration that stops sending frames (camera gone) ends after this. */
@@ -143,7 +144,9 @@ export function OutputScreen({
     const ids = scenes
       .filter((s) => used.has(s.id))
       .flatMap((s) => s.layers.map((l) => l.media_id).filter((id): id is number => id != null))
-    return [...new Set(ids)].sort((a, b) => a - b)
+    // And every video, picture and sound the cues' timelines play.
+    const timelines = show?.cues.flatMap((c) => timelineMediaIds(c.timeline)) ?? []
+    return [...new Set([...ids, ...timelines])].sort((a, b) => a - b)
   }, [show?.cues, scenes])
   const sceneMediaKey = sceneMedia.join(',')
 
@@ -217,6 +220,14 @@ export function OutputScreen({
     playback.setOutputs([outputId])
     return () => playback.setOutputs(null)
   }, [playback, outputId])
+
+  // And plays the timeline sounds meant for its projector (the show's
+  // first one plays those not given to a projector of their own).
+  const firstOutput = show ? [...show.outputs].sort((a, b) => a.position - b.position)[0]?.id ?? null : null
+  useEffect(() => {
+    playback.setSound(true, firstOutput)
+    return () => playback.setSound(false, null)
+  }, [playback, firstOutput])
 
   useEffect(() => {
     document.title = output ? `${output.name} · Output` : 'Output'
