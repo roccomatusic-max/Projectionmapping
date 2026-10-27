@@ -11144,6 +11144,2077 @@ function diya(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) 
   }
 }
 
+// -- Santa in the chimney, candles in the windows, a disco ball, searchlights, the New Year's ball,
+//    champagne, firecrackers, graduation caps -----------------------------------------------------
+
+/** Santa from the waist up, waving (frames), to come up out of a chimney. */
+function chimneySanta(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const wave = Math.sin(p)
+  // Coat.
+  const g = ctx.createLinearGradient(40, 0, 160, 0)
+  g.addColorStop(0, shade(color, -0.25))
+  g.addColorStop(1, shade(color, 0.1))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(44, 200)
+  ctx.quadraticCurveTo(40, 120, 100, 112)
+  ctx.quadraticCurveTo(160, 120, 156, 200)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#f8fafc'
+  ctx.fillRect(94, 120, 12, 80)
+  // One arm waving over his head, the other holding the chimney edge.
+  const [hx, hy] = limb(ctx, 146, 132, 34, 32, -2.4 + wave * 0.35, -0.5 + wave * 0.3, 20, color)
+  ctx.fillStyle = '#f8fafc'
+  circle(ctx, hx, hy, 11)
+  ctx.fill()
+  limb(ctx, 56, 134, 30, 26, 0.5, -0.6, 20, color)
+  ctx.fillStyle = color2
+  circle(ctx, 72, 186, 11)
+  ctx.fill()
+  // Face, cheeks, big white beard.
+  ctx.fillStyle = SKIN
+  circle(ctx, 100, 82, 28)
+  ctx.fill()
+  ctx.fillStyle = '#f8fafc'
+  ctx.beginPath()
+  ctx.moveTo(70, 82)
+  ctx.quadraticCurveTo(66, 150, 100, 156)
+  ctx.quadraticCurveTo(134, 150, 130, 82)
+  ctx.quadraticCurveTo(100, 104, 70, 82)
+  ctx.fill()
+  ctx.fillStyle = '#fca5a5'
+  circle(ctx, 84, 88, 6)
+  ctx.fill()
+  circle(ctx, 116, 88, 6)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 90, 76, 3)
+  ctx.fill()
+  circle(ctx, 110, 76, 3)
+  ctx.fill()
+  ctx.fillStyle = '#f1a07a'
+  circle(ctx, 100, 88, 6)
+  ctx.fill()
+  // Mouth open in a laugh.
+  ctx.fillStyle = '#7f1d1d'
+  ellipse(ctx, 100, 106, 8, 5 + Math.abs(wave) * 3)
+  ctx.fill()
+  // Hat flopping over.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(70, 70)
+  ctx.quadraticCurveTo(96, 20, 140, 38 + wave * 4)
+  ctx.lineTo(132, 52)
+  ctx.quadraticCurveTo(110, 50, 130, 70)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#f8fafc'
+  ctx.beginPath()
+  ctx.roundRect(66, 60, 68, 16, 8)
+  ctx.fill()
+  circle(ctx, 142, 40 + wave * 4, 10)
+  ctx.fill()
+}
+
+/** A brick chimney with snow on top (Santa comes up out of it). */
+function chimney(ctx: Ctx) {
+  ctx.fillStyle = '#9a3412'
+  ctx.fillRect(10, 30, 180, 130)
+  ctx.strokeStyle = '#7c2d12'
+  ctx.lineWidth = 3
+  for (let r = 0; r < 6; r++) {
+    const y = 30 + r * 22
+    ctx.beginPath()
+    ctx.moveTo(10, y)
+    ctx.lineTo(190, y)
+    ctx.stroke()
+    for (let x = 10 + (r % 2) * 22; x < 190; x += 44) {
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x, y + 22)
+      ctx.stroke()
+    }
+  }
+  ctx.fillStyle = '#7c2d12'
+  ctx.fillRect(0, 14, 200, 22)
+  ctx.fillStyle = '#f8fafc'
+  ctx.beginPath()
+  ctx.moveTo(0, 18)
+  ctx.quadraticCurveTo(40, 0, 80, 12)
+  ctx.quadraticCurveTo(130, 2, 200, 16)
+  ctx.lineTo(200, 26)
+  ctx.quadraticCurveTo(150, 34, 100, 28)
+  ctx.quadraticCurveTo(50, 36, 0, 26)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** An electric window candle, its bulb flickering (frames), on a little brass base. */
+function windowCandle(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const flick = [1, 0.9, 1.06, 0.94][f % 4]
+  glow(ctx, 40, 44, 40 * flick, color2, 0.8)
+  ctx.save()
+  ctx.translate(40, 60)
+  ctx.scale(flick, flick)
+  ctx.fillStyle = '#fde68a'
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.bezierCurveTo(-11, -8, -7, -28, 0, -38)
+  ctx.bezierCurveTo(7, -28, 11, -8, 0, 0)
+  ctx.fill()
+  ctx.fillStyle = '#fffbeb'
+  ellipse(ctx, 0, -12, 4, 9)
+  ctx.fill()
+  ctx.restore()
+  const g = ctx.createLinearGradient(28, 0, 52, 0)
+  g.addColorStop(0, shade(color, -0.1))
+  g.addColorStop(0.5, '#ffffff')
+  g.addColorStop(1, shade(color, -0.15))
+  ctx.fillStyle = g
+  ctx.fillRect(30, 62, 20, 72)
+  ctx.fillStyle = '#ca8a04'
+  ctx.beginPath()
+  ctx.moveTo(18, 150)
+  ctx.lineTo(62, 150)
+  ctx.lineTo(54, 134)
+  ctx.lineTo(26, 134)
+  ctx.closePath()
+  ctx.fill()
+  ellipse(ctx, 40, 150, 26, 6)
+  ctx.fill()
+}
+
+/** A mirror ball, its facets catching the light as it turns. */
+function discoBall(ctx: Ctx, f: number, frames: number, { color }: SpriteColors) {
+  const turn = f / frames
+  ctx.fillStyle = '#a1a1aa'
+  ctx.fillRect(56, 0, 8, 18)
+  ctx.save()
+  circle(ctx, 60, 72, 52)
+  ctx.clip()
+  ctx.fillStyle = '#52525b'
+  ctx.fillRect(0, 0, 120, 140)
+  const rows = 10
+  for (let r = 0; r < rows; r++) {
+    const lat = -Math.PI / 2 + ((r + 0.5) / rows) * Math.PI
+    const y = 72 + Math.sin(lat) * 52
+    const rad = Math.cos(lat) * 52
+    const cols = Math.max(4, Math.round(16 * Math.cos(lat)))
+    for (let c = 0; c < cols; c++) {
+      const lon = ((c + turn + (r % 2) * 0.5) / cols) * Math.PI * 2
+      const z = Math.cos(lon)
+      if (z < 0) continue
+      const x = 60 + Math.sin(lon) * rad
+      const b = 0.35 + 0.65 * z * (0.5 + 0.5 * Math.sin(lon * 3 + r))
+      ctx.fillStyle = (c + r + Math.floor(turn * cols)) % 7 === 0 ? '#ffffff' : `rgba(${Math.round(160 + 90 * b)},${Math.round(165 + 85 * b)},${Math.round(180 + 75 * b)},1)`
+      ctx.fillRect(x - (5 * z + 1), y - 4.5, 10 * z + 1.5, 8.5)
+    }
+  }
+  ctx.restore()
+  glow(ctx, 40, 50, 18, color, 0.7)
+}
+
+/** One spot of coloured light thrown by the mirror ball. */
+function lightSpot(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const c = [color, color2, '#ffffff', '#a5f3fc'][f % 4]
+  glow(ctx, 20, 20, 20, c, 0.95)
+}
+
+/** A searchlight on its stand, pointing up; the beam is its own picture. */
+function searchlightBase(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  ctx.fillStyle = '#3f3f46'
+  ctx.beginPath()
+  ctx.moveTo(20, 120)
+  ctx.lineTo(50, 70)
+  ctx.lineTo(70, 70)
+  ctx.lineTo(100, 120)
+  ctx.closePath()
+  ctx.fill()
+  const g = ctx.createLinearGradient(30, 0, 90, 0)
+  g.addColorStop(0, '#52525b')
+  g.addColorStop(0.5, '#a1a1aa')
+  g.addColorStop(1, '#52525b')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.roundRect(30, 26, 60, 50, 10)
+  ctx.fill()
+  ctx.fillStyle = '#fffbeb'
+  ellipse(ctx, 60, 26, 30, 9)
+  ctx.fill()
+  glow(ctx, 60, 22, 34, color, 0.8)
+}
+
+/** A long searchlight beam: its foot at the bottom middle, fading out at the top. */
+function skyBeam(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  const g = ctx.createLinearGradient(0, 600, 0, 0)
+  g.addColorStop(0, rgba(color, 0.6))
+  g.addColorStop(1, rgba(color, 0))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(44, 600)
+  ctx.lineTo(56, 600)
+  ctx.lineTo(100, 0)
+  ctx.lineTo(0, 0)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** The New Year's ball: a glittering sphere of crystal triangles, twinkling with the frames. */
+function newYearBall(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  glow(ctx, 80, 80, 80, color2, 0.45)
+  ctx.save()
+  circle(ctx, 80, 80, 62)
+  ctx.clip()
+  const g = ctx.createRadialGradient(60, 56, 6, 80, 80, 64)
+  g.addColorStop(0, '#ffffff')
+  g.addColorStop(0.5, color)
+  g.addColorStop(1, shade(color, -0.4))
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 160, 160)
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)'
+  ctx.lineWidth = 1.5
+  for (let k = -6; k <= 6; k++) {
+    ctx.beginPath()
+    ctx.moveTo(0, 80 + k * 13)
+    ctx.lineTo(160, 80 + k * 13 - 50)
+    ctx.moveTo(0, 80 + k * 13 - 50)
+    ctx.lineTo(160, 80 + k * 13)
+    ctx.stroke()
+  }
+  for (let k = 0; k < 12; k++) {
+    const on = (k * 5 + f) % 4 === 0
+    if (!on) continue
+    const x = 30 + ((k * 37) % 100)
+    const y = 30 + ((k * 53) % 100)
+    glow(ctx, x, y, 12, '#ffffff', 0.95)
+  }
+  ctx.restore()
+}
+
+/** The pole the ball comes down, with the year's lights at the bottom (base at the bottom of the cell). */
+function ballPole(ctx: Ctx, _f: number, _n: number, { color2 }: SpriteColors) {
+  const g = ctx.createLinearGradient(40, 0, 60, 0)
+  g.addColorStop(0, '#71717a')
+  g.addColorStop(0.5, '#e4e4e7')
+  g.addColorStop(1, '#71717a')
+  ctx.fillStyle = g
+  ctx.fillRect(44, 0, 12, 470)
+  ctx.fillStyle = '#27272a'
+  ctx.fillRect(10, 470, 80, 30)
+  ctx.fillStyle = color2
+  for (let k = 0; k < 4; k++) {
+    ctx.fillRect(16 + k * 18, 476, 14, 18)
+  }
+}
+
+/** A champagne bottle in its foil, cork in (frame 0) or out with foam spilling (frame 1). */
+function champagneBottle(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const open = f % 2 === 1
+  const g = ctx.createLinearGradient(20, 0, 80, 0)
+  g.addColorStop(0, shade(color, -0.35))
+  g.addColorStop(0.4, shade(color, 0.3))
+  g.addColorStop(1, shade(color, -0.4))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(40, 40)
+  ctx.lineTo(60, 40)
+  ctx.lineTo(60, 92)
+  ctx.quadraticCurveTo(82, 104, 82, 130)
+  ctx.lineTo(82, 236)
+  ctx.quadraticCurveTo(82, 244, 74, 244)
+  ctx.lineTo(26, 244)
+  ctx.quadraticCurveTo(18, 244, 18, 236)
+  ctx.lineTo(18, 130)
+  ctx.quadraticCurveTo(18, 104, 40, 92)
+  ctx.closePath()
+  ctx.fill()
+  // Gold foil and label.
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(38, 36)
+  ctx.lineTo(62, 36)
+  ctx.lineTo(62, 96)
+  ctx.lineTo(38, 96)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#fef3c7'
+  ctx.fillRect(24, 150, 52, 50)
+  ctx.fillStyle = shade(color2, -0.3)
+  ctx.font = 'bold 14px Georgia, serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('BRUT', 50, 180)
+  if (!open) {
+    ctx.fillStyle = '#d6b37a'
+    ctx.beginPath()
+    ctx.roundRect(40, 20, 20, 20, 4)
+    ctx.fill()
+  } else {
+    // Foam frothing over the neck.
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'
+    for (let k = 0; k < 9; k++) {
+      circle(ctx, 40 + ((k * 11) % 22), 30 - k * 3, 7 - k * 0.3)
+      ctx.fill()
+    }
+    for (let k = 0; k < 4; k++) {
+      ellipse(ctx, 36 + k * 9, 46 + k * 10, 5, 9)
+      ctx.fill()
+    }
+  }
+}
+
+/** A cork flying, turning. */
+function cork(ctx: Ctx) {
+  ctx.fillStyle = '#d6b37a'
+  ctx.beginPath()
+  ctx.roundRect(8, 4, 24, 32, 5)
+  ctx.fill()
+  ctx.fillStyle = '#a16207'
+  ctx.fillRect(8, 4, 24, 6)
+}
+
+/** A string of red firecrackers hanging from the eaves; frame k shows the bottom k gone off. */
+function firecrackers(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const gone = f % frames
+  ctx.strokeStyle = color2
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(50, 0)
+  ctx.lineTo(50, 300)
+  ctx.stroke()
+  const count = 10
+  for (let k = 0; k < count; k++) {
+    if (count - k <= gone) continue
+    const y = 30 + k * 27
+    for (const d of [-1, 1]) {
+      ctx.save()
+      ctx.translate(50 + d * 14, y)
+      ctx.rotate(d * 0.5)
+      const g = ctx.createLinearGradient(-7, 0, 7, 0)
+      g.addColorStop(0, shade(color, -0.3))
+      g.addColorStop(0.5, shade(color, 0.25))
+      g.addColorStop(1, shade(color, -0.3))
+      ctx.fillStyle = g
+      ctx.fillRect(-7, -14, 14, 28)
+      ctx.fillStyle = color2
+      ctx.fillRect(-7, -14, 14, 4)
+      ctx.fillRect(-7, 10, 14, 4)
+      ctx.restore()
+    }
+  }
+  // A tassel at the top.
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(40, 0)
+  ctx.lineTo(60, 0)
+  ctx.lineTo(56, 22)
+  ctx.lineTo(44, 22)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A bang: a star of light with sparks. */
+function bang(ctx: Ctx, f: number, _n: number, { color2 }: SpriteColors) {
+  glow(ctx, 50, 50, 50, color2, 0.9)
+  ctx.fillStyle = '#ffffff'
+  ctx.beginPath()
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * TAU + f * 0.3
+    const r = k % 2 ? 14 : 40
+    ctx.lineTo(50 + Math.cos(a) * r, 50 + Math.sin(a) * r)
+  }
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A graduation cap with its tassel, tilted a little differently each frame (they spin as they fly). */
+function gradCap(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const a = (f / frames) * TAU
+  const squash = 0.35 + 0.65 * Math.abs(Math.cos(a))
+  ctx.save()
+  ctx.translate(60, 46)
+  ctx.scale(1, squash)
+  ctx.fillStyle = shade(color, -0.2)
+  ctx.beginPath()
+  ctx.moveTo(-26, 4)
+  ctx.lineTo(26, 4)
+  ctx.lineTo(22, 34)
+  ctx.lineTo(-22, 34)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(0, -28)
+  ctx.lineTo(56, 0)
+  ctx.lineTo(0, 24)
+  ctx.lineTo(-56, 0)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+  ctx.strokeStyle = color2
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(60, 46)
+  ctx.lineTo(96, 46 + 6 * squash)
+  ctx.lineTo(98, 78)
+  ctx.stroke()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(92, 76)
+  ctx.lineTo(104, 76)
+  ctx.lineTo(102, 94)
+  ctx.lineTo(94, 94)
+  ctx.closePath()
+  ctx.fill()
+  circle(ctx, 60, 46, 4)
+  ctx.fill()
+}
+
+// -- a school bus, a tractor, deer, foxes, raccoons, a witch who crashes into the house, rain clouds,
+//    hockey players, a lighthouse -------------------------------------------------------------------
+
+/** A yellow school bus driving along (facing right); stopped, its stop sign swings out and the lights flash. */
+function schoolBus(stopped: boolean) {
+  return (ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) => {
+    const p = (f / frames) * TAU
+    const bob = stopped ? 0 : Math.sin(p * 2) * 1.5
+    ctx.save()
+    ctx.translate(0, bob)
+    const g = ctx.createLinearGradient(0, 30, 0, 150)
+    g.addColorStop(0, shade(color, 0.15))
+    g.addColorStop(1, shade(color, -0.2))
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.roundRect(14, 34, 300, 112, [16, 30, 8, 8])
+    ctx.fill()
+    // Hood out front.
+    ctx.beginPath()
+    ctx.roundRect(300, 80, 50, 66, [4, 16, 8, 4])
+    ctx.fill()
+    ctx.fillStyle = '#111827'
+    ctx.fillRect(14, 112, 336, 8)
+    ctx.fillRect(14, 126, 336, 4)
+    // Windows, the last one the driver's.
+    ctx.fillStyle = 'rgba(186,230,253,0.9)'
+    for (let k = 0; k < 6; k++) {
+      ctx.beginPath()
+      ctx.roundRect(28 + k * 44, 48, 36, 36, 4)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#1f2937'
+    ctx.fillRect(296, 46, 6, 66)
+    ctx.fillStyle = color2
+    ctx.font = 'bold 15px Arial, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('SCHOOL BUS', 150, 106)
+    // Red and amber lights on the roof corners, flashing when it stops.
+    const on = stopped && Math.sin(p * 2) > 0
+    for (const x of [24, 290]) {
+      if (on) glow(ctx, x, 34, 22, '#ef4444', 0.95)
+      ctx.fillStyle = on ? '#fca5a5' : '#991b1b'
+      circle(ctx, x, 36, 6)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#fef9c3'
+    circle(ctx, 344, 100, 7)
+    ctx.fill()
+    glow(ctx, 352, 100, 16, '#fef9c3', 0.7)
+    if (stopped) {
+      // The stop arm out from the side.
+      ctx.fillStyle = '#334155'
+      ctx.fillRect(206, 88, 26, 6)
+      ctx.fillStyle = '#dc2626'
+      ctx.beginPath()
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * TAU + Math.PI / 8
+        ctx.lineTo(246 + Math.cos(a) * 20, 90 + Math.sin(a) * 20)
+      }
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 11px Arial, sans-serif'
+      ctx.fillText('STOP', 246, 94)
+      if (on) glow(ctx, 246, 90, 26, '#ef4444', 0.6)
+    }
+    ctx.restore()
+    for (const x of [70, 282]) {
+      ctx.fillStyle = '#27272a'
+      circle(ctx, x, 148, 20)
+      ctx.fill()
+      ctx.fillStyle = '#a1a1aa'
+      circle(ctx, x, 148, 9)
+      ctx.fill()
+      ctx.strokeStyle = '#52525b'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(x + Math.cos(p) * 8, 148 + Math.sin(p) * 8)
+      ctx.lineTo(x - Math.cos(p) * 8, 148 - Math.sin(p) * 8)
+      ctx.stroke()
+    }
+  }
+}
+
+/** A farm tractor (facing right) chugging, puffing from its stack, the big back wheel turning. */
+function tractor(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const chug = Math.sin(p * 4) * 1.5
+  ctx.save()
+  ctx.translate(0, chug)
+  ctx.fillStyle = shade(color, -0.1)
+  ctx.beginPath()
+  ctx.roundRect(110, 86, 120, 50, 8)
+  ctx.fill()
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.roundRect(40, 40, 90, 96, 10)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(186,230,253,0.85)'
+  ctx.fillRect(54, 52, 62, 40)
+  ctx.fillStyle = '#334155'
+  ctx.fillRect(196, 50, 10, 40)
+  ctx.fillStyle = shade(color, -0.35)
+  ctx.fillRect(226, 96, 10, 34)
+  ctx.restore()
+  // A puff from the stack.
+  ctx.fillStyle = `rgba(212,212,216,${0.6 - (f / frames) * 0.4})`
+  circle(ctx, 204 - (f / frames) * 20, 40 - (f / frames) * 30, 8 + (f / frames) * 10)
+  ctx.fill()
+  for (const [x, r] of [[72, 46], [206, 26]] as const) {
+    ctx.fillStyle = '#18181b'
+    circle(ctx, x, 156 - r + 26, r)
+    ctx.fill()
+    ctx.fillStyle = color2
+    circle(ctx, x, 156 - r + 26, r * 0.45)
+    ctx.fill()
+    ctx.strokeStyle = '#3f3f46'
+    ctx.lineWidth = 5
+    for (let k = 0; k < 8; k++) {
+      const a = p + (k / 8) * TAU
+      ctx.beginPath()
+      ctx.moveTo(x + Math.cos(a) * r * 0.85, 156 - r + 26 + Math.sin(a) * r * 0.85)
+      ctx.lineTo(x + Math.cos(a) * r, 156 - r + 26 + Math.sin(a) * r)
+      ctx.stroke()
+    }
+  }
+}
+
+/** A deer walking (facing right), white tail; with alert, standing with its head up and ears turned. */
+function deer(alert: boolean) {
+  return (ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) => {
+    const p = (f / frames) * TAU
+    const s = alert ? 0 : Math.sin(p)
+    const legs: Array<[number, number]> = [[70, s], [86, -s], [150, -s], [166, s]]
+    for (const [x, a] of legs) limb(ctx, x, 120, 34, 32, a * 0.35, -a * 0.25 + 0.1, 7, shade(color, -0.2))
+    const g = ctx.createLinearGradient(0, 70, 0, 140)
+    g.addColorStop(0, color)
+    g.addColorStop(1, shade(color, 0.35))
+    ctx.fillStyle = g
+    ellipse(ctx, 120, 104, 62, 28)
+    ctx.fill()
+    // White tail flag (up when alert).
+    ctx.fillStyle = '#ffffff'
+    ellipse(ctx, 56, alert ? 84 : 96, 8, alert ? 14 : 9, alert ? -0.5 : 0.3)
+    ctx.fill()
+    // Neck and head: grazing down, or up and watching.
+    const [nx, ny] = alert ? [176, 44] : [190, 92 + Math.max(0, Math.sin(p * 0.5)) * 30]
+    ctx.strokeStyle = color
+    ctx.lineWidth = 22
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(160, 96)
+    ctx.lineTo(nx, ny)
+    ctx.stroke()
+    ctx.fillStyle = color
+    ellipse(ctx, nx + 10, ny - 4, 20, 13, alert ? 0.2 : 0.5)
+    ctx.fill()
+    ctx.fillStyle = shade(color, 0.4)
+    ellipse(ctx, nx - 6, ny - 18, 6, 13, -0.4)
+    ctx.fill()
+    ellipse(ctx, nx + 8, ny - 20, 6, 13, 0.3)
+    ctx.fill()
+    ctx.fillStyle = '#111'
+    circle(ctx, nx + 10, ny - 8, 3)
+    ctx.fill()
+    circle(ctx, nx + 27, ny - 1, 3)
+    ctx.fill()
+    // A buck's small antlers in the second colour.
+    ctx.strokeStyle = color2
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(nx + 2, ny - 16)
+    ctx.lineTo(nx - 4, ny - 40)
+    ctx.moveTo(nx - 2, ny - 30)
+    ctx.lineTo(nx - 14, ny - 36)
+    ctx.moveTo(nx + 10, ny - 16)
+    ctx.lineTo(nx + 18, ny - 40)
+    ctx.moveTo(nx + 15, ny - 30)
+    ctx.lineTo(nx + 26, ny - 34)
+    ctx.stroke()
+  }
+}
+
+/** A red fox trotting (facing right), brush tail with a white tip. */
+function fox(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  for (const [x, a] of [[64, s], [76, -s], [126, -s], [138, s]] as const) {
+    limb(ctx, x, 92, 18, 18, a * 0.45, -a * 0.2, 7, shade(color, -0.5))
+  }
+  // Tail streaming behind.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(56, 76)
+  ctx.quadraticCurveTo(20, 60 + s * 4, 6, 84 + s * 4)
+  ctx.quadraticCurveTo(26, 96, 60, 90)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#ffffff'
+  ellipse(ctx, 12, 84 + s * 4, 9, 6, 0.3)
+  ctx.fill()
+  const g = ctx.createLinearGradient(0, 60, 0, 104)
+  g.addColorStop(0, shade(color, 0.1))
+  g.addColorStop(1, shade(color, -0.15))
+  ctx.fillStyle = g
+  ellipse(ctx, 100, 80, 46, 18)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ellipse(ctx, 132, 88, 16, 10)
+  ctx.fill()
+  // Head with pointed ears and a pointed muzzle.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(130, 70)
+  ctx.lineTo(140, 40)
+  ctx.lineTo(150, 58)
+  ctx.lineTo(160, 40)
+  ctx.lineTo(166, 62)
+  ctx.lineTo(192, 74)
+  ctx.lineTo(160, 86)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(150, 76)
+  ctx.lineTo(192, 74)
+  ctx.lineTo(160, 86)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 191, 74, 3.5)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.ellipse(158, 64, 4, 2.4, -0.3, 0, TAU)
+  ctx.fill()
+}
+
+/** A raccoon popping up, little hands on the rim, masked eyes looking about (frames turn its head). */
+function raccoon(ctx: Ctx, f: number, _n: number, { color }: SpriteColors) {
+  const look = [-6, 0, 6, 0][f % 4]
+  ctx.fillStyle = color
+  ellipse(ctx, 80, 120, 46, 50)
+  ctx.fill()
+  // Head.
+  ctx.save()
+  ctx.translate(80 + look, 64)
+  ctx.fillStyle = color
+  ellipse(ctx, 0, 0, 40, 32)
+  ctx.fill()
+  for (const d of [-1, 1]) {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.moveTo(d * 18, -22)
+    ctx.lineTo(d * 30, -44)
+    ctx.lineTo(d * 38, -16)
+    ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = '#e7e5e4'
+    ellipse(ctx, d * 18, 4, 16, 10)
+    ctx.fill()
+    // The black mask.
+    ctx.fillStyle = '#1c1917'
+    ellipse(ctx, d * 15, -4, 14, 9, d * 0.3)
+    ctx.fill()
+    ctx.fillStyle = '#fff'
+    circle(ctx, d * 14 + look * 0.4, -5, 4)
+    ctx.fill()
+    ctx.fillStyle = '#111'
+    circle(ctx, d * 14 + look * 0.6, -5, 2)
+    ctx.fill()
+  }
+  ctx.fillStyle = '#1c1917'
+  ellipse(ctx, 0, 12, 6, 4)
+  ctx.fill()
+  ctx.restore()
+  // Hands over the rim.
+  ctx.fillStyle = '#44403c'
+  ellipse(ctx, 46, 138, 12, 8)
+  ctx.fill()
+  ellipse(ctx, 114, 138, 12, 8)
+  ctx.fill()
+}
+
+/** A metal trash can with its lid knocked askew. */
+function trashCan(ctx: Ctx) {
+  const g = ctx.createLinearGradient(10, 0, 150, 0)
+  g.addColorStop(0, '#52525b')
+  g.addColorStop(0.45, '#d4d4d8')
+  g.addColorStop(1, '#52525b')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(14, 20)
+  ctx.lineTo(146, 20)
+  ctx.lineTo(136, 160)
+  ctx.lineTo(24, 160)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = '#71717a'
+  ctx.lineWidth = 3
+  for (const y of [56, 96, 136]) {
+    ctx.beginPath()
+    ctx.moveTo(16, y)
+    ctx.lineTo(144, y)
+    ctx.stroke()
+  }
+  ctx.fillStyle = '#a1a1aa'
+  ctx.beginPath()
+  ctx.roundRect(4, 10, 152, 14, 6)
+  ctx.fill()
+}
+
+/** The witch splatted flat against the wall, arms and legs out, hat askew, broom snapped. */
+function witchSplat(ctx: Ctx, _f: number, _n: number, { color, color2 }: SpriteColors) {
+  const skin = '#9bd16b'
+  // Broom in two pieces.
+  ctx.strokeStyle = '#78350f'
+  ctx.lineWidth = 7
+  ctx.beginPath()
+  ctx.moveTo(20, 40)
+  ctx.lineTo(90, 90)
+  ctx.moveTo(150, 170)
+  ctx.lineTo(210, 210)
+  ctx.stroke()
+  ctx.fillStyle = '#ca8a04'
+  ctx.beginPath()
+  ctx.moveTo(206, 200)
+  ctx.lineTo(240, 226)
+  ctx.lineTo(214, 236)
+  ctx.closePath()
+  ctx.fill()
+  // Arms and legs spread.
+  for (const [x, y, a] of [[100, 100, 2.3], [140, 100, -2.3], [108, 150, 0.6], [132, 150, -0.6]] as const) {
+    limb(ctx, x, y, 34, 30, a, a > 0 ? 0.3 : -0.3, 14, y < 120 ? color : '#111827')
+  }
+  // Dress.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(98, 92)
+  ctx.lineTo(142, 92)
+  ctx.lineTo(160, 160)
+  ctx.lineTo(80, 160)
+  ctx.closePath()
+  ctx.fill()
+  // Head squashed, swirly eyes, hat crumpled.
+  ctx.fillStyle = skin
+  ellipse(ctx, 120, 72, 24, 20)
+  ctx.fill()
+  ctx.strokeStyle = '#111'
+  ctx.lineWidth = 2
+  for (const d of [-1, 1]) {
+    ctx.beginPath()
+    for (let k = 0; k < 14; k++) {
+      const a = k * 0.8
+      ctx.lineTo(120 + d * 9 + Math.cos(a) * k * 0.45, 68 + Math.sin(a) * k * 0.45)
+    }
+    ctx.stroke()
+  }
+  ctx.fillStyle = '#1f2937'
+  ctx.beginPath()
+  ctx.moveTo(92, 58)
+  ctx.lineTo(150, 50)
+  ctx.lineTo(126, 18)
+  ctx.lineTo(136, 6)
+  ctx.lineTo(112, 22)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.fillRect(98, 50, 46, 6)
+  // Stars of the bump.
+  ctx.fillStyle = '#fde047'
+  for (const [x, y] of [[74, 40], [168, 34], [160, 80]]) {
+    ctx.beginPath()
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * TAU - Math.PI / 2
+      const r = k % 2 ? 4 : 10
+      ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r)
+    }
+    ctx.closePath()
+    ctx.fill()
+  }
+}
+
+/** A puffy rain cloud; frames make its edge billow. Dark when it rains (dark), else pale. */
+function rainCloud(dark: boolean) {
+  return (ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) => {
+    const p = (f / frames) * TAU
+    const base = dark ? color2 : color
+    const lumps: Array<[number, number, number]> = [[60, 90, 40], [110, 64, 52], [170, 70, 46], [214, 96, 34], [140, 104, 44], [86, 106, 34]]
+    for (const [x, y, r] of lumps) {
+      const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.4, 4, x, y, r)
+      g.addColorStop(0, shade(base, 0.35))
+      g.addColorStop(1, shade(base, -0.15))
+      ctx.fillStyle = g
+      circle(ctx, x, y + Math.sin(p + x) * 2, r + Math.sin(p * 2 + y) * 1.5)
+      ctx.fill()
+    }
+    ctx.fillStyle = shade(base, -0.1)
+    ctx.beginPath()
+    ctx.roundRect(40, 100, 190, 32, 16)
+    ctx.fill()
+  }
+}
+
+/** One rain drop streak. */
+function rainStreak(ctx: Ctx) {
+  ctx.strokeStyle = 'rgba(191,219,254,0.9)'
+  ctx.lineWidth = 4
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(10, 4)
+  ctx.lineTo(6, 36)
+  ctx.stroke()
+}
+
+/** A zig-zag of lightning. */
+function lightningBolt(ctx: Ctx) {
+  glow(ctx, 50, 100, 60, '#fef08a', 0.6)
+  ctx.fillStyle = '#fefce8'
+  ctx.beginPath()
+  ctx.moveTo(56, 0)
+  ctx.lineTo(26, 92)
+  ctx.lineTo(52, 92)
+  ctx.lineTo(34, 200)
+  ctx.lineTo(80, 76)
+  ctx.lineTo(54, 76)
+  ctx.lineTo(74, 0)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A hockey player: ready, winding up, slapping the puck, following through (frames 0–3). */
+function hockeyPlayer(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const pose = f % 4
+  // Skates.
+  ctx.strokeStyle = '#e5e7eb'
+  ctx.lineWidth = 3
+  for (const x of [64, 100]) {
+    ctx.fillStyle = '#111827'
+    ctx.fillRect(x - 12, 206, 26, 12)
+    ctx.beginPath()
+    ctx.moveTo(x - 14, 222)
+    ctx.lineTo(x + 16, 222)
+    ctx.stroke()
+  }
+  limb(ctx, 74, 150, 30, 30, 0.25, -0.2, 18, '#1f2937')
+  limb(ctx, 94, 150, 30, 30, -0.2, 0.15, 18, '#1f2937')
+  // Jersey with stripes and a number.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.roundRect(54, 86, 60, 70, 12)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.fillRect(54, 136, 60, 8)
+  ctx.font = 'bold 22px Arial, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('9', 84, 124)
+  // Stick and arms by pose: low, back over the shoulder, through the puck, high finish.
+  const stick = [0.6, -2.3, 0.2, 2.3][pose]
+  const hx = 104
+  const hy = 104
+  ctx.save()
+  ctx.translate(hx, hy)
+  ctx.rotate(-stick)
+  ctx.strokeStyle = '#a16207'
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.moveTo(0, -10)
+  ctx.lineTo(0, 96)
+  ctx.lineTo(26, 102)
+  ctx.stroke()
+  ctx.restore()
+  limb(ctx, 66, 96, 22, 22, 0.9, 0.6, 12, color)
+  limb(ctx, 104, 96, 18, 14, -stick * 0.3, 0.2, 12, color)
+  // Helmet and face.
+  ctx.fillStyle = SKIN
+  circle(ctx, 84, 66, 18)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.arc(84, 64, 20, Math.PI, 0)
+  ctx.fill()
+  ctx.strokeStyle = '#d4d4d8'
+  ctx.lineWidth = 2
+  for (const y of [66, 74]) {
+    ctx.beginPath()
+    ctx.moveTo(88, y)
+    ctx.lineTo(104, y)
+    ctx.stroke()
+  }
+  ctx.fillStyle = '#111'
+  circle(ctx, 92, 64, 2.5)
+  ctx.fill()
+}
+
+/** A puck. */
+function puck(ctx: Ctx) {
+  ctx.fillStyle = '#18181b'
+  ellipse(ctx, 24, 26, 20, 10)
+  ctx.fill()
+  ctx.fillStyle = '#3f3f46'
+  ellipse(ctx, 24, 22, 20, 9)
+  ctx.fill()
+  ctx.strokeStyle = '#a1a1aa'
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+}
+
+/** Where a puck hits: a star of ice chips. */
+function puckHit(ctx: Ctx) {
+  ctx.strokeStyle = 'rgba(224,242,254,0.95)'
+  ctx.lineWidth = 4
+  ctx.lineCap = 'round'
+  for (let k = 0; k < 10; k++) {
+    const a = (k / 10) * TAU
+    ctx.beginPath()
+    ctx.moveTo(80 + Math.cos(a) * 14, 50 + Math.sin(a) * 9)
+    ctx.lineTo(80 + Math.cos(a) * 46, 50 + Math.sin(a) * 30)
+    ctx.stroke()
+  }
+}
+
+/** A striped lighthouse with its lamp room (the beam is its own picture). */
+function lighthouse(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = f / frames
+  // Tower, tapering, in stripes.
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(40, 300)
+  ctx.lineTo(56, 90)
+  ctx.lineTo(104, 90)
+  ctx.lineTo(120, 300)
+  ctx.closePath()
+  ctx.clip()
+  for (let k = 0; k < 5; k++) {
+    ctx.fillStyle = k % 2 ? '#f8fafc' : color
+    ctx.fillRect(30, 90 + k * 42, 100, 42)
+  }
+  const g = ctx.createLinearGradient(40, 0, 120, 0)
+  g.addColorStop(0, 'rgba(0,0,0,0.25)')
+  g.addColorStop(0.5, 'rgba(255,255,255,0.15)')
+  g.addColorStop(1, 'rgba(0,0,0,0.3)')
+  ctx.fillStyle = g
+  ctx.fillRect(30, 90, 100, 210)
+  ctx.restore()
+  ctx.fillStyle = '#1f2937'
+  ctx.fillRect(44, 80, 72, 12)
+  ctx.fillRect(66, 200, 28, 40)
+  // Lamp room glowing, the lamp turning.
+  ctx.fillStyle = 'rgba(254,249,195,0.9)'
+  ctx.fillRect(58, 46, 44, 34)
+  glow(ctx, 80 + Math.sin(p * TAU) * 14, 62, 30, color2, 0.9)
+  ctx.fillStyle = '#1f2937'
+  ctx.beginPath()
+  ctx.moveTo(52, 46)
+  ctx.lineTo(80, 18)
+  ctx.lineTo(108, 46)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillRect(78, 6, 4, 14)
+}
+
+/** The lighthouse's beam: its narrow end on the left middle, widening and fading to the right. */
+function lighthouseBeam(ctx: Ctx, _f: number, _n: number, { color2 }: SpriteColors) {
+  const g = ctx.createLinearGradient(0, 0, 600, 0)
+  g.addColorStop(0, rgba(color2, 0.75))
+  g.addColorStop(1, rgba(color2, 0))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(0, 46)
+  ctx.lineTo(600, 0)
+  ctx.lineTo(600, 100)
+  ctx.lineTo(0, 54)
+  ctx.closePath()
+  ctx.fill()
+}
+
+// -- tumbleweeds, Bigfoot, skeleton dogs, sunflowers, tulips, a bird feeder, a beehive, wind chimes,
+//    a campfire -------------------------------------------------------------------------------------
+
+/** A tumbleweed: a tangled ball of dry twigs (it turns as it rolls). */
+function tumbleweed(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  ctx.strokeStyle = color
+  ctx.lineCap = 'round'
+  for (let k = 0; k < 46; k++) {
+    const a = k * 2.39
+    const b = k * 1.7 + 1
+    const r1 = 20 + ((k * 13) % 40)
+    const r2 = 20 + ((k * 29) % 42)
+    ctx.lineWidth = 1.5 + (k % 3)
+    ctx.strokeStyle = k % 4 ? color : shade(color, -0.3)
+    ctx.beginPath()
+    ctx.moveTo(70 + Math.cos(a) * r1, 70 + Math.sin(a) * r1)
+    ctx.quadraticCurveTo(70 + Math.cos(a + 1) * 10, 70 + Math.sin(a + 1) * 10, 70 + Math.cos(b) * r2, 70 + Math.sin(b) * r2)
+    ctx.stroke()
+  }
+}
+
+/** Bigfoot striding (facing right), one arm swinging, turning his head to look back at people (frames 8–11 of look). */
+function bigfoot(look: boolean) {
+  return (ctx: Ctx, f: number, frames: number, { color }: SpriteColors) => {
+    const p = (f / frames) * TAU
+    const s = Math.sin(p)
+    const fur = color
+    limb(ctx, 92, 196, 50, 46, s * 0.45, -Math.max(0, s) * 0.5, 34, shade(fur, -0.2))
+    limb(ctx, 120, 196, 50, 46, -s * 0.45, -Math.max(0, -s) * 0.5, 34, fur)
+    // Shaggy body.
+    const g = ctx.createLinearGradient(60, 0, 160, 0)
+    g.addColorStop(0, shade(fur, -0.25))
+    g.addColorStop(1, shade(fur, 0.15))
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.moveTo(70, 210)
+    ctx.quadraticCurveTo(54, 120, 92, 82)
+    ctx.quadraticCurveTo(130, 74, 150, 110)
+    ctx.quadraticCurveTo(156, 170, 142, 210)
+    ctx.closePath()
+    ctx.fill()
+    ctx.strokeStyle = shade(fur, -0.35)
+    ctx.lineWidth = 2
+    for (let k = 0; k < 14; k++) {
+      const x = 74 + ((k * 23) % 70)
+      const y = 110 + ((k * 37) % 90)
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x - 4, y + 10)
+      ctx.stroke()
+    }
+    // Long arms.
+    limb(ctx, 132, 112, 52, 50, -s * 0.5 - 0.1, 0.3, 22, fur)
+    limb(ctx, 88, 112, 52, 50, s * 0.5 + 0.1, 0.3, 22, shade(fur, -0.2))
+    // Head: ahead, or turned to look out at people.
+    ctx.fillStyle = fur
+    ellipse(ctx, 124, 70, 26, 30)
+    ctx.fill()
+    ctx.fillStyle = shade(fur, 0.35)
+    if (look) {
+      ellipse(ctx, 124, 76, 17, 16)
+      ctx.fill()
+      ctx.fillStyle = '#111'
+      circle(ctx, 117, 72, 3)
+      ctx.fill()
+      circle(ctx, 131, 72, 3)
+      ctx.fill()
+      ellipse(ctx, 124, 86, 6, 3)
+      ctx.fill()
+    } else {
+      ellipse(ctx, 138, 76, 12, 15)
+      ctx.fill()
+      ctx.fillStyle = '#111'
+      circle(ctx, 142, 70, 3)
+      ctx.fill()
+    }
+  }
+}
+
+/** A skeleton dog trotting (facing right), tail wagging. */
+function skeletonDog(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  const b = color
+  for (const [x, a] of [[60, s], [72, -s], [140, -s], [152, s]] as const) {
+    const [ex, ey] = limb(ctx, x, 96, 26, 26, a * 0.45, -a * 0.25, 5, b)
+    ctx.fillStyle = b
+    ellipse(ctx, ex + 4, ey, 6, 3)
+    ctx.fill()
+  }
+  // Spine and ribs.
+  ctx.strokeStyle = b
+  ctx.lineWidth = 6
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(56, 86)
+  ctx.quadraticCurveTo(100, 70, 154, 84)
+  ctx.stroke()
+  ctx.lineWidth = 4
+  for (let k = 0; k < 6; k++) {
+    const x = 92 + k * 9
+    ctx.beginPath()
+    ctx.moveTo(x, 80)
+    ctx.quadraticCurveTo(x - 6, 96, x + 2, 106 - Math.abs(k - 2.5) * 3)
+    ctx.stroke()
+  }
+  // Hips.
+  ctx.fillStyle = b
+  ellipse(ctx, 64, 88, 14, 10)
+  ctx.fill()
+  // Wagging tail of little bones.
+  for (let k = 0; k < 5; k++) {
+    const a = -0.6 + s * 0.6 * (k / 5)
+    circle(ctx, 50 - k * 7 * Math.cos(a), 84 - k * 7 * Math.sin(a) - k * 2, 3.5)
+    ctx.fill()
+  }
+  // Skull with glowing eyes.
+  ctx.fillStyle = b
+  ellipse(ctx, 172, 70, 20, 16)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.roundRect(180, 66, 28, 14, 6)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(158, 60)
+  ctx.lineTo(164, 40)
+  ctx.lineTo(172, 58)
+  ctx.closePath()
+  ctx.fill()
+  glow(ctx, 172, 68, 9, color2, 0.9)
+  ctx.fillStyle = '#111'
+  ctx.fillRect(186, 78, 18, 2)
+  ctx.fillStyle = color2
+  circle(ctx, 172, 68, 3.5)
+  ctx.fill()
+}
+
+/** A sunflower on its stalk, the head turned left, ahead or right (frames 0–2), or nodding (3). */
+function sunflower(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const pose = f % 4
+  const turn = [-1, 0, 1, 0][pose]
+  const hx = 70 + turn * 10
+  const hy = pose === 3 ? 66 : 56
+  ctx.strokeStyle = '#3f6212'
+  ctx.lineWidth = 9
+  ctx.beginPath()
+  ctx.moveTo(70, 300)
+  ctx.quadraticCurveTo(66, 170, hx, hy + 20)
+  ctx.stroke()
+  ctx.fillStyle = '#4d7c0f'
+  for (const [y, d] of [[200, -1], [160, 1], [240, 1]] as const) {
+    ellipse(ctx, 70 + d * 26, y, 26, 11, d * 0.5)
+    ctx.fill()
+  }
+  // Petals round the head, foreshortened as it turns.
+  ctx.save()
+  ctx.translate(hx, hy)
+  ctx.scale(1 - Math.abs(turn) * 0.3, pose === 3 ? 0.8 : 1)
+  ctx.fillStyle = color
+  for (let k = 0; k < 18; k++) {
+    const a = (k / 18) * TAU
+    ellipse(ctx, Math.cos(a) * 40, Math.sin(a) * 40, 16, 7, a)
+    ctx.fill()
+  }
+  const g = ctx.createRadialGradient(-6, -6, 2, 0, 0, 30)
+  g.addColorStop(0, shade(color2, 0.2))
+  g.addColorStop(1, shade(color2, -0.35))
+  ctx.fillStyle = g
+  circle(ctx, 0, 0, 28)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'
+  for (let k = 0; k < 30; k++) {
+    const a = k * 2.4
+    const r = Math.sqrt(k) * 4.6
+    circle(ctx, Math.cos(a) * r, Math.sin(a) * r, 1.6)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+/** A tulip: a closed bud, opening, and open (frames 0–3). */
+function tulip(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const open = (f % 4) / 3
+  ctx.strokeStyle = '#4d7c0f'
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.moveTo(50, 200)
+  ctx.quadraticCurveTo(46, 130, 50, 74)
+  ctx.stroke()
+  ctx.fillStyle = '#65a30d'
+  ctx.beginPath()
+  ctx.moveTo(50, 196)
+  ctx.quadraticCurveTo(16, 150, 26, 110)
+  ctx.quadraticCurveTo(44, 150, 50, 176)
+  ctx.fill()
+  // Petals: three in front leaning out as it opens, two behind.
+  ctx.fillStyle = shade(color, -0.25)
+  for (const d of [-1, 1]) {
+    ctx.save()
+    ctx.translate(50, 76)
+    ctx.rotate(d * 0.15 * open)
+    ellipse(ctx, d * 10, -18, 14, 26)
+    ctx.fill()
+    ctx.restore()
+  }
+  ctx.fillStyle = color2
+  if (open > 0.5) {
+    ellipse(ctx, 50, 62, 7, 7)
+    ctx.fill()
+  }
+  for (const [d, k] of [[-1, 1], [0, 0], [1, 1]] as const) {
+    ctx.save()
+    ctx.translate(50, 80)
+    ctx.rotate(d * (0.15 + 0.6 * open))
+    const g = ctx.createLinearGradient(0, -50, 0, 0)
+    g.addColorStop(0, shade(color, 0.25))
+    g.addColorStop(1, shade(color, -0.1))
+    ctx.fillStyle = g
+    ellipse(ctx, 0, -22 + k * 2, 13 - k * 1, 26)
+    ctx.fill()
+    ctx.restore()
+  }
+}
+
+/** A bird feeder on a post: a little roofed tray with seed. */
+function birdFeeder(ctx: Ctx, _f: number, _n: number, { color, color2 }: SpriteColors) {
+  ctx.fillStyle = '#78350f'
+  ctx.fillRect(66, 120, 12, 180)
+  ctx.fillStyle = shade(color, -0.2)
+  ctx.fillRect(22, 112, 100, 10)
+  ctx.fillStyle = color2
+  ellipse(ctx, 72, 110, 40, 6)
+  ctx.fill()
+  ctx.fillStyle = '#a16207'
+  ctx.fillRect(30, 60, 8, 52)
+  ctx.fillRect(106, 60, 8, 52)
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(10, 66)
+  ctx.lineTo(72, 22)
+  ctx.lineTo(134, 66)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = 'rgba(255,255,255,0.2)'
+  ctx.beginPath()
+  ctx.moveTo(10, 66)
+  ctx.lineTo(72, 22)
+  ctx.lineTo(80, 28)
+  ctx.lineTo(24, 66)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A little songbird at the feeder: pecking or looking up (frames). */
+function feederBird(ctx: Ctx, f: number, _n: number, { color2 }: SpriteColors) {
+  const peck = f % 2 === 1
+  ctx.fillStyle = '#ca8a04'
+  ellipse(ctx, 34, 36, 20, 14, -0.2)
+  ctx.fill()
+  ctx.fillStyle = '#fef08a'
+  ellipse(ctx, 40, 42, 12, 9)
+  ctx.fill()
+  ctx.fillStyle = '#ca8a04'
+  ctx.beginPath()
+  ctx.moveTo(16, 34)
+  ctx.lineTo(2, 30)
+  ctx.lineTo(16, 42)
+  ctx.closePath()
+  ctx.fill()
+  const [hx, hy] = peck ? [52, 40] : [48, 22]
+  circle(ctx, hx, hy, 11)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, hx + 4, hy - 2, 2)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(hx + 9, hy - 2)
+  ctx.lineTo(hx + 18, hy + (peck ? 6 : 1))
+  ctx.lineTo(hx + 9, hy + 3)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A straw beehive (a skep) on a stand, a dark doorway at the bottom. */
+function beehive(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  ctx.fillStyle = '#78350f'
+  ctx.fillRect(30, 170, 10, 30)
+  ctx.fillRect(120, 170, 10, 30)
+  ctx.fillRect(20, 164, 120, 10)
+  for (let k = 0; k < 6; k++) {
+    const y = 160 - k * 24
+    const w = 62 - k * k * 1.6
+    const g = ctx.createLinearGradient(80 - w, 0, 80 + w, 0)
+    g.addColorStop(0, shade(color, -0.3))
+    g.addColorStop(0.45, shade(color, 0.2))
+    g.addColorStop(1, shade(color, -0.35))
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.roundRect(80 - w, y - 24, w * 2, 28, 14)
+    ctx.fill()
+  }
+  ctx.fillStyle = '#1c1917'
+  ctx.beginPath()
+  ctx.arc(80, 162, 12, Math.PI, 0)
+  ctx.fill()
+}
+
+/** Wind chimes: a wooden disc with tubes of different lengths, swinging (frames) and catching the light. */
+function windChimes(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  ctx.fillStyle = '#92400e'
+  ellipse(ctx, 70, 12, 50, 8)
+  ctx.fill()
+  const tubes = [[30, 120], [50, 150], [70, 170], [90, 140], [110, 110]]
+  tubes.forEach(([x, len], i) => {
+    const a = Math.sin(p + i * 1.3) * 0.12
+    ctx.save()
+    ctx.translate(x, 16)
+    ctx.rotate(a)
+    ctx.strokeStyle = 'rgba(203,213,225,0.7)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.lineTo(0, 14)
+    ctx.stroke()
+    const g = ctx.createLinearGradient(-6, 0, 6, 0)
+    g.addColorStop(0, shade(color, -0.3))
+    g.addColorStop(0.4, '#ffffff')
+    g.addColorStop(1, shade(color, -0.2))
+    ctx.fillStyle = g
+    ctx.fillRect(-6, 14, 12, len - 14)
+    ctx.restore()
+  })
+  // Clapper and the sail it hangs from.
+  const swing = Math.sin(p * 1.5) * 10
+  ctx.strokeStyle = 'rgba(203,213,225,0.7)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(70, 12)
+  ctx.lineTo(70 + swing, 196)
+  ctx.stroke()
+  ctx.fillStyle = '#a16207'
+  circle(ctx, 70 + swing * 0.6, 120, 9)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(70 + swing, 196)
+  ctx.lineTo(56 + swing, 226)
+  ctx.lineTo(84 + swing, 226)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A campfire: logs crossed in a ring of stones, flames licking up (frames). */
+function campfire(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  glow(ctx, 100, 120, 70, color, 0.5)
+  for (let k = 0; k < 7; k++) {
+    const x = 64 + k * 12
+    const h = 70 + Math.sin(p * 2 + k * 1.9) * 22 + (3 - Math.abs(k - 3)) * 14
+    const sway = Math.sin(p * 3 + k) * 6
+    for (const [c, w, hh] of [[color, 16, h], [color2, 10, h * 0.7], ['#fef3c7', 5, h * 0.4]] as const) {
+      ctx.fillStyle = c
+      ctx.beginPath()
+      ctx.moveTo(x - w, 150)
+      ctx.quadraticCurveTo(x - w * 0.5, 150 - hh * 0.6, x + sway, 150 - hh)
+      ctx.quadraticCurveTo(x + w * 0.5, 150 - hh * 0.6, x + w, 150)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
+  ctx.strokeStyle = '#78350f'
+  ctx.lineWidth = 14
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(52, 166)
+  ctx.lineTo(148, 140)
+  ctx.moveTo(52, 140)
+  ctx.lineTo(148, 166)
+  ctx.stroke()
+  for (let k = 0; k < 9; k++) {
+    ctx.fillStyle = k % 2 ? '#78716c' : '#a8a29e'
+    ellipse(ctx, 34 + k * 16.5, 170 + Math.abs(k - 4) * -1, 12, 9)
+    ctx.fill()
+  }
+}
+
+/** One rising spark (or ember). */
+function ember(ctx: Ctx, _f: number, _n: number, { color2 }: SpriteColors) {
+  glow(ctx, 12, 12, 12, color2, 1)
+}
+
+// -- a kinara, Ramadan lanterns, hula dancers, a mariachi, a bagpiper, pilgrims, a cornucopia,
+//    a Christmas tree that lights up, a cow ---------------------------------------------------------
+
+/** A Kwanzaa kinara: seven candles, three red, one black, three green; frame k has the first k lit (0–7). */
+function kinara(ctx: Ctx, f: number, _n: number, _c: SpriteColors) {
+  const lit = f % 8
+  const order = [3, 2, 4, 1, 5, 0, 6] // the black one first, then left to right outward
+  const colors = ['#b91c1c', '#b91c1c', '#b91c1c', '#374151', '#15803d', '#15803d', '#15803d']
+  // Carved wooden base.
+  const g = ctx.createLinearGradient(0, 120, 0, 170)
+  g.addColorStop(0, '#a16207')
+  g.addColorStop(1, '#713f12')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(20, 120)
+  ctx.lineTo(260, 120)
+  ctx.lineTo(240, 150)
+  ctx.lineTo(160, 150)
+  ctx.lineTo(170, 176)
+  ctx.lineTo(110, 176)
+  ctx.lineTo(120, 150)
+  ctx.lineTo(40, 150)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = '#fbbf24'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(30, 132)
+  ctx.lineTo(250, 132)
+  ctx.stroke()
+  for (let k = 0; k < 7; k++) {
+    const x = 40 + k * 33.3
+    const top = k === 3 ? 44 : 60
+    ctx.fillStyle = '#713f12'
+    ctx.fillRect(x - 9, 110, 18, 12)
+    const c = ctx.createLinearGradient(x - 7, 0, x + 7, 0)
+    c.addColorStop(0, shade(colors[k], -0.2))
+    c.addColorStop(0.4, shade(colors[k], 0.35))
+    c.addColorStop(1, shade(colors[k], -0.3))
+    ctx.fillStyle = c
+    ctx.fillRect(x - 7, top, 14, 110 - top)
+    if (order.indexOf(k) < lit) {
+      glow(ctx, x, top - 14, 20, '#fbbf24', 0.7)
+      ctx.fillStyle = '#fde68a'
+      ctx.beginPath()
+      ctx.moveTo(x, top - 26)
+      ctx.quadraticCurveTo(x + 7, top - 8, x, top - 2)
+      ctx.quadraticCurveTo(x - 7, top - 8, x, top - 26)
+      ctx.fill()
+    }
+  }
+}
+
+/** A Ramadan fanous: a brass lantern with coloured glass and a dome; frames flicker the light inside. */
+function fanous(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const flick = 0.75 + 0.25 * Math.sin((f / frames) * TAU * 3)
+  const brass = '#b45309'
+  glow(ctx, 60, 100, 54 * flick, color2, 0.45)
+  ctx.strokeStyle = brass
+  ctx.lineWidth = 4
+  ctx.beginPath()
+  ctx.arc(60, 16, 10, 0, TAU)
+  ctx.stroke()
+  // Dome and spire.
+  ctx.fillStyle = brass
+  ctx.beginPath()
+  ctx.moveTo(30, 60)
+  ctx.quadraticCurveTo(32, 30, 60, 26)
+  ctx.quadraticCurveTo(88, 30, 90, 60)
+  ctx.closePath()
+  ctx.fill()
+  // Glass body: hexagon panes, lit.
+  ctx.fillStyle = shade(color, -0.1 + flick * 0.2)
+  ctx.beginPath()
+  ctx.moveTo(30, 62)
+  ctx.lineTo(90, 62)
+  ctx.lineTo(100, 110)
+  ctx.lineTo(90, 150)
+  ctx.lineTo(30, 150)
+  ctx.lineTo(20, 110)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = `rgba(255,240,200,${0.35 * flick})`
+  ellipse(ctx, 60, 108, 18, 30)
+  ctx.fill()
+  // Brass lattice: frame, star cut-outs.
+  ctx.strokeStyle = brass
+  ctx.lineWidth = 3
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(48, 62)
+  ctx.lineTo(44, 150)
+  ctx.moveTo(72, 62)
+  ctx.lineTo(76, 150)
+  ctx.moveTo(20, 110)
+  ctx.lineTo(100, 110)
+  ctx.stroke()
+  for (const [x, y] of [[34, 86], [60, 86], [86, 86], [34, 130], [60, 130], [86, 130]] as const) {
+    ctx.fillStyle = brass
+    ctx.beginPath()
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * TAU
+      const r = k % 2 ? 3 : 6
+      ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r)
+    }
+    ctx.fill()
+  }
+  // Base.
+  ctx.fillStyle = brass
+  ctx.beginPath()
+  ctx.moveTo(30, 150)
+  ctx.lineTo(90, 150)
+  ctx.lineTo(76, 170)
+  ctx.lineTo(44, 170)
+  ctx.closePath()
+  ctx.fill()
+  circle(ctx, 60, 176, 6)
+  ctx.fill()
+}
+
+/** A hula dancer in a grass skirt and lei, hips swaying, arms flowing side to side. */
+function hulaDancer(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  const hip = s * 10
+  // Legs, knees bent.
+  limb(ctx, 76 + hip * 0.4, 168, 34, 34, 0.2, -0.3, 14, SKIN)
+  limb(ctx, 100 + hip * 0.4, 168, 34, 34, -0.2, 0.3, 14, SKIN)
+  // Body.
+  ctx.fillStyle = SKIN
+  ctx.beginPath()
+  ctx.roundRect(72, 92, 34, 56, 12)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.roundRect(70, 96, 38, 22, 8)
+  ctx.fill()
+  // Grass skirt, swinging with the hips.
+  for (let k = 0; k < 16; k++) {
+    const x = 66 + hip + k * 3
+    ctx.strokeStyle = k % 2 ? '#a3a33a' : '#84843a'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(x, 140)
+    ctx.quadraticCurveTo(x - hip * 0.5, 170, x - hip * 1.2 + (k - 8) * 1.2, 196)
+    ctx.stroke()
+  }
+  ctx.fillStyle = color
+  ctx.fillRect(64 + hip, 136, 50, 8)
+  // Arms flowing to one side, both together.
+  const a = s * 0.7
+  limb(ctx, 76, 100, 30, 30, -1.4 + a, -0.6 + a * 0.4, 9, SKIN)
+  limb(ctx, 102, 100, 30, 30, 1.4 + a, 0.6 + a * 0.4, 9, SKIN)
+  // Head, hair and flower.
+  ctx.fillStyle = '#1c1917'
+  ellipse(ctx, 88, 78, 22, 30)
+  ctx.fill()
+  ctx.fillStyle = SKIN
+  circle(ctx, 90, 70, 16)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 95, 68, 2)
+  ctx.fill()
+  ctx.fillStyle = color
+  for (let k = 0; k < 5; k++) {
+    const aa = (k / 5) * TAU
+    circle(ctx, 74 + Math.cos(aa) * 5, 60 + Math.sin(aa) * 5, 4)
+    ctx.fill()
+  }
+  // Lei.
+  for (let k = 0; k < 11; k++) {
+    ctx.fillStyle = k % 2 ? color : shade(color, 0.4)
+    circle(ctx, 76 + k * 2.6, 90 + Math.sin((k / 10) * Math.PI) * 12, 4.5)
+    ctx.fill()
+  }
+}
+
+/** A mariachi in a wide sombrero and charro suit, strumming a guitar (frames), head bobbing. */
+function mariachi(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  const strum = Math.sin(p * 2)
+  // Legs, one foot tapping.
+  limb(ctx, 82, 170, 36, 36, 0.05, 0, 15, color)
+  limb(ctx, 104, 170, 36, 36 - Math.max(0, s) * 4, -0.05, 0, 15, color)
+  ctx.fillStyle = '#111'
+  ellipse(ctx, 86, 242, 12, 6)
+  ctx.fill()
+  ellipse(ctx, 108, 242 - Math.max(0, s) * 4, 12, 6)
+  ctx.fill()
+  // Short jacket with silver buttons down the trousers.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.roundRect(70, 100, 48, 76, 10)
+  ctx.fill()
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(86, 104, 16, 50)
+  ctx.fillStyle = color2
+  for (let k = 0; k < 5; k++) {
+    circle(ctx, 72, 184 + k * 11, 2.5)
+    ctx.fill()
+    circle(ctx, 116, 184 + k * 11, 2.5)
+    ctx.fill()
+  }
+  ctx.fillStyle = '#b91c1c'
+  ctx.beginPath()
+  ctx.moveTo(94, 108)
+  ctx.lineTo(82, 116)
+  ctx.lineTo(106, 116)
+  ctx.closePath()
+  ctx.fill()
+  // Guitar across the body.
+  ctx.save()
+  ctx.translate(96, 150)
+  ctx.rotate(-0.5)
+  const g = ctx.createRadialGradient(-10, 0, 4, -10, 0, 40)
+  g.addColorStop(0, '#f59e0b')
+  g.addColorStop(1, '#92400e')
+  ctx.fillStyle = g
+  ellipse(ctx, -14, 0, 30, 24)
+  ctx.fill()
+  ellipse(ctx, 14, 0, 22, 18)
+  ctx.fill()
+  ctx.fillStyle = '#1c1917'
+  circle(ctx, 4, 0, 7)
+  ctx.fill()
+  ctx.fillStyle = '#451a03'
+  ctx.fillRect(30, -4, 64, 8)
+  ctx.fillRect(90, -7, 16, 14)
+  ctx.restore()
+  // Strumming arm and the neck hand.
+  ctx.strokeStyle = color
+  ctx.lineWidth = 12
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(78, 112)
+  ctx.lineTo(80 + strum * 6, 146 + strum * 4)
+  ctx.moveTo(112, 112)
+  ctx.lineTo(150, 104)
+  ctx.stroke()
+  ctx.fillStyle = SKIN
+  circle(ctx, 82 + strum * 6, 150 + strum * 4, 6)
+  ctx.fill()
+  circle(ctx, 152, 102, 6)
+  ctx.fill()
+  // Head, moustache and a wide sombrero.
+  const bob = s * 2
+  ctx.fillStyle = SKIN
+  circle(ctx, 94, 80 + bob, 18)
+  ctx.fill()
+  ctx.fillStyle = '#1c1917'
+  ellipse(ctx, 96, 88 + bob, 9, 3)
+  ctx.fill()
+  circle(ctx, 100, 76 + bob, 2.2)
+  ctx.fill()
+  circle(ctx, 89, 76 + bob, 2.2)
+  ctx.fill()
+  ctx.fillStyle = color
+  ellipse(ctx, 94, 62 + bob, 62, 12)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(74, 62 + bob)
+  ctx.quadraticCurveTo(80, 22 + bob, 94, 20 + bob)
+  ctx.quadraticCurveTo(108, 22 + bob, 114, 62 + bob)
+  ctx.fill()
+  ctx.strokeStyle = color2
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.ellipse(94, 62 + bob, 56, 9, 0, 0, TAU)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(76, 52 + bob)
+  ctx.lineTo(112, 52 + bob)
+  ctx.stroke()
+}
+
+/** A bagpiper in a kilt, the bag under one arm, drones over the shoulder, marching. */
+function bagpiper(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  // Legs and socks, marching.
+  const [ax, ay] = limb(ctx, 84, 180, 30, 32, Math.max(0, s) * 0.8, -Math.max(0, s) * 0.9, 13, SKIN)
+  const [bx, by] = limb(ctx, 102, 180, 30, 32, Math.max(0, -s) * 0.8, -Math.max(0, -s) * 0.9, 13, SKIN)
+  ctx.fillStyle = '#f8fafc'
+  for (const [x, y] of [[ax, ay], [bx, by]]) {
+    ctx.fillRect(x - 7, y - 20, 14, 18)
+    ctx.fillStyle = '#111'
+    ellipse(ctx, x + 5, y + 2, 11, 5)
+    ctx.fill()
+    ctx.fillStyle = '#f8fafc'
+  }
+  // Tartan kilt.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(70, 150)
+  ctx.lineTo(118, 150)
+  ctx.lineTo(122 + s * 3, 190)
+  ctx.lineTo(66 + s * 3, 190)
+  ctx.closePath()
+  ctx.fill()
+  ctx.save()
+  ctx.clip()
+  ctx.strokeStyle = color2
+  ctx.globalAlpha = 0.6
+  ctx.lineWidth = 3
+  for (let k = 0; k < 6; k++) {
+    ctx.beginPath()
+    ctx.moveTo(64 + k * 11, 150)
+    ctx.lineTo(64 + k * 11, 192)
+    ctx.moveTo(60, 156 + k * 8)
+    ctx.lineTo(126, 156 + k * 8)
+    ctx.stroke()
+  }
+  ctx.restore()
+  ctx.fillStyle = '#f8fafc'
+  ellipse(ctx, 94, 160, 8, 10)
+  ctx.fill()
+  // Jacket.
+  ctx.fillStyle = '#334155'
+  ctx.beginPath()
+  ctx.roundRect(70, 98, 48, 56, 10)
+  ctx.fill()
+  // The bag, squeezed in time, with drones over the shoulder.
+  const sq = 1 + Math.sin(p * 2) * 0.06
+  ctx.fillStyle = color
+  ellipse(ctx, 116, 130, 22 * sq, 16 / sq, 0.3)
+  ctx.fill()
+  ctx.strokeStyle = '#1c1917'
+  ctx.lineWidth = 5
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  for (const [x, y] of [[96, 46], [108, 40], [122, 50]]) {
+    ctx.moveTo(114, 120)
+    ctx.lineTo(x, y)
+  }
+  ctx.stroke()
+  ctx.fillStyle = '#e2e8f0'
+  for (const [x, y] of [[96, 46], [108, 40], [122, 50]]) {
+    circle(ctx, x, y, 4)
+    ctx.fill()
+  }
+  // Chanter down the front, both hands on it.
+  ctx.strokeStyle = '#1c1917'
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.moveTo(100, 94)
+  ctx.lineTo(96, 150)
+  ctx.stroke()
+  ctx.fillStyle = SKIN
+  circle(ctx, 97, 118 + Math.sin(p * 4) * 2, 6)
+  ctx.fill()
+  circle(ctx, 96, 136 - Math.sin(p * 4) * 2, 6)
+  ctx.fill()
+  // Head with puffed cheeks and a feathered bonnet.
+  ctx.fillStyle = SKIN
+  circle(ctx, 94, 78, 18)
+  ctx.fill()
+  ctx.fillStyle = '#fca5a5'
+  circle(ctx, 104, 84, 6 + Math.sin(p * 2))
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 100, 74, 2.3)
+  ctx.fill()
+  ctx.fillStyle = '#1e293b'
+  ctx.beginPath()
+  ctx.roundRect(74, 36, 40, 34, 8)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.fillRect(74, 62, 40, 6)
+  ctx.fillStyle = '#ffffff'
+  ellipse(ctx, 80, 34, 6, 12, -0.4)
+  ctx.fill()
+}
+
+/** A pilgrim in a buckled hat and white collar, walking (facing right), carrying a basket of food. */
+function pilgrim(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  const [ax, ay] = limb(ctx, 82, 170, 34, 34, s * 0.4, -Math.max(0, s) * 0.4, 14, '#1f2937')
+  const [bx, by] = limb(ctx, 98, 170, 34, 34, -s * 0.4, -Math.max(0, -s) * 0.4, 14, '#111827')
+  for (const [x, y] of [[ax, ay], [bx, by]]) {
+    ctx.fillStyle = '#111'
+    ellipse(ctx, x + 5, y + 2, 12, 5)
+    ctx.fill()
+    ctx.fillStyle = '#d4d4d8'
+    ctx.fillRect(x + 1, y - 3, 6, 5)
+  }
+  // Long dark coat with a belt.
+  const g = ctx.createLinearGradient(0, 96, 0, 180)
+  g.addColorStop(0, shade(color, 0.1))
+  g.addColorStop(1, shade(color, -0.25))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.roundRect(66, 96, 50, 84, 10)
+  ctx.fill()
+  ctx.fillStyle = '#1c1917'
+  ctx.fillRect(66, 140, 50, 7)
+  ctx.fillStyle = '#d4d4d8'
+  ctx.strokeStyle = '#d4d4d8'
+  ctx.lineWidth = 2
+  ctx.strokeRect(86, 139, 10, 9)
+  // White collar.
+  ctx.fillStyle = '#f8fafc'
+  ctx.beginPath()
+  ctx.moveTo(70, 98)
+  ctx.lineTo(112, 98)
+  ctx.lineTo(104, 116)
+  ctx.lineTo(91, 108)
+  ctx.lineTo(78, 116)
+  ctx.closePath()
+  ctx.fill()
+  // Arm round a basket of corn and squash.
+  ctx.fillStyle = '#a16207'
+  ctx.beginPath()
+  ctx.moveTo(110, 130)
+  ctx.lineTo(160, 130)
+  ctx.lineTo(152, 160)
+  ctx.lineTo(118, 160)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = '#713f12'
+  ctx.lineWidth = 2
+  for (let k = 0; k < 3; k++) {
+    ctx.beginPath()
+    ctx.moveTo(112 + k * 1.5, 138 + k * 8)
+    ctx.lineTo(158 - k * 1.5, 138 + k * 8)
+    ctx.stroke()
+  }
+  ctx.fillStyle = color2
+  circle(ctx, 124, 124, 10)
+  ctx.fill()
+  ctx.fillStyle = '#facc15'
+  ellipse(ctx, 144, 118, 6, 16, 0.4)
+  ctx.fill()
+  ctx.fillStyle = '#65a30d'
+  ellipse(ctx, 150, 104, 3, 8, 0.6)
+  ctx.fill()
+  limb(ctx, 104, 106, 26, 26, -0.6 + s * 0.1, -1.0, 11, shade(color, -0.1))
+  // Head, buckled hat.
+  ctx.fillStyle = SKIN
+  circle(ctx, 92, 80, 17)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 99, 78, 2.3)
+  ctx.fill()
+  ctx.fillStyle = '#3f3f46'
+  ellipse(ctx, 92, 66, 30, 6)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(76, 66)
+  ctx.lineTo(79, 28)
+  ctx.lineTo(105, 28)
+  ctx.lineTo(108, 66)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#27272a'
+  ctx.fillRect(77, 54, 30, 8)
+  ctx.strokeStyle = '#fbbf24'
+  ctx.lineWidth = 3
+  ctx.strokeRect(86, 53, 12, 10)
+}
+
+/** A cornucopia: a woven horn spilling fruit and vegetables. */
+function cornucopia(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  const g = ctx.createLinearGradient(20, 0, 200, 0)
+  g.addColorStop(0, shade(color, -0.35))
+  g.addColorStop(1, shade(color, 0.15))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(18, 54)
+  ctx.bezierCurveTo(50, 40, 70, 140, 140, 70)
+  ctx.lineTo(190, 70)
+  ctx.lineTo(190, 160)
+  ctx.bezierCurveTo(120, 170, 50, 150, 30, 90)
+  ctx.quadraticCurveTo(10, 70, 18, 54)
+  ctx.fill()
+  ctx.strokeStyle = shade(color, -0.4)
+  ctx.lineWidth = 2
+  for (let k = 0; k < 9; k++) {
+    const x = 50 + k * 16
+    ctx.beginPath()
+    ctx.moveTo(x, 80 + k * -1)
+    ctx.quadraticCurveTo(x + 8, 120, x, 160 - k * 2)
+    ctx.stroke()
+  }
+  ctx.fillStyle = shade(color, -0.45)
+  ellipse(ctx, 190, 115, 14, 46)
+  ctx.fill()
+  // A couple of things still in the mouth.
+  ctx.fillStyle = '#ea580c'
+  circle(ctx, 196, 92, 16)
+  ctx.fill()
+  ctx.fillStyle = '#7c3aed'
+  for (let k = 0; k < 6; k++) {
+    circle(ctx, 192 + (k % 2) * 8, 118 + k * 5, 6)
+    ctx.fill()
+  }
+}
+
+/** One piece that spills out: an apple, a pear, grapes, a pumpkin, an ear of corn (frames 0–4). */
+function harvestPiece(ctx: Ctx, f: number, _n: number, _c: SpriteColors) {
+  const k = f % 5
+  if (k === 0) {
+    ctx.fillStyle = '#dc2626'
+    circle(ctx, 30, 34, 20)
+    ctx.fill()
+    ctx.fillStyle = '#65a30d'
+    ellipse(ctx, 38, 12, 8, 4, -0.5)
+    ctx.fill()
+  } else if (k === 1) {
+    ctx.fillStyle = '#a3e635'
+    circle(ctx, 30, 40, 18)
+    ctx.fill()
+    circle(ctx, 30, 22, 11)
+    ctx.fill()
+  } else if (k === 2) {
+    ctx.fillStyle = '#7c3aed'
+    for (let i = 0; i < 9; i++) {
+      circle(ctx, 18 + (i % 3) * 12 + Math.floor(i / 3) * 6, 18 + Math.floor(i / 3) * 12, 7)
+      ctx.fill()
+    }
+  } else if (k === 3) {
+    ctx.fillStyle = '#ea580c'
+    ellipse(ctx, 30, 36, 24, 18)
+    ctx.fill()
+    ctx.strokeStyle = '#9a3412'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.ellipse(30, 36, 10, 18, 0, 0, TAU)
+    ctx.stroke()
+    ctx.fillStyle = '#65a30d'
+    ctx.fillRect(28, 14, 5, 8)
+  } else {
+    ctx.fillStyle = '#facc15'
+    ellipse(ctx, 30, 30, 10, 24, 0.5)
+    ctx.fill()
+    ctx.fillStyle = '#a3a33a'
+    ellipse(ctx, 20, 44, 6, 16, 0.9)
+    ctx.fill()
+  }
+}
+
+/** A Christmas tree; frame k has k tenths of its lights on (0–10), the star on at full. */
+function christmasTree(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const on = (f % 11) / 10
+  ctx.fillStyle = '#78350f'
+  ctx.fillRect(88, 290, 24, 30)
+  for (let t = 0; t < 4; t++) {
+    const top = 36 + t * 62
+    const w = 40 + t * 22
+    const g = ctx.createLinearGradient(100 - w, 0, 100 + w, 0)
+    g.addColorStop(0, shade(color, -0.35))
+    g.addColorStop(0.5, shade(color, 0.1))
+    g.addColorStop(1, shade(color, -0.3))
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.moveTo(100, top)
+    ctx.quadraticCurveTo(100 - w * 0.4, top + 60, 100 - w, top + 92)
+    ctx.quadraticCurveTo(100, top + 80, 100 + w, top + 92)
+    ctx.quadraticCurveTo(100 + w * 0.4, top + 60, 100, top)
+    ctx.fill()
+  }
+  // Lights, lit from the bottom up.
+  const lights = 40
+  for (let k = 0; k < lights; k++) {
+    const y = 300 - (k / lights) * 240 - 10
+    const half = 14 + ((y - 40) / 260) * 82
+    const x = 100 + Math.sin(k * 2.4) * half * 0.8
+    const lit = k / lights < on
+    const c = ['#ef4444', '#facc15', '#38bdf8', '#22c55e', color2][k % 5]
+    if (lit) glow(ctx, x, y, 9, c, 0.8)
+    ctx.fillStyle = lit ? '#ffffff' : 'rgba(30,30,30,0.6)'
+    circle(ctx, x, y, lit ? 2.5 : 2)
+    ctx.fill()
+  }
+  // Star.
+  const lit = on >= 1
+  if (lit) glow(ctx, 100, 30, 34, '#fde68a', 0.9)
+  ctx.fillStyle = lit ? '#fde047' : '#a8a29e'
+  ctx.beginPath()
+  for (let k = 0; k < 10; k++) {
+    const a = -Math.PI / 2 + (k / 10) * TAU
+    const r = k % 2 ? 9 : 22
+    ctx.lineTo(100 + Math.cos(a) * r, 30 + Math.sin(a) * r)
+  }
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A dairy cow grazing (head down) or looking up and mooing (look frames), facing right, tail swishing. */
+function cow(look: boolean) {
+  return (ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) => {
+    const p = (f / frames) * TAU
+    const s = Math.sin(p)
+    for (const [x, a] of [[66, s * 0.15], [80, -s * 0.15], [160, -s * 0.15], [174, s * 0.15]] as const) {
+      const [ex, ey] = limb(ctx, x, 120, 30, 26, a, 0, 13, x % 20 ? '#f5f5f4' : '#e7e5e4')
+      ctx.fillStyle = '#292524'
+      ctx.fillRect(ex - 7, ey - 2, 14, 8)
+    }
+    // Tail swishing.
+    ctx.strokeStyle = '#f5f5f4'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(54, 80)
+    ctx.quadraticCurveTo(40 + s * 10, 110, 44 + s * 14, 140)
+    ctx.stroke()
+    ctx.fillStyle = '#292524'
+    ellipse(ctx, 44 + s * 14, 144, 5, 9)
+    ctx.fill()
+    // Body with patches.
+    ctx.fillStyle = '#f5f5f4'
+    ctx.beginPath()
+    ctx.roundRect(52, 66, 136, 66, 28)
+    ctx.fill()
+    ctx.save()
+    ctx.clip()
+    ctx.fillStyle = color
+    ellipse(ctx, 86, 80, 26, 20, 0.4)
+    ctx.fill()
+    ellipse(ctx, 150, 104, 30, 22, -0.3)
+    ctx.fill()
+    ellipse(ctx, 60, 120, 16, 14)
+    ctx.fill()
+    ctx.restore()
+    ctx.fillStyle = color2
+    ellipse(ctx, 120, 134, 14, 8)
+    ctx.fill()
+    // Head: down in the grass, or up and mooing.
+    const [hx, hy] = look ? [206, 64] : [214, 128]
+    ctx.strokeStyle = '#f5f5f4'
+    ctx.lineWidth = 30
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(180, 86)
+    ctx.lineTo(hx - 10, hy)
+    ctx.stroke()
+    ctx.fillStyle = '#f5f5f4'
+    ellipse(ctx, hx, hy, 22, 20)
+    ctx.fill()
+    ctx.fillStyle = color
+    ellipse(ctx, hx - 6, hy - 8, 10, 8)
+    ctx.fill()
+    ctx.fillStyle = color2
+    ellipse(ctx, hx + 14, hy + 8, 13, 11)
+    ctx.fill()
+    ctx.fillStyle = '#7f1d1d'
+    if (look) {
+      ellipse(ctx, hx + 16, hy + 12, 6, 4 + Math.max(0, s) * 3)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#111'
+    circle(ctx, hx + 4, hy - 4, 3)
+    ctx.fill()
+    ctx.fillStyle = '#e7e5e4'
+    ctx.beginPath()
+    ctx.moveTo(hx - 12, hy - 16)
+    ctx.quadraticCurveTo(hx - 20, hy - 30, hx - 10, hy - 32)
+    ctx.lineTo(hx - 6, hy - 18)
+    ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = '#f5f5f4'
+    ellipse(ctx, hx - 20, hy - 8, 10, 5, 0.4)
+    ctx.fill()
+    // Cowbell.
+    ctx.fillStyle = '#ca8a04'
+    ctx.beginPath()
+    ctx.moveTo(hx - 22, hy + 16)
+    ctx.lineTo(hx - 12, hy + 16)
+    ctx.lineTo(hx - 8, hy + 30)
+    ctx.lineTo(hx - 26, hy + 30)
+    ctx.closePath()
+    ctx.fill()
+  }
+}
+
 // -- the rows each style is made of ------------------------------------------------------
 
 const SPARKLE: SpriteRow = { id: 'sparkle', frames: 4, w: 64, h: 64, paint: sparkle }
@@ -11749,4 +13820,179 @@ export const SPRITE_ROWS: Record<string, SpriteRow[]> = {
     SPARKLE,
   ],
   diyas: [{ id: 'main', frames: 4, w: 120, h: 100, paint: diya }, SPARKLE],
+  // Seventh batch.
+  'santa-chimney': [
+    { id: 'main', frames: 1, w: 200, h: 160, paint: chimney },
+    { id: 'santa', frames: 8, w: 200, h: 200, paint: chimneySanta },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Ho ho ho!') },
+    SPARKLE,
+  ],
+  'roof-reindeer': [
+    // Looking left, ahead, right (the order the perching ones turn their heads in), then pawing the roof.
+    {
+      id: 'main', frames: 4, w: 240, h: 210,
+      paint: (ctx, f, _n, c) => {
+        if (f % 4 === 0) {
+          ctx.translate(240, 0)
+          ctx.scale(-1, 1)
+        }
+        reindeer(ctx, 104, 132, f % 4 === 3 ? TAU * 0.25 : 0, false, c.color)
+      },
+    },
+    SPARKLE,
+  ],
+  'window-candles': [{ id: 'main', frames: 4, w: 80, h: 156, paint: windowCandle }, SPARKLE],
+  'disco-ball': [
+    { id: 'main', frames: 8, w: 120, h: 130, paint: discoBall },
+    { id: 'thread', frames: 1, w: 8, h: 256, paint: silk },
+    { id: 'spot', frames: 4, w: 40, h: 40, paint: lightSpot },
+    SPARKLE,
+  ],
+  searchlights: [
+    { id: 'main', frames: 1, w: 120, h: 120, paint: searchlightBase },
+    { id: 'beam', frames: 1, w: 100, h: 600, paint: skyBeam },
+    SPARKLE,
+  ],
+  'ball-drop': [
+    { id: 'main', frames: 1, w: 100, h: 500, paint: ballPole },
+    { id: 'ball', frames: 4, w: 160, h: 160, paint: newYearBall },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Happy New Year!') },
+    SPARKLE,
+  ],
+  champagne: [
+    { id: 'main', frames: 2, w: 100, h: 250, paint: champagneBottle },
+    { id: 'cork', frames: 1, w: 40, h: 40, paint: cork },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Cheers!') },
+    SPARKLE,
+  ],
+  firecrackers: [
+    { id: 'main', frames: 11, w: 100, h: 300, paint: firecrackers },
+    { id: 'thread', frames: 1, w: 8, h: 256, paint: ribbon },
+    { id: 'bang', frames: 4, w: 100, h: 100, paint: bang },
+    SPARKLE,
+  ],
+  'graduation-caps': [
+    { id: 'main', frames: 8, w: 120, h: 100, paint: gradCap },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Congrats!') },
+    SPARKLE,
+  ],
+  'school-bus': [
+    { id: 'main', frames: 8, w: 360, h: 170, paint: schoolBus(false) },
+    { id: 'halt', frames: 4, w: 360, h: 170, paint: schoolBus(true) },
+    SPARKLE,
+  ],
+  tractors: [
+    { id: 'main', frames: 8, w: 240, h: 160, paint: tractor },
+    { id: 'puff', frames: 1, w: 128, h: 128, paint: puff },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Howdy!') },
+    SPARKLE,
+  ],
+  deer: [
+    { id: 'main', frames: 8, w: 220, h: 160, paint: deer(false) },
+    { id: 'halt', frames: 4, w: 220, h: 160, paint: deer(true) },
+    SPARKLE,
+  ],
+  foxes: [{ id: 'main', frames: 8, w: 200, h: 120, paint: fox }, SPARKLE],
+  raccoons: [
+    { id: 'main', frames: 4, w: 160, h: 170, paint: raccoon },
+    { id: 'can', frames: 1, w: 160, h: 165, paint: trashCan },
+    SPARKLE,
+  ],
+  'witch-crash': [
+    { id: 'main', frames: 8, w: 400, h: 260, paint: witch },
+    { id: 'splat', frames: 1, w: 250, h: 240, paint: witchSplat },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Ouch!') },
+    SPARKLE,
+  ],
+  'rain-clouds': [
+    { id: 'main', frames: 8, w: 260, h: 140, paint: rainCloud(false) },
+    { id: 'dark', frames: 8, w: 260, h: 140, paint: rainCloud(true) },
+    { id: 'rain', frames: 1, w: 20, h: 40, paint: rainStreak },
+    { id: 'bolt', frames: 1, w: 100, h: 200, paint: lightningBolt },
+    SPARKLE,
+  ],
+  'hockey-players': [
+    { id: 'main', frames: 4, w: 170, h: 225, paint: hockeyPlayer },
+    { id: 'ball', frames: 1, w: 48, h: 40, paint: puck },
+    { id: 'splat', frames: 1, w: 160, h: 100, paint: puckHit },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('He shoots, he scores!') },
+    SPARKLE,
+  ],
+  lighthouse: [
+    { id: 'main', frames: 8, w: 160, h: 300, paint: lighthouse },
+    { id: 'beam', frames: 1, w: 600, h: 100, paint: lighthouseBeam },
+    SPARKLE,
+  ],
+  tumbleweeds: [{ id: 'main', frames: 1, w: 140, h: 140, paint: tumbleweed }, SPARKLE],
+  bigfoot: [
+    { id: 'main', frames: 8, w: 220, h: 300, paint: bigfoot(false) },
+    { id: 'look', frames: 8, w: 220, h: 300, paint: bigfoot(true) },
+    SPARKLE,
+  ],
+  'skeleton-dogs': [
+    { id: 'main', frames: 8, w: 220, h: 160, paint: skeletonDog },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Arf arf!') },
+    SPARKLE,
+  ],
+  sunflowers: [{ id: 'main', frames: 4, w: 140, h: 300, paint: sunflower }, SPARKLE],
+  tulips: [{ id: 'main', frames: 4, w: 100, h: 200, paint: tulip }, SPARKLE],
+  'bird-feeder': [
+    { id: 'main', frames: 1, w: 144, h: 300, paint: birdFeeder },
+    { id: 'bird', frames: 2, w: 80, h: 60, paint: feederBird },
+    SPARKLE,
+  ],
+  beehive: [
+    { id: 'main', frames: 1, w: 160, h: 200, paint: beehive },
+    { id: 'bee', frames: 8, w: 170, h: 130, paint: bee },
+    SPARKLE,
+  ],
+  'wind-chimes': [
+    { id: 'main', frames: 8, w: 140, h: 230, paint: windChimes },
+    { id: 'thread', frames: 1, w: 8, h: 256, paint: silk },
+    SPARKLE,
+  ],
+  campfire: [
+    { id: 'main', frames: 8, w: 200, h: 190, paint: campfire },
+    { id: 'ember', frames: 1, w: 24, h: 24, paint: ember },
+    SPARKLE,
+  ],
+  kinara: [
+    { id: 'main', frames: 8, w: 280, h: 180, paint: kinara },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Habari gani?') },
+    SPARKLE,
+  ],
+  fanous: [
+    { id: 'main', frames: 8, w: 120, h: 184, paint: fanous },
+    { id: 'thread', frames: 1, w: 8, h: 256, paint: silk },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Ramadan Kareem!') },
+    SPARKLE,
+  ],
+  'hula-dancers': [
+    { id: 'main', frames: 8, w: 180, h: 240, paint: hulaDancer },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Aloha!') },
+    SPARKLE,
+  ],
+  mariachi: [
+    { id: 'main', frames: 8, w: 200, h: 250, paint: mariachi },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('¡Olé!') },
+    SPARKLE,
+  ],
+  bagpipers: [{ id: 'main', frames: 8, w: 180, h: 250, paint: bagpiper }, SPARKLE],
+  pilgrims: [
+    { id: 'main', frames: 8, w: 180, h: 250, paint: pilgrim },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Happy Thanksgiving!') },
+    SPARKLE,
+  ],
+  cornucopia: [
+    { id: 'main', frames: 1, w: 220, h: 180, paint: cornucopia },
+    { id: 'piece', frames: 5, w: 60, h: 60, paint: harvestPiece },
+    SPARKLE,
+  ],
+  'christmas-tree': [{ id: 'main', frames: 11, w: 200, h: 320, paint: christmasTree }, SPARKLE],
+  cows: [
+    { id: 'main', frames: 8, w: 256, h: 190, paint: cow(false) },
+    { id: 'look', frames: 8, w: 256, h: 190, paint: cow(true) },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Moo!') },
+    SPARKLE,
+  ],
 }

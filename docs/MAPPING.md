@@ -906,6 +906,55 @@ Ready-made scenes added: Howl at the moon, Deep freeze, Rudolph's night,
 Fiesta, Coral reef, Lazy summer, Garden party, Egg hunt, End of the rainbow,
 Diyas and fireworks, Rainy autumn day, Hugs and Hometown heroes.
 
+Seventh batch (36 more, taking the library past 300):
+
+- Real date and time (the server's clock): the New Year's ball comes down its
+  pole in the last minute before every hour and lands on the hour, with
+  "Happy New Year!" at midnight on New Year's Eve; champagne corks all pop at
+  midnight on New Year's Eve; Santa comes up out of his chimney far more often
+  on Christmas Eve night; a kinara lights as many candles as the real night of
+  Kwanzaa (26 December to 1 January, all seven the rest of the year);
+  sunflowers follow the sun through the day and droop at night; tulips are
+  open in the day and closed at night.
+- Real weather (where the server is): rain clouds that turn dark and rain to
+  the ground when it is really raining, with lightning in a real thunderstorm;
+  tumbleweeds that roll as fast as the real wind (how far each has gone is
+  kept, so a change in the wind speeds them up rather than jumping them);
+  wind chimes that swing and ring as hard as the real wind.
+- New `halts` flag for walkers: a school bus that stops with its stop sign out
+  and lights flashing for people, deer that stop with their heads up and edge
+  away (near "flee").
+- On the roof and under the gutter: Santa in a chimney at the peak of the roof
+  (standing ones with `ground: false` follow the roofline); reindeer prancing
+  on the roof that turn to watch people; a disco ball whose spots of light
+  wheel over the house and gather round people; strings of firecrackers that
+  go off from the bottom up with a bang each; wind chimes; Ramadan lanterns
+  ("Ramadan Kareem!").
+- In the windows: a candle on every sill, brighter for people (near "hide":
+  blown out).
+- On the ground: searchlights crossing over people; champagne; graduation
+  caps tossed up ("Congrats!"); a lighthouse whose beam sweeps round and stops
+  on people; raccoons climbing out of trash cans to stare at people; a bird
+  feeder whose birds fly off from people; a beehive whose bees swarm at
+  people; a campfire throwing up sparks; hula dancers ("Aloha!") and a
+  mariachi band ("¡Olé!") going faster for people; a cornucopia spilling fruit
+  across the ground; a Christmas tree that lights up, star and all, as people
+  come; sunflowers that turn to face people.
+- Walking: a tractor puffing from its stack ("Howdy!"), foxes that pounce
+  into the snow now and then, Bigfoot turning to stare at whoever spots him,
+  skeleton dogs ("Arf arf!"), a bagpiper, pilgrims ("Happy Thanksgiving!") and
+  cows that look up from the grass and moo.
+- Flying: a witch who flies straight at the house and splats flat against the
+  wall above whoever is there ("Ouch!"), then slides down it.
+- Throwing: hockey players slapping pucks along the ground, passing to people
+  ("He shoots, he scores!").
+
+Ready-made scenes added: Santa's on the roof, Countdown to midnight, Disco
+night, Down on the farm, Into the woods, Bad landing, Stormy weather, Garden in
+bloom, Kwanzaa, Ramadan nights, Luau, Serenade, Harvest walk, Firecrackers,
+Class of the year, Night on the coast, Hockey night, School's out and Pipes and
+drums.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

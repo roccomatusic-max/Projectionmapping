@@ -244,7 +244,33 @@ CATALOG: dict[str, dict] = {
                  "jump); cuckoo-clock tells the real time and calls the hours (near "
                  "jump); robins sing on the roof (near flee); pot-of-gold makes a "
                  "rainbow for people (near jump); easter-eggs light up when found "
-                 "(near jump); diyas glow brighter for people (near light)",
+                 "(near jump); diyas glow brighter for people (near light); "
+                 "santa-chimney is Santa climbing out of a chimney at the roof peak "
+                 "(near jump); roof-reindeer stand on the roof and watch people; "
+                 "window-candles sit on every window sill (near light); disco-ball "
+                 "hangs from the gutter throwing spots of light onto people (near "
+                 "dance); searchlights cross over people (near follow); ball-drop "
+                 "comes down on the hour by the real clock and at midnight on New "
+                 "Year's Eve (near jump); champagne pops its corks (near jump); "
+                 "firecrackers hang from the gutter and go off (near jump); "
+                 "graduation-caps are tossed up (near jump); school-bus stops with "
+                 "its stop sign out (near light); deer stop and edge away (near "
+                 "flee); tractors, foxes, bigfoot, skeleton-dogs (near follow), "
+                 "bagpipers, pilgrims and cows (near follow: look up and moo) go "
+                 "along the bottom; raccoons climb out of trash cans (near jump); "
+                 "witch-crash splats against the wall over people (near follow); "
+                 "rain-clouds rain when it is really raining (near follow: rain on "
+                 "people); hockey-players pass pucks to people (near follow); "
+                 "lighthouse shines its beam on people (near follow); tumbleweeds "
+                 "roll with the real wind (near flee); sunflowers face people (near "
+                 "follow); tulips open for people (near light); bird-feeder birds "
+                 "fly off from people (near flee); beehive bees swarm at people "
+                 "(near follow); wind-chimes swing with the real wind (near dance); "
+                 "campfire sparks fly up (near grow); kinara lights the real night of "
+                 "Kwanzaa (near light); fanous are Ramadan lanterns hanging from the "
+                 "gutter (near light); hula-dancers and mariachi play faster for "
+                 "people (near dance); cornucopia spills fruit for people (near "
+                 "jump); christmas-tree lights up for people (near light)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -280,7 +306,14 @@ CATALOG: dict[str, dict] = {
                    "sailboats", "snowplow", "pirate-ship", "rudolph", "fountains",
                    "web-spiders", "leaf-piles", "puddles", "gnomes", "cuckoo-clock",
                    "robins", "peacocks", "pot-of-gold", "easter-eggs", "teddy-bears",
-                   "diyas"],
+                   "diyas", "santa-chimney", "roof-reindeer", "window-candles",
+                   "disco-ball", "searchlights", "ball-drop", "champagne",
+                   "firecrackers", "graduation-caps", "school-bus", "tractors", "deer",
+                   "foxes", "raccoons", "witch-crash", "rain-clouds", "hockey-players",
+                   "lighthouse", "tumbleweeds", "bigfoot", "skeleton-dogs",
+                   "sunflowers", "tulips", "bird-feeder", "beehive", "wind-chimes",
+                   "campfire", "kinara", "fanous", "hula-dancers", "mariachi",
+                   "bagpipers", "pilgrims", "cornucopia", "christmas-tree", "cows"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
