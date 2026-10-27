@@ -123,7 +123,9 @@ const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'wind
 const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 'sugar-skulls', 'buglers', 'nutcracker', 'workshop-elves',
   'snow-angels', 'north-pole-mailbox', 'bell-ringer', 'ice-fishing-penguins', 'wishbone', 'sign-turkey', 'stuck-santa', 'latke-chef',
   'dreidel-game', 'klezmer-band', 'sufganiyot', 'djembe-drummer', 'kwanzaa-dancers', 'unity-cup', 'baby-new-year', 'noisemaker-kids',
-  'polar-plunge', 'sleepy-reveler', 'god-of-fortune', 'festival-drum', 'dumplings', 'gong-xi-kids', 'lucky-cat', 'midnight-toast'])
+  'polar-plunge', 'sleepy-reveler', 'god-of-fortune', 'festival-drum', 'dumplings', 'gong-xi-kids', 'lucky-cat', 'midnight-toast',
+  'unity-circle', 'dove-release', 'serenade', 'waltzing-couple', 'pebble-penguins', 'liberty-bell', 'cherry-tree', 'bead-balcony', 'jester',
+  'king-cake', 'irish-dancers', 'leprechaun-trap', 'harpist', 'egg-hunt', 'bunny-painter'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
   'hanging-skeletons', 'star-lanterns', 'singing-wreath', 'mistletoe'])
 
@@ -604,9 +606,17 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     stamp(ctx, style, layer, Math.floor(time * 0.35) % 2 ? 'act' : 'main', Math.floor(time * 7), W / 2, H / 2, H * 0.9)
     return
   }
-  if (style === 'bush-eyes' || style === 'pumpkin-tower' || style === 'lawn-reindeer') {
+  if (style === 'bush-eyes' || style === 'pumpkin-tower' || style === 'lawn-reindeer' || style === 'rushmore' || style === 'carnival-mask') {
     const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)
     stamp(ctx, style, layer, 'main', Math.floor(time / 1.2) % 4, W / 2, H / 2, main.h * fit)
+    return
+  }
+  if (style === 'groundhog') {
+    // Popping up out of his burrow, then seeing his shadow (or not) in turn.
+    const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)
+    const k = time % 8
+    if (k < 2) stamp(ctx, style, layer, 'main', Math.min(5, Math.floor(k * 3)), W / 2, H / 2, main.h * fit)
+    else stamp(ctx, style, layer, Math.floor(time / 8) % 2 ? 'spring' : 'shadow', Math.floor(time * 4), W / 2, H / 2, main.h * fit)
     return
   }
   if (style === 'skeleton-band') {
@@ -651,7 +661,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     return
   }
   if (style === 'melting-snowman' || style === 'cookies-for-santa' || style === 'window-menorah' || style === 'habari-gani'
-    || style === 'zodiac-animal' || style === 'father-time') {
+    || style === 'zodiac-animal' || style === 'father-time' || style === 'candy-heart') {
     // Through its stages, by the real temperature or the real date.
     const frames = main.frames
     const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)
@@ -660,7 +670,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
   }
   if (style === 'christmas-tree' || style === 'kinara' || style === 'tulips' || style === 'sunflowers' || style === 'haunted-tree'
     || style === 'candy-bowl' || style === 'creaky-gate' || style === 'ofrenda' || style === 'rangoli' || style === 'gingerbread-house'
-    || style === 'nativity' || style === 'blow-up-santa' || style === 'lights-elf' || style === 'strutting-tom') {
+    || style === 'nativity' || style === 'blow-up-santa' || style === 'lights-elf' || style === 'strutting-tom' || style === 'tree-planters') {
     // Lighting up (the tree, the candles in their order) or opening, as people come.
     const frames = main.frames
     const k = Math.min(1, ((time * 0.3) % 1.3))

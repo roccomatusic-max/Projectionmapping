@@ -1144,6 +1144,40 @@ Ready-made scenes added: Eight nights, Hanukkah kitchen, Habari gani, Kwanzaa
 harvest, Ring in the new year, New Year's party, New Year's Day parade, Gong xi
 fa cai and Chase away the Nian.
 
+Eleventh batch (28 more, MLK Day, Groundhog Day, Valentine's, Presidents' Day,
+Mardi Gras, St Patrick's and Easter; `lateWinterSprites.ts` and
+`springSprites.ts`, with the shared figure drawing in `figures.ts`):
+
+- Real weather: a groundhog asleep in his burrow who peeps out now and then
+  and comes all the way up for people (and all day on 2 February). Then the
+  weather where the server is decides: clear skies and he sees his shadow, grey
+  on the snow so it shows when projected ("Six more weeks of winter!"), and
+  dives back; cloud, rain or snow and he cheers ("Early spring!"). New
+  occasion in the picker: Groundhog Day.
+- Watching people (`looks`): Mount Rushmore's four faces; a feathered carnival
+  mask.
+- Growing for people (`level`): volunteers planting a tree that grows from a
+  bare sapling to a leafy young tree.
+- Performers: children in a circle who raise their joined hands; a child
+  letting peace doves go ("Peace!"); a Valentine serenade with hearts rising
+  ("Be my Valentine!"); a candy heart with its sayings; a waltzing couple who
+  twirl ("Shall we dance?"); a penguin offering a pebble ("Will you be
+  mine?"); the Liberty Bell ringing ("Proclaim liberty!"); young Washington at
+  his cherry tree ("I cannot tell a lie!"); a balcony throwing beads ("Happy
+  Mardi Gras!"); a juggling jester; a king cake that gives up its baby ("You
+  found the baby!"); Irish step dancers kicking high with music rising; a
+  leprechaun trap that snaps shut, the leprechaun popping out laughing ("Ye'll
+  never catch me!"); a harpist; children hunting eggs ("Found one!"); a bunny
+  painting a big egg stripe by stripe ("Ta-da!").
+- Walking: marchers arm in arm who raise their signs ("We shall overcome!"); a
+  child with a heart balloon; a fife and drum; a second line brass band; a
+  dancing crawfish; lambs that spring into the air for people; an egg roll; an
+  Easter bonnet out for a stroll, waving.
+
+Ready-made scenes added: I have a dream, Groundhog Day, Be my Valentine,
+Presidents' Day, Laissez les bons temps rouler, Luck of the Irish and Hoppy
+Easter.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

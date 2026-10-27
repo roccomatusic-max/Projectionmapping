@@ -18,7 +18,7 @@ import { countdownNeedsDate } from './countdown'
 import { moverWalks } from './movers'
 
 export type Occasion =
-  | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'easter'
+  | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'groundhog-day' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'easter'
   | 'earth-day' | 'cinco-de-mayo' | 'mothers-day' | 'memorial-day' | 'fathers-day' | 'juneteenth' | 'fourth-of-july'
   | 'labor-day' | 'halloween' | 'day-of-the-dead' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
   | 'winter' | 'spring' | 'summer' | 'autumn' | 'birthday' | 'party' | 'sea' | 'driveway' | 'any'
@@ -28,6 +28,7 @@ export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = 
   { id: 'new-year', label: 'New Year’s', words: 'new years eve nye midnight january' },
   { id: 'mlk-day', label: 'MLK Day', words: 'martin luther king jr day january dream' },
   { id: 'lunar-new-year', label: 'Lunar New Year', words: 'chinese new year spring festival zodiac' },
+  { id: 'groundhog-day', label: 'Groundhog Day', words: 'groundhog february 2 punxsutawney phil shadow' },
   { id: 'valentines', label: 'Valentine’s', words: 'valentines love february' },
   { id: 'presidents-day', label: 'Presidents’ Day', words: 'presidents day washington lincoln february patriotic' },
   { id: 'mardi-gras', label: 'Mardi Gras', words: 'mardi gras fat tuesday carnival new orleans' },
@@ -467,6 +468,34 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'nian-beast': [['lunar-new-year'], 'nian beast monster scared away red firecrackers legend'],
   'lucky-cat': [['lunar-new-year', 'any'], 'lucky cat maneki neko waving paw good fortune gold coin'],
   'lantern-kid': [['lunar-new-year'], 'lantern festival rabbit lantern child carrying walking'],
+  'dreamers-march': [['mlk-day'], 'march marchers we shall overcome dream civil rights signs walking'],
+  'unity-circle': [['mlk-day', 'any'], 'holding hands circle neighbors together unity friends'],
+  'dove-release': [['mlk-day', 'any'], 'dove doves peace release white birds flying'],
+  'tree-planters': [['mlk-day', 'earth-day', 'spring'], 'day of service volunteers planting a tree growing watering'],
+  groundhog: [['groundhog-day', 'winter'], 'groundhog punxsutawney phil shadow burrow six more weeks early spring weather'],
+  serenade: [['valentines'], 'serenade guitar singer love song hearts be my valentine'],
+  'candy-heart': [['valentines'], 'candy conversation heart be mine hug me xo love you sweets'],
+  'waltzing-couple': [['valentines', 'party'], 'waltz waltzing dancing couple ballroom romance'],
+  'pebble-penguins': [['valentines', 'winter'], 'penguins pebble gift love proposal will you be mine'],
+  'heart-balloon': [['valentines', 'birthday'], 'heart balloon child walking love red'],
+  rushmore: [['presidents-day', 'fourth-of-july'], 'mount rushmore presidents faces washington jefferson roosevelt lincoln watching'],
+  'liberty-bell': [['presidents-day', 'fourth-of-july', 'juneteenth'], 'liberty bell ringing crack philadelphia proclaim liberty'],
+  'cherry-tree': [['presidents-day'], 'george washington cherry tree hatchet i cannot tell a lie'],
+  'fife-and-drum': [['presidents-day', 'fourth-of-july', 'memorial-day'], 'fife and drum corps colonial minutemen marching band'],
+  'bead-balcony': [['mardi-gras'], 'balcony beads throwing new orleans french quarter window'],
+  'brass-band': [['mardi-gras', 'party'], 'brass band second line trombone trumpet tuba marching new orleans'],
+  jester: [['mardi-gras', 'party'], 'jester juggler juggling harlequin carnival'],
+  'king-cake': [['mardi-gras'], 'king cake baby found slice purple green gold'],
+  'carnival-mask': [['mardi-gras', 'halloween'], 'carnival mask masquerade feathers eyes watching'],
+  crawfish: [['mardi-gras', 'summer'], 'crawfish crayfish boil dancing claws louisiana'],
+  'irish-dancers': [['st-patricks'], 'irish step dancers dancing jig reel celtic'],
+  'leprechaun-trap': [['st-patricks'], 'leprechaun trap box gold coins catch shamrock'],
+  harpist: [['st-patricks'], 'harp harpist irish celtic music playing'],
+  'egg-hunt': [['easter', 'spring'], 'easter egg hunt children basket found one'],
+  'bunny-painter': [['easter', 'spring'], 'easter bunny painting egg decorating paint brush'],
+  lambs: [['easter', 'spring'], 'lambs lamb sheep springing hopping spring farm'],
+  'egg-roll': [['easter'], 'easter egg roll white house spoon rolling child'],
+  'easter-bonnet': [['easter', 'spring'], 'easter bonnet hat flowers parade stroll'],
 }
 
 const INFO_TAGS: Record<string, [Occasion[], string]> = {

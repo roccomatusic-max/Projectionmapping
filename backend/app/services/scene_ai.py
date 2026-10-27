@@ -341,7 +341,21 @@ CATALOG: dict[str, dict] = {
                  "(near light); god-of-fortune bows (near follow); festival-drum (near "
                  "follow); dumplings steam (near follow); gong-xi-kids bow (near follow); "
                  "nian-beast runs from people (near flee); lucky-cat waves (near follow); "
-                 "lantern-kid carries a rabbit lantern (near dance)",
+                 "lantern-kid carries a rabbit lantern (near dance); dreamers-march "
+                 "for MLK Day (near dance); unity-circle holding hands (near follow); "
+                 "dove-release (near follow); tree-planters' tree grows for people (near "
+                 "follow); groundhog pops up and sees his shadow by the real weather "
+                 "(near follow); serenade (near follow); candy-heart (near follow); "
+                 "waltzing-couple (near follow); pebble-penguins (near follow); "
+                 "heart-balloon (near dance); rushmore faces watch people (near follow); "
+                 "liberty-bell rings (near follow); cherry-tree (near follow); "
+                 "fife-and-drum (near dance); bead-balcony throws beads (near follow); "
+                 "brass-band (near dance); jester juggles (near follow); king-cake (near "
+                 "follow); carnival-mask watches (near follow); crawfish (near dance); "
+                 "irish-dancers (near follow); leprechaun-trap snaps shut (near follow); "
+                 "harpist (near follow); egg-hunt (near follow); bunny-painter (near "
+                 "follow); lambs spring (near dance); egg-roll (near dance); "
+                 "easter-bonnet (near dance)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -405,7 +419,14 @@ CATALOG: dict[str, dict] = {
                    "noisemaker-kids", "midnight-toast", "conga-line", "polar-plunge",
                    "rose-float", "mummers", "sleepy-reveler", "zodiac-animal",
                    "god-of-fortune", "festival-drum", "dumplings", "gong-xi-kids",
-                   "nian-beast", "lucky-cat", "lantern-kid"],
+                   "nian-beast", "lucky-cat", "lantern-kid", "dreamers-march",
+                   "unity-circle", "dove-release", "tree-planters", "groundhog",
+                   "serenade", "candy-heart", "waltzing-couple", "pebble-penguins",
+                   "heart-balloon", "rushmore", "liberty-bell", "cherry-tree",
+                   "fife-and-drum", "bead-balcony", "brass-band", "jester", "king-cake",
+                   "carnival-mask", "crawfish", "irish-dancers", "leprechaun-trap",
+                   "harpist", "egg-hunt", "bunny-painter", "lambs", "egg-roll",
+                   "easter-bonnet"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
