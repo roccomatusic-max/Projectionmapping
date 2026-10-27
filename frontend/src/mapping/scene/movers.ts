@@ -69,6 +69,10 @@ export const MOVER_STYLES = [
   'habari-gani', 'unity-cup', 'harvest-basket', 'baby-new-year', 'father-time', 'noisemaker-kids', 'midnight-toast',
   'conga-line', 'polar-plunge', 'rose-float', 'mummers', 'sleepy-reveler', 'zodiac-animal', 'god-of-fortune',
   'festival-drum', 'dumplings', 'gong-xi-kids', 'nian-beast', 'lucky-cat', 'lantern-kid',
+  'dreamers-march', 'unity-circle', 'dove-release', 'tree-planters', 'groundhog', 'serenade', 'candy-heart',
+  'waltzing-couple', 'pebble-penguins', 'heart-balloon', 'rushmore', 'liberty-bell', 'cherry-tree', 'fife-and-drum',
+  'bead-balcony', 'brass-band', 'jester', 'king-cake', 'carnival-mask', 'crawfish', 'irish-dancers',
+  'leprechaun-trap', 'harpist', 'egg-hunt', 'bunny-painter', 'lambs', 'egg-roll', 'easter-bonnet',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -404,6 +408,34 @@ const STYLE: Record<MoverStyle, {
   'nian-beast': { motion: 'walker', ground: true, height: 1.1, pace: 1.6 },
   'lucky-cat': { motion: 'stand', ground: true, height: 0.8, many: 1 },
   'lantern-kid': { motion: 'walker', ground: true, height: 1, pace: 1.1 },
+  'dreamers-march': { motion: 'walker', ground: true, height: 1.2, pace: 1.2 },
+  'unity-circle': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'dove-release': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'tree-planters': { motion: 'stand', ground: true, height: 1.2, many: 1 },
+  groundhog: { motion: 'stand', ground: true, height: 0.75, many: 0 },
+  serenade: { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'candy-heart': { motion: 'stand', ground: true, height: 0.7, many: 2 },
+  'waltzing-couple': { motion: 'stand', ground: true, height: 1.2, many: 1 },
+  'pebble-penguins': { motion: 'stand', ground: true, height: 0.8, many: 1 },
+  'heart-balloon': { motion: 'walker', ground: true, height: 1.1, pace: 0.9 },
+  rushmore: { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'liberty-bell': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'cherry-tree': { motion: 'stand', ground: true, height: 1.25, many: 0 },
+  'fife-and-drum': { motion: 'walker', ground: true, height: 1.15, pace: 1.1 },
+  'bead-balcony': { motion: 'stand', ground: false, height: 1.1, many: 0 },
+  'brass-band': { motion: 'walker', ground: true, height: 1.2, pace: 1.3 },
+  jester: { motion: 'stand', ground: true, height: 1.1, many: 1 },
+  'king-cake': { motion: 'stand', ground: true, height: 0.7, many: 0 },
+  'carnival-mask': { motion: 'stand', ground: false, height: 0.9, many: 0 },
+  crawfish: { motion: 'walker', ground: true, height: 0.5, pace: 0.6 },
+  'irish-dancers': { motion: 'stand', ground: true, height: 1.1, many: 1 },
+  'leprechaun-trap': { motion: 'stand', ground: true, height: 0.9, many: 0 },
+  harpist: { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'egg-hunt': { motion: 'stand', ground: true, height: 0.9, many: 1 },
+  'bunny-painter': { motion: 'stand', ground: true, height: 1, many: 0 },
+  lambs: { motion: 'walker', ground: true, height: 0.6, pace: 0.8 },
+  'egg-roll': { motion: 'walker', ground: true, height: 0.85, pace: 0.7 },
+  'easter-bonnet': { motion: 'walker', ground: true, height: 1.1, pace: 1 },
 }
 
 /**
@@ -478,6 +510,25 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   dumplings: { idle: 3, act: 5 },
   'gong-xi-kids': { idle: 2, act: 6 },
   'lucky-cat': { idle: 3, act: 8, text: true },
+  'unity-circle': { idle: 2, act: 6, together: true },
+  'dove-release': { idle: 2, act: 6 },
+  'tree-planters': { level: 0.15, peek: true },
+  serenade: { idle: 2, act: 6, notes: 'lit' },
+  'candy-heart': { idle: 0.25, act: 1.5, text: true },
+  'waltzing-couple': { idle: 2, act: 5 },
+  'pebble-penguins': { idle: 2, act: 5, faces: true },
+  rushmore: { looks: true },
+  'liberty-bell': { idle: 2, act: 6, text: true },
+  'cherry-tree': { idle: 2, act: 6 },
+  'bead-balcony': { idle: 2, act: 7 },
+  jester: { idle: 4, act: 9 },
+  'king-cake': { idle: 1, act: 4 },
+  'carnival-mask': { looks: true },
+  'irish-dancers': { idle: 4, act: 9, notes: 'lit', together: true },
+  'leprechaun-trap': { idle: 1, act: 3 },
+  harpist: { idle: 3, act: 6, notes: true },
+  'egg-hunt': { idle: 2, act: 4 },
+  'bunny-painter': { idle: 2, act: 3 },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -3160,6 +3211,29 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         if (busy && near.k > 0.3) {
           const said = bubble(sprite, size, false, near.k)
           if (style === 'zodiac-animal') said.frame = sprite.frame
+          out.push(said)
+        }
+      } else if (style === 'groundhog') {
+        // Asleep in his burrow, peeping out now and then, and up for people (all day on Groundhog Day). Once he's
+        // all the way up, the real weather where the server is decides: clear skies and he sees his shadow
+        // ("Six more weeks of winter!") and dives back; cloudy, rain or snow and he cheers an early spring.
+        const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
+        const day = now.getMonth() === 1 && now.getDate() === 2
+        let level = day ? 1 : 0.4 * Math.pow(Math.max(0, Math.sin(t * 0.3 + ph * 9)), 8)
+        level = Math.max(level, k)
+        if (action === 'hide') level *= 1 - smoothstep(0.2, 0.6, near.k)
+        const sky = weatherFor('').data
+        const sunny = !!sky && ['sun', 'part'].includes(weatherLook(sky.code).icon)
+        sprite.flip = false
+        if (level > 0.95) {
+          sprite.row = sunny ? 'shadow' : 'spring'
+          sprite.frame = Math.floor(t * 4 + ph * 4)
+        } else sprite.frame = Math.round(level * 5)
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (level > 0.95 && (k > 0.3 || day)) {
+          const said = bubble(sprite, size, false, Math.max(near.k, 0.6))
+          if (!sunny) said.row = 'early'
           out.push(said)
         }
       } else if (style === 'midnight-toast') {

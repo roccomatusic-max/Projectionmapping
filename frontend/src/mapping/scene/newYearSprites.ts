@@ -11,7 +11,7 @@
  * into a cell of w by h design units.
  */
 
-import { arm, dot, head, rr } from './hanukkahKwanzaaSprites'
+import { arm, dot, head, rr } from './figures'
 import { ZODIAC } from './holidays'
 import {
   circle, ellipse, glow, heartPath, rgba, saying, shade, SKIN, SPARKLE, TAU,

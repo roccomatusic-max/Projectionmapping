@@ -203,3 +203,15 @@ def test_winter_holiday_and_new_year_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "window-menorah", "habari-gani", "father-time", "zodiac-animal", "nian-beast", "conga-line"]
+
+
+def test_late_winter_and_spring_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "groundhog", "near": "follow"},
+        {"type": "movers", "style": "rushmore", "near": "follow"},
+        {"type": "movers", "style": "brass-band", "near": "dance"},
+        {"type": "movers", "style": "leprechaun-trap", "near": "follow"},
+        {"type": "movers", "style": "lambs", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "groundhog", "rushmore", "brass-band", "leprechaun-trap", "lambs"]
