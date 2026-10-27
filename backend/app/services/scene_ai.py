@@ -423,7 +423,19 @@ CATALOG: dict[str, dict] = {
                  "follow); snowshoe-hiker (near dance); ski-lift (near follow); "
                  "sled-dogs (near dance); chestnut-roaster (near follow); tree-lot "
                  "(near follow); proposal (near follow); valentine-mailbox (near "
-                 "follow); egg-dyeing (near follow); maple-tapping (near follow)",
+                 "follow); egg-dyeing (near follow); maple-tapping (near follow); diya-lighter (near follow); mithai-box (near follow); "
+                 "holi-colors (near follow); alebrije (near dance); papel-picado "
+                 "(near follow); step-team (near follow); zawadi (near follow); "
+                 "dragon-dance (near dance); tangerine-tree (near follow); "
+                 "mardi-gras-float (near dance); rainbow-leprechaun (near follow); "
+                 "pi-day-pie (near follow); birdhouse-builder (near follow); "
+                 "thank-you-letter (near follow); lincoln-hat (near follow); "
+                 "resolution-list (near follow); tamale-maker (near follow); "
+                 "haunted-doorbell (near follow); candy-trader (near follow); "
+                 "tree-trimmer (near follow); secret-admirer (near follow); "
+                 "egg-spoon-race (near follow); seed-spitters (near follow); "
+                 "paul-revere (near dance); hammock-napper (near follow); "
+                 "flag-raiser (near follow)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -528,7 +540,15 @@ CATALOG: dict[str, dict] = {
                    "igloo-builder", "snowflake-catcher", "ice-sculptor",
                    "snowshoe-hiker", "ski-lift", "sled-dogs", "chestnut-roaster",
                    "tree-lot", "proposal", "valentine-mailbox", "egg-dyeing",
-                   "maple-tapping"],
+                   "maple-tapping",
+                   "diya-lighter", "mithai-box", "holi-colors", "alebrije",
+                   "papel-picado", "step-team", "zawadi", "dragon-dance",
+                   "tangerine-tree", "mardi-gras-float", "rainbow-leprechaun",
+                   "pi-day-pie", "birdhouse-builder", "thank-you-letter",
+                   "lincoln-hat", "resolution-list", "tamale-maker",
+                   "haunted-doorbell", "candy-trader", "tree-trimmer",
+                   "secret-admirer", "egg-spoon-race", "seed-spitters", "paul-revere",
+                   "hammock-napper", "flag-raiser"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",

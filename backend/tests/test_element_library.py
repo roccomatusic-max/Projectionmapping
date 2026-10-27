@@ -281,3 +281,10 @@ def test_autumn_and_winter_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "kite-flyer", "snow-shoveler", "giant-pumpkin", "hayride", "turkey-disguise", "proposal"]
+
+
+def test_heritage_and_observance_styles_survive_describe_a_scene():
+    styles = ["diya-lighter", "holi-colors", "alebrije", "step-team", "dragon-dance", "mardi-gras-float",
+              "rainbow-leprechaun", "lincoln-hat", "tree-trimmer", "paul-revere", "flag-raiser"]
+    layers = scene_ai.to_layers([{"type": "movers", "style": s, "near": "follow"} for s in styles])
+    assert [layer.style for layer in layers] == styles
