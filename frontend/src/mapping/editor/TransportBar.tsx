@@ -12,8 +12,9 @@ const STATUS: Record<TransportState['status'], { label: string; tone: string }> 
 }
 
 /**
- * GO, pause, stop, blackout. Big targets: this is pressed on a phone in
- * the dark as often as at a desk.
+ * GO, pause, stop, blackout. Big targets on Run the show: this is pressed
+ * on a phone in the dark as often as at a desk. Elsewhere (Editor, Scenes,
+ * Camera) it is one slim line, so the work area starts near the top.
  */
 export function TransportBar({
   show,
@@ -54,9 +55,9 @@ export function TransportBar({
   const otherShowLive = transport && !thisShow && (transport.status === 'playing' || transport.status === 'paused')
 
   return (
-    <div className={classNames('panel flex flex-wrap items-center gap-3', large ? 'p-4' : 'px-4 py-3')}>
+    <div className={classNames('panel flex flex-wrap items-center', large ? 'gap-3 p-4' : 'gap-2 px-3 py-2')}>
       <button
-        className={classNames('btn-primary min-w-[9rem] font-semibold', large ? 'w-full px-8 py-6 text-2xl sm:w-auto' : 'px-6 py-3 text-lg')}
+        className={classNames('btn-primary min-w-[9rem] font-semibold', large ? 'w-full px-8 py-6 text-2xl sm:w-auto' : 'min-w-[6rem] px-5 py-1.5 text-base')}
         disabled={!canRun || busy || !next || held}
         onClick={() => onCommand('go')}
         title={held ? 'The emergency stop is on. Clear it in the red bar at the top first.'
@@ -64,28 +65,28 @@ export function TransportBar({
       >
         GO
       </button>
-      <div className="flex gap-2">
+      <div className={classNames('flex', large ? 'gap-2' : 'gap-1.5')}>
         {status === 'paused' ? (
-          <button className={classNames('btn-default', large && 'btn-lg')} disabled={!canRun || busy || held}
+          <button className={classNames('btn-default', large ? 'btn-lg' : 'btn-sm')} disabled={!canRun || busy || held}
             onClick={() => onCommand('resume')}>
             Resume
           </button>
         ) : (
-          <button className={classNames('btn-default', large && 'btn-lg')} disabled={!canRun || busy || status !== 'playing'}
+          <button className={classNames('btn-default', large ? 'btn-lg' : 'btn-sm')} disabled={!canRun || busy || status !== 'playing'}
             onClick={() => onCommand('pause')}>
             Pause
           </button>
         )}
-        <button className={classNames('btn-default', large && 'btn-lg')} disabled={!canRun || busy || status === 'stopped'}
+        <button className={classNames('btn-default', large ? 'btn-lg' : 'btn-sm')} disabled={!canRun || busy || status === 'stopped'}
           onClick={() => onCommand('stop')}>
           Stop
         </button>
-        <button className={classNames('btn-danger', large && 'btn-lg')} disabled={!canRun || busy}
+        <button className={classNames('btn-danger', large ? 'btn-lg' : 'btn-sm')} disabled={!canRun || busy}
           onClick={() => onCommand('blackout')} title="Black on every output at once">
           Blackout
         </button>
       </div>
-      <div className={classNames('min-w-0 flex-1', large && 'basis-full sm:basis-auto')}>
+      <div className={classNames('min-w-0 flex-1', large ? 'basis-full sm:basis-auto' : 'flex flex-wrap items-center gap-x-3')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className={classNames('chip ring-1', STATUS[status].tone)}>{STATUS[status].label}</span>
           {current && (
@@ -95,7 +96,7 @@ export function TransportBar({
             </span>
           )}
         </div>
-        <p className="mt-0.5 truncate text-xs text-slate-500">
+        <p className={classNames('truncate text-xs text-slate-500', large && 'mt-0.5')}>
           {held
             ? 'GO is held by the emergency stop. Clear it in the red bar at the top first.'
             : otherShowLive
