@@ -24,6 +24,8 @@
 import type { PersonSpot } from '../people'
 import type { LayerBlend, ObjectPin, SceneLayer, SourceRect, Surface } from '../types'
 import { nearOf } from './catalog'
+import { CLASS_FIRST_YEAR, CLASS_POSES, CLASS_TOSS, CLASS_YEARS } from './celebrationSprites'
+import { BOARD_HELLO, BOARD_POSES } from './schoolGameSprites'
 import { SPRITE_ROWS, type SpriteRow } from './spriteRows'
 import { hanukkahEve, lastWeekday, lunarNewYear } from './holidays'
 import { weatherFor, weatherLook } from './weather'
@@ -81,6 +83,10 @@ export const MOVER_STYLES = [
   'werewolf-change', 'lawn-chair-skeleton', 'skeleton-photographer', 'ghost-tea-party', 'witch-spell', 'scaredy-ghost',
   'elf-on-shelf', 'advent-calendar', 'nice-list', 'snowman-builders', 'star-topper', 'light-tangle', 'ugly-sweater',
   'present-puppy', 'reindeer-food', 'present-tower', 'sweater-dog', 'stair-peekers', 'cookie-baker',
+  'bounce-house', 'magician', 'balloon-twister', 'party-horns', 'musical-chairs', 'pin-the-tail', 'limbo',
+  'sack-race', 'face-painter', 'karaoke', 'dj-booth', 'diploma-walk', 'class-of', 'grad-parade', 'valedictorian',
+  'crossing-guard', 'backpack-kid', 'chalkboard-teacher', 'spelling-bee', 'science-volcano', 'referee',
+  'cheerleaders', 'stadium-wave', 'field-goal', 'team-mascot', 'snake-can', 'squirting-flower',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -498,6 +504,33 @@ const STYLE: Record<MoverStyle, {
   'sweater-dog': { motion: 'walker', ground: true, height: 0.6, pace: 0.9 },
   'stair-peekers': { motion: 'stand', ground: true, height: 1.1, many: 0 },
   'cookie-baker': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'bounce-house': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  magician: { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'balloon-twister': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'party-horns': { motion: 'stand', ground: true, height: 1, many: 1 },
+  'musical-chairs': { motion: 'stand', ground: true, height: 0.95, many: 0 },
+  'pin-the-tail': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  limbo: { motion: 'stand', ground: true, height: 1, many: 0 },
+  'sack-race': { motion: 'walker', ground: true, height: 0.95, pace: 1.1 },
+  'face-painter': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  karaoke: { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'dj-booth': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  'diploma-walk': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'class-of': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'grad-parade': { motion: 'walker', ground: true, height: 0.95, pace: 1.6 },
+  valedictorian: { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'crossing-guard': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'backpack-kid': { motion: 'walker', ground: true, height: 0.95, pace: 0.9 },
+  'chalkboard-teacher': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'spelling-bee': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'science-volcano': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  referee: { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  cheerleaders: { motion: 'stand', ground: true, height: 1.1, many: 1 },
+  'stadium-wave': { motion: 'stand', ground: true, height: 0.95, many: 0 },
+  'field-goal': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'team-mascot': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'snake-can': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'squirting-flower': { motion: 'stand', ground: true, height: 1.15, many: 0 },
 }
 
 /**
@@ -630,6 +663,28 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   'reindeer-food': { idle: 2, act: 5 },
   'stair-peekers': { idle: 2, act: 4 },
   'cookie-baker': { idle: 2, act: 4 },
+  'bounce-house': { idle: 4, act: 6 },
+  magician: { idle: 3, act: 5 },
+  'balloon-twister': { idle: 3, act: 4 },
+  'party-horns': { idle: 3, act: 6, together: true },
+  'musical-chairs': { idle: 6, act: 5 },
+  'pin-the-tail': { idle: 3, act: 4 },
+  limbo: { level: 0 },
+  'face-painter': { idle: 3, act: 5 },
+  karaoke: { idle: 3, act: 5, notes: 'lit' },
+  'dj-booth': { idle: 6, act: 8, notes: true },
+  'diploma-walk': { idle: 2, act: 4 },
+  valedictorian: { idle: 3, act: 5 },
+  'crossing-guard': { idle: 2, act: 4, text: true },
+  'spelling-bee': { idle: 2, act: 4, text: true },
+  'science-volcano': { idle: 2, act: 5 },
+  referee: { idle: 2, act: 4 },
+  cheerleaders: { idle: 4, act: 4, together: true },
+  'stadium-wave': { idle: 3, act: 6 },
+  'field-goal': { idle: 1, act: 6 },
+  'team-mascot': { idle: 4, act: 5 },
+  'snake-can': { idle: 2, act: 5, text: true },
+  'squirting-flower': { idle: 3, act: 4 },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -3371,6 +3426,22 @@ export function moverSprites(f: MoverFrame): Sprite[] {
           if (cold) said.row = 'cocoa'
           out.push(said)
         }
+      } else if (style === 'class-of' || style === 'chalkboard-teacher') {
+        // Ones that show the real date: the graduate's yard sign reads this year's class (next year's from July)
+        // and the teacher's board today's day of the week. For people the graduate throws a cap in the air and
+        // the teacher turns round to say good morning.
+        sprite.flip = false
+        const acting = busy && smoothstep(0.1, 0.6, near.k) > 0.3
+        const grad = style === 'class-of'
+        const slot = grad
+          ? Math.max(0, Math.min(CLASS_YEARS - 1, now.getFullYear() + (now.getMonth() >= 6 ? 1 : 0) - CLASS_FIRST_YEAR))
+          : now.getDay()
+        const poses = grad ? (acting ? CLASS_TOSS : CLASS_POSES) : acting ? BOARD_HELLO : BOARD_POSES
+        sprite.row = acting ? 'act' : 'main'
+        sprite.frame = slot * poses + (Math.floor(t * (acting ? 6 : 2) + ph * 8) % poses)
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (acting && hasRow(style, 'bubble')) out.push(bubble(sprite, size, false, near.k))
       } else if (style === 'lawn-chair-skeleton') {
         // Dressed for the real temperature where the server is: sunglasses and a cold drink when it's mild, a
         // hat, scarf, blanket and a steaming mug (and a shiver) below 50°F. It waves to people.

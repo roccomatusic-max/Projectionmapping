@@ -10,8 +10,10 @@
  */
 
 import { OutputRenderer } from '../renderer'
+import { CLASS_FIRST_YEAR, CLASS_POSES, CLASS_TOSS, CLASS_YEARS } from '../scene/celebrationSprites'
 import type { LibraryItem } from '../scene/library'
 import { paintAtlas } from '../scene/movers'
+import { BOARD_HELLO, BOARD_POSES } from '../scene/schoolGameSprites'
 import { SPRITE_ROWS, type SpriteRow } from '../scene/spriteRows'
 import type { MappingScene, SceneLayer, Surface } from '../types'
 import { wholeCanvasOutput } from './ScenePreview'
@@ -129,7 +131,10 @@ const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 's
   'flowers-for-mom', 'saluting-soldier', 'grill-dad', 'fishing-dock', 'order-reader', 'double-dutch', 'hot-dog-contest', 'sparkler-writers',
   'ironworkers', 'cannonball', 'cornhole', 'rain-barrel', 'lemonade-stand', 'pumpkin-carver', 'mad-scientist', 'singing-pumpkins',
   'apple-bobbing', 'grave-digger', 'phantom-organist', 'lawn-chair-skeleton', 'skeleton-photographer', 'ghost-tea-party', 'witch-spell',
-  'scaredy-ghost', 'nice-list', 'star-topper', 'light-tangle', 'ugly-sweater', 'present-puppy', 'reindeer-food', 'stair-peekers', 'cookie-baker'])
+  'scaredy-ghost', 'nice-list', 'star-topper', 'light-tangle', 'ugly-sweater', 'present-puppy', 'reindeer-food', 'stair-peekers', 'cookie-baker',
+  'bounce-house', 'magician', 'balloon-twister', 'party-horns', 'musical-chairs', 'pin-the-tail', 'face-painter', 'karaoke', 'dj-booth',
+  'diploma-walk', 'valedictorian', 'crossing-guard', 'spelling-bee', 'science-volcano', 'referee', 'cheerleaders', 'stadium-wave',
+  'field-goal', 'team-mascot', 'snake-can', 'squirting-flower'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
   'hanging-skeletons', 'star-lanterns', 'singing-wreath', 'mistletoe'])
 
@@ -605,6 +610,18 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     }
     return
   }
+  if (style === 'class-of' || style === 'chalkboard-teacher') {
+    // This year's class, or today's day on the board; now waiting, now doing its thing for people.
+    const now = new Date()
+    const grad = style === 'class-of'
+    const acting = Math.floor(time * 0.35) % 2 === 1
+    const slot = grad
+      ? Math.max(0, Math.min(CLASS_YEARS - 1, now.getFullYear() + (now.getMonth() >= 6 ? 1 : 0) - CLASS_FIRST_YEAR))
+      : now.getDay()
+    const poses = grad ? (acting ? CLASS_TOSS : CLASS_POSES) : acting ? BOARD_HELLO : BOARD_POSES
+    stamp(ctx, style, layer, acting ? 'act' : 'main', slot * poses + (Math.floor(time * 5) % poses), W / 2, H / 2, H * 0.9)
+    return
+  }
   if (ACTORS.has(style)) {
     // Now doing its thing for people, now waiting.
     stamp(ctx, style, layer, Math.floor(time * 0.35) % 2 ? 'act' : 'main', Math.floor(time * 7), W / 2, H / 2, H * 0.9)
@@ -683,7 +700,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     || style === 'candy-bowl' || style === 'creaky-gate' || style === 'ofrenda' || style === 'rangoli' || style === 'gingerbread-house'
     || style === 'nativity' || style === 'blow-up-santa' || style === 'lights-elf' || style === 'strutting-tom' || style === 'tree-planters' || style === 'mom-garden'
     || style === 'statue-of-liberty' || style === 'sandcastle' || style === 'sarcophagus' || style === 'werewolf-change'
-    || style === 'snowman-builders' || style === 'advent-calendar') {
+    || style === 'snowman-builders' || style === 'advent-calendar' || style === 'limbo') {
     // Lighting up (the tree, the candles in their order) or opening, as people come.
     const frames = main.frames
     const k = Math.min(1, ((time * 0.3) % 1.3))
