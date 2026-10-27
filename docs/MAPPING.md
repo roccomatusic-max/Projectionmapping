@@ -1303,6 +1303,32 @@ Ready-made scenes added: Passover, High Holy Days, Ramadan and Eid, Indigenous
 Peoples' Day and Grandparents Day; Game day and April Fools' gain the new
 elements and their countdowns.
 
+Sixteenth batch (27 for Thanksgiving, autumn, Halloween, winter, Valentine's and
+Easter; `harvestSprites.ts` and `wintertimeSprites.ts`):
+
+- Real weather: a kite that flies as high and pulls as hard as today's real
+  wind (on a still day the child has to run to get it up: "Come on, wind!");
+  a neighbour who shovels while it really snows ("Let it snow!") and otherwise
+  leans on the shovel looking up for it.
+- Growing for people (`level`): a prize pumpkin that swells until it wins the
+  blue ribbon; an igloo going up block by block; an ice sculptor carving a
+  swan out of the block.
+- Performers: a pumpkin pie on the windowsill that a child sneaks a slice of
+  ("Just one bite!"); Dad carving the turkey ("Who wants a drumstick?"); the
+  family raising their glasses ("Thankful for you!"); a child leaping into the
+  leaf pile; apples dropping into the basket; a cider press; a turkey trying
+  one disguise after another, sign and all; a Halloween candy chute; a car
+  trunk dressed as a monster's mouth; the family on the curb cheering as a
+  parade balloon floats by; a child catching snowflakes on her tongue; a ski
+  lift; chestnuts roasting; the tree lot tying a tree onto the car roof; a
+  proposal ("Yes!"); a Valentine's mailbox whose flag goes up; dyeing Easter
+  eggs one colour after another; tapping the maples and pouring the syrup.
+- Walking: a hayride, a costume parade, a snowshoe hiker and a sled dog team.
+
+Ready-made scenes added: Thanksgiving dinner, Fall fun, Trick-or-treat street,
+Snow day and Winter village; Be my Valentine and Hoppy Easter gain the new
+elements.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

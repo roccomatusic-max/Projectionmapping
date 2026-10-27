@@ -411,7 +411,19 @@ CATALOG: dict[str, dict] = {
                  "follow); canoe-paddlers (near dance); story-time (near follow); "
                  "knitting-grandma's scarf grows for people (near follow); porch-swing "
                  "(near follow); whoopee-cushion (near follow); touchdown-dance (near "
-                 "follow)",
+                 "follow); pie-thief (near follow); turkey-carver (near follow); "
+                 "thanks-table (near follow); leaf-jumper (near follow); "
+                 "apple-picker (near follow); hayride (near dance); cider-press "
+                 "(near follow); giant-pumpkin (near follow); turkey-disguise (near "
+                 "follow); candy-chute (near follow); trunk-or-treat (near follow); "
+                 "costume-parade (near dance); parade-watchers (near follow); "
+                 "kite-flyer flies on the real wind (near follow); snow-shoveler "
+                 "shovels when it really snows (near follow); igloo-builder (near "
+                 "follow); snowflake-catcher (near follow); ice-sculptor (near "
+                 "follow); snowshoe-hiker (near dance); ski-lift (near follow); "
+                 "sled-dogs (near dance); chestnut-roaster (near follow); tree-lot "
+                 "(near follow); proposal (near follow); valentine-mailbox (near "
+                 "follow); egg-dyeing (near follow); maple-tapping (near follow)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -508,7 +520,15 @@ CATALOG: dict[str, dict] = {
                    "moon-sighting", "iftar", "eid-gifts", "fanous-kid",
                    "three-sisters-garden", "canoe-paddlers", "story-time",
                    "knitting-grandma", "porch-swing", "whoopee-cushion",
-                   "touchdown-dance"],
+                   "touchdown-dance",
+                   "pie-thief", "turkey-carver", "thanks-table", "leaf-jumper",
+                   "apple-picker", "hayride", "cider-press", "giant-pumpkin",
+                   "turkey-disguise", "candy-chute", "trunk-or-treat",
+                   "costume-parade", "parade-watchers", "kite-flyer", "snow-shoveler",
+                   "igloo-builder", "snowflake-catcher", "ice-sculptor",
+                   "snowshoe-hiker", "ski-lift", "sled-dogs", "chestnut-roaster",
+                   "tree-lot", "proposal", "valentine-mailbox", "egg-dyeing",
+                   "maple-tapping"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
