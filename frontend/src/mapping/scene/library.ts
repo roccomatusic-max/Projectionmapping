@@ -18,9 +18,9 @@ import { countdownNeedsDate } from './countdown'
 import { moverWalks } from './movers'
 
 export type Occasion =
-  | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'groundhog-day' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'easter'
-  | 'earth-day' | 'cinco-de-mayo' | 'mothers-day' | 'memorial-day' | 'fathers-day' | 'juneteenth' | 'fourth-of-july'
-  | 'labor-day' | 'halloween' | 'day-of-the-dead' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
+  | 'new-year' | 'mlk-day' | 'lunar-new-year' | 'groundhog-day' | 'super-bowl' | 'valentines' | 'presidents-day' | 'mardi-gras' | 'st-patricks' | 'april-fools' | 'easter'
+  | 'earth-day' | 'cinco-de-mayo' | 'mothers-day' | 'memorial-day' | 'graduation' | 'fathers-day' | 'juneteenth' | 'fourth-of-july'
+  | 'back-to-school' | 'labor-day' | 'halloween' | 'day-of-the-dead' | 'veterans-day' | 'thanksgiving' | 'diwali' | 'hanukkah' | 'christmas' | 'kwanzaa'
   | 'winter' | 'spring' | 'summer' | 'autumn' | 'birthday' | 'party' | 'sea' | 'driveway' | 'any'
 
 /** The holidays in calendar order, then the seasons and the rest. */
@@ -29,18 +29,22 @@ export const OCCASIONS: Array<{ id: Occasion; label: string; words: string }> = 
   { id: 'mlk-day', label: 'MLK Day', words: 'martin luther king jr day january dream' },
   { id: 'lunar-new-year', label: 'Lunar New Year', words: 'chinese new year spring festival zodiac' },
   { id: 'groundhog-day', label: 'Groundhog Day', words: 'groundhog february 2 punxsutawney phil shadow' },
+  { id: 'super-bowl', label: 'Super Bowl', words: 'super bowl football game day sunday february' },
   { id: 'valentines', label: 'Valentine’s', words: 'valentines love february' },
   { id: 'presidents-day', label: 'Presidents’ Day', words: 'presidents day washington lincoln february patriotic' },
   { id: 'mardi-gras', label: 'Mardi Gras', words: 'mardi gras fat tuesday carnival new orleans' },
   { id: 'st-patricks', label: 'St Patrick’s', words: 'st patricks paddy irish luck march green' },
+  { id: 'april-fools', label: 'April Fools’', words: 'april fools day prank joke april 1' },
   { id: 'easter', label: 'Easter', words: 'april spring' },
   { id: 'earth-day', label: 'Earth Day', words: 'earth day planet nature green april' },
   { id: 'cinco-de-mayo', label: 'Cinco de Mayo', words: 'cinco de mayo fiesta mexico may' },
   { id: 'mothers-day', label: 'Mother’s Day', words: 'mothers day mom mum may' },
   { id: 'memorial-day', label: 'Memorial Day', words: 'memorial day remember may patriotic' },
+  { id: 'graduation', label: 'Graduation', words: 'graduation grad graduate commencement class of diploma' },
   { id: 'fathers-day', label: 'Father’s Day', words: 'fathers day dad june' },
   { id: 'juneteenth', label: 'Juneteenth', words: 'juneteenth freedom day june' },
   { id: 'fourth-of-july', label: 'Fourth of July', words: '4th july independence usa america patriotic' },
+  { id: 'back-to-school', label: 'Back to school', words: 'back to school first day teacher class august september' },
   { id: 'labor-day', label: 'Labor Day', words: 'labor labour day september workers' },
   { id: 'halloween', label: 'Halloween', words: 'spooky scary october trick treat' },
   { id: 'day-of-the-dead', label: 'Day of the Dead', words: 'dia de los muertos dia de muertos november calavera mexican' },
@@ -302,7 +306,7 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   hedgehogs: [['autumn', 'any'], 'hedgehog hedgehogs prickly ball curl shy'],
   skunks: [['autumn', 'any', 'halloween'], 'skunk skunks stink smell spray funny'],
   'uncle-sam': [['fourth-of-july', 'presidents-day'], 'uncle sam stilts stilt walker parade independence day july 4th patriotic'],
-  'football-players': [['autumn', 'thanksgiving', 'party'], 'football player players touchdown sport game super bowl'],
+  'football-players': [['super-bowl', 'autumn', 'thanksgiving', 'party'], 'football player players touchdown sport game super bowl'],
   storks: [['spring', 'any'], 'stork storks baby bundle delivery new baby welcome'],
   'flying-pigs': [['any', 'party'], 'flying pig pigs when pigs fly funny wings'],
   unicorns: [['any', 'birthday', 'party'], 'unicorn unicorns rainbow magic horn horse fantasy'],
@@ -353,8 +357,8 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'ball-drop': [['new-year'], 'new year ball drop times square countdown midnight real time clock hour'],
   champagne: [['new-year', 'party', 'birthday'], 'champagne bottle cork pop cheers toast celebration midnight new year'],
   firecrackers: [['lunar-new-year', 'new-year', 'fourth-of-july'], 'firecracker firecrackers fireworks bang pop chinese new year lunar string'],
-  'graduation-caps': [['party', 'summer'], 'graduation grad cap caps mortarboard toss congrats school class'],
-  'school-bus': [['labor-day', 'any', 'autumn'], 'school bus yellow stop sign back to school kids'],
+  'graduation-caps': [['graduation', 'party', 'summer'], 'graduation grad cap caps mortarboard toss congrats school class'],
+  'school-bus': [['back-to-school', 'labor-day', 'any', 'autumn'], 'school bus yellow stop sign back to school kids'],
   tractors: [['autumn', 'thanksgiving', 'any'], 'tractor farm farmer harvest howdy country'],
   deer: [['winter', 'autumn', 'christmas', 'any'], 'deer buck doe antlers woods forest wildlife'],
   foxes: [['winter', 'autumn', 'any'], 'fox foxes red fox pounce snow woods wildlife'],
@@ -550,6 +554,33 @@ const MOVER_TAGS: Record<string, [Occasion[], string]> = {
   'sweater-dog': [['christmas', 'winter'], 'dog christmas sweater antlers jumping walking'],
   'stair-peekers': [['christmas'], 'children pajamas peeking santa shadow christmas eve'],
   'cookie-baker': [['christmas'], 'mrs claus baking cookies oven tray fresh'],
+  'bounce-house': [['birthday', 'party', 'summer'], 'bounce house bouncy castle inflatable jumping kids'],
+  magician: [['birthday', 'party'], 'magician magic trick rabbit top hat wand abracadabra'],
+  'balloon-twister': [['birthday', 'party'], 'clown balloon animal dog twisting'],
+  'party-horns': [['birthday', 'party', 'new-year'], 'party horn blowers noisemakers hats guests'],
+  'musical-chairs': [['birthday', 'party'], 'musical chairs game kids music stops'],
+  'pin-the-tail': [['birthday', 'party'], 'pin the tail on the donkey blindfold game'],
+  limbo: [['party', 'summer', 'birthday'], 'limbo dancer bar how low can you go luau'],
+  'sack-race': [['birthday', 'party', 'fourth-of-july', 'summer'], 'sack race hopping kids picnic games'],
+  'face-painter': [['birthday', 'party'], 'face painting painter tiger kids'],
+  karaoke: [['party', 'birthday', 'new-year'], 'karaoke singer singing microphone song'],
+  'dj-booth': [['party', 'new-year', 'birthday'], 'dj disc jockey turntables music dance party'],
+  'diploma-walk': [['graduation'], 'graduate graduation diploma stage principal handshake commencement'],
+  'class-of': [['graduation'], 'class of graduate graduation yard sign senior cap toss year'],
+  'grad-parade': [['graduation'], 'graduation car parade drive by honk grad'],
+  valedictorian: [['graduation'], 'valedictorian speech podium graduation graduate'],
+  'crossing-guard': [['back-to-school'], 'crossing guard stop sign school kids crosswalk'],
+  'backpack-kid': [['back-to-school'], 'backpack school kid first day lunchbox'],
+  'chalkboard-teacher': [['back-to-school'], 'teacher whiteboard chalkboard school class today day of the week'],
+  'spelling-bee': [['back-to-school'], 'spelling bee school contest letters bell'],
+  'science-volcano': [['back-to-school'], 'science fair volcano erupting baking soda vinegar experiment'],
+  referee: [['super-bowl', 'autumn'], 'referee ref touchdown football whistle game day'],
+  cheerleaders: [['super-bowl', 'autumn', 'back-to-school'], 'cheerleaders cheer pom poms football game day'],
+  'stadium-wave': [['super-bowl', 'autumn'], 'fans stadium wave bleachers crowd football game day foam finger'],
+  'field-goal': [['super-bowl', 'autumn'], 'field goal kick kicker football uprights game day'],
+  'team-mascot': [['super-bowl', 'autumn', 'back-to-school'], 'mascot bear team football game day'],
+  'snake-can': [['april-fools'], 'april fools prank spring snakes can nuts joke'],
+  'squirting-flower': [['april-fools', 'birthday'], 'april fools prank clown squirting flower water joke'],
 }
 
 const INFO_TAGS: Record<string, [Occasion[], string]> = {

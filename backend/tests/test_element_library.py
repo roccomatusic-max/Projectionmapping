@@ -239,3 +239,16 @@ def test_more_halloween_and_christmas_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "lawn-chair-skeleton", "haunted-portrait", "elf-on-shelf", "advent-calendar", "present-tower"]
+
+
+def test_celebration_school_and_game_day_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "class-of", "near": "follow"},
+        {"type": "movers", "style": "chalkboard-teacher", "near": "follow"},
+        {"type": "movers", "style": "limbo", "near": "follow"},
+        {"type": "movers", "style": "grad-parade", "near": "dance"},
+        {"type": "movers", "style": "stadium-wave", "near": "follow"},
+        {"type": "movers", "style": "snake-can", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "class-of", "chalkboard-teacher", "limbo", "grad-parade", "stadium-wave", "snake-can"]

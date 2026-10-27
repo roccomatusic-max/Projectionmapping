@@ -383,7 +383,20 @@ CATALOG: dict[str, dict] = {
                  "light-tangle (near follow); ugly-sweater (near follow); present-puppy "
                  "(near follow); reindeer-food (near follow); present-tower (near dance); "
                  "sweater-dog (near dance); stair-peekers (near follow); cookie-baker "
-                 "(near follow)",
+                 "(near follow); "
+                 "bounce-house (near follow); magician (near follow); balloon-twister "
+                 "(near follow); party-horns (near follow); musical-chairs scramble "
+                 "for people (near follow); pin-the-tail (near follow); limbo bar "
+                 "lowers for people (near follow); sack-race (near dance); "
+                 "face-painter (near follow); karaoke (near follow); dj-booth (near "
+                 "follow); diploma-walk (near follow); class-of sign shows this year's "
+                 "class (near follow); grad-parade (near dance); valedictorian (near "
+                 "follow); crossing-guard (near follow); backpack-kid (near dance); "
+                 "chalkboard-teacher writes today's day (near follow); spelling-bee "
+                 "(near follow); science-volcano (near follow); referee (near follow); "
+                 "cheerleaders (near follow); stadium-wave (near follow); field-goal "
+                 "(near follow); team-mascot (near follow); snake-can (near follow); "
+                 "squirting-flower (near follow)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -468,7 +481,14 @@ CATALOG: dict[str, dict] = {
                    "scaredy-ghost", "elf-on-shelf", "advent-calendar", "nice-list",
                    "snowman-builders", "star-topper", "light-tangle", "ugly-sweater",
                    "present-puppy", "reindeer-food", "present-tower", "sweater-dog",
-                   "stair-peekers", "cookie-baker"],
+                   "stair-peekers", "cookie-baker", "bounce-house", "magician",
+                   "balloon-twister", "party-horns", "musical-chairs", "pin-the-tail",
+                   "limbo", "sack-race", "face-painter", "karaoke", "dj-booth",
+                   "diploma-walk", "class-of", "grad-parade", "valedictorian",
+                   "crossing-guard", "backpack-kid", "chalkboard-teacher",
+                   "spelling-bee", "science-volcano", "referee", "cheerleaders",
+                   "stadium-wave", "field-goal", "team-mascot", "snake-can",
+                   "squirting-flower"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",

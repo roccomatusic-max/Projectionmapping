@@ -1240,6 +1240,35 @@ Ready-made scenes added: Mad laboratory, Haunted parlor, Graveyard shift,
 Pumpkin patch party, The night before Christmas, Deck the halls and Christmas
 morning.
 
+Fourteenth batch (27 for birthdays, parties, graduation, back to school, game
+day and April Fools'; `celebrationSprites.ts` and `schoolGameSprites.ts`; new
+occasions Super Bowl, April Fools', Graduation and Back to school, which the
+football players, graduation caps and school bus now carry too):
+
+- Real date: a graduate by a yard sign for this year's class ("Class of 2027",
+  next year's class from July) who throws a cap in the air for people; a
+  teacher who writes today's day of the week on the whiteboard ("Happy
+  Tuesday!") and turns to say good morning.
+- Growing for people (`level`): a limbo bar that goes lower and lower, the
+  dancer bending further back under it.
+- Performers: a bounce house where the children jump higher; a magician who
+  pulls a rabbit out of his hat ("Abracadabra!"); a clown who hands out a
+  balloon dog ("One for you!"); party horns blown together; musical chairs
+  (the music stops, three dive for the chairs and one is left out); pin the
+  tail on the donkey (on the nose); a face painter whose tiger roars ("Rawr!");
+  a karaoke singer in a spotlight; a DJ with sweeping lights; a graduate
+  crossing the stage ("Congratulations!"); the valedictorian ("We did it!"); a
+  crossing guard holding up her stop sign while children cross; a spelling bee
+  ("B, E, E" and the bell); a science fair volcano; a referee calling a
+  touchdown ("Touchdown!"); cheerleaders ("Go team go!"); fans doing the wave;
+  a field goal ("It's good!"); the team mascot; a can of "nuts" full of spring
+  snakes and a clown's squirting flower ("April Fools!").
+- Walking: a sack race, a graduation car parade and a child with a huge
+  backpack.
+
+Ready-made scenes added: Backyard birthday bash, Party games, Dance party,
+Graduation day, First day of school, Game day and April Fools'.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,
