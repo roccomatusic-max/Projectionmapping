@@ -909,12 +909,10 @@ function heading(dx: number, dy: number, limit: number): { angle: number; flip: 
   return { angle: Math.max(-limit, Math.min(limit, a)), flip }
 }
 
-/** A speech bubble over one ("Ho ho ho!"), showing as someone comes near. */
-/** Music (or hearts, or letters) floating up from (x, y) on one side of it, more of it the more lit. */
-/** Tonight's night of Hanukkah (1 to 8; the candles are lit from the evening it starts), or 0. */
 /** The pose each elf on the shelf was last left in, so it stays put while people watch. */
 const elfPose = new Map<string, number>()
 
+/** Tonight's night of Hanukkah (1 to 8; the candles are lit from the evening it starts), or 0. */
 function hanukkahNight(now: Date) {
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
   for (const year of [now.getFullYear() - 1, now.getFullYear()]) {
@@ -939,6 +937,7 @@ function zodiacIndex(now: Date) {
   return (((year - 4) % 12) + 12) % 12
 }
 
+/** Music (or hearts, or letters) floating up from (x, y) on one side of it, more of it the more lit. */
 function rising(out: Sprite[], x: number, y: number, size: number, dir: number, lit: number, onlyLit: boolean, t: number, ph: number) {
   const count = 2 + Math.round(lit * 3)
   for (let j = 0; j < count; j++) {
@@ -951,6 +950,7 @@ function rising(out: Sprite[], x: number, y: number, size: number, dir: number, 
   }
 }
 
+/** A speech bubble over one ("Ho ho ho!"), showing as someone comes near. */
 function bubble(s: Sprite, size: number, flip: boolean, k: number): Sprite {
   const bh = size * 0.32
   return {
