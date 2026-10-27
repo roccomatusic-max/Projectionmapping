@@ -826,6 +826,42 @@ Ready-made scenes added: Snowy rooftop, Stockings were hung, Haunted rooftop,
 Farmyard, Love letters, Hometown parade, Lucky koi pond, Mermaid lagoon and
 Summer street.
 
+Fifth batch:
+
+- Peeking over the window sills (`peek` motion): ghosts, elves and cats take
+  turns to come up over the sills of the traced windows, look round and duck
+  down again; only the part above the sill shows (a sprite's `crop`). People
+  bring up the one in the window nearest them, which turns to watch them and
+  says "Boo!", "I see you!" or "Meow?" (near "hide" or "flee": it ducks down).
+  Each is sized to its window. Glowing eyes open in the dark windows instead,
+  their pupils following whoever is nearest. Without windows they peek over the
+  bottom of the house.
+- On the roof: owls that turn their heads to watch people (`look`) and fly
+  off when they come close, and seagulls ("Mine! Mine!").
+- Throwing (`throw`): kids along the bottom winding up and throwing
+  snowballs or water balloons in an arc, splatting on the house, or on whoever
+  comes near (near "follow").
+- Coming up along the bottom (`popup`): a jack-in-the-box whose lid flies open
+  and jester springs out ("Surprise!"); moles that poke up out of their mounds
+  (`rises`) and duck back when people come (near "hide"); coffins that creak
+  open for a vampire ("Good evening!"); ghosts rising from behind headstones;
+  party poppers that go off now and then and for people, confetti fanning out;
+  a birthday cake whose candles people blow out by walking up (smoke curls
+  up, they light again about 8 seconds later; near "light": lit only for
+  people).
+- Walking: shy snails, tortoises, hedgehogs and skunks that stop and hide in
+  their shells (or curl up, or turn their tail on people) when people come
+  near and carry on a couple of seconds after (`shy`); ice skaters that twirl
+  for people (`twirl`); Uncle Sam on stilts ("Happy 4th!") and football
+  players ("Touchdown!"). Skiers slide down the roof and jump off the end.
+- Flying: a stork with a baby's bundle, flying pigs, a unicorn trailing
+  sparkles, a magic carpet and a small superhero; fairies flit about over the
+  house; ladybugs and moths are flocks.
+
+Ready-made scenes added: Restless graveyard, Peekaboo ghosts, Elves on watch,
+Snow day, Birthday surprise, Garden visitors, Welcome baby, Seaside, Stars and
+stripes and Make-believe.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,
