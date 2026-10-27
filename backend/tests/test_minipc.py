@@ -781,9 +781,7 @@ async def test_a_show_ending_never_turns_a_mini_pc_off(api):
     player_id, _ = await paired(api, headers)
     await app_checkin(api, version="1.0.80", awake=[])
     show = await make_show(api, headers)
-    saved = await api.put("/api/tonight", headers=headers, json={
-        "show_id": show["id"], "enabled": True, "start_at": "18:00", "end_at": "23:00",
-        "power": True})
+    saved = await api.put("/api/tonight", headers=headers, json={"show_id": show["id"]})
     assert saved.status_code == 200, saved.text
 
     await tonight.start_show(by="test")

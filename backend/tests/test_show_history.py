@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 from tests.test_api import add_projector, api, login  # noqa: F401 - fixture
-from tests.test_tonight import _setup
+from tests.test_tonight import _setup, plan_night
 
 
 async def _link(api, headers, output_id, projector_id):
@@ -51,17 +51,16 @@ async def test_tonights_show_is_recorded_from_start_to_end(api):
     from app.services import tonight
 
     now = datetime.now(settings.tz).replace(second=0, microsecond=0)
-    await api.put("/api/tonight", headers=headers, json={
-        "enabled": True, "start_at": (now - timedelta(minutes=2)).strftime("%H:%M"),
-        "end_at": (now + timedelta(hours=1)).strftime("%H:%M"), "power": False})
+    await plan_night(api, headers, now - timedelta(minutes=2), now + timedelta(hours=1),
+                     group_id=group["id"], power=False)
     await tonight.scheduler.tick(now)
 
     [night] = await _nights(api, headers)
     assert night["outcome"] == "running"
-    assert night["source"] == "weekly"
+    assert night["source"] == "calendar"
     assert night["group_name"] == "Spooky"
     assert night["started_by"] == "the schedule"
-    assert night["key"].endswith(":weekly")
+    assert ":entry" in night["key"]
     assert night["timeline"][0]["kind"] == "cue"
     assert [p["name"] for p in night["projectors"]] == ["House Left"]
 
@@ -111,9 +110,7 @@ async def test_a_show_that_could_not_start_and_a_missed_one(api):
     from app.services.show_history import recorder
 
     now = datetime.now(settings.tz).replace(second=0, microsecond=0)
-    await api.put("/api/tonight", headers=headers, json={
-        "enabled": True, "start_at": now.strftime("%H:%M"),
-        "end_at": (now + timedelta(hours=1)).strftime("%H:%M"), "power": False})
+    await plan_night(api, headers, now, now + timedelta(hours=1), power=False)
     await tonight.scheduler.tick(now)
     [held] = await _nights(api, headers)
     assert held["outcome"] == "missed"

@@ -1,12 +1,14 @@
 /**
- * The home page's evening view: what plays tonight, when, and whether
- * everything it needs is ready.
+ * The home page's evening view: what plays tonight, when, what is coming
+ * up on the next nights, and whether everything it needs is ready.
  *
- * Scene groups pick a scene for every projector at once ("Halloween
- * night"); one click on a group makes every projector follow it. Playlists
- * play groups in turn through the night (Playlists.tsx). Tonight's show
- * time starts and stops the show by itself (services/tonight.py on the
- * server).
+ * Shows play only on nights added to the calendar (services/show_calendar.py):
+ * "Add a show tonight" puts one on tonight, and a night with nothing on it
+ * says "No show tonight". Scene groups pick a scene for every projector at
+ * once ("Halloween night"); one click on a group makes every projector
+ * follow it, and tonight's own show play it. Playlists play groups in turn
+ * through the night (Playlists.tsx). The server starts and stops each
+ * planned show by itself (services/tonight.py).
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -38,18 +40,9 @@ import { HistoryLine } from './HistoryLine'
 import { PlaylistTimeline, PlaylistsPanel } from './Playlists'
 import { isLive, lampTone, matchesFilter, peakLampHours } from '@/lib/status'
 import { problemText, stopLabel, useWalkInfo, walkDay, walkTime, walkVerdict } from '@/lib/walkthrough'
-import {
-  DAY_NAMES,
-  clockText,
-  describeDays,
-  spanText,
-  timeOf,
-  tonightApi,
-  whenText,
-  type Playlist,
-  type SceneGroup,
-  type Tonight,
-} from '@/lib/tonight'
+import { calendarApi, dayText, isoDate, latestShow, type CalendarData } from '@/lib/calendar'
+import { EntryEditor } from '@/components/calendar/EntryEditor'
+import { spanText, timeOf, tonightApi, whenText, type Playlist, type SceneGroup, type Tonight } from '@/lib/tonight'
 
 function errorText(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
@@ -132,8 +125,7 @@ function useTonightData() {
 /** Where in tonight's show time we are, in one plain line and a tone. */
 export function timeLine(tonight: Tonight, now: Date): { chip: string; tone: Tone; line: string } {
   const when = tonight.next_starts_at ? whenText(tonight.next_starts_at, now) : null
-  const shownName = tonight.playlist_name ?? tonight.group_name
-  const next = when && tonight.next_title && tonight.next_title !== shownName ? `${when} (${tonight.next_title})` : when
+  const next = when && tonight.next_title ? `${when} (${tonight.next_title})` : when
   const left = (iso: string | null) => (iso ? spanText(new Date(iso).getTime() - now.getTime()) : '')
   switch (tonight.state) {
     case 'running':
@@ -141,33 +133,95 @@ export function timeLine(tonight: Tonight, now: Date): { chip: string; tone: Ton
     case 'later':
       return { chip: `Starts in ${left(tonight.starts_at)}`, tone: 'busy', line: `The show starts by itself at ${whenText(tonight.starts_at, now)}` }
     case 'done':
-      return { chip: 'Finished for tonight', tone: 'idle', line: next ? `Next show ${next}` : 'Finished for tonight' }
+      return { chip: 'Finished for tonight', tone: 'idle', line: next ? `Next show ${next}` : 'No more shows on the calendar.' }
     case 'not_tonight': {
-      const why = tonight.cancelled_by ? `The calendar says no show tonight (${tonight.cancelled_by}).` : 'Not on tonight.'
+      const why = tonight.cancelled_by ? 'The calendar says no show tonight.' : 'Nothing is planned tonight.'
       return { chip: 'No show tonight', tone: 'idle', line: next ? `${why} Next show ${next}` : why }
     }
     default:
       return {
-        chip: 'No show time set',
+        chip: 'No show planned',
         tone: 'idle',
-        line: 'The show does not start by itself. Set a time, or press Start now.',
+        line: 'Nothing is on the calendar. Add a show tonight, or press Start now.',
       }
   }
 }
 
+/** Whether tonight has a show of its own: on now, still to come, or over. */
+export function showTonight(tonight: Tonight): boolean {
+  return tonight.state === 'running' || tonight.state === 'later' || tonight.state === 'done'
+}
+
+/** What tonight's card calls the night: the show's look, or that there is none. */
+export function tonightName(tonight: Tonight, groups: SceneGroup[]): string {
+  if (!showTonight(tonight)) return tonight.state === 'off' ? 'No show planned' : 'No show tonight'
+  return tonight.playlist_name ?? tonight.group_name ?? tonight.title ?? (groups.length ? 'Show' : 'No scene group yet')
+}
+
 /**
- * What the calendar plans tonight, in plain lines: "From the calendar:
- * Halloween, 5:00 PM to 11:30 PM", one line per show time when there are
- * several. Empty on a night the weekly show time plans.
+ * Tonight's show times in plain lines: "6:45 PM to 11:00 PM · projectors
+ * turn on and off by themselves", and one line per show time with its name
+ * when the night has several.
  */
-export function calendarLines(tonight: Tonight): string[] {
-  const fromCalendar = tonight.tonight_slots.filter((s) => s.source === 'calendar')
-  if (fromCalendar.length === 0) return []
-  if (fromCalendar.length === 1) {
-    const slot = fromCalendar[0]
-    return [`From the calendar: ${slot.title}, ${timeOf(slot.starts_at)} to ${timeOf(slot.ends_at)}`]
-  }
-  return ['From the calendar tonight:', ...fromCalendar.map((s) => `${timeOf(s.starts_at)} to ${timeOf(s.ends_at)} · ${s.title}`)]
+export function plannedLines(tonight: Tonight): string[] {
+  const slots = tonight.tonight_slots
+  if (slots.length === 0) return []
+  const power = (on: boolean) => (on ? ' · projectors turn on and off by themselves' : '')
+  if (slots.length === 1) return [`${timeOf(slots[0].starts_at)} to ${timeOf(slots[0].ends_at)}${power(slots[0].power)}`]
+  return slots.map((s) => `${timeOf(s.starts_at)} to ${timeOf(s.ends_at)} · ${s.title}`)
+}
+
+/** How far ahead the card lists the shows coming up. */
+const AHEAD_DAYS = 14
+
+/**
+ * The calendar from today for two weeks: tonight's own entry (to change it),
+ * the newest show (a new one starts from its times) and the nights coming up.
+ * Reloads when tonight's plan changes, and every minute.
+ */
+export function useCalendarAhead(tonight: Tonight | null) {
+  const [data, setData] = useState<CalendarData | null>(null)
+  const load = useCallback(() => {
+    calendarApi.get(isoDate(new Date()), AHEAD_DAYS + 1).then(setData).catch(() => undefined)
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load, tonight])
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load()
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [load])
+  const entry = tonight && showTonight(tonight) && tonight.state !== 'done' ? data?.entries.find((e) => e.id === tonight.entry_id) ?? null : null
+  const ahead = (data?.days ?? []).filter((d) => d.date > (data?.today ?? '') && d.slots.length > 0)
+  return { data, reload: load, entry, ahead, like: latestShow(data?.entries ?? []) }
+}
+
+/** The next nights with a show, one line each; nights not listed have none. */
+export function ComingUp({ ahead, phone = false }: { ahead: CalendarData['days']; phone?: boolean }) {
+  const shown = ahead.slice(0, phone ? 5 : 7)
+  return (
+    <div className={phone ? 'text-[15px]' : 'text-sm'}>
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Coming up</p>
+      {shown.length === 0 ? (
+        <p className="mt-1 text-slate-400">No shows on the calendar in the next two weeks.</p>
+      ) : (
+        <ul className="mt-1 space-y-0.5">
+          {shown.map((day) =>
+            day.slots.map((slot) => (
+              <li key={slot.key} className="tnum flex min-w-0 gap-2 text-slate-300">
+                <span className={classNames('shrink-0 text-slate-400', phone ? 'w-24' : 'w-28')}>{dayText(day.date)}</span>
+                <span className="w-16 shrink-0">{timeOf(slot.starts_at)}</span>
+                <span className="min-w-0 truncate text-slate-200">{slot.title}</span>
+              </li>
+            )),
+          )}
+        </ul>
+      )}
+      {ahead.length > 0 && <p className="mt-1 text-2xs text-slate-500">Nights not listed have no show.</p>}
+    </div>
+  )
 }
 
 function Tile({
@@ -328,116 +382,6 @@ function Metrics() {
         sub={playing && cue ? `${status.showName ?? 'show'} · cue ${cue.position + 1}` : 'nothing playing'}
         tone={transport?.status === 'playing' ? 'ok' : transport?.status === 'paused' ? 'warn' : 'idle'}
       />
-    </div>
-  )
-}
-
-export function TimesEditor({
-  tonight,
-  shows,
-  onCancel,
-  onSaved,
-}: {
-  tonight: Tonight
-  shows: { id: number; name: string }[]
-  onCancel: () => void
-  onSaved: (next: Tonight) => void
-}) {
-  const [enabled, setEnabled] = useState(tonight.enabled || !tonight.start_at)
-  const [start, setStart] = useState(tonight.start_at ?? '18:00')
-  const [end, setEnd] = useState(tonight.end_at ?? '23:00')
-  const [days, setDays] = useState<number[]>(tonight.days.length ? tonight.days : [0, 1, 2, 3, 4, 5, 6])
-  const [power, setPower] = useState(tonight.power)
-  const [showId, setShowId] = useState<number | null>(tonight.show_id)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const toggleDay = (day: number) => setDays((current) => (current.includes(day) ? current.filter((d) => d !== day) : [...current, day]))
-  const save = async () => {
-    setBusy(true)
-    try {
-      onSaved(await tonightApi.update({ enabled, start_at: start, end_at: end, days, power, show_id: showId }))
-    } catch (err) {
-      setError(errorText(err, 'Saving the show time failed'))
-    } finally {
-      setBusy(false)
-    }
-  }
-  const afterMidnight = start && end && end <= start
-
-  return (
-    <div className="space-y-4 border-t border-white/[0.06] bg-panel-850/60 px-4 py-4">
-      <label className="flex items-start gap-2.5 text-sm text-slate-200">
-        <input type="checkbox" className="mt-0.5" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        <span>
-          Start and stop the show by itself
-          <span className="block text-xs text-slate-500">Off means the show only plays when you press Start now or GO.</span>
-        </span>
-      </label>
-      <div className={classNames('grid gap-4 sm:grid-cols-2 lg:grid-cols-4', !enabled && 'pointer-events-none opacity-50')}>
-        <label className="block text-sm">
-          <span className="mb-1 block text-xs font-medium text-slate-400">Starts at</span>
-          <input type="time" className="input w-full" value={start} onChange={(e) => setStart(e.target.value)} />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block text-xs font-medium text-slate-400">Ends at</span>
-          <input type="time" className="input w-full" value={end} onChange={(e) => setEnd(e.target.value)} />
-          {afterMidnight && <span className="mt-1 block text-2xs text-slate-500">That is after midnight, the next morning.</span>}
-        </label>
-        <div className="sm:col-span-2">
-          <span className="mb-1 block text-xs font-medium text-slate-400">Nights</span>
-          <div className="flex flex-wrap gap-1.5">
-            {DAY_NAMES.map((name, day) => (
-              <button
-                key={name}
-                type="button"
-                aria-pressed={days.includes(day)}
-                onClick={() => toggleDay(day)}
-                className={classNames(
-                  'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                  days.includes(day) ? 'border-sky-500/60 bg-sky-500/15 text-sky-200' : 'border-white/10 text-slate-400 hover:text-slate-200',
-                )}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <label className={classNames('flex items-start gap-2.5 text-sm text-slate-200', !enabled && 'opacity-50')}>
-        <input type="checkbox" className="mt-0.5" checked={power} disabled={!enabled} onChange={(e) => setPower(e.target.checked)} />
-        <span>
-          Turn the projectors on at the start and off at the end
-          <span className="block text-xs text-slate-500">The projectors this show uses. They take a minute or two to warm up.</span>
-        </span>
-      </label>
-      {shows.length > 1 && (
-        <label className="block max-w-xs text-sm">
-          <span className="mb-1 block text-xs font-medium text-slate-400">Show</span>
-          <select className="input w-full" value={showId ?? ''} onChange={(e) => setShowId(e.target.value ? Number(e.target.value) : null)}>
-            {shows.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {enabled && (
-        <p className="text-xs text-slate-500">
-          If the start time has already passed tonight, the show starts as soon as you save. If the server restarts during show
-          time (a power cut), the show starts again by itself.
-        </p>
-      )}
-      {error && <Banner tone="fault">{error}</Banner>}
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <button className="btn-default" onClick={onCancel}>
-          Cancel
-        </button>
-        <button className="btn-primary" disabled={busy || (enabled && days.length === 0)} onClick={() => void save()}>
-          Save show time
-        </button>
-      </div>
     </div>
   )
 }
@@ -654,15 +598,18 @@ export function groupLines(group: SceneGroup, show: Show | undefined, scenes: Ma
 export function usedText(group: SceneGroup, tonight: Tonight, transport: { show_id: number | null; status: string } | null | undefined): { tone: Tone; text: string } {
   const live = transport?.show_id === group.show_id && transport?.status === 'playing'
   const now = live ? `Every projector is now playing ${group.name}.` : `${group.name} is set.`
-  const fromCalendar = tonight.tonight_slots.find((s) => s.source === 'calendar' && new Date(s.starts_at).getTime() > Date.now())
+  const planned = tonight.tonight_slots.find((s) => new Date(s.ends_at).getTime() > Date.now())
   const playlistNext = tonight.playlist_steps.find((s) => s.state === 'later')
   if (tonight.playlist_name && tonight.state === 'running' && playlistNext) {
     return { tone: 'warn', text: `${now} At ${timeOf(playlistNext.starts_at)} the playlist ${tonight.playlist_name} moves on to ${playlistNext.group_name ?? 'its next step'}.` }
   }
-  if (fromCalendar && fromCalendar.group_id !== group.id) {
-    return { tone: 'warn', text: `${now} At ${timeOf(fromCalendar.starts_at)} the calendar’s ${fromCalendar.title} takes over. Change it on the Calendar page.` }
+  if (planned && planned.group_id !== group.id) {
+    return { tone: 'warn', text: `${now} Tonight’s ${planned.title} covers several nights and keeps its own look at ${timeOf(planned.starts_at)}. Change it on the Calendar.` }
   }
-  return { tone: 'ok', text: live ? now : `${group.name} is set for tonight. Every projector will play it when the show starts.` }
+  if (!planned) {
+    return { tone: live ? 'ok' : 'warn', text: `${now} No show is planned tonight, so it plays when you press Start now. Add a show tonight to have it start by itself.` }
+  }
+  return { tone: 'ok', text: live ? now : `${group.name} plays tonight at ${timeOf(planned.starts_at)}, on every projector.` }
 }
 
 /* ------------------------------------------------------------------ */
@@ -671,11 +618,12 @@ export function usedText(group: SceneGroup, tonight: Tonight, transport: { show_
 
 export function TonightShow({ session }: { session: Session }) {
   const status = useShowStatus()
-  const { tonight, setTonight, groups, playlists, scenes, shows, error, setError, loadGroups, loadPlaylists } = useTonightData()
-  const [editingTimes, setEditingTimes] = useState(false)
+  const { tonight, setTonight, groups, playlists, scenes, shows, error, setError, reload, loadGroups, loadPlaylists } = useTonightData()
+  const [planning, setPlanning] = useState(false)
   const [editor, setEditor] = useState<{ group: SceneGroup | null } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null)
+  const ahead = useCalendarAhead(tonight)
   useTicker(15_000)
 
   const canOperate = session.role !== 'viewer'
@@ -699,8 +647,7 @@ export function TonightShow({ session }: { session: Session }) {
   const showOptions = status.shows.map((s) => ({ id: s.id, name: s.name }))
   const multipleShows = showOptions.length > 1
   const visibleGroups = groups
-  // Tonight is planned by the calendar (a show, or no show), not the weekly time.
-  const onCalendar = !!tonight && (tonight.tonight_slots.some((s) => s.source === 'calendar') || !!tonight.cancelled_by)
+  const planned = !!tonight && showTonight(tonight)
 
   const act = async (label: string, work: () => Promise<void>) => {
     setBusy(label)
@@ -747,28 +694,16 @@ export function TonightShow({ session }: { session: Session }) {
                 </Chip>
               )}
             </div>
-            <p className="mt-1.5 truncate text-2xl font-semibold tracking-tight text-slate-50">
-              {tonight?.playlist_name ?? tonight?.group_name ?? (groups.length ? 'Pick tonight’s scenes below' : 'No scene group yet')}
+            <p className={classNames('mt-1.5 truncate text-2xl font-semibold tracking-tight', planned ? 'text-slate-50' : 'text-slate-400')}>
+              {tonight ? tonightName(tonight, groups) : ''}
             </p>
             {tonight && <PlaylistTimeline tonight={tonight} className="mt-1.5" />}
-            {tonight && calendarLines(tonight).map((line, i) => (
-              <p key={line} className={classNames('text-sm', i === 0 ? 'mt-0.5 font-medium text-sky-200' : 'tnum text-slate-200')}>
+            {tonight && plannedLines(tonight).map((line) => (
+              <p key={line} className="tnum mt-0.5 text-sm text-slate-200">
                 {line}
               </p>
             ))}
-            {(multipleShows || tonight?.enabled) && (
-              <p className="mt-0.5 text-sm text-slate-400">
-                {multipleShows && <span>{tonight?.show_name ?? 'No show picked yet'}</span>}
-                {multipleShows && tonight?.enabled && <span> · </span>}
-                {tonight?.enabled && tonight.start_at && (
-                  <span className={onCalendar ? 'text-slate-400' : 'text-slate-200'}>
-                    {onCalendar && 'Weekly show time: '}
-                    {clockText(tonight.start_at)} to {clockText(tonight.end_at)}, {describeDays(tonight.days)}
-                    {tonight.power && !onCalendar && <span className="text-slate-400"> · projectors turn on and off by themselves</span>}
-                  </span>
-                )}
-              </p>
-            )}
+            {multipleShows && planned && <p className="mt-0.5 text-sm text-slate-400">{tonight?.show_name}</p>}
             {time && (
               <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-300">
                 <ClockIcon size={14} className="shrink-0 text-slate-500" aria-hidden />
@@ -777,12 +712,18 @@ export function TonightShow({ session }: { session: Session }) {
             )}
             {tonight?.last_message && <p className="mt-1 text-xs text-slate-500">Last: {tonight.last_message}</p>}
             <HistoryLine />
+            {ahead.data && (
+              <div className="mt-3 border-t border-white/[0.06] pt-2.5">
+                <ComingUp ahead={ahead.ahead} />
+              </div>
+            )}
           </div>
           {canOperate && (
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              {tonight && !editingTimes && (
-                <button className="btn-default" onClick={() => setEditingTimes(true)}>
-                  <ClockIcon size={15} aria-hidden /> {tonight.enabled ? 'Change show time' : 'Set show time'}
+              {tonight && (
+                <button className="btn-default" disabled={!ahead.data} onClick={() => setPlanning(true)}>
+                  {ahead.entry ? <EditIcon size={15} aria-hidden /> : <AddIcon size={15} aria-hidden />}{' '}
+                  {ahead.entry ? 'Change tonight’s show' : 'Add a show tonight'}
                 </button>
               )}
               <Link to="/calendar" className="btn-default">
@@ -810,15 +751,24 @@ export function TonightShow({ session }: { session: Session }) {
             )}
           </div>
         )}
-        {editingTimes && tonight && (
-          <TimesEditor
-            tonight={tonight}
+        {planning && tonight && (
+          <EntryEditor
+            entry={ahead.entry}
+            date={isoDate(now)}
+            night={isoDate(now)}
+            like={ahead.like}
+            groupId={tonight.plan_group_id}
+            playlistId={tonight.plan_playlist_id}
+            groups={groups}
+            playlists={playlists}
             shows={showOptions}
-            onCancel={() => setEditingTimes(false)}
-            onSaved={(next) => {
-              setTonight(next)
-              setEditingTimes(false)
-              setNotice({ tone: 'ok', text: next.enabled ? `Show time saved: ${clockText(next.start_at)} to ${clockText(next.end_at)}, ${describeDays(next.days)}.` : 'The show will not start by itself.' })
+            defaultShowId={tonight.show_id}
+            onClose={() => setPlanning(false)}
+            onSaved={(message) => {
+              setPlanning(false)
+              setNotice({ tone: 'ok', text: message })
+              void reload()
+              ahead.reload()
             }}
           />
         )}
@@ -832,7 +782,7 @@ export function TonightShow({ session }: { session: Session }) {
             <ScenesIcon size={15} strokeWidth={1.75} className="mt-0.5 shrink-0 text-slate-500" aria-hidden />
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-100">Pick tonight's scenes</h2>
-              <p className="mt-0.5 text-xs text-slate-500">One click sets a scene on every projector at once.</p>
+              <p className="mt-0.5 text-xs text-slate-500">One click sets a scene on every projector now, and on tonight’s show.</p>
             </div>
           </div>
           {canEdit && (
@@ -889,7 +839,7 @@ export function TonightShow({ session }: { session: Session }) {
                       <span className="truncate text-base font-semibold text-slate-50">{group.name}</span>
                       {active && (
                         <Chip tone="ok" className="shrink-0">
-                          <CheckIcon size={12} aria-hidden /> Tonight
+                          <CheckIcon size={12} aria-hidden /> {planned ? 'Tonight' : 'Picked'}
                         </Chip>
                       )}
                       {playlistNow && (

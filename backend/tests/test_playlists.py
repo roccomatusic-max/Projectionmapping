@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from tests.test_api import api, login  # noqa: F401 - fixture
 from tests.test_mapping import make_cue, make_show
 from tests.test_show_calendar import _groups
-from tests.test_tonight import _cues, _setup
+from tests.test_tonight import _cues, _setup, plan_night
 
 
 def hhmm(value: datetime) -> str:
@@ -120,13 +120,15 @@ async def test_a_playlist_plays_through_the_night(api):
             {"at": hhmm(now), "group_id": groups["Harvest"], "fade_seconds": 8},
             {"at": hhmm(now + timedelta(minutes=60)), "group_id": groups["Winter"]},
         ]})).json()
+    # Tonight's show, planned with one look; picking the playlist changes it.
+    entry = await plan_night(api, headers, began, now + timedelta(minutes=50),
+                             group_id=groups["Winter"], power=False)
     used = await api.post(f"/api/mapping/playlists/{playlist['id']}/use", headers=headers)
     assert used.status_code == 200, used.text
     assert used.json()["plan_playlist_id"] == playlist["id"]
     assert used.json()["plan_group_id"] is None
-    await api.put("/api/tonight", headers=headers, json={
-        "enabled": True, "start_at": hhmm(began),
-        "end_at": hhmm(now + timedelta(minutes=50)), "power": False})
+    assert used.json()["entry_id"] == entry["id"]
+    assert used.json()["playlist_name"] == "Halloween night"
 
     from app.db.session import session_scope
 
@@ -134,6 +136,7 @@ async def test_a_playlist_plays_through_the_night(api):
         first = await service.describe(session, began + timedelta(minutes=1))
     assert first["state"] == "running"
     assert first["title"] == "Halloween night"
+    assert first["entry_id"] == entry["id"]
     assert first["playlist_name"] == "Halloween night"
     assert first["group_name"] == "Halloween"
     assert [s["state"] for s in first["playlist_steps"]] == ["now", "later", "never"]
@@ -185,7 +188,7 @@ async def test_a_playlist_plays_through_the_night(api):
     assert state["status"] == "stopped"
     assert all(c["scene_id"] == scenes["Trees"] for c in await _cues(api, headers, show["id"]))
 
-    # Picking a single group again takes the playlist off the weekly show time.
+    # Picking a single group again takes the playlist off tonight's show.
     picked = await api.post(f"/api/mapping/scene-groups/{groups['Winter']}/use", headers=headers)
     assert picked.json()["plan_playlist_id"] is None
     assert picked.json()["playlist_name"] is None

@@ -4,7 +4,7 @@ import { HOLD_MS, useHold } from '@/components/EmergencyStop'
 import type { Projector, TemperatureReading } from '@/api/types'
 import { classNames, formatHours } from '@/lib/format'
 import { activeInput, attentionItems, isLive, lampReadings } from '@/lib/status'
-import { clockText, playlistNow, spanText, whenText, type Tonight } from '@/lib/tonight'
+import { playlistNow, spanText, whenText, type Tonight } from '@/lib/tonight'
 import type { Player } from './editor/PlayersPanel'
 import { FitGroundBar, FitGroundHandles, useFitGround } from './ScreenFitGround'
 import { StraightenBar, StraightenHandles, useStraighten } from './ScreenStraighten'
@@ -691,13 +691,8 @@ function TonightLine({ tonight, now }: { tonight: Tonight | null; now: number })
   const date = new Date(now)
   const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const today = tonight.state === 'running' || tonight.state === 'later'
-  // From the weekly show time or the calendar: the times of tonight's show.
-  const when =
-    today && tonight.starts_at && tonight.ends_at
-      ? `${time(tonight.starts_at)} to ${time(tonight.ends_at)}`
-      : today && tonight.start_at
-        ? `${clockText(tonight.start_at)} to ${clockText(tonight.end_at)}`
-        : null
+  // From the calendar: the times of tonight's show.
+  const when = today && tonight.starts_at && tonight.ends_at ? `${time(tonight.starts_at)} to ${time(tonight.ends_at)}` : null
   const name = today ? tonight.title ?? tonight.group_name : null
   // A playlist: the step on now and the next one.
   const steps = playlistNow(tonight)

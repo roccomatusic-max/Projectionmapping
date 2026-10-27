@@ -1,17 +1,18 @@
 /**
  * The show calendar: a month, a week or a list of what plays each night.
  *
- * Each night shows its show times: calendar entries, or the weekly show
- * time on nights the calendar leaves alone. The server decides which plays
- * (services/show_calendar.py); this only draws it and opens the editor.
- * Used by the Calendar page and the phone remote's Calendar tab.
+ * Only the shows added here play; a night with none has no show, and
+ * nothing fills nights in by itself. The server decides which show times
+ * each night has (services/show_calendar.py); this only draws them and
+ * opens the editor. Used by the Calendar page and the phone remote's
+ * Calendar tab.
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { BusMessage } from '@/api/types'
 import { Banner, Chip, Spinner, StatusDot } from '@/components/ui'
-import { AddIcon, BlackoutIcon, ChevronIcon, ChevronLeftIcon, ClockIcon, EditIcon, PowerIcon } from '@/components/icons'
+import { AddIcon, BlackoutIcon, ChevronIcon, ChevronLeftIcon, EditIcon, PowerIcon } from '@/components/icons'
 import { classNames } from '@/lib/format'
 import {
   addDays,
@@ -20,6 +21,7 @@ import {
   entryWhen,
   fromIso,
   isoDate,
+  latestShow,
   startOfWeek,
   type CalendarData,
   type CalendarDay,
@@ -95,7 +97,7 @@ function rangeFor(view: View, anchor: Date, today: Date, listDays: number): { st
   return { start: startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1)), days: 42 }
 }
 
-type Editing = { entry: CalendarEntry | null; date?: string; kind?: 'show' | 'off' }
+type Editing = { entry: CalendarEntry | null; date?: string; night?: string }
 
 export function CalendarBoard({
   canEdit,
@@ -188,9 +190,9 @@ export function CalendarBoard({
   const entryById = (id: number | null) => entries.find((e) => e.id === id) ?? null
   const days = data?.days ?? []
   const day = days.find((d) => d.date === selected) ?? null
-  const openEntry = (id: number | null) => {
+  const openEntry = (id: number | null, night?: string) => {
     const entry = entryById(id)
-    if (entry && canEdit) setEditing({ entry })
+    if (entry && canEdit) setEditing({ entry, night })
   }
   const title =
     view === 'week'
@@ -231,11 +233,8 @@ export function CalendarBoard({
         <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
         {canEdit && (
           <div className="ml-auto flex gap-2">
-            <button className="btn-default btn-sm" onClick={() => setEditing({ entry: null, date: selected, kind: 'off' })}>
-              <BlackoutIcon size={14} aria-hidden /> No show
-            </button>
             <button className="btn-primary btn-sm" onClick={() => setEditing({ entry: null, date: selected })}>
-              <AddIcon size={14} aria-hidden /> Plan a show
+              <AddIcon size={14} aria-hidden /> Add a show
             </button>
           </div>
         )}
@@ -243,6 +242,7 @@ export function CalendarBoard({
 
       {error && <Banner tone="fault" onDismiss={() => setError(null)}>{error}</Banner>}
       {notice && <Banner tone="ok" onDismiss={() => setNotice(null)}>{notice}</Banner>}
+      {data && <p className="text-xs text-slate-500">Shows only play on the nights you add. Nights with nothing on them have no show.</p>}
       {groups.length === 0 && data && (
         <Banner tone="busy">
           Scene groups are the looks you plan on the calendar (“Halloween night”). Make them on the{' '}
@@ -265,7 +265,7 @@ export function CalendarBoard({
               <DayBody day={d} entryById={entryById} onOpen={openEntry} canEdit={canEdit} small />
               {canEdit && (
                 <button className="mt-1 text-2xs text-sky-300 hover:underline" onClick={() => setEditing({ entry: null, date: d.date })}>
-                  + Plan a show
+                  + Add a show
                 </button>
               )}
             </div>
@@ -274,7 +274,7 @@ export function CalendarBoard({
       )}
       {data && view === 'list' && (
         <>
-          <AgendaList days={days} today={data.today} entryById={entryById} onOpen={openEntry} canEdit={canEdit} phone={phone} />
+          <AgendaList days={days} today={data.today} entryById={entryById} onOpen={openEntry} canEdit={canEdit} />
           {listDays < LIST_MAX && (
             <button className="btn-default btn-sm w-full" onClick={() => setListDays((n) => Math.min(LIST_MAX, n + 14))}>
               Show two more weeks
@@ -289,17 +289,14 @@ export function CalendarBoard({
             <DayHeading day={day} today={data.today} />
             {canEdit && (
               <div className="ml-auto flex gap-2">
-                <button className="btn-ghost btn-sm" onClick={() => setEditing({ entry: null, date: day.date, kind: 'off' })}>
-                  No show this night
-                </button>
                 <button className="btn-default btn-sm" onClick={() => setEditing({ entry: null, date: day.date })}>
-                  <AddIcon size={14} aria-hidden /> Plan a show on {dayText(day.date)}
+                  <AddIcon size={14} aria-hidden /> Add a show on {dayText(day.date)}
                 </button>
               </div>
             )}
           </div>
           <div className="mt-2">
-            <DayBody day={day} entryById={entryById} onOpen={openEntry} canEdit={canEdit} phone={phone} />
+            <DayBody day={day} entryById={entryById} onOpen={openEntry} canEdit={canEdit} />
           </div>
         </section>
       )}
@@ -308,14 +305,12 @@ export function CalendarBoard({
         <Plans
           entries={entries}
           today={data.today}
-          tonight={tonight}
           groups={groups}
           playlists={playlists}
           showPast={showPast}
           onShowPast={setShowPast}
           onOpen={(entry) => canEdit && setEditing({ entry })}
           canEdit={canEdit}
-          phone={phone}
         />
       )}
       {data && !sameClock(data.timezone) && (
@@ -326,7 +321,8 @@ export function CalendarBoard({
         <EntryEditor
           entry={editing.entry}
           date={editing.date}
-          kind={editing.kind}
+          night={editing.night}
+          like={latestShow(entries)}
           groups={groups}
           playlists={playlists}
           shows={showOptions}
@@ -372,20 +368,18 @@ function DayBody({
   onOpen,
   canEdit,
   small = false,
-  phone = false,
 }: {
   day: CalendarDay
   entryById: (id: number | null) => CalendarEntry | null
-  onOpen: (id: number | null) => void
+  onOpen: (id: number | null, night?: string) => void
   canEdit: boolean
   small?: boolean
-  phone?: boolean
 }) {
   const nothing = day.slots.length === 0 && !day.cancelled_by
   return (
     <div className="space-y-1.5">
       {day.slots.map((slot) => (
-        <SlotRow key={slot.key} slot={slot} entry={entryById(slot.entry_id)} onOpen={onOpen} canEdit={canEdit} small={small} phone={phone} />
+        <SlotRow key={slot.key} slot={slot} entry={entryById(slot.entry_id)} onOpen={(id) => onOpen(id, day.date)} canEdit={canEdit} small={small} />
       ))}
       {day.cancelled_by && day.slots.length > 0 && !small && (
         <button
@@ -394,7 +388,7 @@ function DayBody({
           onClick={() => onOpen(day.cancelled_by?.entry_id ?? null)}
           className="block w-full text-left text-2xs text-slate-500 hover:text-slate-300 disabled:cursor-default"
         >
-          {day.cancelled_by.title} (no show) keeps every other show off this night.
+          {day.cancelled_by.title === 'No show' ? 'A no-show night' : `${day.cancelled_by.title} (no show)`} keeps every other show off this night.
         </button>
       )}
       {day.cancelled_by && day.slots.length === 0 && (
@@ -405,10 +399,10 @@ function DayBody({
           className="flex w-full items-center gap-2 rounded-md bg-red-500/[0.08] px-2 py-1.5 text-left text-xs text-red-200 ring-1 ring-red-500/20 disabled:cursor-default"
         >
           <BlackoutIcon size={13} aria-hidden className="shrink-0" />
-          <span className="truncate">No show · {day.cancelled_by.title}</span>
+          <span className="truncate">No show{day.cancelled_by.title !== 'No show' && ` · ${day.cancelled_by.title}`}</span>
         </button>
       )}
-      {nothing && <p className={classNames('text-slate-500', small ? 'text-2xs' : 'text-xs')}>Nothing planned. The show does not start by itself.</p>}
+      {nothing && <p className={classNames('text-slate-500', small ? 'text-2xs' : 'text-xs')}>{small ? 'No show' : 'No show. Nothing is added for this night.'}</p>}
       {!small &&
         day.skipped
           .filter((s) => s.entry_id != null)
@@ -417,7 +411,7 @@ function DayBody({
               key={`${s.entry_id}-${s.reason}`}
               type="button"
               disabled={!canEdit}
-              onClick={() => onOpen(s.entry_id)}
+              onClick={() => onOpen(s.entry_id, day.date)}
               className="block w-full text-left text-2xs text-slate-500 hover:text-slate-300 disabled:cursor-default"
             >
               Not playing this night: {s.title} ({s.reason})
@@ -433,17 +427,14 @@ function SlotRow({
   onOpen,
   canEdit,
   small,
-  phone,
 }: {
   slot: CalendarSlot
   entry: CalendarEntry | null
   onOpen: (id: number | null) => void
   canEdit: boolean
   small: boolean
-  phone: boolean
 }) {
   const color = slot.playlist_id != null ? playlistSwatch(slot.playlist_id) : swatch(slot.group_id)
-  const weekly = slot.source === 'weekly'
   const body = (
     <>
       <span className={classNames('w-1 shrink-0 self-stretch rounded-full', color.bar)} />
@@ -458,17 +449,17 @@ function SlotRow({
         </span>
         {!small && (
           <span className="block truncate text-2xs text-slate-500">
-            {weekly ? 'Weekly show time' : entry ? entryWhen(entry, describeDays) : 'Calendar'}
+            {entry ? entryWhen(entry, describeDays) : 'Calendar'}
             {slot.playlist_name
               ? slot.playlist_name !== slot.title && ` · ${slot.playlist_name}`
               : slot.group_name && slot.group_name !== slot.title && ` · ${slot.group_name}`}
             {slot.playlist_id != null && ' (playlist)'}
-            {!slot.group_name && slot.playlist_id == null && !weekly && ' · scenes the cues have'}
+            {!slot.group_name && slot.playlist_id == null && ' · scenes the cues have'}
           </span>
         )}
         {!small && entry?.note && <span className="block truncate text-2xs italic text-slate-500">{entry.note}</span>}
       </span>
-      {!small && canEdit && !weekly && <EditIcon size={13} className="mt-0.5 shrink-0 text-slate-500" aria-hidden />}
+      {!small && canEdit && <EditIcon size={13} className="mt-0.5 shrink-0 text-slate-500" aria-hidden />}
     </>
   )
   const className = classNames(
@@ -476,14 +467,6 @@ function SlotRow({
     slot.state === 'done' && 'opacity-50',
     slot.state === 'running' && 'bg-emerald-500/[0.06] ring-1 ring-emerald-500/30',
   )
-  if (weekly && phone) return <div className={className}>{body}</div>
-  if (weekly) {
-    return (
-      <Link to="/" className={classNames(className, 'hover:bg-white/[0.03]')} title="The weekly show time is set on the Dashboard">
-        {body}
-      </Link>
-    )
-  }
   return (
     <button type="button" className={classNames(className, canEdit && 'hover:bg-white/[0.03]')} disabled={!canEdit} onClick={() => onOpen(slot.entry_id)}>
       {body}
@@ -583,18 +566,16 @@ function AgendaList({
   entryById,
   onOpen,
   canEdit,
-  phone,
 }: {
   days: CalendarDay[]
   today: string
   entryById: (id: number | null) => CalendarEntry | null
-  onOpen: (id: number | null) => void
+  onOpen: (id: number | null, night?: string) => void
   canEdit: boolean
-  phone: boolean
 }) {
   const planned = days.filter((d) => d.slots.length > 0 || d.cancelled_by)
   if (planned.length === 0) {
-    return <p className="rounded-lg border border-white/[0.06] p-4 text-sm text-slate-400">Nothing planned in these weeks. Press Plan a show to add one.</p>
+    return <p className="rounded-lg border border-white/[0.06] p-4 text-sm text-slate-400">No shows in these weeks. Press Add a show to put one on a night.</p>
   }
   return (
     <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.08]">
@@ -606,7 +587,7 @@ function AgendaList({
             <span className="block text-2xs text-slate-500">{fromIso(d.date).toLocaleDateString([], { month: 'short' })}</span>
           </div>
           <div className="min-w-0 flex-1">
-            <DayBody day={d} entryById={entryById} onOpen={onOpen} canEdit={canEdit} phone={phone} />
+            <DayBody day={d} entryById={entryById} onOpen={onOpen} canEdit={canEdit} />
           </div>
         </li>
       ))}
@@ -617,25 +598,21 @@ function AgendaList({
 function Plans({
   entries,
   today,
-  tonight,
   groups,
   playlists,
   showPast,
   onShowPast,
   onOpen,
   canEdit,
-  phone,
 }: {
   entries: CalendarEntry[]
   today: string
-  tonight: Tonight | null
   groups: SceneGroup[]
   playlists: Playlist[]
   showPast: boolean
   onShowPast: (show: boolean) => void
   onOpen: (entry: CalendarEntry) => void
   canEdit: boolean
-  phone: boolean
 }) {
   const groupName = (id: number | null) => groups.find((g) => g.id === id)?.name ?? null
   const playlistName = (id: number | null) => playlists.find((p) => p.id === id)?.name ?? null
@@ -645,30 +622,11 @@ function Plans({
   const past = sorted.filter((e) => e.end_date != null && e.end_date < today)
   const current = sorted.filter((e) => !(e.end_date != null && e.end_date < today))
   const shown = showPast ? [...current, ...past] : current
-  // Off the calendar's nights, tonight's group is the weekly show time's.
-  const weeklyGroup = tonight && tonight.source !== 'calendar' ? (tonight.playlist_name ? `${tonight.playlist_name} (playlist)` : tonight.group_name) : null
 
   return (
-    <section aria-label="Everything planned" className="space-y-2 pt-2">
-      <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Everything planned</h2>
+    <section aria-label="Your shows" className="space-y-2 pt-2">
+      <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Your shows</h2>
       <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.08]">
-        <li className="flex items-start gap-3 px-3 py-2.5">
-          <ClockIcon size={15} className="mt-0.5 shrink-0 text-slate-500" aria-hidden />
-          <div className="min-w-0 flex-1 text-sm">
-            <span className="font-medium text-slate-100">Weekly show time</span>
-            <span className="block text-xs text-slate-400">
-              {tonight?.enabled && tonight.start_at
-                ? `${clockText(tonight.start_at)} to ${clockText(tonight.end_at)}, ${describeDays(tonight.days)}${weeklyGroup ? ` · ${weeklyGroup}` : ''}`
-                : 'Off. Only the calendar starts the show by itself.'}
-            </span>
-            <span className="block text-2xs text-slate-500">Plays on nights the calendar has nothing for.</span>
-          </div>
-          {!phone && (
-            <Link to="/" className="btn-ghost btn-sm shrink-0">
-              Change on the Dashboard
-            </Link>
-          )}
-        </li>
         {shown.map((entry) => {
           const isPast = entry.end_date != null && entry.end_date < today
           const name = entry.title || (entry.kind === 'off' ? 'No show' : playlistName(entry.playlist_id) ?? groupName(entry.group_id) ?? 'Show')
@@ -700,7 +658,7 @@ function Plans({
             </li>
           )
         })}
-        {shown.length === 0 && <li className="px-3 py-2.5 text-xs text-slate-500">Nothing on the calendar yet.</li>}
+        {shown.length === 0 && <li className="px-3 py-2.5 text-xs text-slate-500">No shows added yet. Pick a night and press Add a show.</li>}
       </ul>
       {past.length > 0 && (
         <button className="text-xs text-slate-400 hover:text-slate-200" onClick={() => onShowPast(!showPast)}>

@@ -100,26 +100,14 @@ class PlaylistStepOut(BaseModel):
 
 
 class PlanUpdate(BaseModel):
+    """The show Start now plays when nothing is planned. Show times live on the calendar."""
+
     show_id: int | None = None
-    enabled: bool | None = None
-    start_at: str | None = Field(default=None, pattern=TIME_PATTERN)
-    end_at: str | None = Field(default=None, pattern=TIME_PATTERN)
-    days: list[int] | None = Field(default=None, max_length=7)
-    power: bool | None = None
-
-    @field_validator("days")
-    @classmethod
-    def _days(cls, value: list[int] | None) -> list[int] | None:
-        if value is None:
-            return None
-        if any(day < 0 or day > 6 for day in value):
-            raise ValueError("Days are 0 (Monday) to 6 (Sunday)")
-        return sorted(set(value))
 
 
-#: off: no show time set, or switched off. later: starts later today.
-#: running: inside tonight's show time. done: finished for tonight.
-#: not_tonight: does not run on today's weekday.
+#: off: nothing planned on the calendar from today on. later: starts later
+#: today. running: inside tonight's show time. done: finished for tonight.
+#: not_tonight: nothing planned tonight, but on a later night.
 PlanState = Literal["off", "later", "running", "done", "not_tonight"]
 
 
@@ -146,10 +134,6 @@ class TonightOut(BaseModel):
     show_name: str | None
     group_id: int | None
     group_name: str | None
-    enabled: bool
-    start_at: str | None
-    end_at: str | None
-    days: list[int]
     power: bool
     state: PlanState
     #: Tonight's show time (the one running, or today's), when there is one.
@@ -157,12 +141,13 @@ class TonightOut(BaseModel):
     ends_at: datetime | None
     #: The next start still to come, which may be a later night.
     next_starts_at: datetime | None
-    #: Where the show time shown comes from: "weekly", "calendar", or None.
+    #: Where the show time shown comes from: "calendar", or None ("weekly"
+    #: was the old weekly show time).
     source: Literal["weekly", "calendar"] | None = None
     #: Its name, and the calendar entry it comes from.
     title: str | None = None
     entry_id: int | None = None
-    #: Every show time today, from the calendar or the weekly show time.
+    #: Every show time today, from the calendar.
     tonight_slots: list[SlotOut] = Field(default_factory=list)
     #: The name of the calendar's "no show" entry keeping tonight dark.
     cancelled_by: str | None = None
@@ -173,7 +158,7 @@ class TonightOut(BaseModel):
     playlist_id: int | None = None
     playlist_name: str | None = None
     playlist_steps: list[PlaylistStepOut] = Field(default_factory=list)
-    #: What the weekly show time plays: a group, or a playlist instead.
+    #: The group or playlist picked last: what Start now plays with nothing planned.
     plan_group_id: int | None = None
     plan_playlist_id: int | None = None
     last_message: str

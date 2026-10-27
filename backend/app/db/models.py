@@ -712,11 +712,12 @@ class MappingPlaylist(Base):
 
 
 class ShowPlan(Base):
-    """Tonight's show: which show and scene group, and when it runs.
+    """Tonight's show: the show and scene group picked last, and what last ran.
 
-    One row. The scheduler in services/tonight.py starts the show at
-    ``start_at`` and stops it at ``end_at`` (local times, "HH:MM") on the
-    weekdays in ``days``; an end before the start means after midnight.
+    One row. Show times come only from the calendar (``ShowCalendarEntry``).
+    ``enabled``, ``start_at``, ``end_at`` and ``days`` were the old weekly
+    show time; they plan nothing any more (migration c7e1a5d9f3b2 moved
+    them onto the calendar) and are kept so old backups still restore.
     """
 
     __tablename__ = "show_plan"
@@ -756,10 +757,9 @@ class ShowPlan(Base):
 class ShowCalendarEntry(Base):
     """A show planned on the calendar, or a night with no show.
 
-    One date (``start_date`` = ``end_date``), a run of dates, or a repeat
-    with no end (``end_date`` empty), on the weekdays in ``days``. On a
-    night the calendar has something for, the calendar replaces the
-    weekly show time in ``ShowPlan``. See services/show_calendar.py.
+    One date (``start_date`` = ``end_date``) or a run of dates, on the
+    weekdays in ``days``. Only these plan shows: a night with none has no
+    show. See services/show_calendar.py.
     """
 
     __tablename__ = "show_calendar"
@@ -778,7 +778,8 @@ class ShowCalendarEntry(Base):
     playlist_id: Mapped[int | None] = mapped_column(
         ForeignKey("mapping_playlists.id", ondelete="SET NULL")
     )
-    #: Local dates, "YYYY-MM-DD". No end date means it keeps repeating.
+    #: Local dates, "YYYY-MM-DD". New entries always have an end date
+    #: (migration c7e1a5d9f3b2 gave the old open-ended ones one).
     start_date: Mapped[str] = mapped_column(String(10))
     end_date: Mapped[str | None] = mapped_column(String(10))
     #: Weekdays it runs, Monday 0 to Sunday 6.

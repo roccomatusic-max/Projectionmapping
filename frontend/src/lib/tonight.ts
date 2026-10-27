@@ -54,17 +54,13 @@ export interface Tonight {
   show_name: string | null
   group_id: number | null
   group_name: string | null
-  enabled: boolean
-  start_at: string | null
-  end_at: string | null
-  /** Monday 0 to Sunday 6. */
-  days: number[]
   power: boolean
+  /** off: nothing on the calendar from today on. not_tonight: nothing tonight, but later. */
   state: PlanState
   starts_at: string | null
   ends_at: string | null
   next_starts_at: string | null
-  /** Where tonight's show time comes from: the weekly show time or the calendar. */
+  /** Where tonight's show time comes from: always the calendar now ("weekly" was the old weekly show time). */
   source: 'weekly' | 'calendar' | null
   /** Its name, and the calendar entry it comes from. */
   title: string | null
@@ -79,7 +75,7 @@ export interface Tonight {
   playlist_id: number | null
   playlist_name: string | null
   playlist_steps: PlaylistStepTonight[]
-  /** What the weekly show time plays: a group, or a playlist instead. */
+  /** The group or playlist picked last: what Start now plays with nothing planned. */
   plan_group_id: number | null
   plan_playlist_id: number | null
   last_message: string
@@ -102,13 +98,9 @@ export interface Slot {
   playlist_name: string | null
 }
 
+/** Show times live on the calendar; the plan only keeps the show Start now plays. */
 export interface PlanChanges {
   show_id?: number | null
-  enabled?: boolean
-  start_at?: string | null
-  end_at?: string | null
-  days?: number[]
-  power?: boolean
 }
 
 export interface TonightAction {

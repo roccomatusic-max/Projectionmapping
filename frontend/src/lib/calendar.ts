@@ -12,7 +12,7 @@ export interface CalendarEntry {
   group_id: number | null
   /** Plays instead of the group when set. */
   playlist_id: number | null
-  /** "YYYY-MM-DD", local dates. No end date keeps repeating. */
+  /** "YYYY-MM-DD", local dates; the same for one night. Every entry has an end: nothing repeats by itself. */
   start_date: string
   end_date: string | null
   /** Monday 0 to Sunday 6. */
@@ -98,11 +98,14 @@ export function dayText(value: string, opts: { weekday?: boolean } = {}): string
   })
 }
 
-/** When an entry runs, in plain words: "Sat Oct 31", "Nov 1 to Nov 30, Fri and Sat", "Fridays from Nov 20". */
+/** When an entry runs, in plain words: "Sat Oct 31", "Nov 1 to Nov 30, Fri and Sat". */
 export function entryWhen(entry: Pick<CalendarEntry, 'start_date' | 'end_date' | 'days'>, describeDays: (days: number[]) => string): string {
-  if (entry.end_date === entry.start_date) return dayText(entry.start_date)
+  if (!entry.end_date || entry.end_date === entry.start_date) return dayText(entry.start_date)
   const nights = describeDays(entry.days)
-  const from = dayText(entry.start_date, { weekday: false })
-  if (!entry.end_date) return `${nights[0].toUpperCase()}${nights.slice(1)} from ${from}, no end date`
-  return `${from} to ${dayText(entry.end_date, { weekday: false })}, ${nights}`
+  return `${dayText(entry.start_date, { weekday: false })} to ${dayText(entry.end_date, { weekday: false })}, ${nights}`
+}
+
+/** The newest show on the calendar: a new one starts from its times and look. */
+export function latestShow(entries: CalendarEntry[]): CalendarEntry | null {
+  return entries.filter((e) => e.kind === 'show').reduce<CalendarEntry | null>((best, e) => (!best || e.id > best.id ? e : best), null)
 }

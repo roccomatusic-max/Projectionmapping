@@ -13,6 +13,7 @@ import pytest
 
 from tests.test_api import add_projector, api, login  # noqa: F401 - fixture
 from tests.test_mapping import make_show
+from tests.test_tonight import plan_night
 
 
 @pytest.fixture
@@ -254,10 +255,7 @@ async def test_a_show_the_schedule_could_not_start_is_sent(api, sent):
     assert (await api.post("/api/emergency/stop", headers=headers)).status_code == 200
 
     now = datetime.now(settings.tz).replace(second=0, microsecond=0)
-    saved = await api.put("/api/tonight", headers=headers, json={
-        "enabled": True, "show_id": show["id"], "start_at": now.strftime("%H:%M"),
-        "end_at": (now + timedelta(hours=2)).strftime("%H:%M"), "power": False})
-    assert saved.status_code == 200, saved.text
+    await plan_night(api, headers, now, now + timedelta(hours=2), show_id=show["id"], power=False)
     await service.scheduler.tick(now)
     await _settled()
     assert [s["json"]["title"] for s in sent] == ["Show did not start"]
