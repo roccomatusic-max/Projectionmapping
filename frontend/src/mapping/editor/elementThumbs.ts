@@ -116,10 +116,10 @@ const SCATTER = new Set([
 /** Ones that float up: three of them. */
 const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons', 'floating-candles'])
 /** Ones that sit on the roofline, or hang under it. */
-const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls', 'wolves', 'robins'])
+const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls', 'wolves', 'robins', 'roof-reindeer'])
 /** Ones that peek over a window sill. */
 const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes'])
-const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas'])
+const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous'])
 
 function hash(n: number) {
   const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453
@@ -216,7 +216,8 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
         ctx.translate(W * x, top)
         ctx.rotate(swing)
         stamp(ctx, style, layer, 'thread', 0, 0, len / 2, len)
-        stamp(ctx, style, layer, 'main', style === 'stockings' ? i : style === 'pinatas' ? 0 : f + i, 0, len + H * 0.14, H * 0.32)
+        stamp(ctx, style, layer, 'main', style === 'stockings' ? i : style === 'pinatas' ? 0 : style === 'firecrackers' ? Math.floor(time * 3 + i * 4) % 11 : f + i,
+          0, len + H * (style === 'firecrackers' ? 0.25 : 0.14), H * (style === 'firecrackers' ? 0.5 : 0.32))
         ctx.restore()
       }
     })
@@ -471,6 +472,138 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
   }
   if (style === 'peacocks') {
     stamp(ctx, style, layer, Math.floor(time * 0.3) % 2 ? 'wave' : 'main', f, W / 2, H / 2, H * 0.92)
+    return
+  }
+  if (style === 'santa-chimney') {
+    // Santa climbing up out of the chimney and ducking back down.
+    const up = Math.min(1, Math.max(0, Math.sin(time * 0.9) * 1.4))
+    const ch = H * 0.46
+    const top = H * 0.96 - ch + ch * 0.1
+    const sh = ch * 1.05
+    if (up > 0.02) stamp(ctx, style, layer, 'santa', f, W / 2, top - (sh * up * 0.8) + sh / 2, sh, false, up * 0.8)
+    stamp(ctx, style, layer, 'main', 0, W / 2, H * 0.96 - ch / 2, ch)
+    return
+  }
+  if (style === 'window-candles') {
+    ;[0.3, 0.7].forEach((x, i) => {
+      ctx.fillStyle = '#0b1220'
+      ctx.fillRect(W * x - H * 0.3, H * 0.12, H * 0.6, H * 0.72)
+      ctx.strokeStyle = 'rgba(148,163,184,0.8)'
+      ctx.lineWidth = 3
+      ctx.strokeRect(W * x - H * 0.3, H * 0.12, H * 0.6, H * 0.72)
+      stamp(ctx, style, layer, 'main', f + i, W * x, H * 0.84 - H * 0.28, H * 0.56)
+    })
+    return
+  }
+  if (style === 'searchlights' || style === 'lighthouse') {
+    if (style === 'lighthouse') {
+      const c = Math.cos(time * 1.2)
+      const bl = W * 0.7 * Math.abs(c)
+      stamp(ctx, style, layer, 'main', f, W * 0.5, H * 0.5, H * 0.92)
+      const ly = H * 0.04 + (H * 0.92 * 62) / 300
+      ctx.save()
+      ctx.translate(W * 0.5 + Math.sign(c) * bl / 2, ly)
+      ctx.scale(Math.sign(c) * bl / (H * 0.2 * 6), 1)
+      stamp(ctx, style, layer, 'beam', 0, 0, 0, H * 0.2)
+      ctx.restore()
+      return
+    }
+    ;[0.3, 0.7].forEach((x, i) => {
+      const a = Math.sin(time * 0.7 + i * 2) * 0.45 + (i ? 0.2 : -0.2)
+      ctx.save()
+      ctx.translate(W * x, H * 0.82)
+      ctx.rotate(a)
+      stamp(ctx, style, layer, 'beam', 0, 0, -H * 0.45, H * 0.9)
+      ctx.restore()
+      stamp(ctx, style, layer, 'main', 0, W * x, H * 0.86, H * 0.24)
+    })
+    return
+  }
+  if (style === 'ball-drop' || style === 'champagne') {
+    const k = (time * 0.25) % 1
+    if (style === 'ball-drop') {
+      stamp(ctx, style, layer, 'main', 0, W / 2, H / 2, H * 0.96)
+      stamp(ctx, style, layer, 'ball', f, W / 2, H * 0.14 + Math.min(1, k * 1.3) * H * 0.62, H * 0.3)
+      return
+    }
+    const popped = k > 0.5
+    stamp(ctx, style, layer, 'main', popped ? 1 : 0, W / 2, H * 0.52, H * 0.9)
+    if (popped) {
+      const a = (k - 0.5) * 2
+      stamp(ctx, style, layer, 'cork', 0, W / 2 + a * W * 0.2, H * 0.1 + a * a * H * 0.3 - a * H * 0.1, H * 0.12)
+    }
+    return
+  }
+  if (style === 'graduation-caps' || style === 'cornucopia' || style === 'campfire') {
+    if (style === 'campfire') {
+      stamp(ctx, style, layer, 'main', f, W / 2, H * 0.56, H * 0.8)
+      for (let j = 0; j < 8; j++) {
+        const q = (time * 0.5 + j / 8) % 1
+        stamp(ctx, style, layer, 'ember', 0, W * (0.42 + 0.16 * hash(j)), H * (0.4 - q * 0.38), H * 0.06 * (1 - q * 0.5))
+      }
+      return
+    }
+    if (style === 'cornucopia') {
+      stamp(ctx, style, layer, 'main', 0, W * 0.38, H * 0.56, H * 0.66)
+      ;[0.66, 0.76, 0.86, 0.72].forEach((x, j) => stamp(ctx, style, layer, 'piece', j, W * x, H * (j === 3 ? 0.66 : 0.8), H * 0.16))
+      return
+    }
+    ;[0.25, 0.5, 0.75].forEach((x, i) => {
+      const k = (time * 0.5 + i * 0.33) % 1
+      stamp(ctx, style, layer, 'main', Math.floor(time * 10 + i * 3), W * x, H * (0.85 - 4 * k * (1 - k) * 0.6), H * 0.24)
+    })
+    return
+  }
+  if (style === 'raccoons') {
+    const up = Math.min(1, Math.max(0, Math.sin(time * 1.1) * 1.3))
+    const ch = H * 0.56
+    stamp(ctx, style, layer, 'main', Math.floor(time * 0.8) % 4, W / 2, H * 0.97 - ch * 0.94 + ch * 0.45 - up * ch * 0.6, ch * 0.9)
+    stamp(ctx, style, layer, 'can', 0, W / 2, H * 0.97 - ch / 2, ch)
+    return
+  }
+  if (style === 'witch-crash') {
+    stamp(ctx, style, layer, 'splat', 0, W / 2, H * 0.48 + ((time * 0.15) % 1) * H * 0.1, H * 0.86)
+    return
+  }
+  if (style === 'rain-clouds') {
+    for (let j = 0; j < 16; j++) {
+      const q = (time * 1.2 + hash(j)) % 1
+      stamp(ctx, style, layer, 'rain', 0, W * (0.3 + 0.4 * hash(j + 3)), H * (0.5 + q * 0.48), H * 0.08)
+    }
+    stamp(ctx, style, layer, 'dark', f, W / 2, H * 0.32, H * 0.56)
+    return
+  }
+  if (style === 'hockey-players') {
+    const k = (time * 0.6) % 1
+    stamp(ctx, style, layer, 'main', k < 0.3 ? 0 : k < 0.45 ? 1 : k < 0.6 ? 2 : 3, W * 0.3, H / 2, H * 0.9)
+    if (k > 0.5) stamp(ctx, style, layer, 'ball', 0, W * (0.42 + (k - 0.5) * 1.0), H * 0.9, H * 0.08)
+    return
+  }
+  if (style === 'bird-feeder' || style === 'beehive') {
+    if (style === 'bird-feeder') {
+      stamp(ctx, style, layer, 'main', 0, W / 2, H / 2, H * 0.96)
+      ;[-0.12, 0.02, 0.13].forEach((d, i) => stamp(ctx, style, layer, 'bird', Math.floor(time * 2 + i) % 2, W / 2 + d * H, H * 0.36, H * 0.1, d < 0))
+      return
+    }
+    stamp(ctx, style, layer, 'main', 0, W * 0.42, H * 0.55, H * 0.8)
+    for (let j = 0; j < 5; j++) {
+      const a = time * (1.2 + hash(j)) + j * 2.4
+      stamp(ctx, style, layer, 'bee', Math.floor(time * 20 + j), W * 0.55 + Math.sin(a) * W * 0.28, H * 0.45 + Math.sin(a * 2) * H * 0.2, H * 0.14,
+        Math.cos(a) < 0)
+    }
+    return
+  }
+  if (style === 'christmas-tree' || style === 'kinara' || style === 'tulips' || style === 'sunflowers') {
+    // Lighting up (the tree, the candles in their order) or opening, as people come.
+    const frames = main.frames
+    const k = Math.min(1, ((time * 0.3) % 1.3))
+    const frame = style === 'sunflowers' ? Math.floor(time * 0.6) % 3 : Math.round(k * (frames - 1))
+    if (style === 'tulips' || style === 'sunflowers') {
+      ;[0.3, 0.5, 0.7].forEach((x) => stamp(ctx, style, layer, 'main', frame, W * x, H / 2, H * 0.92))
+      return
+    }
+    const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)
+    stamp(ctx, style, layer, 'main', frame, W / 2, H / 2, main.h * fit)
     return
   }
   // One, as big as fits.
