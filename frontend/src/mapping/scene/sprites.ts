@@ -578,6 +578,7 @@ function bat(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColor
   glow(ctx, 135, 58, 9, color2, 0.9)
   ctx.fillStyle = '#fff'
   circle(ctx, 121, 58, 2.6)
+  ctx.fill()
   circle(ctx, 135, 58, 2.6)
   ctx.fill()
 }
@@ -860,6 +861,7 @@ function bone(ctx: Ctx, x1: number, y1: number, x2: number, y2: number, w: numbe
   ctx.stroke()
   ctx.fillStyle = color
   circle(ctx, x1, y1, w * 0.62)
+  ctx.fill()
   circle(ctx, x2, y2, w * 0.62)
   ctx.fill()
 }
@@ -1048,6 +1050,7 @@ function ufo(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
   ctx.stroke()
   ctx.fillStyle = color2
   circle(ctx, 144, 33, 4)
+  ctx.fill()
   circle(ctx, 176, 33, 4)
   ctx.fill()
   ctx.fillStyle = 'rgba(255,255,255,0.45)'
@@ -1125,6 +1128,7 @@ function skeleton(ctx: Ctx, f: number, frames: number, { color, color2 }: Sprite
   ctx.fill()
   ctx.fillStyle = line
   circle(ctx, hip.x - 9, hip.y - 4, 5)
+  ctx.fill()
   circle(ctx, hip.x + 9, hip.y - 4, 5)
   ctx.fill()
   for (let k = 0; k < 4; k++) {
@@ -1250,10 +1254,12 @@ function zombie(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteCo
   ctx.fill()
   ctx.fillStyle = '#e8f5d0'
   circle(ctx, 106, 70, 7)
+  ctx.fill()
   circle(ctx, 120, 72, 5)
   ctx.fill()
   ctx.fillStyle = '#7f1d1d'
   circle(ctx, 107, 71, 2.5)
+  ctx.fill()
   circle(ctx, 121, 73, 2)
   ctx.fill()
   ctx.strokeStyle = '#3f1d1d'
@@ -1321,10 +1327,12 @@ function blackCat(ctx: Ctx, f: number, frames: number, { color, color2 }: Sprite
   glow(ctx, 222, 74, 11, color2, 0.9)
   ctx.fillStyle = color2
   ellipse(ctx, 202, 72, 6, 5)
+  ctx.fill()
   ellipse(ctx, 222, 74, 5, 4.5)
   ctx.fill()
   ctx.fillStyle = '#000'
   ellipse(ctx, 202, 72, 1.6, 4.5)
+  ctx.fill()
   ellipse(ctx, 222, 74, 1.4, 4)
   ctx.fill()
   ctx.strokeStyle = 'rgba(255,255,255,0.45)'
@@ -1778,6 +1786,7 @@ function butterfly(ctx: Ctx, f: number, frames: number, { color, color2 }: Sprit
     ctx.fill()
     ctx.fillStyle = color2
     circle(ctx, 48, -50, 10)
+    ctx.fill()
     circle(ctx, -34, -34, 7)
     ctx.fill()
     ctx.strokeStyle = 'rgba(0,0,0,0.6)'
@@ -2577,6 +2586,7 @@ function owl(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColor
   ctx.fill()
   ctx.fillStyle = shade(color, 0.5)
   ellipse(ctx, 214, 104, 20, 22)
+  ctx.fill()
   ellipse(ctx, 246, 104, 20, 22)
   ctx.fill()
   for (const x of [214, 246]) {
@@ -2901,6 +2911,7 @@ function gingerbreadMan(ctx: Ctx, f: number, frames: number, { color, color2 }: 
   // Face and buttons.
   ctx.fillStyle = '#ffffff'
   circle(ctx, 78, 52, 5)
+  ctx.fill()
   circle(ctx, 100, 52, 5)
   ctx.fill()
   ctx.strokeStyle = '#ffffff'
@@ -2962,6 +2973,7 @@ function toySoldier(ctx: Ctx, f: number, frames: number, { color, color2 }: Spri
   // Epaulettes.
   ctx.fillStyle = color2
   ellipse(ctx, 62, 110, 12, 6)
+  ctx.fill()
   ellipse(ctx, 112, 110, 12, 6)
   ctx.fill()
   // Head, rosy cheeks, moustache, tall black hat with a plume.
@@ -3326,6 +3338,7 @@ function hatchingEgg(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteC
     ctx.fill()
     ctx.fillStyle = '#111'
     circle(ctx, 60, y - 6, 4)
+    ctx.fill()
     circle(ctx, 80, y - 6, 4)
     ctx.fill()
     ctx.fillStyle = '#f97316'
@@ -3338,6 +3351,7 @@ function hatchingEgg(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteC
     if (wings) {
       ctx.fillStyle = '#facc15'
       ellipse(ctx, 36, y + 6, 14, 8, -0.8)
+      ctx.fill()
       ellipse(ctx, 104, y + 6, 14, 8, 0.8)
       ctx.fill()
     }
@@ -3869,10 +3883,12 @@ function trickOrTreater(ctx: Ctx, f: number, frames: number, { color, color2 }: 
   ctx.fill()
   ctx.fillStyle = '#ffffff'
   ellipse(ctx, 88, 82, 6, 4)
+  ctx.fill()
   ellipse(ctx, 112, 82, 6, 4)
   ctx.fill()
   ctx.fillStyle = '#111'
   circle(ctx, 90, 82, 2.5)
+  ctx.fill()
   circle(ctx, 114, 82, 2.5)
   ctx.fill()
   ctx.strokeStyle = '#7c2d12'
@@ -4099,6 +4115,7 @@ function vampire(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteC
   ctx.fill()
   ctx.fillStyle = '#b91c1c'
   ellipse(ctx, 112, 72, 4, 3)
+  ctx.fill()
   ellipse(ctx, 124, 72, 3.5, 3)
   ctx.fill()
   ctx.strokeStyle = '#4c0519'
@@ -4197,10 +4214,12 @@ function frankenstein(ctx: Ctx, f: number, frames: number, { color, color2 }: Sp
   ctx.fillRect(108, 60, 14, 4)
   ctx.fillStyle = '#fef9c3'
   ellipse(ctx, 92, 70, 6, 4)
+  ctx.fill()
   ellipse(ctx, 114, 70, 6, 4)
   ctx.fill()
   ctx.fillStyle = '#111'
   circle(ctx, 94, 70, 2.5)
+  ctx.fill()
   circle(ctx, 116, 70, 2.5)
   ctx.fill()
   ctx.strokeStyle = '#1f2937'
@@ -4273,6 +4292,7 @@ function grimReaper(ctx: Ctx, f: number, frames: number, { color, color2 }: Spri
   glow(ctx, 138, 72, 12, color2, 0.9 + 0.1 * s)
   ctx.fillStyle = color2
   circle(ctx, 120, 70, 3.5)
+  ctx.fill()
   circle(ctx, 138, 72, 3.5)
   ctx.fill()
   // Sleeve reaching to the scythe, bony fingers round the handle.
@@ -4388,6 +4408,7 @@ function polarBear(ctx: Ctx, f: number, frames: number, { color, color2 }: Sprit
   ctx.fill()
   ctx.fillStyle = '#111'
   ellipse(ctx, 294, 86, 7, 5)
+  ctx.fill()
   circle(ctx, 262, 72, 3.5)
   ctx.fill()
   // Scarf round the neck, the end blowing back over the shoulder.
@@ -4568,6 +4589,7 @@ function squirrel(ctx: Ctx, f: number, frames: number, { color, color2 }: Sprite
   ctx.fill()
   ctx.fillStyle = '#111'
   circle(ctx, 160, 64, 4)
+  ctx.fill()
   circle(ctx, 182, 76, 3)
   ctx.fill()
   ctx.fillStyle = '#fff'
@@ -5074,6 +5096,7 @@ function robot(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteCol
     ctx.stroke()
   } else {
     ellipse(ctx, 82, 64, 5, 7)
+    ctx.fill()
     ellipse(ctx, 106, 64, 5, 7)
     ctx.fill()
   }
@@ -5131,6 +5154,7 @@ function dog(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColor
   ctx.fill()
   ctx.fillStyle = '#111'
   circle(ctx, 238, 58, 5.5)
+  ctx.fill()
   circle(ctx, 204, 46, 3.5)
   ctx.fill()
   ctx.fillStyle = '#f472b6'
@@ -5498,6 +5522,7 @@ function hangingBat(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteCo
     glow(ctx, 67, 134, 9, color2, 0.9)
     ctx.fillStyle = '#fff'
     circle(ctx, 53, 134, 2.4)
+    ctx.fill()
     circle(ctx, 67, 134, 2.4)
     ctx.fill()
   }
@@ -5508,6 +5533,7 @@ function jingleBell(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteCo
   // Bow on top.
   ctx.fillStyle = color2
   ellipse(ctx, 40, 22, 22, 11, 0.4)
+  ctx.fill()
   ellipse(ctx, 80, 22, 22, 11, -0.4)
   ctx.fill()
   ctx.beginPath()
@@ -5760,6 +5786,7 @@ function slidingPenguin(ctx: Ctx, f: number, _n: number, { color, color2 }: Spri
   // Feet trailing.
   ctx.fillStyle = color2
   ellipse(ctx, 18, 76, 14, 7, 0.3)
+  ctx.fill()
   ellipse(ctx, 22, 92, 14, 7, -0.3)
   ctx.fill()
   // Snow spray.
@@ -5812,6 +5839,7 @@ function snowman(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteC
   // Face: coal eyes, carrot nose, smile.
   ctx.fillStyle = '#111'
   circle(ctx, 80, 72, 3.5)
+  ctx.fill()
   circle(ctx, 96, 72, 3.5)
   ctx.fill()
   for (let k = 0; k < 5; k++) {
@@ -5930,6 +5958,7 @@ function santaWalking(ctx: Ctx, f: number, frames: number, { color, color2 }: Sp
   ctx.stroke()
   ctx.fillStyle = '#111'
   circle(ctx, 80, 56, 9)
+  ctx.fill()
   circle(ctx, 148 + s * 10, 156, 9)
   ctx.fill()
 }
@@ -6080,7 +6109,9 @@ function iceCreamTruck(ctx: Ctx, f: number, frames: number, { color, color2 }: S
   ctx.stroke()
   ctx.fillStyle = color2
   circle(ctx, 162, 44, 18)
+  ctx.fill()
   circle(ctx, 184, 44, 18)
+  ctx.fill()
   circle(ctx, 173, 28, 18)
   ctx.fill()
   ctx.fillStyle = '#dc2626'
@@ -6262,6 +6293,7 @@ function drummer(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteC
   const [bx, by] = limb(ctx, 100, 186, 36, 36, Math.max(0, -s) * 1.1, -Math.max(0, -s) * 1.2, 15, '#e2e8f0')
   ctx.fillStyle = '#111'
   ellipse(ctx, ax + 6, ay + 2, 12, 6)
+  ctx.fill()
   ellipse(ctx, bx + 6, by + 2, 12, 6)
   ctx.fill()
   // Jacket with braid.
@@ -6610,6 +6642,7 @@ function mermaid(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteC
   // Shell top.
   ctx.fillStyle = color2
   circle(ctx, 210, 88, 7)
+  ctx.fill()
   circle(ctx, 224, 87, 7)
   ctx.fill()
   // Head.
@@ -7600,6 +7633,7 @@ function snowballKid(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteC
   limb(ctx, 104, 168, 30, 30, 0.3, -0.1, 18, '#1e40af')
   ctx.fillStyle = '#3f2a1d'
   ellipse(ctx, 74, 228, 14, 8)
+  ctx.fill()
   ellipse(ctx, 116, 228, 14, 8)
   ctx.fill()
   // Far arm.
@@ -7662,6 +7696,7 @@ function balloonKid(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteCo
   limb(ctx, 104, 168, 30, 30, 0.3, -0.1, 14, shade(SKIN, -0.08))
   ctx.fillStyle = '#ffffff'
   ellipse(ctx, 76, 228, 13, 7)
+  ctx.fill()
   ellipse(ctx, 116, 228, 13, 7)
   ctx.fill()
   // Shorts and T-shirt.
@@ -7829,6 +7864,7 @@ function jester(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteCo
   ctx.fill()
   ctx.fillStyle = '#111'
   circle(ctx, -9, -36, 3)
+  ctx.fill()
   circle(ctx, 9, -36, 3)
   ctx.fill()
   ctx.strokeStyle = '#dc2626'
@@ -7892,6 +7928,7 @@ function mole(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColo
   ctx.fill()
   ctx.fillStyle = shade(color2, -0.35)
   circle(ctx, 60, 88 + sniff * 2, 2.5)
+  ctx.fill()
   circle(ctx, 70, 88 + sniff * 2, 2.5)
   ctx.fill()
   ctx.strokeStyle = 'rgba(255,255,255,0.6)'
@@ -7965,6 +8002,7 @@ function coffin(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors
     ctx.fill()
     ctx.fillStyle = '#dc2626'
     circle(ctx, 73, 74, 3)
+    ctx.fill()
     circle(ctx, 87, 74, 3)
     ctx.fill()
     ctx.fillStyle = '#fff'
@@ -7979,6 +8017,7 @@ function coffin(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors
     if (out) {
       ctx.fillStyle = '#e2e8f0'
       circle(ctx, 140, 120, 7)
+      ctx.fill()
       circle(ctx, 20, 120, 7)
       ctx.fill()
     }
@@ -8001,6 +8040,7 @@ function coffin(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors
     glow(ctx, 126, 80, 16, '#ef4444', 1)
     ctx.fillStyle = '#ef4444'
     circle(ctx, 122, 80, 3)
+    ctx.fill()
     circle(ctx, 131, 80, 3)
     ctx.fill()
   } else {
@@ -8048,6 +8088,7 @@ function tombstone(ctx: Ctx) {
   ctx.stroke()
   ctx.fillStyle = 'rgba(77,124,15,0.7)'
   ellipse(ctx, 34, 154, 18, 8)
+  ctx.fill()
   ellipse(ctx, 108, 150, 14, 10)
   ctx.fill()
   ctx.fillStyle = '#3b2614'
@@ -8468,6 +8509,7 @@ function hedgehog(hiding: boolean) {
     ctx.fill()
     ctx.fillStyle = '#111'
     circle(ctx, 186, 95, 5)
+    ctx.fill()
     circle(ctx, 154, 84, 3.5)
     ctx.fill()
     ctx.fillStyle = shade(color2, -0.2)
@@ -8629,6 +8671,7 @@ function footballPlayer(ctx: Ctx, f: number, frames: number, { color, color2 }: 
   const [bx, by] = limb(ctx, 100, 150, 34, 32, -s * 0.7, -Math.max(0, -s) * 1.1, 17, '#f1f5f9')
   ctx.fillStyle = '#111'
   ellipse(ctx, ax + 6, ay + 3, 12, 6)
+  ctx.fill()
   ellipse(ctx, bx + 6, by + 3, 12, 6)
   ctx.fill()
   limb(ctx, 80, 100, 26, 24, -0.8 - s * 0.4, 0.6, 13, color)
@@ -8822,6 +8865,7 @@ function flyingPig(ctx: Ctx, f: number, frames: number, { color, color2 }: Sprit
   ctx.fill()
   ctx.fillStyle = shade(color, -0.4)
   circle(ctx, 204, 73, 3)
+  ctx.fill()
   circle(ctx, 204, 83, 3)
   ctx.fill()
   ctx.fillStyle = '#111'
@@ -9051,6 +9095,7 @@ function superhero(ctx: Ctx, f: number, frames: number, { color, color2 }: Sprit
   ctx.stroke()
   ctx.fillStyle = color2
   ellipse(ctx, 44, 70 + Math.sin(p) * 3, 12, 9)
+  ctx.fill()
   ellipse(ctx, 46, 86 - Math.sin(p) * 3, 12, 9)
   ctx.fill()
   // Body with an emblem.
@@ -9115,6 +9160,7 @@ function ladybug(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteC
   ctx.fill()
   ctx.fillStyle = '#fff'
   circle(ctx, 104, 44, 4)
+  ctx.fill()
   circle(ctx, 104, 56, 4)
   ctx.fill()
   ctx.strokeStyle = '#111'
@@ -9178,6 +9224,1924 @@ function moth(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColo
   ctx.quadraticCurveTo(34, 18, 44, 16)
   ctx.stroke()
   ctx.restore()
+}
+
+// -- wolves on the roof, a rising moon, a piñata, ornaments, icicles, flags -----------------------------
+
+/** A wolf sitting on the roofline: sitting, looking left, looking right, howling; paws at the bottom. */
+function roofWolf(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const pose = f % 4
+  const fur = color
+  // Bushy tail curled round.
+  ctx.fillStyle = shade(fur, -0.2)
+  ctx.beginPath()
+  ctx.moveTo(60, 196)
+  ctx.bezierCurveTo(10, 200, 4, 150, 30, 140)
+  ctx.bezierCurveTo(30, 170, 50, 182, 74, 184)
+  ctx.closePath()
+  ctx.fill()
+  // Haunches and chest, sitting upright.
+  const g = ctx.createLinearGradient(40, 0, 140, 0)
+  g.addColorStop(0, shade(fur, -0.15))
+  g.addColorStop(1, shade(fur, 0.2))
+  ctx.fillStyle = g
+  ellipse(ctx, 78, 168, 44, 32)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(60, 170)
+  ctx.quadraticCurveTo(70, 100, 100, 84)
+  ctx.lineTo(126, 96)
+  ctx.quadraticCurveTo(122, 150, 112, 196)
+  ctx.lineTo(70, 196)
+  ctx.closePath()
+  ctx.fill()
+  // Pale chest ruff.
+  ctx.fillStyle = shade(fur, 0.55)
+  ctx.beginPath()
+  ctx.moveTo(100, 96)
+  ctx.quadraticCurveTo(128, 120, 112, 170)
+  ctx.quadraticCurveTo(100, 140, 96, 110)
+  ctx.closePath()
+  ctx.fill()
+  // Front legs and paws.
+  ctx.fillStyle = shade(fur, 0.1)
+  for (const x of [92, 112]) {
+    ctx.beginPath()
+    ctx.roundRect(x - 7, 140, 14, 54, 6)
+    ctx.fill()
+    ellipse(ctx, x + 2, 196, 11, 5)
+    ctx.fill()
+  }
+  // Head: turned left or right, or tipped up to howl.
+  const [hx, hy, tilt] = pose === 3 ? [116, 70, -0.9] : pose === 1 ? [104, 74, 0.25] : pose === 2 ? [118, 74, -0.15] : [112, 76, 0]
+  ctx.save()
+  ctx.translate(hx, hy)
+  ctx.rotate(tilt)
+  ctx.scale(pose === 1 ? -1 : 1, 1)
+  ctx.fillStyle = fur
+  ctx.beginPath()
+  ctx.moveTo(-22, -6)
+  ctx.lineTo(-16, -40)
+  ctx.lineTo(-4, -20)
+  ctx.lineTo(8, -40)
+  ctx.lineTo(14, -14)
+  ctx.lineTo(44, 0)
+  ctx.lineTo(42, 10)
+  ctx.lineTo(4, 22)
+  ctx.lineTo(-22, 14)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = shade(fur, 0.5)
+  ctx.beginPath()
+  ctx.moveTo(14, 6)
+  ctx.lineTo(42, 6)
+  ctx.lineTo(4, 22)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 44, 3, 4)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ellipse(ctx, 10, -6, 4, 3)
+  ctx.fill()
+  if (pose === 3) {
+    // Mouth open in a howl.
+    ctx.fillStyle = '#3f0d12'
+    ctx.beginPath()
+    ctx.moveTo(30, 8)
+    ctx.lineTo(44, 12)
+    ctx.lineTo(28, 16)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+/** The moon at one of its phases (frame 0 new, 8 full), with craters and a soft glow. */
+function moonPhase(ctx: Ctx, f: number, frames: number, { color }: SpriteColors) {
+  const k = (f % frames) / frames
+  const r = 70
+  ctx.save()
+  ctx.translate(100, 100)
+  glow(ctx, 0, 0, 100, color, 0.35 * Math.sin(k * Math.PI))
+  // The dark part faintly (earthshine), then the lit part.
+  ctx.fillStyle = 'rgba(71,85,105,0.25)'
+  circle(ctx, 0, 0, r)
+  ctx.fill()
+  ctx.save()
+  circle(ctx, 0, 0, r)
+  ctx.clip()
+  // Lit region: the right half growing to full, then shrinking from the right.
+  const waxing = k < 0.5
+  const c = Math.cos(k * TAU) // 1 new, -1 full
+  ctx.fillStyle = shade(color, 0.1)
+  ctx.beginPath()
+  if (waxing) {
+    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2)
+    ctx.ellipse(0, 0, Math.abs(c) * r, r, 0, Math.PI / 2, -Math.PI / 2, c > 0)
+  } else {
+    ctx.arc(0, 0, r, Math.PI / 2, -Math.PI / 2)
+    ctx.ellipse(0, 0, Math.abs(c) * r, r, 0, -Math.PI / 2, Math.PI / 2, c > 0)
+  }
+  ctx.fill()
+  // Craters, only where it is lit (drawn over everything, then the dark side shaded back).
+  ctx.globalCompositeOperation = 'source-atop'
+  ctx.fillStyle = 'rgba(100,116,139,0.35)'
+  for (const [x, y, cr] of [[-24, -20, 14], [20, 18, 10], [-6, 34, 8], [30, -30, 7], [-36, 20, 6]]) {
+    circle(ctx, x, y, cr)
+    ctx.fill()
+  }
+  ctx.restore()
+  ctx.restore()
+}
+
+/** A donkey piñata in fringed paper stripes, hanging by its back. */
+function pinata(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const stripes = [color, color2, '#22c55e', '#38bdf8', '#f472b6', '#facc15']
+  const fringe = (x: number, y: number, w: number, h: number, i: number) => {
+    ctx.fillStyle = stripes[i % stripes.length]
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeStyle = shade(stripes[i % stripes.length], -0.25)
+    ctx.lineWidth = 1.5
+    for (let k = x + 3; k < x + w; k += 6) {
+      ctx.beginPath()
+      ctx.moveTo(k, y + h - 6)
+      ctx.lineTo(k, y + h)
+      ctx.stroke()
+    }
+  }
+  ctx.save()
+  ctx.translate(0, f % 2 ? 2 : 0)
+  // Legs.
+  for (const [x, i] of [[52, 1], [76, 2], [132, 3], [156, 4]] as const) for (let k = 0; k < 4; k++) fringe(x - 10, 120 + k * 14, 20, 14, i + k)
+  // Body.
+  for (let k = 0; k < 4; k++) fringe(36, 70 + k * 14, 136, 14, k)
+  // Neck and head.
+  for (let k = 0; k < 5; k++) fringe(150, 20 + k * 12, 26, 12, k + 2)
+  for (let k = 0; k < 3; k++) fringe(160, 20 + k * 12, 42, 12, k + 3)
+  // Ears and tail.
+  fringe(152, 0, 10, 22, 0)
+  fringe(166, 0, 10, 22, 1)
+  fringe(24, 74, 14, 40, 5)
+  ctx.fillStyle = '#111'
+  circle(ctx, 186, 30, 3)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** A shiny Christmas bauble with a cap; the highlight turns round with the frames. */
+function ornament(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const a = (f / frames) * TAU
+  ctx.fillStyle = '#cbd5e1'
+  ctx.fillRect(40, 6, 20, 12)
+  ctx.strokeStyle = '#cbd5e1'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(50, 4, 5, 0, TAU)
+  ctx.stroke()
+  const g = ctx.createRadialGradient(50 + Math.cos(a) * 18, 52 - 12, 4, 50, 60, 46)
+  g.addColorStop(0, shade(color, 0.6))
+  g.addColorStop(0.5, color)
+  g.addColorStop(1, shade(color, -0.45))
+  ctx.fillStyle = g
+  circle(ctx, 50, 60, 42)
+  ctx.fill()
+  // A band of pattern that turns with it.
+  ctx.save()
+  circle(ctx, 50, 60, 42)
+  ctx.clip()
+  ctx.fillStyle = color2
+  ctx.fillRect(8, 56, 84, 8)
+  for (let k = 0; k < 6; k++) {
+    const x = 50 + Math.sin(a + (k * TAU) / 6) * 40
+    if (Math.cos(a + (k * TAU) / 6) < 0) continue
+    ctx.beginPath()
+    ctx.moveTo(x, 44)
+    ctx.lineTo(x + 6, 52)
+    ctx.lineTo(x, 60)
+    ctx.lineTo(x - 6, 52)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.restore()
+  ctx.fillStyle = 'rgba(255,255,255,0.75)'
+  ellipse(ctx, 50 + Math.cos(a) * 18, 40, 7, 4, -0.5)
+  ctx.fill()
+}
+
+/** A cluster of icicles of different lengths hanging from the top of the cell. */
+function icicles(ctx: Ctx, f: number, _n: number, { color }: SpriteColors) {
+  const lens = [[14, 90], [34, 140], [54, 70], [72, 170], [92, 110], [110, 60], [128, 130]]
+  lens.forEach(([x, len], i) => {
+    const l = len * (0.85 + 0.15 * ((f + i) % 3) / 2)
+    const g = ctx.createLinearGradient(x - 8, 0, x + 8, 0)
+    g.addColorStop(0, rgba(color, 0.55))
+    g.addColorStop(0.5, 'rgba(255,255,255,0.95)')
+    g.addColorStop(1, rgba(color, 0.7))
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.moveTo(x - 9, 0)
+    ctx.quadraticCurveTo(x - 6, l * 0.5, x, l)
+    ctx.quadraticCurveTo(x + 6, l * 0.5, x + 9, 0)
+    ctx.closePath()
+    ctx.fill()
+  })
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.beginPath()
+  ctx.roundRect(0, 0, 142, 10, 5)
+  ctx.fill()
+}
+
+/** One drop of water falling from an icicle. */
+function waterDrop(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  ctx.fillStyle = rgba(color, 0.85)
+  ctx.beginPath()
+  ctx.moveTo(16, 2)
+  ctx.bezierCurveTo(26, 18, 28, 30, 16, 30)
+  ctx.bezierCurveTo(4, 30, 6, 18, 16, 2)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'
+  circle(ctx, 13, 22, 3)
+  ctx.fill()
+}
+
+/** A flag on a pole, rippling; stripes in the first colour, the corner in the second, with stars. */
+function waveFlag(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const wave = (x: number) => Math.sin(p - x * 0.05) * (x - 20) * 0.08
+  ctx.fillStyle = '#d4d4d8'
+  ctx.fillRect(14, 10, 6, 210)
+  ctx.fillStyle = '#facc15'
+  circle(ctx, 17, 8, 7)
+  ctx.fill()
+  const W = 170
+  const H = 100
+  const rows = 13
+  const step = 10
+  for (let r = 0; r < rows; r++) {
+    ctx.fillStyle = r % 2 ? '#f8fafc' : color
+    ctx.beginPath()
+    for (let x = 20; x <= 20 + W; x += step) ctx.lineTo(x, 22 + (r * H) / rows + wave(x))
+    for (let x = 20 + W; x >= 20; x -= step) ctx.lineTo(x, 22 + ((r + 1) * H) / rows + wave(x) + 0.5)
+    ctx.closePath()
+    ctx.fill()
+  }
+  // The corner with stars.
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  for (let x = 20; x <= 92; x += step) ctx.lineTo(x, 22 + wave(x))
+  for (let x = 92; x >= 20; x -= step) ctx.lineTo(x, 22 + (7 * H) / rows + wave(x))
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#ffffff'
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 5; c++) {
+      const x = 28 + c * 14 + (r % 2) * 7
+      if (x > 88) continue
+      circle(ctx, x, 30 + r * 12 + wave(x), 2.2)
+      ctx.fill()
+    }
+  }
+  // Shading along the ripple.
+  for (let x = 20; x < 20 + W; x += step) {
+    const s = Math.cos(p - x * 0.05)
+    ctx.fillStyle = s > 0 ? `rgba(255,255,255,${s * 0.12})` : `rgba(0,0,0,${-s * 0.18})`
+    ctx.beginPath()
+    ctx.moveTo(x, 22 + wave(x))
+    ctx.lineTo(x + step, 22 + wave(x + step))
+    ctx.lineTo(x + step, 22 + H + wave(x + step))
+    ctx.lineTo(x, 22 + H + wave(x))
+    ctx.closePath()
+    ctx.fill()
+  }
+}
+
+
+// -- presents that open, a cauldron, carved pumpkins, bunnies in burrows, a helicopter, sprinklers, snow globes --
+
+/** A present opening for people: wrapped, shaking, lid lifting, and a teddy bear popping out. */
+function giftBox(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const stage = f % 4
+  // The teddy rising out of it.
+  if (stage === 3) {
+    ctx.fillStyle = '#b45309'
+    circle(ctx, 80, 64, 30)
+    ctx.fill()
+    circle(ctx, 56, 40, 11)
+    ctx.fill()
+    circle(ctx, 104, 40, 11)
+    ctx.fill()
+    ctx.fillStyle = '#fde68a'
+    ellipse(ctx, 80, 74, 13, 10)
+    ctx.fill()
+    ctx.fillStyle = '#111'
+    circle(ctx, 70, 58, 3.5)
+    ctx.fill()
+    circle(ctx, 90, 58, 3.5)
+    ctx.fill()
+    circle(ctx, 80, 70, 4)
+    ctx.fill()
+    ctx.strokeStyle = '#b45309'
+    ctx.lineWidth = 12
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(56, 100)
+    ctx.lineTo(34, 70)
+    ctx.moveTo(104, 100)
+    ctx.lineTo(126, 70)
+    ctx.stroke()
+  }
+  // The box.
+  const g = ctx.createLinearGradient(20, 0, 140, 0)
+  g.addColorStop(0, shade(color, -0.25))
+  g.addColorStop(1, shade(color, 0.15))
+  ctx.fillStyle = g
+  ctx.fillRect(22, 104, 116, 92)
+  ctx.fillStyle = color2
+  ctx.fillRect(72, 104, 16, 92)
+  // The lid: on, lifted a little, or flipped back.
+  const lid = stage === 2 ? -26 : stage === 3 ? -60 : 0
+  ctx.save()
+  ctx.translate(stage === 3 ? 30 : 0, lid)
+  ctx.rotate(stage === 3 ? -0.5 : 0)
+  ctx.fillStyle = shade(color, 0.1)
+  ctx.fillRect(16, 88, 128, 20)
+  ctx.fillStyle = color2
+  ctx.fillRect(72, 88, 16, 20)
+  // A bow on top.
+  ctx.beginPath()
+  ctx.ellipse(66, 80, 16, 10, -0.4, 0, TAU)
+  ctx.ellipse(94, 80, 16, 10, 0.4, 0, TAU)
+  ctx.fill()
+  ctx.fillStyle = shade(color2, -0.25)
+  circle(ctx, 80, 84, 6)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** A witch's cauldron on three legs over a fire, bubbling green. */
+function cauldron(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  // Fire underneath.
+  for (let k = 0; k < 5; k++) {
+    const x = 60 + k * 20
+    const h = 26 + Math.sin(p * 2 + k * 1.7) * 8
+    ctx.fillStyle = k % 2 ? '#f97316' : '#facc15'
+    ctx.beginPath()
+    ctx.moveTo(x - 10, 214)
+    ctx.quadraticCurveTo(x, 214 - h * 1.4, x + 10, 214)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.fillStyle = '#44403c'
+  ctx.fillRect(48, 210, 124, 8)
+  // Glow from the brew.
+  glow(ctx, 110, 80, 90, color, 0.45)
+  // Pot.
+  const g = ctx.createRadialGradient(90, 120, 10, 110, 140, 80)
+  g.addColorStop(0, '#52525b')
+  g.addColorStop(1, '#09090b')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(40, 96)
+  ctx.bezierCurveTo(30, 200, 190, 200, 180, 96)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = '#27272a'
+  ctx.lineWidth = 7
+  for (const [x0, x1] of [[60, 50], [160, 170], [110, 110]]) {
+    ctx.beginPath()
+    ctx.moveTo(x0, 176)
+    ctx.lineTo(x1, 210)
+    ctx.stroke()
+  }
+  // The brew, bubbles popping.
+  ctx.fillStyle = color
+  ellipse(ctx, 110, 96, 72, 14)
+  ctx.fill()
+  for (let k = 0; k < 6; k++) {
+    const q = (f / frames + k / 6) % 1
+    const x = 60 + ((k * 37) % 100)
+    ctx.fillStyle = shade(color, 0.35)
+    circle(ctx, x, 94 - q * 30, 5 + q * 8)
+    ctx.fill()
+  }
+  ctx.fillStyle = '#3f3f46'
+  ellipse(ctx, 110, 96, 74, 16)
+  ctx.lineWidth = 8
+  ctx.strokeStyle = '#27272a'
+  ctx.stroke()
+  // A bone poking out.
+  ctx.strokeStyle = color2
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.moveTo(140, 92)
+  ctx.lineTo(160, 60 + Math.sin(p) * 4)
+  ctx.stroke()
+  ctx.fillStyle = color2
+  circle(ctx, 158, 58 + Math.sin(p) * 4, 5)
+  ctx.fill()
+  circle(ctx, 165, 62 + Math.sin(p) * 4, 5)
+  ctx.fill()
+}
+
+/** One green bubble rising from the cauldron. */
+function brewBubble(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  ctx.strokeStyle = shade(color, 0.4)
+  ctx.lineWidth = 3
+  ctx.fillStyle = rgba(color, 0.35)
+  circle(ctx, 20, 20, 16)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'
+  circle(ctx, 14, 14, 4)
+  ctx.fill()
+}
+
+/** A carved jack-o'-lantern lit from inside: a grin, or (boo) a shout with wide eyes. */
+function litPumpkin(boo: boolean) {
+  return (ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) => {
+    const flick = [1, 0.85, 0.95, 0.75][f % 4]
+    glow(ctx, 100, 104, 96, color2, 0.35 * flick)
+    // Ribbed pumpkin.
+    for (const [x, rx] of [[62, 40], [138, 40], [84, 42], [116, 42], [100, 44]]) {
+      const g = ctx.createRadialGradient(x - 10, 90, 8, x, 110, 70)
+      g.addColorStop(0, shade(color, 0.25))
+      g.addColorStop(1, shade(color, -0.3))
+      ctx.fillStyle = g
+      ellipse(ctx, x, 114, rx, 66)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#4d7c0f'
+    ctx.beginPath()
+    ctx.moveTo(94, 52)
+    ctx.quadraticCurveTo(96, 30, 112, 22)
+    ctx.lineTo(116, 30)
+    ctx.quadraticCurveTo(106, 36, 106, 52)
+    ctx.closePath()
+    ctx.fill()
+    // The carved face, lit.
+    const lit = (path: () => void) => {
+      const g = ctx.createRadialGradient(100, 120, 4, 100, 120, 60)
+      g.addColorStop(0, '#fffbeb')
+      g.addColorStop(0.5, color2)
+      g.addColorStop(1, shade(color2, -0.4 * (1 - flick)))
+      ctx.fillStyle = g
+      path()
+      ctx.fill()
+    }
+    const eye = (x: number, d: number) => lit(() => {
+      ctx.beginPath()
+      if (boo) {
+        ctx.ellipse(x, 92, 16, 20, 0, 0, TAU)
+      } else {
+        ctx.moveTo(x - 16, 104)
+        ctx.lineTo(x + d * 4, 78)
+        ctx.lineTo(x + 16, 104)
+        ctx.closePath()
+      }
+    })
+    eye(74, -1)
+    eye(126, 1)
+    lit(() => {
+      ctx.beginPath()
+      ctx.moveTo(100, 108)
+      ctx.lineTo(108, 122)
+      ctx.lineTo(92, 122)
+      ctx.closePath()
+    })
+    lit(() => {
+      ctx.beginPath()
+      if (boo) {
+        ctx.ellipse(100, 152, 26, 22, 0, 0, TAU)
+      } else {
+        ctx.moveTo(56, 136)
+        for (let k = 0; k <= 8; k++) ctx.lineTo(56 + k * 11, 140 + (k % 2 ? 10 : 0) + Math.sin((k / 8) * Math.PI) * 16)
+        ctx.lineTo(144, 136)
+        ctx.quadraticCurveTo(100, 196, 56, 136)
+        ctx.closePath()
+      }
+    })
+  }
+}
+
+/** A rabbit poking up out of its burrow, ears twitching, nose sniffing. */
+function burrowBunny(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const s = Math.sin((f / frames) * TAU)
+  // Ears.
+  for (const [x, a] of [[64, -0.25 + s * 0.08], [96, 0.2 - s * 0.05]] as const) {
+    ctx.save()
+    ctx.translate(x, 70)
+    ctx.rotate(a)
+    ctx.fillStyle = color
+    ellipse(ctx, 0, -34, 13, 38)
+    ctx.fill()
+    ctx.fillStyle = color2
+    ellipse(ctx, 0, -32, 6, 28)
+    ctx.fill()
+    ctx.restore()
+  }
+  const g = ctx.createRadialGradient(72, 90, 6, 80, 110, 60)
+  g.addColorStop(0, shade(color, 0.25))
+  g.addColorStop(1, shade(color, -0.2))
+  ctx.fillStyle = g
+  ellipse(ctx, 80, 104, 40, 36)
+  ctx.fill()
+  ellipse(ctx, 80, 160, 50, 34)
+  ctx.fill()
+  // Face.
+  ctx.fillStyle = '#111'
+  circle(ctx, 66, 96, 5)
+  ctx.fill()
+  circle(ctx, 94, 96, 5)
+  ctx.fill()
+  ctx.fillStyle = '#fff'
+  circle(ctx, 68, 94, 1.6)
+  ctx.fill()
+  circle(ctx, 96, 94, 1.6)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ellipse(ctx, 80, 112 + s, 6, 4)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(17,17,17,0.5)'
+  ctx.lineWidth = 1.5
+  for (const d of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(80 + d * 6, 114)
+    ctx.lineTo(80 + d * 30, 108 + s * 2)
+    ctx.moveTo(80 + d * 6, 116)
+    ctx.lineTo(80 + d * 30, 120 - s * 2)
+    ctx.stroke()
+  }
+  // Paws on the rim.
+  ctx.fillStyle = shade(color, 0.3)
+  ellipse(ctx, 62, 140, 12, 9)
+  ctx.fill()
+  ellipse(ctx, 98, 140, 12, 9)
+  ctx.fill()
+}
+
+/** A helicopter, rotor a blur, searchlight underneath. */
+function helicopter(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  // Tail boom and tail rotor.
+  ctx.fillStyle = shade(color, -0.15)
+  ctx.beginPath()
+  ctx.moveTo(150, 78)
+  ctx.lineTo(270, 70)
+  ctx.lineTo(270, 80)
+  ctx.lineTo(150, 98)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillRect(258, 46, 12, 34)
+  ctx.strokeStyle = 'rgba(203,213,225,0.7)'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(264 + Math.cos(p * 3) * 18, 60 + Math.sin(p * 3) * 18)
+  ctx.lineTo(264 - Math.cos(p * 3) * 18, 60 - Math.sin(p * 3) * 18)
+  ctx.stroke()
+  // Body with a big bubble window (facing left).
+  const g = ctx.createLinearGradient(0, 50, 0, 130)
+  g.addColorStop(0, shade(color, 0.3))
+  g.addColorStop(1, shade(color, -0.3))
+  ctx.fillStyle = g
+  ellipse(ctx, 110, 90, 64, 36)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(186,230,253,0.85)'
+  ctx.beginPath()
+  ctx.ellipse(76, 84, 34, 26, 0, Math.PI * 0.95, Math.PI * 2.05)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.fillRect(120, 82, 46, 8)
+  // Skids.
+  ctx.strokeStyle = '#334155'
+  ctx.lineWidth = 5
+  ctx.beginPath()
+  ctx.moveTo(80, 124)
+  ctx.lineTo(84, 140)
+  ctx.moveTo(136, 124)
+  ctx.lineTo(132, 140)
+  ctx.moveTo(56, 140)
+  ctx.lineTo(160, 140)
+  ctx.stroke()
+  // Searchlight.
+  ctx.fillStyle = '#fef9c3'
+  circle(ctx, 70, 120, 7)
+  ctx.fill()
+  // Main rotor: mast and a blurred disc.
+  ctx.fillStyle = '#334155'
+  ctx.fillRect(106, 46, 8, 12)
+  ctx.fillStyle = 'rgba(148,163,184,0.25)'
+  ellipse(ctx, 110, 44, 104, 7)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(30,41,59,0.85)'
+  ctx.lineWidth = 5
+  ctx.beginPath()
+  const c = Math.cos(p * 2) * 104
+  ctx.moveTo(110 - c, 44)
+  ctx.lineTo(110 + c, 44)
+  ctx.stroke()
+}
+
+/** The searchlight's beam: narrow at the top, wide and soft at the bottom. */
+function searchBeam(ctx: Ctx) {
+  const g = ctx.createLinearGradient(0, 0, 0, 300)
+  g.addColorStop(0, 'rgba(254,249,195,0.75)')
+  g.addColorStop(1, 'rgba(254,249,195,0.05)')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(90, 0)
+  ctx.lineTo(110, 0)
+  ctx.lineTo(180, 300)
+  ctx.lineTo(20, 300)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = 'rgba(254,249,195,0.25)'
+  ellipse(ctx, 100, 294, 80, 6)
+  ctx.fill()
+}
+
+/** A garden sprinkler head on its spike. */
+function sprinklerHead(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  ctx.fillStyle = '#3f6212'
+  ellipse(ctx, 40, 96, 36, 6)
+  ctx.fill()
+  ctx.fillStyle = '#64748b'
+  ctx.fillRect(36, 40, 8, 56)
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.roundRect(24, 26, 32, 22, 8)
+  ctx.fill()
+  ctx.fillStyle = shade(color, -0.3)
+  ctx.fillRect(36, 14, 8, 14)
+}
+
+/** A fan of water drops arcing from the sprinkler (the base is at the bottom middle). */
+function sprinklerSpray(ctx: Ctx, f: number, frames: number, { color2 }: SpriteColors) {
+  const p = f / frames
+  for (let k = 0; k < 40; k++) {
+    const j = (k % 10) / 10
+    const lane = Math.floor(k / 10)
+    const q = (p + j) % 1
+    const spread = (lane - 1.5) * 0.14
+    const x = 150 + (q * 150 + 10) * Math.sin(spread)
+    const y = 200 - Math.sin(q * Math.PI) * 170 * (1 - Math.abs(spread)) - q * 20
+    ctx.fillStyle = rgba(color2, 0.75 * (1 - q * 0.6))
+    ellipse(ctx, x + q * 120, y, 3.5, 5)
+    ctx.fill()
+  }
+}
+
+/** A snow globe with a little house inside; snow swirls more in the later frames, then settles. */
+function snowGlobe(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const swirl = f / Math.max(1, frames - 1)
+  // Base.
+  const b = ctx.createLinearGradient(0, 160, 0, 210)
+  b.addColorStop(0, shade(color, 0.2))
+  b.addColorStop(1, shade(color, -0.35))
+  ctx.fillStyle = b
+  ctx.beginPath()
+  ctx.moveTo(40, 168)
+  ctx.lineTo(160, 168)
+  ctx.lineTo(176, 210)
+  ctx.lineTo(24, 210)
+  ctx.closePath()
+  ctx.fill()
+  // Glass.
+  const g = ctx.createRadialGradient(80, 70, 10, 100, 100, 90)
+  g.addColorStop(0, 'rgba(224,242,254,0.45)')
+  g.addColorStop(1, 'rgba(56,189,248,0.25)')
+  ctx.fillStyle = g
+  circle(ctx, 100, 100, 80)
+  ctx.fill()
+  ctx.save()
+  circle(ctx, 100, 100, 78)
+  ctx.clip()
+  // Snowy ground, a little house and a tree.
+  ctx.fillStyle = '#f8fafc'
+  ellipse(ctx, 100, 168, 90, 26)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.fillRect(74, 116, 44, 34)
+  ctx.fillStyle = '#7f1d1d'
+  ctx.beginPath()
+  ctx.moveTo(68, 118)
+  ctx.lineTo(96, 92)
+  ctx.lineTo(124, 118)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#fde047'
+  ctx.fillRect(84, 126, 10, 10)
+  ctx.fillStyle = '#15803d'
+  for (const [y, w] of [[112, 18], [126, 22], [140, 26]]) {
+    ctx.beginPath()
+    ctx.moveTo(146, y - 18)
+    ctx.lineTo(146 + w, y)
+    ctx.lineTo(146 - w, y)
+    ctx.closePath()
+    ctx.fill()
+  }
+  // Snow: settled on the ground when still, whirling when shaken.
+  ctx.fillStyle = '#ffffff'
+  for (let k = 0; k < 40; k++) {
+    const a = k * 2.4 + swirl * 4
+    const r = 10 + ((k * 13) % 60)
+    const x = 100 + Math.cos(a) * r * swirl + ((k * 29) % 120 - 60) * (1 - swirl)
+    const y = 100 + Math.sin(a) * r * swirl * 0.8 + (60 + (k % 5)) * (1 - swirl)
+    circle(ctx, x, y, 2.5)
+    ctx.fill()
+  }
+  ctx.restore()
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'
+  ellipse(ctx, 70, 54, 20, 10, -0.6)
+  ctx.fill()
+}
+
+
+// -- manta rays, clownfish, anglerfish, starfish, surfers, sailboats, a snowplow, a pirate ship, Rudolph --
+
+/** A manta ray gliding, wingtips rising and falling. */
+function mantaRay(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const s = Math.sin((f / frames) * TAU)
+  // Long thin tail.
+  ctx.strokeStyle = shade(color, -0.3)
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(60, 80)
+  ctx.quadraticCurveTo(30, 82 + s * 6, 4, 76)
+  ctx.stroke()
+  // Wings as one diamond shape that flexes.
+  const g = ctx.createLinearGradient(0, 20, 0, 140)
+  g.addColorStop(0, shade(color, 0.2))
+  g.addColorStop(1, shade(color, -0.35))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(60, 80)
+  ctx.quadraticCurveTo(100, 40 - s * 20, 130, 8 - s * 30)
+  ctx.quadraticCurveTo(150, 50, 200, 74)
+  ctx.quadraticCurveTo(150, 104, 130, 150 + s * 30)
+  ctx.quadraticCurveTo(100, 118 + s * 20, 60, 80)
+  ctx.fill()
+  // Pale underside showing at the edge, head fins and eyes.
+  ctx.fillStyle = rgba(color2, 0.6)
+  ctx.beginPath()
+  ctx.moveTo(150, 80)
+  ctx.quadraticCurveTo(170, 72, 200, 74)
+  ctx.quadraticCurveTo(172, 86, 150, 80)
+  ctx.fill()
+  ctx.fillStyle = shade(color, -0.2)
+  ellipse(ctx, 206, 68, 10, 5, -0.4)
+  ctx.fill()
+  ellipse(ctx, 206, 82, 10, 5, 0.4)
+  ctx.fill()
+  ctx.fillStyle = '#e2e8f0'
+  for (let k = 0; k < 6; k++) {
+    circle(ctx, 110 + k * 8, 64 + (k % 2) * 6 - s * 4, 2)
+    ctx.fill()
+  }
+}
+
+/** A clownfish: orange with white bands edged in black. */
+function clownfish(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const s = Math.sin((f / frames) * TAU)
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(26, 50)
+  ctx.lineTo(6, 30 + s * 6)
+  ctx.lineTo(6, 70 + s * 6)
+  ctx.closePath()
+  ctx.fill()
+  const g = ctx.createRadialGradient(80, 40, 6, 76, 50, 56)
+  g.addColorStop(0, shade(color, 0.3))
+  g.addColorStop(1, shade(color, -0.2))
+  ctx.fillStyle = g
+  ellipse(ctx, 74, 50, 52, 28)
+  ctx.fill()
+  ctx.save()
+  ellipse(ctx, 74, 50, 52, 28)
+  ctx.clip()
+  for (const x of [44, 82, 112]) {
+    ctx.fillStyle = '#111'
+    ctx.fillRect(x - 9, 0, 18, 100)
+    ctx.fillStyle = color2
+    ctx.fillRect(x - 6, 0, 12, 100)
+  }
+  ctx.restore()
+  ctx.fillStyle = shade(color, -0.1)
+  ellipse(ctx, 70, 82 + s * 2, 14, 7, 0.3)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 112, 44, 5)
+  ctx.fill()
+  ctx.fillStyle = '#fff'
+  circle(ctx, 113, 42, 1.6)
+  ctx.fill()
+}
+
+/** An anglerfish in the dark, its lure glowing on a stalk, jaws full of teeth. */
+function anglerfish(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const s = Math.sin((f / frames) * TAU)
+  // Lure.
+  ctx.strokeStyle = shade(color, 0.1)
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(130, 56)
+  ctx.quadraticCurveTo(150, 4, 196 + s * 4, 26)
+  ctx.stroke()
+  glow(ctx, 198 + s * 4, 30, 34, color2, 0.9)
+  ctx.fillStyle = '#fefce8'
+  circle(ctx, 198 + s * 4, 30, 7)
+  ctx.fill()
+  // Tail.
+  ctx.fillStyle = shade(color, -0.25)
+  ctx.beginPath()
+  ctx.moveTo(40, 100)
+  ctx.lineTo(6, 70 + s * 8)
+  ctx.lineTo(6, 134 + s * 8)
+  ctx.closePath()
+  ctx.fill()
+  // Body.
+  const g = ctx.createRadialGradient(110, 90, 10, 100, 104, 80)
+  g.addColorStop(0, shade(color, 0.2))
+  g.addColorStop(1, shade(color, -0.4))
+  ctx.fillStyle = g
+  ellipse(ctx, 100, 104, 70, 54)
+  ctx.fill()
+  // Wide mouth with teeth.
+  ctx.fillStyle = '#0b0b0f'
+  ctx.beginPath()
+  ctx.moveTo(110, 110)
+  ctx.quadraticCurveTo(150, 100, 174, 92)
+  ctx.quadraticCurveTo(170, 140, 124, 142)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#f1f5f9'
+  for (let k = 0; k < 6; k++) {
+    const x = 124 + k * 8
+    ctx.beginPath()
+    ctx.moveTo(x, 104 - k * 1.6)
+    ctx.lineTo(x + 3, 116 - k * 1.6)
+    ctx.lineTo(x + 6, 103 - k * 1.6)
+    ctx.closePath()
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(x - 2, 140 - k * 2)
+    ctx.lineTo(x + 1, 128 - k * 2)
+    ctx.lineTo(x + 4, 139 - k * 2)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.fillStyle = '#fefce8'
+  circle(ctx, 140, 76, 9)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 142, 76, 4)
+  ctx.fill()
+  ctx.fillStyle = shade(color, -0.1)
+  ellipse(ctx, 92, 140, 18, 10, 0.5 + s * 0.2)
+  ctx.fill()
+}
+
+/** A starfish creeping along, its arms curling in turn. */
+function starfish(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  ctx.save()
+  ctx.translate(80, 80)
+  const g = ctx.createRadialGradient(-6, -6, 4, 0, 0, 70)
+  g.addColorStop(0, shade(color, 0.3))
+  g.addColorStop(1, shade(color, -0.25))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  for (let k = 0; k < 5; k++) {
+    const a = -Math.PI / 2 + (k * TAU) / 5
+    const len = 64 + Math.sin(p + k * 1.3) * 6
+    const bend = Math.sin(p + k) * 0.12
+    ctx.lineTo(Math.cos(a - 0.36) * 22, Math.sin(a - 0.36) * 22)
+    ctx.quadraticCurveTo(Math.cos(a + bend) * len * 0.7, Math.sin(a + bend) * len * 0.7, Math.cos(a + bend) * len, Math.sin(a + bend) * len)
+    ctx.quadraticCurveTo(Math.cos(a + bend) * len * 0.7, Math.sin(a + bend) * len * 0.7, Math.cos(a + 0.36) * 22, Math.sin(a + 0.36) * 22)
+  }
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  for (let k = 0; k < 5; k++) {
+    const a = -Math.PI / 2 + (k * TAU) / 5
+    for (let j = 1; j <= 3; j++) {
+      circle(ctx, Math.cos(a) * j * 15, Math.sin(a) * j * 15, 3.5 - j * 0.6)
+      ctx.fill()
+    }
+  }
+  // A friendly face.
+  ctx.fillStyle = '#111'
+  circle(ctx, -7, -4, 3)
+  ctx.fill()
+  circle(ctx, 7, -4, 3)
+  ctx.fill()
+  ctx.strokeStyle = '#111'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(0, 4, 6, 0.3, Math.PI - 0.3)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** A surfer standing on a board riding a curling wave. */
+function surfer(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  // The wave curling behind.
+  const w = ctx.createLinearGradient(0, 120, 0, 230)
+  w.addColorStop(0, '#38bdf8')
+  w.addColorStop(1, '#0c4a6e')
+  ctx.fillStyle = w
+  ctx.beginPath()
+  ctx.moveTo(0, 230)
+  ctx.lineTo(0, 150)
+  ctx.bezierCurveTo(10, 100 + s * 4, 60, 90, 80, 120)
+  ctx.bezierCurveTo(60, 110, 50, 140, 70, 160)
+  ctx.bezierCurveTo(120, 190, 200, 190, 240, 196)
+  ctx.lineTo(240, 230)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'
+  for (let k = 0; k < 8; k++) {
+    circle(ctx, 20 + k * 8 + Math.sin(p + k) * 2, 104 + Math.abs(k - 4) * 3 + Math.cos(p + k) * 2, 4)
+    ctx.fill()
+  }
+  // Board.
+  ctx.save()
+  ctx.translate(150, 182)
+  ctx.rotate(-0.1 + s * 0.05)
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.ellipse(0, 0, 60, 8, 0, 0, TAU)
+  ctx.fill()
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(-56, -1, 112, 2)
+  ctx.restore()
+  // Surfer crouched, arms out.
+  const lean = s * 0.06
+  ctx.save()
+  ctx.translate(150, 176)
+  ctx.rotate(lean)
+  limb(ctx, -12, -54, 28, 28, -0.45, 0.6, 12, '#1e3a8a')
+  limb(ctx, 10, -54, 28, 28, 0.55, -0.5, 12, '#1e40af')
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.roundRect(-16, -104, 34, 54, 10)
+  ctx.fill()
+  limb(ctx, -10, -96, 24, 22, -2.1, 0.4, 9, SKIN)
+  limb(ctx, 14, -96, 24, 22, 2.1, -0.4, 9, SKIN)
+  ctx.fillStyle = SKIN
+  circle(ctx, 4, -120, 15)
+  ctx.fill()
+  ctx.fillStyle = '#facc15'
+  ctx.beginPath()
+  ctx.arc(2, -124, 16, Math.PI * 0.9, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** A little sailboat, sail filled, rocking on the water. */
+function sailboat(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  ctx.save()
+  ctx.translate(110, 196)
+  ctx.rotate(Math.sin(p) * 0.06)
+  ctx.translate(-110, -196)
+  // Sails.
+  ctx.fillStyle = '#f8fafc'
+  ctx.beginPath()
+  ctx.moveTo(110, 20)
+  ctx.quadraticCurveTo(170 + Math.sin(p) * 4, 90, 176, 160)
+  ctx.lineTo(110, 160)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(104, 40)
+  ctx.quadraticCurveTo(60, 100, 48, 160)
+  ctx.lineTo(104, 160)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#78350f'
+  ctx.fillRect(105, 14, 6, 152)
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(110, 8)
+  ctx.lineTo(134, 14)
+  ctx.lineTo(110, 20)
+  ctx.closePath()
+  ctx.fill()
+  // Hull.
+  const g = ctx.createLinearGradient(0, 166, 0, 200)
+  g.addColorStop(0, shade(color, 0.15))
+  g.addColorStop(1, shade(color, -0.3))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(26, 166)
+  ctx.lineTo(196, 166)
+  ctx.lineTo(176, 200)
+  ctx.lineTo(48, 200)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#f8fafc'
+  ctx.fillRect(34, 172, 154, 4)
+  ctx.restore()
+  // Water lapping.
+  ctx.fillStyle = 'rgba(56,189,248,0.8)'
+  ctx.beginPath()
+  ctx.moveTo(0, 210)
+  for (let x = 0; x <= 220; x += 10) ctx.lineTo(x, 198 + Math.sin(p + x * 0.08) * 4)
+  ctx.lineTo(220, 210)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A snowplow truck with its blade down, throwing a plume of snow off to the side. */
+function snowplow(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  // Snow pushed up in a bank ahead of the blade and thrown off its top in a spray.
+  ctx.fillStyle = 'rgba(241,245,249,0.95)'
+  ctx.beginPath()
+  ctx.moveTo(296, 178)
+  ctx.quadraticCurveTo(318, 130, 346, 178)
+  ctx.closePath()
+  ctx.fill()
+  for (let k = 0; k < 34; k++) {
+    const q = ((f / frames) + ((k * 0.618) % 1)) % 1
+    const vx = 6 + ((k * 0.37) % 1) * 32
+    const vy = 100 + ((k * 0.73) % 1) * 60
+    const x = 304 + vx * q
+    const y = 96 - vy * q + 150 * q * q
+    ctx.fillStyle = `rgba(255,255,255,${0.95 * (1 - q * 0.7)})`
+    circle(ctx, x, y, 2.5 + ((k * 0.29) % 1) * 3.5)
+    ctx.fill()
+  }
+  // Body: dump bed and cab (facing right).
+  ctx.fillStyle = shade(color, -0.15)
+  ctx.fillRect(20, 70, 160, 80)
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.roundRect(180, 54, 86, 96, 10)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(186,230,253,0.9)'
+  ctx.fillRect(220, 66, 38, 34)
+  // Flashing light on the roof.
+  const on = Math.sin(p * 2) > 0
+  if (on) glow(ctx, 222, 46, 30, '#f59e0b', 0.9)
+  ctx.fillStyle = on ? '#fbbf24' : '#92400e'
+  ctx.fillRect(214, 42, 16, 12)
+  // Blade.
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(272, 96)
+  ctx.lineTo(304, 86)
+  ctx.quadraticCurveTo(316, 130, 304, 172)
+  ctx.lineTo(272, 160)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = shade(color2, -0.35)
+  ctx.lineWidth = 5
+  for (const y of [104, 126, 148]) {
+    ctx.beginPath()
+    ctx.moveTo(276, y)
+    ctx.lineTo(306, y + 12)
+    ctx.stroke()
+  }
+  // The sander hopper on the back, with a stripe.
+  ctx.fillStyle = color2
+  ctx.fillRect(20, 92, 160, 10)
+  // Wheels.
+  for (const x of [60, 140, 228]) {
+    ctx.fillStyle = '#27272a'
+    circle(ctx, x, 156, 22)
+    ctx.fill()
+    ctx.fillStyle = '#a1a1aa'
+    circle(ctx, x, 156, 10)
+    ctx.fill()
+    ctx.strokeStyle = '#52525b'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(x + Math.cos(p) * 12, 156 + Math.sin(p) * 12)
+    ctx.lineTo(x - Math.cos(p) * 12, 156 - Math.sin(p) * 12)
+    ctx.stroke()
+  }
+}
+
+/** A pirate ship sailing, skull flag flying, cannon ports along the side. */
+function pirateShip(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  ctx.save()
+  ctx.translate(150, 210)
+  ctx.rotate(Math.sin(p) * 0.04)
+  ctx.translate(-150, -210)
+  // Masts and sails.
+  for (const [x, h] of [[110, 170], [190, 140]]) {
+    ctx.fillStyle = '#78350f'
+    ctx.fillRect(x - 3, 210 - h - 30, 6, h)
+    for (let k = 0; k < 2; k++) {
+      const top = 210 - h - 16 + k * 58
+      ctx.fillStyle = '#f5f5f4'
+      ctx.beginPath()
+      ctx.moveTo(x - 42, top)
+      ctx.quadraticCurveTo(x + 6 + Math.sin(p) * 3, top + 26, x - 42, top + 50)
+      ctx.lineTo(x + 42, top + 50)
+      ctx.quadraticCurveTo(x + 52 + Math.sin(p) * 3, top + 26, x + 42, top)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
+  // Skull flag.
+  ctx.fillStyle = '#111'
+  ctx.beginPath()
+  ctx.moveTo(110, 12)
+  for (let x = 110; x >= 70; x -= 8) ctx.lineTo(x, 12 + Math.sin(p * 2 + x * 0.2) * 3)
+  for (let x = 70; x <= 110; x += 8) ctx.lineTo(x, 40 + Math.sin(p * 2 + x * 0.2) * 3)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#f8fafc'
+  circle(ctx, 90, 24, 6)
+  ctx.fill()
+  ctx.fillRect(84, 30, 12, 4)
+  // Hull.
+  const g = ctx.createLinearGradient(0, 160, 0, 230)
+  g.addColorStop(0, shade(color, 0.15))
+  g.addColorStop(1, shade(color, -0.35))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(20, 160)
+  ctx.lineTo(280, 166)
+  ctx.lineTo(258, 230)
+  ctx.lineTo(56, 230)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.fillRect(30, 176, 244, 6)
+  ctx.fillStyle = '#111'
+  for (let k = 0; k < 5; k++) {
+    circle(ctx, 80 + k * 38, 198, 7)
+    ctx.fill()
+  }
+  ctx.restore()
+  ctx.fillStyle = 'rgba(56,189,248,0.75)'
+  ctx.beginPath()
+  ctx.moveTo(0, 240)
+  for (let x = 0; x <= 300; x += 12) ctx.lineTo(x, 226 + Math.sin(p + x * 0.07) * 5)
+  ctx.lineTo(300, 240)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** A reindeer flying, legs tucked, with a glowing red nose. */
+function rudolph(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  ctx.translate(0, 10)
+  // Legs, galloping through the air.
+  for (const [x, a, c] of [[70, s, shade(color, -0.25)], [150, -s, shade(color, -0.25)], [84, -s, color], [164, s, color]] as const) {
+    const [ex, ey] = limb(ctx, x, 110, 28, 26, 0.9 + a * 0.5, -1.2 - a * 0.3, 10, c)
+    ctx.fillStyle = '#292524'
+    circle(ctx, ex, ey, 5)
+    ctx.fill()
+  }
+  const g = ctx.createLinearGradient(0, 70, 0, 130)
+  g.addColorStop(0, shade(color, 0.2))
+  g.addColorStop(1, shade(color, -0.2))
+  ctx.fillStyle = g
+  ellipse(ctx, 116, 100, 60, 24)
+  ctx.fill()
+  ctx.fillStyle = '#fef3c7'
+  ellipse(ctx, 60, 92, 10, 8)
+  ctx.fill()
+  // Neck and head.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(156, 92)
+  ctx.quadraticCurveTo(176, 60, 196, 54)
+  ctx.lineTo(206, 70)
+  ctx.quadraticCurveTo(184, 84, 174, 108)
+  ctx.closePath()
+  ctx.fill()
+  ellipse(ctx, 210, 62, 24, 14, 0.25)
+  ctx.fill()
+  // Antlers.
+  ctx.strokeStyle = '#a16207'
+  ctx.lineWidth = 4
+  ctx.lineCap = 'round'
+  for (const d of [0, 10]) {
+    ctx.beginPath()
+    ctx.moveTo(196 + d, 50)
+    ctx.lineTo(186 + d, 18)
+    ctx.moveTo(190 + d, 32)
+    ctx.lineTo(176 + d, 24)
+    ctx.moveTo(188 + d, 24)
+    ctx.lineTo(198 + d, 10)
+    ctx.stroke()
+  }
+  ctx.fillStyle = '#111'
+  circle(ctx, 210, 56, 3)
+  ctx.fill()
+  // The nose, glowing, brighter on the beat.
+  glow(ctx, 234, 68, 26 + Math.abs(s) * 8, color2, 0.9)
+  ctx.fillStyle = color2
+  circle(ctx, 234, 68, 8)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'
+  circle(ctx, 232, 65, 2.5)
+  ctx.fill()
+  // A bell collar.
+  ctx.strokeStyle = '#b91c1c'
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.moveTo(168, 84)
+  ctx.lineTo(184, 98)
+  ctx.stroke()
+  ctx.fillStyle = '#facc15'
+  circle(ctx, 178, 100, 5)
+  ctx.fill()
+}
+
+
+// -- fountains, spider webs, leaf piles, puddles, garden gnomes, a cuckoo clock, robins, peacocks,
+//    a pot of gold, Easter eggs, teddy bears and diyas ----------------------------------------
+
+/** A firework fountain: a cone on the ground throwing up a spray of sparks that arc over and fall. */
+function fountain(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = f / frames
+  for (let k = 0; k < 70; k++) {
+    const q = (p + ((k * 0.618) % 1)) % 1
+    const a = ((k * 0.37) % 1 - 0.5) * 0.9
+    const v = 380 * (0.75 + ((k * 0.73) % 1) * 0.25)
+    const x = 130 + Math.sin(a) * v * q
+    const y = 214 - Math.cos(a) * v * q + 270 * q * q
+    const c = k % 3 === 0 ? '#ffffff' : k % 3 === 1 ? color : color2
+    ctx.fillStyle = rgba(c, 1 - q * q)
+    circle(ctx, x, y, 3.5 * (1 - q * 0.5))
+    ctx.fill()
+    // A short streak behind each spark.
+    ctx.strokeStyle = rgba(c, 0.4 * (1 - q))
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x - Math.sin(a) * 14, y + Math.cos(a) * 14 - 20 * q)
+    ctx.stroke()
+  }
+  glow(ctx, 130, 210, 34, color, 0.8)
+  ctx.fillStyle = '#7c2d12'
+  ctx.beginPath()
+  ctx.moveTo(116, 246)
+  ctx.lineTo(124, 214)
+  ctx.lineTo(136, 214)
+  ctx.lineTo(144, 246)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.fillRect(120, 226, 20, 6)
+}
+
+/** A spider's web strung in a corner, dew catching the light. */
+function spiderWeb(ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) {
+  ctx.strokeStyle = rgba(color, 0.85)
+  ctx.lineWidth = 2
+  const cx = 110
+  const cy = 110
+  const spokes = 10
+  for (let k = 0; k < spokes; k++) {
+    const a = (k / spokes) * TAU
+    ctx.beginPath()
+    ctx.moveTo(cx, cy)
+    ctx.lineTo(cx + Math.cos(a) * 104, cy + Math.sin(a) * 104)
+    ctx.stroke()
+  }
+  for (let r = 14; r < 104; r += 13) {
+    ctx.beginPath()
+    for (let k = 0; k <= spokes; k++) {
+      const a = (k / spokes) * TAU
+      const a0 = ((k - 0.5) / spokes) * TAU
+      if (k === 0) ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+      else ctx.quadraticCurveTo(cx + Math.cos(a0) * r * 0.9, cy + Math.sin(a0) * r * 0.9, cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+    }
+    ctx.stroke()
+  }
+  ctx.fillStyle = 'rgba(224,242,254,0.9)'
+  for (let k = 0; k < 9; k++) {
+    const a = k * 2.3
+    const r = 20 + ((k * 31) % 80)
+    circle(ctx, cx + Math.cos(a) * r, cy + Math.sin(a) * r, 2.2)
+    ctx.fill()
+  }
+}
+
+/** A plump spider scuttling, its eight legs stepping in turn; lit grey with markings, so it shows when projected. */
+function webSpider(ctx: Ctx, f: number, frames: number, { color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  for (const d of [-1, 1]) {
+    for (let k = 0; k < 4; k++) {
+      const swing = Math.sin(p + k * 1.6 + (d > 0 ? Math.PI : 0)) * 0.16
+      // Out from the body, up to the knee, down to the foot.
+      const a = -0.9 + k * 0.6 + swing
+      const kx = 50 + d * Math.cos(a) * 26
+      const ky = 54 + Math.sin(a) * 20 - 14
+      const fx = 50 + d * (Math.cos(a) * 42 + 4)
+      const fy = 54 + Math.sin(a) * 34 + 8
+      ctx.strokeStyle = '#a1a1aa'
+      ctx.lineWidth = 4.5
+      ctx.beginPath()
+      ctx.moveTo(50 + d * 8, 54)
+      ctx.lineTo(kx, ky)
+      ctx.lineTo(fx, fy)
+      ctx.stroke()
+    }
+  }
+  const g = ctx.createRadialGradient(44, 56, 4, 50, 64, 26)
+  g.addColorStop(0, '#a1a1aa')
+  g.addColorStop(1, '#3f3f46')
+  ctx.fillStyle = g
+  ellipse(ctx, 50, 66, 19, 22)
+  ctx.fill()
+  ctx.fillStyle = '#71717a'
+  circle(ctx, 50, 40, 12)
+  ctx.fill()
+  // An hourglass marking on its back.
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(43, 58)
+  ctx.lineTo(57, 58)
+  ctx.lineTo(50, 66)
+  ctx.lineTo(57, 74)
+  ctx.lineTo(43, 74)
+  ctx.lineTo(50, 66)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#fff'
+  circle(ctx, 45, 37, 3.2)
+  ctx.fill()
+  circle(ctx, 55, 37, 3.2)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 45, 38, 1.5)
+  ctx.fill()
+  circle(ctx, 55, 38, 1.5)
+  ctx.fill()
+}
+
+/** A pile of autumn leaves. */
+function leafPile(ctx: Ctx, _f: number, _n: number, { color, color2 }: SpriteColors) {
+  const cols = [color, color2, '#b45309', '#dc2626', '#facc15', '#92400e']
+  for (let k = 0; k < 70; k++) {
+    const x = 20 + ((k * 53) % 200)
+    const top = 110 - Math.sin(((x - 20) / 200) * Math.PI) * 80
+    const y = top + ((k * 29) % Math.max(1, 120 - top))
+    ctx.save()
+    ctx.translate(x, Math.min(118, y))
+    ctx.rotate(k * 1.7)
+    ctx.fillStyle = cols[k % cols.length]
+    ctx.beginPath()
+    ctx.moveTo(-12, 0)
+    ctx.quadraticCurveTo(0, -9, 12, 0)
+    ctx.quadraticCurveTo(0, 9, -12, 0)
+    ctx.fill()
+    ctx.restore()
+  }
+}
+
+/** One leaf, for the ones flying out of the pile. */
+function pileLeaf(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  ctx.fillStyle = [color, color2, '#dc2626', '#facc15'][f % 4]
+  ctx.beginPath()
+  ctx.moveTo(4, 20)
+  ctx.quadraticCurveTo(20, 2, 36, 20)
+  ctx.quadraticCurveTo(20, 38, 4, 20)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(4, 20)
+  ctx.lineTo(36, 20)
+  ctx.stroke()
+}
+
+/** A puddle with rings spreading across it. */
+function puddle(ctx: Ctx, f: number, frames: number, { color }: SpriteColors) {
+  const p = f / frames
+  const g = ctx.createRadialGradient(110, 40, 10, 110, 40, 110)
+  g.addColorStop(0, rgba(color, 0.65))
+  g.addColorStop(1, rgba(color, 0.35))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.ellipse(110, 40, 104, 32, 0, 0, TAU)
+  ctx.fill()
+  ctx.save()
+  ctx.beginPath()
+  ctx.ellipse(110, 40, 102, 30, 0, 0, TAU)
+  ctx.clip()
+  for (let k = 0; k < 3; k++) {
+    const q = (p + k / 3) % 1
+    ctx.strokeStyle = `rgba(255,255,255,${0.5 * (1 - q)})`
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.ellipse(80 + k * 30, 36 + k * 4, 10 + q * 60, 3 + q * 18, 0, 0, TAU)
+    ctx.stroke()
+  }
+  ctx.restore()
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'
+  ellipse(ctx, 70, 30, 24, 4, -0.1)
+  ctx.fill()
+}
+
+/** A garden gnome with a pointed hat and white beard, walking. */
+function gnome(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  // Boots.
+  for (const [x, a] of [[66, s], [94, -s]] as const) {
+    ctx.fillStyle = '#3f2a1d'
+    ellipse(ctx, x + a * 8, 226 - Math.max(0, a) * 6, 15, 9)
+    ctx.fill()
+  }
+  // Coat.
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(50, 220)
+  ctx.quadraticCurveTo(46, 150, 80, 128)
+  ctx.quadraticCurveTo(114, 150, 110, 220)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#3f2a1d'
+  ctx.fillRect(50, 186, 60, 8)
+  // Arms.
+  limb(ctx, 56, 150, 24, 22, -0.5 - s * 0.3, 0.6, 12, color2)
+  limb(ctx, 104, 150, 24, 22, 0.5 + s * 0.3, -0.6, 12, color2)
+  // Face, big nose, white beard.
+  ctx.fillStyle = SKIN
+  circle(ctx, 80, 112, 22)
+  ctx.fill()
+  ctx.fillStyle = '#ffffff'
+  ctx.beginPath()
+  ctx.moveTo(58, 112)
+  ctx.quadraticCurveTo(60, 172, 80, 176)
+  ctx.quadraticCurveTo(100, 172, 102, 112)
+  ctx.quadraticCurveTo(80, 126, 58, 112)
+  ctx.fill()
+  ctx.fillStyle = '#f9a8a8'
+  circle(ctx, 80, 114, 8)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 72, 104, 2.5)
+  ctx.fill()
+  circle(ctx, 88, 104, 2.5)
+  ctx.fill()
+  // Tall pointed hat, flopping a little.
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(54, 104)
+  ctx.quadraticCurveTo(70, 50, 82 + s * 6, 6)
+  ctx.quadraticCurveTo(96, 60, 106, 104)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = shade(color, -0.2)
+  ctx.fillRect(54, 98, 52, 8)
+}
+
+/** A cuckoo clock (the house): carved roof, a little door at the top, pine-cone weights. Hands are rows of their own. */
+function cuckooClock(ctx: Ctx, _f: number, _n: number, { color, color2 }: SpriteColors) {
+  // Pine-cone weights on chains.
+  ctx.strokeStyle = '#a8a29e'
+  ctx.lineWidth = 2
+  for (const x of [80, 120]) {
+    ctx.beginPath()
+    ctx.moveTo(x, 200)
+    ctx.lineTo(x, x === 80 ? 270 : 250)
+    ctx.stroke()
+    ctx.fillStyle = '#78350f'
+    ellipse(ctx, x, x === 80 ? 282 : 262, 9, 16)
+    ctx.fill()
+  }
+  // House.
+  const g = ctx.createLinearGradient(30, 0, 170, 0)
+  g.addColorStop(0, shade(color, -0.25))
+  g.addColorStop(1, shade(color, 0.1))
+  ctx.fillStyle = g
+  ctx.fillRect(36, 70, 128, 134)
+  // Roof with carved leaves.
+  ctx.fillStyle = shade(color, -0.4)
+  ctx.beginPath()
+  ctx.moveTo(18, 84)
+  ctx.lineTo(100, 8)
+  ctx.lineTo(182, 84)
+  ctx.lineTo(168, 84)
+  ctx.lineTo(100, 26)
+  ctx.lineTo(32, 84)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color2
+  for (let k = 0; k < 5; k++) {
+    ellipse(ctx, 60 + k * 20, 210, 8, 5, k * 0.5)
+    ctx.fill()
+  }
+  // The little door the bird comes out of.
+  ctx.fillStyle = '#1c1917'
+  ctx.beginPath()
+  ctx.roundRect(88, 40, 24, 30, [12, 12, 0, 0])
+  ctx.fill()
+  // Clock face.
+  ctx.fillStyle = '#fef3c7'
+  circle(ctx, 100, 136, 44)
+  ctx.fill()
+  ctx.strokeStyle = shade(color, -0.4)
+  ctx.lineWidth = 4
+  ctx.stroke()
+  ctx.fillStyle = '#292524'
+  ctx.font = 'bold 12px Georgia, serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  for (let h = 1; h <= 12; h++) {
+    const a = (h / 12) * TAU - Math.PI / 2
+    ctx.fillText(String(h), 100 + Math.cos(a) * 34, 136 + Math.sin(a) * 34)
+  }
+  ctx.fillStyle = '#292524'
+  circle(ctx, 100, 136, 4)
+  ctx.fill()
+}
+
+/** One clock hand, pointing up from the bottom middle (frame 0 hour hand, 1 minute hand). */
+function clockHand(ctx: Ctx, f: number) {
+  const long = f % 2 === 1
+  ctx.fillStyle = '#1c1917'
+  ctx.beginPath()
+  ctx.moveTo(6, 100)
+  ctx.lineTo(10, long ? 4 : 34)
+  ctx.lineTo(14, 100)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** The cuckoo, beak open (frame 1) or shut. */
+function cuckooBird(ctx: Ctx, f: number, _n: number, { color2 }: SpriteColors) {
+  const open = f % 2 === 1
+  ctx.fillStyle = '#92400e'
+  ellipse(ctx, 40, 44, 28, 20)
+  ctx.fill()
+  ctx.fillStyle = '#b45309'
+  ellipse(ctx, 34, 44, 18, 10, 0.3)
+  ctx.fill()
+  circle(ctx, 60, 30, 14)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ctx.beginPath()
+  ctx.moveTo(70, open ? 24 : 27)
+  ctx.lineTo(90, 28)
+  ctx.lineTo(70, open ? 36 : 32)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 62, 26, 2.5)
+  ctx.fill()
+}
+
+/** A robin on the roofline: sitting, looking, pecking, singing; feet at the bottom. */
+function perchedRobin(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const pose = f % 4
+  ctx.fillStyle = shade(color, -0.25)
+  ctx.beginPath()
+  ctx.moveTo(52, 110)
+  ctx.lineTo(16, 140)
+  ctx.lineTo(30, 146)
+  ctx.lineTo(66, 120)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = '#a16207'
+  ctx.lineWidth = 3
+  for (const x of [72, 86]) {
+    ctx.beginPath()
+    ctx.moveTo(x, 134)
+    ctx.lineTo(x + 2, 156)
+    ctx.moveTo(x - 6, 158)
+    ctx.lineTo(x + 8, 158)
+    ctx.stroke()
+  }
+  ctx.fillStyle = color
+  ellipse(ctx, 78, 110, 36, 28, -0.3)
+  ctx.fill()
+  // Red breast.
+  ctx.fillStyle = color2
+  ellipse(ctx, 94, 116, 20, 20, -0.3)
+  ctx.fill()
+  const [hx, hy, tilt] = pose === 2 ? [110, 106, 0.6] : pose === 1 ? [100, 70, -0.1] : pose === 3 ? [102, 70, -0.45] : [104, 72, 0]
+  ctx.save()
+  ctx.translate(hx, hy)
+  ctx.rotate(tilt)
+  ctx.fillStyle = color
+  circle(ctx, 0, 0, 20)
+  ctx.fill()
+  ctx.fillStyle = color2
+  ellipse(ctx, 8, 10, 10, 8)
+  ctx.fill()
+  ctx.fillStyle = '#facc15'
+  ctx.beginPath()
+  ctx.moveTo(16, pose === 3 ? -6 : -2)
+  ctx.lineTo(32, 2)
+  ctx.lineTo(16, pose === 3 ? 10 : 5)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 6, -4, 3.5)
+  ctx.fill()
+  ctx.fillStyle = '#fff'
+  circle(ctx, 7, -5, 1.2)
+  ctx.fill()
+  ctx.restore()
+  if (pose === 3) {
+    // A few notes as it sings.
+    ctx.fillStyle = '#e0f2fe'
+    ctx.font = 'bold 20px Georgia, serif'
+    ctx.fillText('♪', 128, 44)
+    ctx.fillText('♫', 142, 24)
+  }
+}
+
+/** A peacock strutting with its train folded, or (display) fanned out in a great circle of eyes. */
+function peacock(display: boolean) {
+  return (ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) => {
+    const p = (f / frames) * TAU
+    const s = Math.sin(p)
+    if (display) {
+      // The fan, shimmering.
+      for (let k = 0; k < 17; k++) {
+        const a = Math.PI + (k / 16) * Math.PI
+        const len = 98 + Math.sin(p + k) * 4
+        ctx.strokeStyle = shade(color, -0.2)
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.moveTo(110, 150)
+        ctx.lineTo(110 + Math.cos(a) * len, 150 + Math.sin(a) * len)
+        ctx.stroke()
+        ctx.fillStyle = rgba(color, 0.85)
+        ellipse(ctx, 110 + Math.cos(a) * (len - 10), 150 + Math.sin(a) * (len - 10), 16, 10, a)
+        ctx.fill()
+        ctx.fillStyle = color2
+        ellipse(ctx, 110 + Math.cos(a) * (len - 10), 150 + Math.sin(a) * (len - 10), 8, 6, a)
+        ctx.fill()
+        ctx.fillStyle = '#1e3a8a'
+        circle(ctx, 110 + Math.cos(a) * (len - 10), 150 + Math.sin(a) * (len - 10), 3.5)
+        ctx.fill()
+      }
+    } else {
+      // Long train sweeping behind.
+      ctx.fillStyle = shade(color, -0.1)
+      ctx.beginPath()
+      ctx.moveTo(90, 150)
+      ctx.quadraticCurveTo(40, 170, 4, 200 + s * 3)
+      ctx.lineTo(10, 214)
+      ctx.quadraticCurveTo(60, 196, 100, 170)
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillStyle = color2
+      for (let k = 0; k < 5; k++) {
+        circle(ctx, 20 + k * 16, 204 - k * 9 + s * 2, 4)
+        ctx.fill()
+      }
+    }
+    // Legs walking (or standing to display).
+    const step = display ? 0 : s
+    limb(ctx, 104, 176, 24, 22, step * 0.4, -step * 0.2, 5, '#78716c')
+    limb(ctx, 116, 176, 24, 22, -step * 0.4, step * 0.2, 5, '#a8a29e')
+    // Blue body and long neck.
+    const g = ctx.createLinearGradient(0, 100, 0, 190)
+    g.addColorStop(0, '#2563eb')
+    g.addColorStop(1, '#1e3a8a')
+    ctx.fillStyle = g
+    ellipse(ctx, 112, 160, 24, 22)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(104, 150)
+    ctx.quadraticCurveTo(110, 110, 124, 92)
+    ctx.lineTo(134, 98)
+    ctx.quadraticCurveTo(124, 120, 124, 154)
+    ctx.closePath()
+    ctx.fill()
+    circle(ctx, 132, 90, 11)
+    ctx.fill()
+    ctx.fillStyle = '#fde68a'
+    ctx.beginPath()
+    ctx.moveTo(140, 88)
+    ctx.lineTo(152, 92)
+    ctx.lineTo(140, 95)
+    ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = '#fff'
+    ellipse(ctx, 133, 88, 5, 2.5)
+    ctx.fill()
+    ctx.fillStyle = '#111'
+    circle(ctx, 134, 88, 1.8)
+    ctx.fill()
+    // Crest.
+    ctx.strokeStyle = '#1e40af'
+    ctx.lineWidth = 1.5
+    for (let k = -1; k <= 1; k++) {
+      ctx.beginPath()
+      ctx.moveTo(130, 80)
+      ctx.lineTo(126 + k * 6, 64)
+      ctx.stroke()
+      ctx.fillStyle = color2
+      circle(ctx, 126 + k * 6, 63, 2.5)
+      ctx.fill()
+    }
+  }
+}
+
+/** A pot of gold heaped with coins that glint. */
+function potOfGold(ctx: Ctx, f: number, frames: number, { color }: SpriteColors) {
+  const p = f / frames
+  // Coins heaped up.
+  for (let k = 0; k < 16; k++) {
+    const x = 50 + ((k * 37) % 100)
+    const y = 70 - Math.sin(((x - 50) / 100) * Math.PI) * 30 + (k % 3) * 6
+    const g = ctx.createLinearGradient(x - 12, y, x + 12, y)
+    g.addColorStop(0, '#a16207')
+    g.addColorStop(0.5, '#fde047')
+    g.addColorStop(1, '#ca8a04')
+    ctx.fillStyle = g
+    ellipse(ctx, x, y, 13, 6, (k % 5) * 0.2)
+    ctx.fill()
+  }
+  // A glint moving across the heap.
+  const gx = 50 + ((p * 3) % 1) * 100
+  glow(ctx, gx, 56, 14, '#ffffff', 0.9)
+  // The black pot.
+  const g = ctx.createRadialGradient(80, 110, 10, 100, 130, 80)
+  g.addColorStop(0, '#3f3f46')
+  g.addColorStop(1, '#09090b')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(30, 82)
+  ctx.bezierCurveTo(10, 200, 190, 200, 170, 82)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = '#27272a'
+  ellipse(ctx, 100, 82, 74, 12)
+  ctx.fill()
+  ctx.fillStyle = color
+  ctx.fillRect(40, 110, 120, 8)
+}
+
+/** A rainbow arc (the base is the bottom of the cell). */
+function rainbowArc(ctx: Ctx) {
+  const cols = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#8b5cf6']
+  cols.forEach((c, k) => {
+    ctx.strokeStyle = rgba(c, 0.8)
+    ctx.lineWidth = 14
+    ctx.beginPath()
+    ctx.arc(200, 200, 180 - k * 14, Math.PI, 0)
+    ctx.stroke()
+  })
+}
+
+/** A painted Easter egg; each frame is another pattern. */
+function easterEgg(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const kind = f % 4
+  const base = [color, color2, '#a78bfa', '#34d399'][kind]
+  const trim = [color2, color, '#fde047', '#f472b6'][kind]
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(50, 6)
+  ctx.bezierCurveTo(88, 6, 96, 80, 92, 96)
+  ctx.bezierCurveTo(86, 126, 14, 126, 8, 96)
+  ctx.bezierCurveTo(4, 80, 12, 6, 50, 6)
+  ctx.closePath()
+  const g = ctx.createRadialGradient(36, 40, 6, 50, 70, 70)
+  g.addColorStop(0, shade(base, 0.4))
+  g.addColorStop(1, shade(base, -0.2))
+  ctx.fillStyle = g
+  ctx.fill()
+  ctx.clip()
+  ctx.fillStyle = trim
+  if (kind === 0) {
+    for (let k = 0; k < 3; k++) {
+      ctx.beginPath()
+      for (let x = 0; x <= 100; x += 10) ctx.lineTo(x, 44 + k * 26 + (x % 20 ? 6 : -6))
+      ctx.lineTo(100, 50 + k * 26)
+      ctx.lineTo(0, 50 + k * 26)
+      ctx.fill()
+    }
+  } else if (kind === 1) {
+    for (let k = 0; k < 14; k++) {
+      circle(ctx, 14 + ((k * 23) % 76), 20 + ((k * 37) % 96), 6)
+      ctx.fill()
+    }
+  } else if (kind === 2) {
+    for (let k = 0; k < 4; k++) ctx.fillRect(0, 26 + k * 24, 100, 8)
+  } else {
+    for (let k = 0; k < 6; k++) {
+      ctx.beginPath()
+      ctx.moveTo(10 + k * 16, 60)
+      ctx.lineTo(18 + k * 16, 48)
+      ctx.lineTo(26 + k * 16, 60)
+      ctx.lineTo(18 + k * 16, 72)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
+  ctx.restore()
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'
+  ellipse(ctx, 34, 32, 8, 14, 0.4)
+  ctx.fill()
+}
+
+/** A teddy bear walking, holding a red heart. */
+function teddyBear(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+  const p = (f / frames) * TAU
+  const s = Math.sin(p)
+  const fur = color
+  // Legs.
+  for (const [x, a] of [[66, s], [100, -s]] as const) {
+    ctx.fillStyle = shade(fur, -0.1)
+    ellipse(ctx, x + a * 8, 200 - Math.max(0, a) * 6, 16, 22)
+    ctx.fill()
+    ctx.fillStyle = shade(fur, 0.35)
+    ellipse(ctx, x + a * 8 + 4, 216 - Math.max(0, a) * 6, 10, 7)
+    ctx.fill()
+  }
+  // Body.
+  const g = ctx.createRadialGradient(76, 140, 10, 84, 160, 60)
+  g.addColorStop(0, shade(fur, 0.25))
+  g.addColorStop(1, shade(fur, -0.2))
+  ctx.fillStyle = g
+  ellipse(ctx, 84, 160, 42, 46)
+  ctx.fill()
+  ctx.fillStyle = shade(fur, 0.35)
+  ellipse(ctx, 88, 166, 24, 28)
+  ctx.fill()
+  // Head and ears.
+  ctx.fillStyle = fur
+  circle(ctx, 54, 62, 14)
+  ctx.fill()
+  circle(ctx, 112, 62, 14)
+  ctx.fill()
+  circle(ctx, 84, 88, 36)
+  ctx.fill()
+  ctx.fillStyle = shade(fur, 0.4)
+  circle(ctx, 54, 62, 7)
+  ctx.fill()
+  circle(ctx, 112, 62, 7)
+  ctx.fill()
+  ellipse(ctx, 94, 100, 15, 11)
+  ctx.fill()
+  ctx.fillStyle = '#111'
+  circle(ctx, 74, 82, 4)
+  ctx.fill()
+  circle(ctx, 100, 82, 4)
+  ctx.fill()
+  ellipse(ctx, 98, 96, 6, 4)
+  ctx.fill()
+  // Arms holding a heart out front.
+  limb(ctx, 60, 136, 22, 20, 0.8 + s * 0.1, -1.6, 15, shade(fur, -0.05))
+  ctx.save()
+  ctx.translate(112, 150)
+  ctx.scale(1.1, 1.1)
+  ctx.fillStyle = color2
+  heartPath(ctx, 0, 0, 22)
+  ctx.fill()
+  ctx.restore()
+  limb(ctx, 108, 136, 20, 16, 1.4 + s * 0.1, -1.4, 15, fur)
+}
+
+/** A diya: a clay oil lamp with its flame; the frames flicker. */
+function diya(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColors) {
+  const flick = [1, 0.85, 1.08, 0.9][f % 4]
+  glow(ctx, 60, 40, 46 * flick, '#fbbf24', 0.75)
+  ctx.save()
+  ctx.translate(60, 62)
+  ctx.scale(1, flick)
+  ctx.fillStyle = '#f59e0b'
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.bezierCurveTo(-10, -8, -6, -28, 0, -40)
+  ctx.bezierCurveTo(6, -28, 10, -8, 0, 0)
+  ctx.fill()
+  ctx.fillStyle = '#fef3c7'
+  ellipse(ctx, 0, -10, 3, 8)
+  ctx.fill()
+  ctx.restore()
+  // The clay bowl with painted dots.
+  const g = ctx.createLinearGradient(0, 60, 0, 96)
+  g.addColorStop(0, shade(color, 0.15))
+  g.addColorStop(1, shade(color, -0.35))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(14, 64)
+  ctx.quadraticCurveTo(60, 120, 106, 64)
+  ctx.quadraticCurveTo(84, 54, 60, 62)
+  ctx.quadraticCurveTo(36, 54, 14, 64)
+  ctx.fill()
+  ctx.fillStyle = color2
+  for (let k = 0; k < 5; k++) {
+    circle(ctx, 30 + k * 15, 76 + Math.abs(k - 2) * -2, 3)
+    ctx.fill()
+  }
 }
 
 // -- the rows each style is made of ------------------------------------------------------
@@ -9631,4 +11595,158 @@ export const SPRITE_ROWS: Record<string, SpriteRow[]> = {
   ],
   ladybugs: [{ id: 'main', frames: 8, w: 140, h: 100, paint: ladybug }, SPARKLE],
   moths: [{ id: 'main', frames: 8, w: 130, h: 100, paint: moth }, SPARKLE],
+  // Sixth batch.
+  wolves: [
+    // Looking left, ahead, right, howling (the order the perching ones turn their heads in).
+    { id: 'main', frames: 4, w: 200, h: 200, paint: (ctx, f, n, c) => roofWolf(ctx, [1, 0, 2, 3][f % 4], n, c) },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Awooo!') },
+    SPARKLE,
+  ],
+  moon: [{ id: 'main', frames: 24, w: 200, h: 200, paint: moonPhase }, SPARKLE],
+  pinatas: [
+    { id: 'main', frames: 2, w: 210, h: 180, paint: pinata },
+    { id: 'thread', frames: 1, w: 8, h: 256, paint: silk },
+    { id: 'candy', frames: 4, w: 100, h: 100, paint: candy },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Candy!') },
+    SPARKLE,
+  ],
+  ornaments: [
+    { id: 'main', frames: 8, w: 100, h: 104, paint: ornament },
+    { id: 'thread', frames: 1, w: 8, h: 256, paint: ribbon },
+    SPARKLE,
+  ],
+  icicles: [
+    { id: 'main', frames: 3, w: 142, h: 180, paint: icicles },
+    { id: 'drop', frames: 1, w: 32, h: 32, paint: waterDrop },
+    SPARKLE,
+  ],
+  flags: [{ id: 'main', frames: 8, w: 200, h: 224, paint: waveFlag }, SPARKLE],
+  'gift-boxes': [
+    { id: 'main', frames: 4, w: 160, h: 200, paint: giftBox },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Surprise!') },
+    SPARKLE,
+  ],
+  cauldrons: [
+    { id: 'main', frames: 8, w: 220, h: 220, paint: cauldron },
+    { id: 'brew', frames: 1, w: 40, h: 40, paint: brewBubble },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Hubble bubble!') },
+    SPARKLE,
+  ],
+  'glowing-pumpkins': [
+    { id: 'main', frames: 4, w: 200, h: 200, paint: litPumpkin(false) },
+    { id: 'boo', frames: 4, w: 200, h: 200, paint: litPumpkin(true) },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Boo!') },
+    SPARKLE,
+  ],
+  'burrow-bunnies': [
+    { id: 'main', frames: 8, w: 160, h: 200, paint: burrowBunny },
+    { id: 'mound', frames: 1, w: 160, h: 60, paint: dirtMound },
+    SPARKLE,
+  ],
+  helicopter: [
+    // Painted facing left; turned round to face the way it flies like the rest.
+    {
+      id: 'main', frames: 8, w: 290, h: 150,
+      paint: (ctx, f, n, c) => {
+        ctx.translate(290, 0)
+        ctx.scale(-1, 1)
+        helicopter(ctx, f, n, c)
+      },
+    },
+    { id: 'search', frames: 1, w: 200, h: 300, paint: searchBeam },
+    SPARKLE,
+  ],
+  sprinklers: [
+    { id: 'main', frames: 1, w: 80, h: 100, paint: sprinklerHead },
+    { id: 'spray', frames: 8, w: 300, h: 210, paint: sprinklerSpray },
+    SPARKLE,
+  ],
+  'snow-globes': [{ id: 'main', frames: 8, w: 200, h: 212, paint: snowGlobe }, SPARKLE],
+  'manta-rays': [
+    // Painted with the wing tips reaching past the cell at the top of the beat: drawn a little smaller.
+    {
+      id: 'main', frames: 8, w: 220, h: 160,
+      paint: (ctx, f, n, c) => {
+        ctx.translate(110, 80)
+        ctx.scale(0.68, 0.68)
+        ctx.translate(-110, -80)
+        mantaRay(ctx, f, n, c)
+      },
+    },
+    SPARKLE,
+  ],
+  clownfish: [{ id: 'main', frames: 8, w: 130, h: 100, paint: clownfish }, SPARKLE],
+  anglerfish: [{ id: 'main', frames: 8, w: 220, h: 170, paint: anglerfish }, SPARKLE],
+  starfish: [{ id: 'main', frames: 8, w: 160, h: 160, paint: starfish }, SPARKLE],
+  surfers: [
+    { id: 'main', frames: 8, w: 240, h: 230, paint: surfer },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Cowabunga!') },
+    SPARKLE,
+  ],
+  sailboats: [{ id: 'main', frames: 8, w: 220, h: 210, paint: sailboat }, SPARKLE],
+  snowplow: [
+    { id: 'main', frames: 8, w: 350, h: 180, paint: snowplow },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Beep beep!') },
+    SPARKLE,
+  ],
+  'pirate-ship': [
+    { id: 'main', frames: 8, w: 300, h: 240, paint: pirateShip },
+    { id: 'puff', frames: 1, w: 128, h: 128, paint: puff },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Arr!') },
+    SPARKLE,
+  ],
+  rudolph: [{ id: 'main', frames: 8, w: 250, h: 190, paint: rudolph }, SPARKLE],
+  fountains: [{ id: 'main', frames: 8, w: 260, h: 250, paint: fountain }, SPARKLE],
+  'web-spiders': [
+    { id: 'main', frames: 1, w: 220, h: 220, paint: spiderWeb },
+    { id: 'spider', frames: 8, w: 100, h: 100, paint: webSpider },
+    { id: 'thread', frames: 1, w: 8, h: 256, paint: silk },
+    SPARKLE,
+  ],
+  'leaf-piles': [
+    { id: 'main', frames: 1, w: 240, h: 130, paint: leafPile },
+    { id: 'leaf', frames: 4, w: 40, h: 40, paint: pileLeaf },
+    SPARKLE,
+  ],
+  puddles: [
+    { id: 'main', frames: 8, w: 220, h: 80, paint: puddle },
+    { id: 'splash', frames: 1, w: 160, h: 100, paint: splash },
+    SPARKLE,
+  ],
+  gnomes: [{ id: 'main', frames: 8, w: 160, h: 240, paint: gnome }, SPARKLE],
+  'cuckoo-clock': [
+    { id: 'main', frames: 1, w: 200, h: 300, paint: cuckooClock },
+    { id: 'hand', frames: 2, w: 20, h: 100, paint: clockHand },
+    { id: 'cuckoo', frames: 2, w: 100, h: 60, paint: cuckooBird },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Cuckoo!') },
+    SPARKLE,
+  ],
+  robins: [
+    { id: 'main', frames: 4, w: 160, h: 170, paint: perchedRobin },
+    { id: 'fly', frames: 8, w: 256, h: 176, paint: (ctx, f, n, c) => bird(ctx, f, n, { ...c, color2: '#78350f' }) },
+    SPARKLE,
+  ],
+  peacocks: [
+    { id: 'main', frames: 8, w: 240, h: 240, paint: (ctx, f, n, c) => (ctx.translate(10, 0), peacock(false)(ctx, f, n, c)) },
+    // Stopping to fan its tail for people.
+    { id: 'wave', frames: 8, w: 240, h: 240, paint: (ctx, f, n, c) => (ctx.translate(10, 0), peacock(true)(ctx, f, n, c)) },
+    SPARKLE,
+  ],
+  'pot-of-gold': [
+    { id: 'main', frames: 8, w: 200, h: 170, paint: potOfGold },
+    { id: 'rainbow', frames: 1, w: 400, h: 200, paint: rainbowArc },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Lucky you!') },
+    SPARKLE,
+  ],
+  'easter-eggs': [
+    { id: 'main', frames: 4, w: 100, h: 124, paint: easterEgg },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Found one!') },
+    SPARKLE,
+  ],
+  'teddy-bears': [
+    { id: 'main', frames: 8, w: 160, h: 230, paint: teddyBear },
+    { id: 'bubble', frames: 1, w: 360, h: 140, paint: saying('Hugs!') },
+    SPARKLE,
+  ],
+  diyas: [{ id: 'main', frames: 4, w: 120, h: 100, paint: diya }, SPARKLE],
 }

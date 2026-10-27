@@ -223,7 +223,28 @@ CATALOG: dict[str, dict] = {
                  "stilts and football-players walk along the bottom; storks, "
                  "flying-pigs, unicorns, magic-carpet and superheroes fly over the "
                  "roof; fairies flit about (near follow); ladybugs (near flee) and "
-                 "moths (near follow) are flocks",
+                 "moths (near follow) are flocks; wolves sit on the roof, watch "
+                 "people and howl (near light); moon is tonight's real moon crossing "
+                 "the sky (near light); pinatas hang from the gutter and burst into "
+                 "candy when people dance under them (near dance); ornaments and "
+                 "icicles hang from the gutter, icicles dripping when it is really "
+                 "above freezing (near follow); flags ripple with the real wind; "
+                 "gift-boxes open for people (near jump); cauldrons bubble (near "
+                 "dance); glowing-pumpkins shout boo (near jump); burrow-bunnies duck "
+                 "into their burrows (near hide); helicopter turns its searchlight "
+                 "onto people (near follow); sprinklers spray people (near follow); "
+                 "snow-globes are shaken by people (near dance); manta-rays, "
+                 "anglerfish (near light) and rudolph (near light) fly over the roof; "
+                 "clownfish are a flock (near flee); starfish, surfers (near jump), "
+                 "sailboats, snowplow, pirate-ship (near follow, fires its cannon), "
+                 "gnomes (near hide: they freeze), peacocks (near dance: fan their "
+                 "tails) and teddy-bears (near follow) go along the bottom; fountains "
+                 "spray higher for people (near grow); web-spiders drop from their "
+                 "webs (near follow); leaf-piles burst and puddles splash (near "
+                 "jump); cuckoo-clock tells the real time and calls the hours (near "
+                 "jump); robins sing on the roof (near flee); pot-of-gold makes a "
+                 "rainbow for people (near jump); easter-eggs light up when found "
+                 "(near jump); diyas glow brighter for people (near light)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -252,7 +273,14 @@ CATALOG: dict[str, dict] = {
                    "skiers", "ice-skaters", "snails", "tortoises", "hedgehogs",
                    "skunks", "uncle-sam", "football-players", "storks", "flying-pigs",
                    "unicorns", "magic-carpet", "fairies", "superheroes", "ladybugs",
-                   "moths"],
+                   "moths", "wolves", "moon", "pinatas", "ornaments", "icicles",
+                   "flags", "gift-boxes", "cauldrons", "glowing-pumpkins",
+                   "burrow-bunnies", "helicopter", "sprinklers", "snow-globes",
+                   "manta-rays", "clownfish", "anglerfish", "starfish", "surfers",
+                   "sailboats", "snowplow", "pirate-ship", "rudolph", "fountains",
+                   "web-spiders", "leaf-piles", "puddles", "gnomes", "cuckoo-clock",
+                   "robins", "peacocks", "pot-of-gold", "easter-eggs", "teddy-bears",
+                   "diyas"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
