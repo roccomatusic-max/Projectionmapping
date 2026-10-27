@@ -1329,6 +1329,33 @@ Ready-made scenes added: Thanksgiving dinner, Fall fun, Trick-or-treat street,
 Snow day and Winter village; Be my Valentine and Hoppy Easter gain the new
 elements.
 
+Seventeenth batch (26 more, bringing this round to 300; `heritageSprites.ts`
+and `observanceSprites.ts`):
+
+- Growing for people (`level`): a girl lighting a row of diyas one by one;
+  papel picado banners strung up one after another; a birdhouse built piece
+  by piece until two birds move in; a child hanging one more ornament on the
+  tree for each step nearer, until the lights come on.
+- Performers: Grandma's box of Diwali sweets; friends throwing Holi colours;
+  a Juneteenth step team; a Kwanzaa gift handed to Grandpa; a child picking
+  kumquats from a tree hung with red envelopes; a leprechaun sliding down the
+  rainbow into his pot of gold; a Pi Day baker under the digits of π; a
+  thank-you letter posted for Veterans Day; Lincoln raising his stovepipe hat;
+  a New Year's resolution list that unrolls across the lawn; Grandma making
+  tamales ("¡Provecho!"); a haunted doorbell a friendly monster answers with
+  candy; trick-or-treaters swapping sweets; a secret admirer who leaves a
+  heart, rings and runs; an egg-and-spoon race; a watermelon seed-spitting
+  contest; a Labor Day hammock nap that ends in a wave; a scout raising the
+  flag.
+- Walking: a winged alebrije, a Lunar New Year dragon dance chasing its pearl,
+  a Mardi Gras float throwing beads and Paul Revere galloping with his lantern.
+
+Ready-made scene added: Spring festivals (Holi and Pi Day). Festival of
+lights, Día de Muertos, Juneteenth, Habari gani, Gong xi fa cai, Laissez les
+bons temps rouler, Luck of the Irish, Presidents' Day, Veterans Day, Earth
+Day, Labor Day cookout, Spooky front yard, Deck the halls, Be my Valentine,
+Hoppy Easter, New Year's party and ¡Viva México! gain the new elements.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

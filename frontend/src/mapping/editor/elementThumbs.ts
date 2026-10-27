@@ -141,7 +141,10 @@ const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 's
   'field-goal', 'team-mascot', 'snake-can', 'squirting-flower', 'seder-table', 'afikomen-hunt', 'shofar-blower', 'apples-and-honey',
   'tashlich', 'sukkah', 'iftar', 'eid-gifts', 'story-time', 'porch-swing', 'whoopee-cushion', 'touchdown-dance', 'pie-thief',
   'turkey-carver', 'thanks-table', 'leaf-jumper', 'apple-picker', 'cider-press', 'candy-chute', 'trunk-or-treat', 'parade-watchers',
-  'snowflake-catcher', 'ski-lift', 'chestnut-roaster', 'tree-lot', 'proposal', 'valentine-mailbox', 'egg-dyeing', 'maple-tapping'])
+  'snowflake-catcher', 'ski-lift', 'chestnut-roaster', 'tree-lot', 'proposal', 'valentine-mailbox', 'egg-dyeing', 'maple-tapping',
+  'mithai-box', 'holi-colors', 'step-team', 'zawadi', 'tangerine-tree', 'rainbow-leprechaun', 'pi-day-pie', 'thank-you-letter',
+  'lincoln-hat', 'resolution-list', 'tamale-maker', 'haunted-doorbell', 'candy-trader', 'secret-admirer', 'egg-spoon-race',
+  'seed-spitters', 'hammock-napper', 'flag-raiser'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
   'hanging-skeletons', 'star-lanterns', 'singing-wreath', 'mistletoe'])
 
@@ -730,7 +733,8 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     || style === 'statue-of-liberty' || style === 'sandcastle' || style === 'sarcophagus' || style === 'werewolf-change'
     || style === 'snowman-builders' || style === 'advent-calendar' || style === 'limbo' || style === 'elijahs-door' || style === 'sea-parting'
     || style === 'three-sisters-garden' || style === 'knitting-grandma'
-    || style === 'giant-pumpkin' || style === 'igloo-builder' || style === 'ice-sculptor') {
+    || style === 'giant-pumpkin' || style === 'igloo-builder' || style === 'ice-sculptor'
+    || style === 'diya-lighter' || style === 'papel-picado' || style === 'birdhouse-builder' || style === 'tree-trimmer') {
     // Lighting up (the tree, the candles in their order) or opening, as people come.
     const frames = main.frames
     const k = Math.min(1, ((time * 0.3) % 1.3))
