@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { request } from '@/api/client'
 import {
   BlackoutIcon,
@@ -57,6 +57,16 @@ export interface Player {
     link?: string
     /** Player: the status overlay is on its projector. */
     overlay?: boolean
+    /** Player: how far its picture can be from the show clock, by its own measure (ms). */
+    sync_ms?: number
+    /** Player: how far ahead of the show clock its clock is, as the server checks it (ms). */
+    clock_check_ms?: number
+    /** Player: times its clock had to jump into step since its output opened. */
+    clock_steps?: number
+    /** Player: frames it did not draw in the last second. */
+    dropped?: number
+    /** Player: how much later (ms; earlier when negative) it draws, set here. */
+    trim_ms?: number
     /** The address it reports from on the network. */
     address?: string
   }
@@ -114,12 +124,30 @@ const SCREENS: Array<{ id: TestPattern; label: string; hint: string }> = [
   { id: 'grid', label: 'Grid', hint: 'A test grid, for lining the projector up' },
   { id: 'white', label: 'White', hint: 'Full white: is it on, and where does its light land?' },
   { id: 'black', label: 'Black', hint: 'Nothing: this projector only, the others carry on' },
+  { id: 'sync', label: 'Sync test', hint: 'The show clock as big numbers, a bar and a flashing square, to photograph beside another projector' },
 ]
+
+/** In step within a frame at 60 Hz; out of step past the server's warning line (alerts.py). */
+const SYNC_GOOD_MS = 17
+const SYNC_WARN_MS = 50
+
+/** How far one mini PC's picture is from the show clock (ms), by the worse of
+ *  its own measure and the server's check on its clock; null before either. */
+export function syncOff(player: Player): number | null {
+  const { sync_ms: own, clock_check_ms: check } = player.report
+  if (!player.online || (own == null && check == null)) return null
+  return Math.max(own ?? 0, Math.abs(check ?? 0))
+}
+
+function syncTone(off: number) {
+  return off <= SYNC_GOOD_MS ? 'text-emerald-300' : off <= SYNC_WARN_MS ? 'text-amber-200' : 'text-red-300'
+}
 
 const SCREEN_LABEL: Partial<Record<TestPattern, string>> = {
   grid: 'Test grid',
   white: 'White',
   black: 'Black',
+  sync: 'The sync test',
   red: 'Red',
   green: 'Green',
   blue: 'Blue',
@@ -272,6 +300,8 @@ export function PlayersPanel({
         </div>
       ))}
 
+      <SyncSummary players={paired} canEdit={canEdit} onError={onError} reload={load} />
+
       {paired.map((player) => (
         <div key={player.id} className="rounded-md bg-panel-850 p-3 ring-1 ring-white/5">
           <div className="flex items-center gap-2">
@@ -322,6 +352,74 @@ export function PlayersPanel({
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Are all the projectors in step? The worst of them, in words, and the sync
+ * test on every projector at once, to photograph.
+ */
+function SyncSummary({
+  players,
+  canEdit,
+  onError,
+  reload,
+}: {
+  players: Player[]
+  canEdit: boolean
+  onError: (message: string) => void
+  reload: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const playing = players.filter((p) => p.kind === 'player' && p.output_id != null)
+  if (playing.length === 0) return null
+  const measured = playing
+    .map((p) => ({ player: p, off: syncOff(p) }))
+    .filter((m): m is { player: Player; off: number } => m.off != null)
+  const worst = measured.reduce<{ player: Player; off: number } | null>((w, m) => (!w || m.off > w.off ? m : w), null)
+  const testing = playing.some((p) => p.screen === 'sync')
+
+  const setTest = async (on: boolean) => {
+    setBusy(true)
+    try {
+      await request('/mapping/players/sync-test', { method: 'POST', body: { on } })
+      await reload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'That did not reach the mini PCs')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const words = !worst
+    ? 'Checking how closely the projectors keep time…'
+    : worst.off <= SYNC_GOOD_MS
+      ? measured.length > 1
+        ? `In step: all ${measured.length} projectors within ${Math.max(1, Math.round(worst.off))} ms of the show clock, under one frame.`
+        : `In step: within ${Math.max(1, Math.round(worst.off))} ms of the show clock, under one frame.`
+      : worst.off <= SYNC_WARN_MS
+        ? `Nearly in step: ${worst.player.name} is up to ${Math.round(worst.off)} ms from the show clock (2 to 3 frames).`
+        : `Out of step: ${worst.player.name} is ${Math.round(worst.off)} ms from the show clock. See its card below.`
+
+  return (
+    <div className="space-y-2 rounded-md bg-panel-850 p-3 ring-1 ring-white/5">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className={classNames('min-w-0 flex-1 text-sm', worst ? syncTone(worst.off) : 'text-slate-400')}>{words}</p>
+        <button className={testing ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'} disabled={!canEdit || busy}
+          onClick={() => setTest(!testing)}
+          title={testing ? 'Every projector showing the sync test goes back to the show'
+            : 'Every mini PC’s projector shows the sync test until you take it off'}>
+          <TargetIcon size={12} aria-hidden /> {testing ? 'Back to the show' : 'Sync test on every projector'}
+        </button>
+      </div>
+      {testing && (
+        <p className="text-xs text-slate-400">
+          Take one photo with two projectors in it: the big numbers and the yellow bars should match, and the white
+          squares flash together. A line sweeps across the whole house through each projector in turn; in step, it
+          crosses from one to the next without a jump. If one is always a little behind, shift it below.
+        </p>
+      )}
     </div>
   )
 }
@@ -440,8 +538,6 @@ function PlayerControls({
         report.width ? `${report.width}×${report.height}` : null,
         report.fps != null ? `${report.fps.toFixed(0)} fps` : null,
         report.link && report.link !== 'open' ? 'live link down' : null,
-        report.clock_ms != null ? `clock ±${report.clock_ms} ms` : null,
-        report.drift_ms != null ? `drift ${report.drift_ms} ms` : null,
         report.people_ms != null ? `camera to here ${report.people_ms} ms` : null,
         report.cache === 'on'
           ? `media saved here${report.cached_bytes ? ` (${formatBytes(report.cached_bytes)})` : ''}`
@@ -505,12 +601,16 @@ function PlayerControls({
               aria-pressed={screen === option.id}
               onClick={() => show(option.id)}
             >
-              {option.id === 'none' ? <ShowIcon size={12} aria-hidden /> : option.id === 'grid' ? <TestPatternIcon size={12} aria-hidden /> : option.id === 'black' ? <BlackoutIcon size={12} aria-hidden /> : null}
+              {option.id === 'none' ? <ShowIcon size={12} aria-hidden /> : option.id === 'grid' ? <TestPatternIcon size={12} aria-hidden /> : option.id === 'black' ? <BlackoutIcon size={12} aria-hidden /> : option.id === 'sync' ? <TargetIcon size={12} aria-hidden /> : null}
               {option.label}
             </button>
           ))}
         </div>
       </div>
+
+      {player.online && player.output_id != null && (
+        <SyncRow player={player} canEdit={canEdit} onError={onError} reload={reload} />
+      )}
 
       {appHere && app?.update && (
         <div className="flex flex-wrap items-start gap-2">
@@ -714,4 +814,80 @@ async function copyText(text: string) {
   const ok = document.execCommand('copy')
   area.remove()
   if (!ok) throw new Error('This browser would not copy it. Use Download instead.')
+}
+
+/** Steps of the time shift a press of − or + makes (ms). */
+const TRIM_STEP = 5
+
+/**
+ * How closely one mini PC keeps time, and a shift for its projector: some
+ * projectors take a frame or two longer than others to show a picture, which
+ * no clock can see. The sync test photo shows it; shifting the quicker one
+ * later evens them out.
+ */
+function SyncRow({
+  player,
+  canEdit,
+  onError,
+  reload,
+}: {
+  player: Player
+  canEdit: boolean
+  onError: (message: string) => void
+  reload: () => Promise<void>
+}) {
+  const saved = player.report.trim_ms ?? 0
+  const [trim, setTrim] = useState(saved)
+  const timer = useRef<number>()
+  useEffect(() => setTrim(saved), [saved])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const change = (to: number) => {
+    const next = Math.max(-500, Math.min(500, to))
+    setTrim(next)
+    // One request for a run of presses.
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(async () => {
+      try {
+        await request(`/mapping/players/${player.id}/trim`, { method: 'POST', body: { trim_ms: next } })
+        await reload()
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'That did not reach the mini PC')
+      }
+    }, 600)
+  }
+
+  const { report } = player
+  const off = syncOff(player)
+  const parts = [
+    report.clock_ms != null ? `clock ±${Math.max(1, Math.round(report.clock_ms))} ms` : null,
+    report.drift_ms != null ? `video ${report.drift_ms > 0 ? '+' : ''}${report.drift_ms} ms` : null,
+    report.clock_check_ms != null ? `server check ${report.clock_check_ms > 0 ? '+' : ''}${report.clock_check_ms} ms` : null,
+    report.dropped ? `${report.dropped} frames dropped last second` : null,
+    report.clock_steps ? `clock jumped ${report.clock_steps}×` : null,
+  ].filter(Boolean)
+
+  return (
+    <div className="flex flex-wrap items-start gap-2">
+      <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">Sync</span>
+      <div className="min-w-0 flex-1 space-y-1 text-xs">
+        <p className={off == null ? 'text-slate-400' : syncTone(off)}>
+          {off == null
+            ? 'Checking… (a mini PC on an older page shows this after its next restart)'
+            : off <= SYNC_GOOD_MS
+              ? `In step: within ${Math.max(1, Math.round(off))} ms of the show clock.`
+              : `${Math.round(off)} ms from the show clock.`}
+        </p>
+        {parts.length > 0 && <p className="tnum text-slate-500">{parts.join(' · ')}</p>}
+      </div>
+      <div className="flex items-center gap-1" title="Draw this projector's picture later (+) or earlier (−), to match a projector that is slower or quicker to show it">
+        <span className="text-xs text-slate-400">Shift</span>
+        <button className="btn-ghost px-1.5 py-0.5 text-xs" disabled={!canEdit || trim <= -500}
+          aria-label="Earlier" onClick={() => change(trim - TRIM_STEP)}>−</button>
+        <span className="tnum w-14 text-center text-xs text-slate-200">{trim > 0 ? '+' : ''}{trim} ms</span>
+        <button className="btn-ghost px-1.5 py-0.5 text-xs" disabled={!canEdit || trim >= 500}
+          aria-label="Later" onClick={() => change(trim + TRIM_STEP)}>+</button>
+      </div>
+    </div>
+  )
 }

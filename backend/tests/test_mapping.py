@@ -427,13 +427,15 @@ async def test_player_pairing_flow(api):
     assert claimed["status"] == "approved"
     player_headers = {"Authorization": f"Bearer {claimed['access_token']}"}
 
+    version = (await api.get("/api/health")).json()["version"]
     assignment = await api.post("/api/mapping/players/me", headers=player_headers,
-                                json={"fps": 60, "drift_ms": 4, "cache": "on"})
+                                json={"fps": 60, "drift_ms": 4, "cache": "on",
+                                      "page_version": version})
     assert assignment.status_code == 200, assignment.text
     assert assignment.json() == {"player_id": first["player_id"], "name": "Left mini PC",
                                  "output_id": output["id"], "show_id": show["id"],
                                  "commands": [], "picture": False, "picture_ms": 3000,
-                                 "picture_width": 480}
+                                 "picture_width": 480, "trim_ms": 0}
     listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
     assert listed["online"] is True
     assert listed["report"]["fps"] == 60

@@ -70,7 +70,7 @@ export interface ColorAdjust {
   blue: number
 }
 
-export type TestPattern = 'none' | 'grid' | 'id' | 'white' | 'black' | 'red' | 'green' | 'blue'
+export type TestPattern = 'none' | 'grid' | 'id' | 'white' | 'black' | 'red' | 'green' | 'blue' | 'sync'
 
 export interface Output {
   id: number

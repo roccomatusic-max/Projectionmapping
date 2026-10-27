@@ -99,6 +99,7 @@ PROBLEM_LABELS = {
     "power_failed": "Projector did not turn on",
     "start_failed": "Show did not start",
     "minipc_offline": "Mini PC lost its connection",
+    "minipc_out_of_sync": "Mini PC out of step",
     "server_restart": "Server restarted",
     "automation_failed": "Automation failed",
     "automation_missed": "Automation missed",

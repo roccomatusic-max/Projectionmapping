@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
 import { enterFullscreen, OutputScreen, OVERLAY_EVENT } from './OutputPage'
 import { captureOutput } from './OutputView'
+import type { ServerClock } from './live'
 import { trackingDelayMs } from './people'
 import type { Show } from './types'
 
@@ -42,6 +43,8 @@ interface Assignment {
    *  status screen, on a monitor beside the projector, shows them. */
   picture_ms?: number
   picture_width?: number
+  /** Draw this much later (ms; negative is earlier), set on the Players page. */
+  trim_ms?: number
 }
 
 function base64Of(picture: Blob): Promise<string> {
@@ -109,6 +112,18 @@ export default function PlayerPage() {
   const [pictureWanted, setPictureWanted] = useState(false)
   const [picturePace, setPicturePace] = useState({ ms: PICTURE_MS, width: PICTURE_WIDTH })
   const stats = useRef<Record<string, unknown>>({})
+  const showClock = useRef<ServerClock | null>(null)
+  // The server version this page came from: an older page is reloaded by the
+  // server while no show plays, so updates reach mini PCs that never restart.
+  const pageVersion = useRef<string | null>(null)
+  useEffect(() => {
+    fetch('/api/health', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((health: { version?: string }) => {
+        pageVersion.current = health.version ?? null
+      })
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     document.title = 'Player'
@@ -148,7 +163,12 @@ export default function PlayerPage() {
     try {
       const next = await request<Assignment>('/mapping/players/me', {
         method: 'POST',
-        body: { ...stats.current, cache: cache.mode, cached_bytes: cache.bytes },
+        // The show clock as this leaves, for the server's own check on it.
+        body: {
+          ...stats.current, cache: cache.mode, cached_bytes: cache.bytes,
+          clock_now: showClock.current?.synced ? showClock.current.now() : null,
+          page_version: pageVersion.current,
+        },
       })
       obey(next.commands)
       setPictureWanted(next.picture === true)
@@ -159,7 +179,8 @@ export default function PlayerPage() {
         current &&
         current.output_id === next.output_id &&
         current.show_id === next.show_id &&
-        current.name === next.name
+        current.name === next.name &&
+        (current.trim_ms ?? 0) === (next.trim_ms ?? 0)
           ? current
           : next,
       )
@@ -276,10 +297,15 @@ export default function PlayerPage() {
       outputId={assignment.output_id}
       playerId={assignment.player_id}
       onShow={syncMedia}
+      trimMs={assignment.trim_ms ?? 0}
       onStats={(s) => {
+        showClock.current = s.clock
         stats.current = {
           fps: Math.round(s.fps * 10) / 10,
           drift_ms: s.drift == null ? null : Math.round(s.drift * 1000),
+          sync_ms: s.syncMs,
+          clock_steps: s.clockSteps,
+          dropped: s.dropped,
           width: s.width,
           height: s.height,
           cue: s.cue,

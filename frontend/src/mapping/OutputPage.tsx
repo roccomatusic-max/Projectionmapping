@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { withDefaults } from './geometry'
-import { type LinkStatus, useLocalChannel } from './live'
+import { type LinkStatus, type ServerClock, useLocalChannel } from './live'
 import { type CalibrationFrame, type FrameStats, OutputView } from './OutputView'
 import type { CalibrationStepMessage, Show } from './types'
 import { liveLabel } from './types'
@@ -47,6 +47,14 @@ export type OutputStats = FrameStats & {
   cue: string | null
   /** Half the round trip to the server clock (ms), null until it is set. */
   clockMs: number | null
+  /** How far this projector's picture can be from the show clock, by its
+   *  own measure (ms): the clock's uncertainty, what it is still easing in,
+   *  and the video's drift. Null until the clock is set. */
+  syncMs: number | null
+  /** Times the clock had to jump rather than ease into step. */
+  clockSteps: number
+  /** This page's show clock, for the heartbeat's own check on it. */
+  clock: ServerClock
   link: LinkStatus
   /** The status overlay is on the projector. */
   overlay: boolean
@@ -73,9 +81,12 @@ export function OutputScreen({
   hudExtra,
   onStats,
   onShow,
+  trimMs = 0,
 }: {
   showId: number
   outputId: number
+  /** Draw this much later (ms; negative is earlier), set on the Players page. */
+  trimMs?: number
   /** Set on a paired player, so "identify" requests for it are honoured. */
   playerId?: number
   hudExtra?: ReactNode
@@ -129,7 +140,7 @@ export function OutputScreen({
   const { show, setShow, scenes, transport, link, clock, playback, error } = runtime
   const [hud, setHud] = useState(playerId == null)
   const [identify, setIdentify] = useState(false)
-  const [stats, setStats] = useState<FrameStats>({ fps: 0, drift: null, sceneScale: null })
+  const [stats, setStats] = useState<FrameStats>({ fps: 0, drift: null, dropped: 0, sceneScale: null })
   const [size, setSize] = useState<[number, number]>(() => pixelSize())
   const identifyTimer = useRef<number>()
 
@@ -176,6 +187,9 @@ export function OutputScreen({
         height,
         cue: t?.current ? (t.current.position < 0 ? `scene ${t.current.name}` : `${t.current.position + 1} ${t.current.name}`) : null,
         clockMs: c.synced ? Math.round(c.rtt / 2) : null,
+        syncMs: c.synced ? Math.round(c.uncertainty + Math.abs(c.easing) + Math.abs((frame.drift ?? 0) * 1000)) : null,
+        clockSteps: c.steps,
+        clock: c,
         link: l,
         overlay: h,
       })
@@ -260,6 +274,7 @@ export function OutputScreen({
         calibration={calibration}
         interaction={transport?.current?.interaction ?? 'none'}
         outputs={show.outputs}
+        trimMs={trimMs}
       />
       {showHud && (
         <div className="pointer-events-none absolute left-4 top-4 space-y-1 rounded-lg bg-black/70 px-4 py-3 font-mono text-xs text-slate-200 ring-1 ring-white/10">
@@ -271,8 +286,11 @@ export function OutputScreen({
             {transport?.current ? ` · ${liveLabel(transport.current)}` : ''}
           </p>
           <p>
-            link {link} · clock {clock.synced ? `±${Math.round(clock.rtt / 2)} ms` : 'syncing'} · {stats.fps.toFixed(0)} fps
+            link {link} · clock {clock.synced ? `±${Math.max(1, Math.round(clock.uncertainty))} ms` : 'syncing'}
+            {clock.steps ? ` (${clock.steps} jump${clock.steps === 1 ? '' : 's'})` : ''} · {stats.fps.toFixed(0)} fps
+            {stats.dropped ? ` · ${stats.dropped} dropped` : ''}
             {stats.drift != null ? ` · drift ${(stats.drift * 1000).toFixed(0)} ms` : ''}
+            {trimMs ? ` · shifted ${trimMs > 0 ? '+' : ''}${trimMs} ms` : ''}
             {stats.sceneScale != null ? ` · scene detail ${Math.round(stats.sceneScale * 100)}%` : ''}
           </p>
           <p className={mismatch ? 'text-amber-300' : 'text-slate-400'}>

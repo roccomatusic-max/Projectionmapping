@@ -65,7 +65,11 @@ const PATTERN_CODE: Record<TestPattern, number> = {
   red: 5,
   green: 6,
   blue: 7,
+  sync: 8,
 }
+
+/** The sync test's sweep crosses the whole canvas in this long (ms). */
+const SWEEP_MS = 4000
 
 const VERTEX = `#version 300 es
 in vec2 aPos;
@@ -120,6 +124,7 @@ uniform int uHasScene;
 uniform vec4 uDistort;     // style (0 ripple, 1 swirl, 2 bulge), size, amount, speed
 uniform float uDistortOn;  // strength, 0 when no distort layer plays
 uniform float uSceneTime;
+uniform float uSweep;
 
 vec2 mediaUv(vec2 c, vec2 size, int fit, int own, out float inside) {
   // A picture of the output's own is laid over its slice, not the canvas,
@@ -280,6 +285,19 @@ void main() {
     col = vec3(0.0, 1.0, 0.0);
   } else if (uPattern == 7) {
     col = vec3(0.0, 0.0, 1.0);
+  } else if (uPattern == 8) {
+    // The sync test: a line sweeping across the whole canvas, through every
+    // projector in turn, with a fading tail; numbers of this projector's own
+    // laid over it. In step, the line crosses from one projector to the next
+    // without a jump.
+    float fw = max(fwidth(c.x), 1e-5);
+    float behind = fract(uSweep - c.x);
+    float line = 1.0 - smoothstep(fw * 2.0, fw * 4.0, min(behind, 1.0 - behind));
+    float tail = (1.0 - smoothstep(0.0, 0.12, behind)) * 0.35;
+    col = vec3(0.04) + vec3(0.2, 0.75, 1.0) * tail;
+    vec4 o = texture(uOverlay, vUv);
+    col = mix(col, o.rgb, o.a);
+    col = mix(col, vec3(1.0), line);
   }
 
   col = pow(max(col, vec3(0.0)), vec3(1.0 / uGamma)) * uGain * uBright;
@@ -409,6 +427,70 @@ function drawIdOverlay(canvas: HTMLCanvasElement, output: Output) {
   // in the middle and towards each corner, where focus usually goes first.
   const r = h * 0.075
   for (const [x, y] of [[0.5, 0.5], [0.2, 0.32], [0.8, 0.32], [0.2, 0.68], [0.8, 0.68]]) focusStar(ctx, w * x, h * y, r)
+}
+
+/**
+ * The sync test's numbers, in the projector's own pixels: the show clock
+ * to the millisecond, the 60-a-second frame it is on, a bar filling once a
+ * second, and a square flashing white for the first tenth of every second.
+ * Photograph two projectors at once and the numbers and bars should match;
+ * film them and the squares should flash together.
+ */
+export function drawSyncOverlay(canvas: HTMLCanvasElement, output: Output, now: number, note: string) {
+  const ctx = canvas.getContext('2d')!
+  const { width: w, height: h } = canvas
+  ctx.clearRect(0, 0, w, h)
+  const ms = ((now % 1000) + 1000) % 1000
+  const seconds = Math.floor(now / 1000)
+  const mono = 'ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+  ctx.font = `600 ${Math.round(h / 16)}px Inter, system-ui, sans-serif`
+  ctx.fillText(`Sync test · ${output.name}`, w / 2, h * 0.09)
+
+  // Seconds and milliseconds of the show clock, every projector alike.
+  ctx.fillStyle = '#fff'
+  ctx.font = `700 ${Math.round(h / 4.2)}px ${mono}`
+  const s2 = String(seconds % 60).padStart(2, '0')
+  ctx.fillText(`${s2}.${String(Math.floor(ms)).padStart(3, '0')}`, w / 2, h * 0.36)
+  // Which sixtieth of a second, counted from the minute: the same number
+  // on every projector in step, one apart if a frame apart.
+  const frame = Math.floor(((((now % 60_000) + 60_000) % 60_000) * 60) / 1000)
+  ctx.fillStyle = 'rgb(125, 211, 252)'
+  ctx.font = `600 ${Math.round(h / 11)}px ${mono}`
+  ctx.fillText(`frame ${String(frame).padStart(4, '0')}`, w / 2, h * 0.56)
+
+  // A bar filling once a second, with a mark every 10 ms and a number every 100.
+  const left = w * 0.08
+  const width = w * 0.84
+  const top = h * 0.67
+  const tall = h * 0.08
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)'
+  ctx.fillRect(left, top, width, tall)
+  ctx.fillStyle = 'rgb(250, 204, 21)'
+  ctx.fillRect(left, top, (width * ms) / 1000, tall)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+  for (let t = 0; t <= 1000; t += 10) {
+    const x = left + (width * t) / 1000
+    const big = t % 100 === 0
+    ctx.fillRect(x - (big ? 1.5 : 0.5), top + tall, big ? 3 : 1, big ? tall * 0.6 : tall * 0.3)
+  }
+  ctx.font = `500 ${Math.round(h / 32)}px ${mono}`
+  for (let t = 0; t <= 1000; t += 100) ctx.fillText(String(t), left + (width * t) / 1000, top + tall * 2.05)
+
+  // Flashes white for the first 100 ms of every second.
+  const box = h * 0.14
+  ctx.fillStyle = ms < 100 ? '#fff' : 'rgba(255, 255, 255, 0.08)'
+  ctx.fillRect(w - box * 1.25, h * 0.04, box, box)
+  ctx.fillRect(box * 0.25, h * 0.04, box, box)
+
+  if (note) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
+    ctx.font = `400 ${Math.round(h / 30)}px Inter, system-ui, sans-serif`
+    ctx.fillText(note, w / 2, h * 0.94)
+  }
 }
 
 function focusStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
@@ -712,6 +794,7 @@ export class OutputRenderer {
     surfaces = [],
     frameTime = performance.now() / 1000,
     now,
+    syncNote = '',
   }: {
     mix?: number
     blackout?: boolean
@@ -725,8 +808,10 @@ export class OutputRenderer {
     surfaces?: Surface[]
     /** Any steady clock, seconds; scenes use it for how long a frame took. */
     frameTime?: number
-    /** Now on the server's clock, epoch ms (a house part's checkerboard square). */
+    /** Now on the server's clock, epoch ms (a house part's checkerboard square, the sync test). */
     now?: number
+    /** A line about this computer's clock, shown at the bottom of the sync test. */
+    syncNote?: string
   } = {}) {
     const output = this.output
     if (this.lost || !output) return
@@ -841,10 +926,31 @@ export class OutputRenderer {
     gl.uniform4f(this.u('uDistort'), distort?.style ?? 0, distort?.size ?? 0, distort?.amount ?? 0, distort?.speed ?? 0)
     gl.uniform1f(this.u('uDistortOn'), distort ? Math.min(1, this.scenes!.distortStrength) : 0)
     gl.uniform1f(this.u('uSceneTime'), scenes[0]?.time ?? 0)
+    if (output.test_pattern === 'sync') this.drawSync(output, now ?? Date.now(), syncNote)
 
     gl.bindVertexArray(this.vao)
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0)
     gl.bindVertexArray(null)
+  }
+
+  /** The sync test's numbers for this moment, and where the sweep is. */
+  private drawSync(output: Output, now: number, note: string) {
+    const gl = this.gl
+    const scale = Math.min(1, 1280 / Math.max(output.width, output.height))
+    const w = Math.max(64, Math.round(output.width * scale))
+    const h = Math.max(64, Math.round(output.height * scale))
+    if (this.overlayCanvas.width !== w || this.overlayCanvas.height !== h) {
+      this.overlayCanvas.width = w
+      this.overlayCanvas.height = h
+    }
+    drawSyncOverlay(this.overlayCanvas, output, now, note)
+    gl.activeTexture(gl.TEXTURE0 + UNITS.findIndex(([name]) => name === 'overlay'))
+    gl.bindTexture(gl.TEXTURE_2D, this.textures.overlay)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.overlayCanvas)
+    gl.activeTexture(gl.TEXTURE0)
+    // Another pattern drawn into the overlay next must draw it again.
+    this.overlayKey = 'sync'
+    gl.uniform1f(this.u('uSweep'), (((now % SWEEP_MS) + SWEEP_MS) % SWEEP_MS) / SWEEP_MS)
   }
 
   dispose() {
