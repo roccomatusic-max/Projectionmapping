@@ -1,11 +1,13 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { Session } from '@/api/client'
-import { CalendarIcon, CheckIcon, ClockIcon, RunShowIcon, StopIcon } from '@/components/icons'
-import { TimesEditor, calendarLines, groupLines, timeLine, usedText } from '@/components/tonight/TonightShow'
+import { AddIcon, CalendarIcon, CheckIcon, ClockIcon, EditIcon, RunShowIcon, StopIcon } from '@/components/icons'
+import { EntryEditor } from '@/components/calendar/EntryEditor'
+import { isoDate } from '@/lib/calendar'
+import { ComingUp, groupLines, plannedLines, showTonight, timeLine, tonightName, useCalendarAhead, usedText } from '@/components/tonight/TonightShow'
 import { TONE_DOT, TONE_TEXT, type Tone } from '@/components/tone'
 import { classNames } from '@/lib/format'
 import { usedPlaylistText } from '@/components/tonight/Playlists'
-import { clockText, describeDays, playlistNow, timeOf, tonightApi, type Playlist, type SceneGroup, type Tonight } from '@/lib/tonight'
+import { clockText, playlistNow, timeOf, tonightApi, type Playlist, type SceneGroup, type Tonight } from '@/lib/tonight'
 import { mappingApi } from '@/mapping/api'
 import type { MappingScene, Show, ShowSummary, TransportState } from '@/mapping/types'
 
@@ -13,8 +15,9 @@ import type { MappingScene, Show, ShowSummary, TransportState } from '@/mapping/
  * Tonight's show on the phone: the same plan as the Dashboard's card
  * (components/tonight/TonightShow.tsx), laid out for one thumb. Shows what
  * plays tonight and when (a playlist's step on now and the next one),
- * picks tonight's scene group or playlist, starts or stops the show, and
- * sets the show time.
+ * picks tonight's scene group or playlist, starts or stops the show, adds
+ * a show tonight (only nights with a show added play) and lists the nights
+ * coming up.
  */
 
 function errorText(err: unknown, fallback: string) {
@@ -36,11 +39,12 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
   const [scenes, setScenes] = useState<MappingScene[]>([])
   const [shows, setShows] = useState<ShowSummary[]>([])
   const [fullShows, setFullShows] = useState<Record<number, Show>>({})
-  const [editing, setEditing] = useState(false)
+  const [planning, setPlanning] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [, tick] = useState(0)
+  const ahead = useCalendarAhead(tonight)
 
   const load = useCallback(async () => {
     try {
@@ -131,8 +135,7 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
   const playingTonight =
     !!tonight?.show_id && transport?.show_id === tonight.show_id && (transport.status === 'playing' || transport.status === 'paused')
   const multipleShows = shows.length > 1
-  // Tonight is planned by the calendar (a show, or no show), not the weekly time.
-  const onCalendarTonight = !!tonight && (tonight.tonight_slots.some((s) => s.source === 'calendar') || !!tonight.cancelled_by)
+  const planned = !!tonight && showTonight(tonight)
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 pb-6 pt-3">
@@ -153,9 +156,9 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
             <span className={classNames('h-2 w-2 rounded-full', TONE_DOT[time.tone], time.tone === 'ok' && 'animate-pulse')} />
             {time.chip}
           </span>
-          <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">Playing tonight</p>
-          <p className="mt-0.5 truncate text-[22px] font-semibold leading-tight text-slate-50">
-            {tonight.playlist_name ?? tonight.group_name ?? (groups.length ? 'Pick tonight’s scenes below' : 'No scene group yet')}
+          <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">{planned ? 'Playing tonight' : 'Tonight'}</p>
+          <p className={classNames('mt-0.5 truncate text-[22px] font-semibold leading-tight', planned ? 'text-slate-50' : 'text-slate-400')}>
+            {tonightName(tonight, groups)}
           </p>
           {tonight.playlist_name && (playlistNow(tonight).now || playlistNow(tonight).next) && (
             <div className="mt-2 space-y-0.5 text-[15px]">
@@ -182,28 +185,22 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
             </ol>
           )}
           <div className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[15px]">
-            {calendarLines(tonight).map((line, i) => (
-              <p key={line} className={i === 0 ? 'font-medium text-sky-200' : 'text-slate-200'}>
+            {plannedLines(tonight).map((line) => (
+              <p key={line} className="tnum text-slate-200">
                 {line}
               </p>
             ))}
-            {tonight.enabled && tonight.start_at && !onCalendarTonight ? (
-              <>
-                <p className="text-slate-200">
-                  {clockText(tonight.start_at)} to {clockText(tonight.end_at)}
-                </p>
-                <p className="text-slate-400">
-                  {describeDays(tonight.days)[0].toUpperCase() + describeDays(tonight.days).slice(1)}
-                  {tonight.power && ' · projectors turn on and off by themselves'}
-                </p>
-              </>
-            ) : null}
             <p className="flex items-start gap-1.5 text-slate-300">
               <ClockIcon size={16} className="mt-0.5 shrink-0 text-slate-500" aria-hidden />
               {time.line}
             </p>
             {tonight.last_message && <p className="text-xs text-slate-500">Last: {tonight.last_message}</p>}
           </div>
+          {ahead.data && (
+            <div className="mt-3 border-t border-white/[0.06] pt-3">
+              <ComingUp ahead={ahead.ahead} phone />
+            </div>
+          )}
         </section>
       )}
 
@@ -239,11 +236,11 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
             </button>
           )}
           <button
-            className="flex h-16 items-center justify-center gap-2 rounded-2xl bg-panel-850 text-[16px] font-semibold text-slate-100 ring-1 ring-white/[0.08] active:scale-[0.97]"
-            aria-expanded={editing}
-            onClick={() => setEditing((open) => !open)}
+            className="flex h-16 items-center justify-center gap-2 rounded-2xl bg-panel-850 px-2 text-[16px] font-semibold leading-tight text-slate-100 ring-1 ring-white/[0.08] active:scale-[0.97] disabled:opacity-50"
+            disabled={!ahead.data}
+            onClick={() => setPlanning(true)}
           >
-            <ClockIcon size={20} aria-hidden /> {tonight.enabled ? 'Change time' : 'Set time'}
+            {ahead.entry ? <EditIcon size={20} aria-hidden /> : <AddIcon size={20} aria-hidden />} {ahead.entry ? 'Change tonight' : 'Add a show tonight'}
           </button>
         </div>
       )}
@@ -252,35 +249,39 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
           className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-panel-900 text-[15px] font-medium text-slate-200 ring-1 ring-white/[0.06] active:scale-[0.98]"
           onClick={onCalendar}
         >
-          <CalendarIcon size={18} aria-hidden /> Plan shows on the calendar
+          <CalendarIcon size={18} aria-hidden /> Add shows on other nights
         </button>
       )}
       {walk}
       {!canRun && <p className="text-center text-sm text-slate-500">Your account can see tonight&apos;s show but not change it.</p>}
 
-      {editing && tonight && (
-        <div className="overflow-hidden rounded-3xl ring-1 ring-white/[0.06]">
-          <TimesEditor
-            tonight={tonight}
-            shows={shows.map((s) => ({ id: s.id, name: s.name }))}
-            onCancel={() => setEditing(false)}
-            onSaved={(next) => {
-              setTonight(next)
-              setEditing(false)
-              setNotice({
-                tone: 'ok',
-                text: next.enabled ? `Show time saved: ${clockText(next.start_at)} to ${clockText(next.end_at)}, ${describeDays(next.days)}.` : 'The show will not start by itself.',
-              })
-            }}
-          />
-        </div>
+      {planning && tonight && (
+        <EntryEditor
+          entry={ahead.entry}
+          date={isoDate(now)}
+          night={isoDate(now)}
+          like={ahead.like}
+          groupId={tonight.plan_group_id}
+          playlistId={tonight.plan_playlist_id}
+          groups={groups}
+          playlists={playlists}
+          shows={shows.map((s) => ({ id: s.id, name: s.name }))}
+          defaultShowId={tonight.show_id}
+          onClose={() => setPlanning(false)}
+          onSaved={(message) => {
+            setPlanning(false)
+            setNotice({ tone: 'ok', text: message })
+            void load()
+            ahead.reload()
+          }}
+        />
       )}
 
       <section className="mt-1">
         <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Pick tonight&apos;s scenes</h2>
         {groups.length === 0 ? (
           <p className="rounded-3xl bg-panel-900 p-5 text-[15px] text-slate-400 ring-1 ring-white/[0.06]">
-            No scene groups yet. Make one on the Dashboard of Projector Control, then pick it here each evening.
+            No scene groups yet. Make one on the Dashboard of Projector Control, then pick it here.
           </p>
         ) : (
           <ul className="overflow-hidden rounded-3xl bg-panel-900 ring-1 ring-white/[0.06]">
@@ -308,7 +309,7 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
                     ) : (
                       active && (
                         <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
-                          <CheckIcon size={12} aria-hidden /> Tonight
+                          <CheckIcon size={12} aria-hidden /> {planned ? 'Tonight' : 'Picked'}
                         </span>
                       )
                     )}
@@ -325,7 +326,7 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Or a playlist</h2>
           <ul className="overflow-hidden rounded-3xl bg-panel-900 ring-1 ring-white/[0.06]">
             {playlists.map((playlist, i) => {
-              const active = tonight?.plan_playlist_id === playlist.id || (tonight?.playlist_id === playlist.id && tonight.state === 'running')
+              const active = planned && tonight?.playlist_id === playlist.id && tonight.state !== 'done'
               const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? 'Deleted group'
               return (
                 <li key={playlist.id} className={classNames(i > 0 && 'border-t border-white/[0.05]', active && 'bg-sky-500/[0.08]')}>
@@ -348,7 +349,7 @@ export default function TonightTab({ session, transport, onCalendar, walk }: {
                     ) : (
                       active && (
                         <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
-                          <CheckIcon size={12} aria-hidden /> Tonight
+                          <CheckIcon size={12} aria-hidden /> {planned ? 'Tonight' : 'Picked'}
                         </span>
                       )
                     )}

@@ -3,8 +3,8 @@
  *
  * "Halloween night" might be Spooky from 6:45 PM, Pumpkins from 8:00 PM
  * and Quiet from 9:30 PM, each fading in over a few seconds. Picking one
- * plays it at the weekly show time; the Calendar can plan one for any
- * night. The server moves the projectors on at each time
+ * plays it now and on tonight's show (when tonight has one of its own);
+ * the Calendar can put one on any night. The server moves the projectors on at each time
  * (services/playlists.py and services/tonight.py).
  */
 
@@ -160,7 +160,8 @@ export function PlaylistsPanel({
       ) : (
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
           {playlists.map((playlist) => {
-            const active = tonight?.plan_playlist_id === playlist.id
+            // Tonight's show plays it (picked last, with no show tonight, it only waits for Start now).
+            const active = tonight?.playlist_id === playlist.id && (tonight.state === 'later' || tonight.state === 'running')
             const playingNow = tonight?.playlist_id === playlist.id && tonight.state === 'running'
             return (
               <div
@@ -176,7 +177,7 @@ export function PlaylistsPanel({
                   disabled={!canOperate || busy != null}
                   aria-pressed={active}
                   onClick={() => void use(playlist)}
-                  title={canOperate ? 'Play this at the weekly show time' : undefined}
+                  title={canOperate ? 'Play this tonight' : undefined}
                 >
                   <span className="flex w-full items-center gap-2 pr-7">
                     <span className="truncate text-base font-semibold text-slate-50">{playlist.name}</span>
@@ -240,17 +241,20 @@ export function PlaylistsPanel({
 
 /** What picking a playlist did, for the notice under the card. */
 export function usedPlaylistText(playlist: Playlist, tonight: Tonight): { tone: Tone; text: string } {
-  const fromCalendar = tonight.tonight_slots.find((s) => s.source === 'calendar' && new Date(s.ends_at).getTime() > Date.now())
-  if (fromCalendar && fromCalendar.playlist_id !== playlist.id) {
+  const planned = tonight.tonight_slots.find((s) => new Date(s.ends_at).getTime() > Date.now())
+  if (planned && planned.playlist_id !== playlist.id) {
     return {
       tone: 'warn',
-      text: `${playlist.name} is set for the weekly show time. Tonight the calendar plays ${fromCalendar.title} instead; change that on the Calendar page.`,
+      text: `${playlist.name} is set. Tonight’s ${planned.title} covers several nights and keeps its own look; change it on the Calendar.`,
     }
   }
   if (tonight.playlist_id === playlist.id && tonight.state === 'running') {
     return { tone: 'ok', text: `Playing ${playlist.name}. The scenes change by themselves at each time.` }
   }
-  return { tone: 'ok', text: `${playlist.name} is set for tonight. The scenes change by themselves at each time once the show starts.` }
+  if (!planned) {
+    return { tone: 'warn', text: `${playlist.name} is set, but no show is planned tonight. Add a show tonight, or press Start now.` }
+  }
+  return { tone: 'ok', text: `${playlist.name} plays tonight. The scenes change by themselves at each time once the show starts.` }
 }
 
 function PlaylistEditor({

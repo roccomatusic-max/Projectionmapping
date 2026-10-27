@@ -31,6 +31,16 @@ async def _setup(api, headers):
     return show, outputs, scenes, cues
 
 
+async def plan_night(api, headers, start: datetime, end: datetime, **extra):
+    """Put a show on the calendar for the night ``start`` falls on."""
+    night = start.date().isoformat()
+    made = await api.post("/api/calendar/entries", headers=headers, json={
+        "start_date": night, "end_date": night, "start_at": start.strftime("%H:%M"),
+        "end_at": end.strftime("%H:%M"), **extra})
+    assert made.status_code == 201, made.text
+    return made.json()
+
+
 async def _cues(api, headers, show_id):
     return (await api.get(f"/api/mapping/shows/{show_id}", headers=headers)).json()["cues"]
 
@@ -92,59 +102,52 @@ async def test_a_scene_group_sets_every_projector_in_one_click(api):
     assert tonight["show_id"] == show["id"]
 
 
-async def test_tonight_show_time_is_kept_and_checked(api):
+async def test_tonight_follows_the_calendar(api):
     headers = await login(api)
     show, *_ = await _setup(api, headers)
 
     tonight = (await api.get("/api/tonight", headers=headers)).json()
-    # The only show is picked by itself; no time yet.
+    # The only show is picked by itself; nothing planned yet.
     assert tonight["show_id"] == show["id"]
     assert tonight["state"] == "off"
-    assert tonight["days"] == [0, 1, 2, 3, 4, 5, 6]
-
-    for bad in ({"start_at": "25:00"}, {"days": [7]},
-                {"enabled": True, "start_at": "18:00"},
-                {"enabled": True, "start_at": "18:00", "end_at": "18:00"},
-                {"enabled": True, "start_at": "18:00", "end_at": "23:00", "days": []}):
-        refused = await api.put("/api/tonight", headers=headers, json=bad)
-        assert refused.status_code in (400, 422), bad
-
+    # The old weekly show time plans nothing.
     saved = await api.put("/api/tonight", headers=headers, json={
-        "enabled": True, "start_at": "18:00", "end_at": "01:00", "power": False})
+        "enabled": True, "start_at": "18:00", "end_at": "23:00", "days": [0, 1, 2]})
     assert saved.status_code == 200, saved.text
-    assert saved.json()["start_at"] == "18:00"
-    assert saved.json()["power"] is False
+    assert saved.json()["state"] == "off"
+    assert saved.json()["tonight_slots"] == []
+
+    zone = datetime.now().astimezone().tzinfo
+
+    def at(hour, minute=0, day=0):
+        base = datetime(2026, 10, 24, tzinfo=zone) + timedelta(days=day)
+        return base.replace(hour=hour, minute=minute)
+
+    await plan_night(api, headers, at(18), at(1, day=1), power=False)
+    await plan_night(api, headers, at(18, day=2), at(23, day=2))
 
     from app.db.session import session_scope
     from app.services import tonight as service
 
-    zone = datetime.now().astimezone().tzinfo
     async with session_scope() as session:
-        def at(hour, minute=0, day=0):
-            base = datetime(2026, 10, 24, tzinfo=zone) + timedelta(days=day)
-            return base.replace(hour=hour, minute=minute)
-
         later = await service.describe(session, at(12))
         assert later["state"] == "later"
         assert later["starts_at"] == at(18)
         assert later["ends_at"] == at(1, day=1)
+        assert later["power"] is True  # the plan's; each show time has its own
+        assert later["tonight_slots"][0]["power"] is False
         running = await service.describe(session, at(23, 30))
         assert running["state"] == "running"
         # After midnight it is still the night that started yesterday.
         after_midnight = await service.describe(session, at(0, 30, day=1))
         assert after_midnight["state"] == "running"
         assert after_midnight["starts_at"] == at(18)
-        done = await service.describe(session, at(2, day=1))
-        assert done["state"] == "later"  # tonight's show is yet to come
-        # Not on Saturdays (2026-10-24 is a Saturday).
-        plan = await service.load_plan(session)
-        plan.days = [0, 1, 2, 3, 4, 6]
-        assert (await service.describe(session, at(12)))["state"] == "not_tonight"
-        assert (await service.describe(session, at(12)))["next_starts_at"] == at(18, day=1)
-        plan.days = list(range(7))
-        plan.end_at = "23:00"
-        assert (await service.describe(session, at(23, 30)))["state"] == "done"
-        await session.rollback()
+        # The 25th has nothing planned: no show, and the next one on the 26th.
+        free = await service.describe(session, at(12, day=1))
+        assert free["state"] == "not_tonight"
+        assert free["next_starts_at"] == at(18, day=2)
+        assert (await service.describe(session, at(23, 30, day=2)))["state"] == "done"
+        assert (await service.describe(session, at(12, day=3)))["state"] == "off"
 
 
 async def test_the_show_starts_and_stops_on_time(api):
@@ -167,10 +170,9 @@ async def test_the_show_starts_and_stops_on_time(api):
     from app.services import tonight as service
 
     now = datetime.now(settings.tz).replace(second=0, microsecond=0)
-    saved = await api.put("/api/tonight", headers=headers, json={
-        "enabled": True, "start_at": (now - timedelta(minutes=2)).strftime("%H:%M"),
-        "end_at": (now + timedelta(hours=1)).strftime("%H:%M"), "power": True})
-    assert saved.json()["state"] == "running"
+    await plan_night(api, headers, now - timedelta(minutes=2), now + timedelta(hours=1),
+                     group_id=group["id"], power=True)
+    assert (await api.get("/api/tonight", headers=headers)).json()["state"] == "running"
 
     # A start time just passed: the show starts now, with tonight's group.
     await service.scheduler.tick(now)
@@ -226,9 +228,7 @@ async def test_the_emergency_stop_holds_tonights_show(api):
     from app.services import tonight as service
 
     now = datetime.now(settings.tz).replace(second=0, microsecond=0)
-    await api.put("/api/tonight", headers=headers, json={
-        "enabled": True, "start_at": now.strftime("%H:%M"),
-        "end_at": (now + timedelta(hours=2)).strftime("%H:%M"), "power": False})
+    await plan_night(api, headers, now, now + timedelta(hours=2), power=False)
     await service.scheduler.tick(now)
     tonight = (await api.get("/api/tonight", headers=headers)).json()
     assert "emergency stop is on" in tonight["last_message"]

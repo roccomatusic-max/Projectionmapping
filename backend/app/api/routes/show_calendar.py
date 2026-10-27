@@ -1,7 +1,9 @@
 """The show calendar: shows planned ahead, night by night.
 
-Entries are one date, a run of dates, or repeating weekdays, each with a
-scene group and a start and end time, or a "no show" entry. The scheduler
+Entries are one date, or a run of dates with an end (every night or the
+weekdays picked), each with a scene group and a start and end time, or a
+"no show" entry. Nothing repeats without an end: a night nobody put a
+show on has no show. The scheduler
 in services/tonight.py plays them; services/show_calendar.py decides which
 show times each night has.
 """
@@ -38,6 +40,8 @@ router = APIRouter(tags=["calendar"])
 
 #: The most days one calendar read covers (six weeks of a month view, and then some).
 MAX_DAYS = 124
+#: The longest run of nights one entry can cover.
+MAX_NIGHTS = 366
 
 
 def _changed() -> None:
@@ -59,8 +63,12 @@ async def _load_entry(session, entry_id: int) -> ShowCalendarEntry:
 
 async def _checked(session, payload: EntryIn) -> dict:
     """The entry's fields, once they make sense together."""
-    if payload.end_date is not None and payload.end_date < payload.start_date:
+    if payload.end_date is None:
+        raise _bad("Pick the last night. Shows only play on the nights you add.")
+    if payload.end_date < payload.start_date:
         raise _bad("The last night has to be on or after the first night")
+    if (payload.end_date - payload.start_date).days > MAX_NIGHTS:
+        raise _bad("A run of nights can be at most a year long")
     if not payload.days:
         raise _bad("Pick at least one night of the week")
     fields = payload.model_dump()
@@ -106,7 +114,7 @@ async def _title(session, entry: ShowCalendarEntry) -> str:
 def _when(entry: ShowCalendarEntry) -> str:
     if entry.end_date == entry.start_date:
         return entry.start_date
-    return f"{entry.start_date} to {entry.end_date or 'no end'}"
+    return f"{entry.start_date} to {entry.end_date}"
 
 
 @router.get("/calendar", response_model=CalendarOut)
@@ -123,8 +131,6 @@ async def get_calendar(session: SessionDep, _: RequireViewer,
         night = planner.night(first + timedelta(days=offset), now.tzinfo)
         slots = []
         for slot in night.slots:
-            if slot.source == "weekly" and night.night < now.date():
-                continue  # the weekly time today stands for the future, not past nights
             state = "done" if slot.end <= now else "running" if slot.start <= now else "later"
             slots.append(CalendarSlot(state=state, **service._slot_out(
                 slot, planner.group_names, planner.playlist_names)))

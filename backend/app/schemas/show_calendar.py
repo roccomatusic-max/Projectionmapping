@@ -19,7 +19,8 @@ class EntryIn(BaseModel):
     #: Plays instead of the group when set.
     playlist_id: int | None = None
     start_date: date
-    #: The last night; None keeps repeating with no end.
+    #: The last night (the same as start_date for one night). Required:
+    #: nothing repeats without an end. Optional here only for a clear message.
     end_date: date | None = None
     days: list[int] = Field(default_factory=lambda: list(range(7)), max_length=7)
     start_at: str | None = Field(default=None, pattern=TIME_PATTERN)

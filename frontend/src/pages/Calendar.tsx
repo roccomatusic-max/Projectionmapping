@@ -12,7 +12,7 @@ export default function Calendar({ session }: { session: Session }) {
       <PageHeader
         icon={CalendarIcon}
         title="Calendar"
-        subtitle="Plan shows ahead. Pick the nights, a scene group and the times; the show starts and stops by itself."
+        subtitle="Add a show to each night you want one: a scene group and the times. Only those nights play; the rest stay dark."
       />
       <CalendarBoard canEdit={session.role !== 'viewer'} subscribe={subscribe} />
     </div>

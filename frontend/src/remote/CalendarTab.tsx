@@ -11,7 +11,7 @@ export default function CalendarTab({ session }: { session: Session }) {
     <div className="mx-auto flex max-w-lg flex-col gap-3 px-4 pb-6 pt-3">
       <header>
         <p className="text-[17px] font-semibold text-slate-50">Calendar</p>
-        <p className="text-xs text-slate-500">Plan shows ahead. Tap a show to change it.</p>
+        <p className="text-xs text-slate-500">Only the nights you add play. Tap a show to change it.</p>
       </header>
       <CalendarBoard canEdit={session.role === 'admin' || session.role === 'operator'} phone />
     </div>

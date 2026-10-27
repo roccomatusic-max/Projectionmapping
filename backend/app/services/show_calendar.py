@@ -1,18 +1,18 @@
 """The show calendar: which show times each night has.
 
-Two things plan a night. The weekly show time (``ShowPlan``: "6 to 11 PM,
-every night") and calendar entries (``ShowCalendarEntry``): one date, a run
-of dates, or repeating weekdays, each with a scene group and its own times,
-or a "no show" entry that keeps a night dark.
+Only the calendar plans shows. Each entry is one night, or a run of nights
+with an end (every night, or only the weekdays picked), with a scene group
+or playlist and its own times; or a "no show" entry that takes nights out
+of a run. A night nobody put a show on has no show. Nothing repeats on its
+own: the old weekly show time (``ShowPlan.enabled``/``start_at``/``days``)
+no longer plans anything.
 
 For any one night the rules are:
 
-* If the calendar has anything for the night, the calendar decides and the
-  weekly show time is not used that night.
 * The more specific entry wins: one date beats a week, a week beats a
-  repeat with no end. Between equally specific entries the newest wins.
+  month. Between equally specific entries the newest wins.
 * A "no show" entry cancels every less specific show that night, so
-  "No shows in November" plus "Party on Nov 14" still plays the party.
+  "No shows Nov 2 to 8" plus "Party on Nov 5" still plays the party.
 * Shows that would overlap a winning show that night are left out.
 
 ``slots_for_night`` turns that into the night's show times, which the
@@ -40,7 +40,8 @@ class Slot:
     night: date
     start: datetime
     end: datetime
-    #: "weekly" (the weekly show time) or "calendar".
+    #: Always "calendar" now; "weekly" was the old weekly show time and
+    #: still names past nights in the show history.
     source: str
     entry_id: int | None
     show_id: int | None
@@ -112,34 +113,17 @@ def entry_title(entry: ShowCalendarEntry, group_names: dict[int, str],
     return group_names.get(entry.group_id or 0) or "Show"
 
 
-def weekly_slot(plan: ShowPlan, night: date, tz, group_names: dict[int, str],
-                playlist_names: dict[int, str] | None = None) -> Slot | None:
-    start_t, end_t = parse_time(plan.start_at), parse_time(plan.end_at)
-    if (not plan.enabled or start_t is None or end_t is None
-            or night.weekday() not in (plan.days or [])):
-        return None
-    start, end = span(start_t, end_t, night, tz)
-    playlist = (playlist_names or {}).get(plan.playlist_id or 0)
-    return Slot(night, start, end, "weekly", None, plan.show_id, plan.group_id, plan.power,
-                playlist or group_names.get(plan.group_id or 0) or "Weekly show time",
-                plan.playlist_id if playlist else None)
-
-
-def resolve_night(plan: ShowPlan, entries: list[ShowCalendarEntry], night: date, tz,
+def resolve_night(entries: list[ShowCalendarEntry], night: date, tz,
                   group_names: dict[int, str],
                   playlist_names: dict[int, str] | None = None) -> Night:
     out = Night(night)
     here = sorted((e for e in entries if applies(e, night)), key=_rank)
-    if not here:
-        weekly = weekly_slot(plan, night, tz, group_names, playlist_names)
-        if weekly is not None:
-            out.slots.append(weekly)
-        return out
     for entry in here:
         title = entry_title(entry, group_names, playlist_names)
         if out.cancelled_by is not None:
+            off = entry_title(out.cancelled_by, group_names)
             out.skipped.append((entry.id, title,
-                                f"{entry_title(out.cancelled_by, group_names)}: no show"))
+                                "no show this night" if off == "No show" else f"{off}: no show"))
             continue
         if entry.kind == "off":
             out.cancelled_by = entry
@@ -155,8 +139,6 @@ def resolve_night(plan: ShowPlan, entries: list[ShowCalendarEntry], night: date,
         playlist_id = entry.playlist_id if entry.playlist_id in (playlist_names or {}) else None
         out.slots.append(Slot(night, start, end, "calendar", entry.id, entry.show_id,
                               entry.group_id, entry.power, title, playlist_id))
-    if weekly_slot(plan, night, tz, group_names) is not None:
-        out.skipped.append((None, "Weekly show time", "the calendar has this night"))
     out.slots.sort(key=lambda s: s.start)
     return out
 
@@ -187,8 +169,7 @@ class Planner:
         return cls(plan, entries, names, playlists)
 
     def night(self, night: date, tz) -> Night:
-        return resolve_night(self.plan, self.entries, night, tz, self.group_names,
-                             self.playlist_names)
+        return resolve_night(self.entries, night, tz, self.group_names, self.playlist_names)
 
     def steps(self, slot: Slot) -> list[TimedStep]:
         """The playlist steps of a show time, placed on its night; [] without one."""
@@ -218,9 +199,9 @@ class Planner:
         return max(running, key=lambda s: s.start) if running else None
 
     def next_start(self, now: datetime) -> Slot | None:
-        # The weekly plan repeats every week; past that only entries can start.
-        horizon = LOOKAHEAD_DAYS if self.entries else 8
-        for offset in range(horizon):
+        if not self.entries:
+            return None
+        for offset in range(LOOKAHEAD_DAYS):
             for slot in self.slots(now.date() + timedelta(days=offset), now.tzinfo):
                 if slot.start > now:
                     return slot
@@ -228,7 +209,5 @@ class Planner:
 
     def anything_planned(self, today: date) -> bool:
         """Whether the show will ever start by itself from today on."""
-        if self.plan.enabled and self.plan.start_at and self.plan.end_at:
-            return True
         return any(e.kind == "show" and (e.end_date is None or e.end_date >= today.isoformat())
                    for e in self.entries)

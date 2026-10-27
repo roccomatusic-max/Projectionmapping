@@ -5,10 +5,12 @@ Using one writes it into every cue of the show (the cue's scene and its
 "Scenes on each projector" choices), so the projectors follow it at once,
 mid-cue included, through the same path the Scenes page uses.
 
-The show plan says which show and group play and from when to when, every
-week; the show calendar (services/show_calendar.py) plans single nights,
-runs of nights and repeats ahead, and wins on the nights it has something
-for. The scheduler here checks both every 20 seconds:
+The show calendar (services/show_calendar.py) is the only thing that plans
+shows: single nights, or runs of nights with an end, each with its own
+times. A night with nothing on it has no show. The show plan row only
+remembers the show and group picked last (what Start now plays when
+nothing is planned) and which show time last started. The scheduler here
+checks the calendar every 20 seconds:
 
 * At the start time it uses the group, presses GO on the first cue and,
   when asked to, turns the show's projectors on. A start time that has
@@ -49,6 +51,7 @@ from app.db.models import (
     MappingShow,
     Projector,
     Severity,
+    ShowCalendarEntry,
     ShowPlan,
 )
 from app.db.session import session_scope
@@ -173,10 +176,6 @@ async def describe(session, now: datetime | None = None) -> dict[str, Any]:
         "show_name": show.name if show else None,
         "group_id": group.id if group else None,
         "group_name": group.name if group else None,
-        "enabled": plan.enabled,
-        "start_at": plan.start_at,
-        "end_at": plan.end_at,
-        "days": list(plan.days or []),
         "power": plan.power,
         "state": state,
         "starts_at": shown.start if shown else None,
@@ -222,8 +221,7 @@ async def tonights_group_ids(session) -> set[int]:
         live = planner.group_at(current, now)[0]
         if live:
             ids.add(live)
-    if (plan.group_id and plan.playlist_id is None
-            and (current is None or current.source == "weekly")):
+    if plan.group_id and plan.playlist_id is None and current is None:
         ids.add(plan.group_id)
     return ids
 
@@ -282,7 +280,7 @@ async def start_show(*, by: str, slot: Slot | None = None,
     """Use tonight's group, GO on the first cue, turn the projectors on.
 
     Without a show time given, it plays the one on now, else the next one
-    later today, else the weekly plan's show and group. A playlist starts
+    later today, else the show and group picked last. A playlist starts
     on the step its time says, or its first step before then. A start by
     the schedule that goes wrong opens an alert (which can reach the
     phone); nobody is watching then. Any good start closes it.
@@ -429,7 +427,7 @@ async def switch_group(show_id: int, group_id: int | None, fade_seconds: float) 
 
 
 async def use_playlist_now(playlist_id: int) -> None:
-    """A playlist just picked for the weekly show time: put its step on now.
+    """A playlist just picked for tonight: put its step on now.
 
     During the show time that is the step due now, faded in; otherwise its
     first step, so the projectors are ready when the show starts. A show
@@ -454,6 +452,32 @@ async def use_playlist_now(playlist_id: int) -> None:
     if current is not None:
         scheduler.note_step(current.key, step.index, group_id)
     await switch_group(show_id, group_id, step.fade_seconds)
+
+
+async def pick_for_tonight(session, *, show_id: int, group_id: int | None = None,
+                           playlist_id: int | None = None,
+                           now: datetime | None = None) -> ShowCalendarEntry | None:
+    """Tonight's planned show plays this group (or playlist) from now on.
+
+    Only a show planned for tonight alone (a one-night entry) that is on
+    now or still to come is changed: a run of nights keeps its own look,
+    so picking a look tonight never changes other nights. Returns the
+    entry changed, if any.
+    """
+    now = now or datetime.now(settings.tz)
+    plan = await load_plan(session)
+    planner = await Planner.load(session, plan)
+    slot = planner.current(now) or next(
+        (s for s in planner.slots(now.date(), now.tzinfo) if s.start > now), None)
+    if slot is None or slot.entry_id is None:
+        return None
+    entry = await session.get(ShowCalendarEntry, slot.entry_id)
+    if entry is None or entry.kind != "show" or entry.start_date != entry.end_date:
+        return None
+    entry.show_id = show_id
+    entry.group_id = None if playlist_id is not None else group_id
+    entry.playlist_id = playlist_id
+    return entry
 
 
 class TonightScheduler:

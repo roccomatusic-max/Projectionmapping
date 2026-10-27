@@ -165,18 +165,24 @@ async def delete_group(group_id: int, session: SessionDep, admin: RequireAdmin) 
 @router.post("/mapping/scene-groups/{group_id}/use", response_model=TonightOut,
              dependencies=[Depends(command_rate_limit)])
 async def use_group(group_id: int, session: SessionDep, user: RequireOperator) -> TonightOut:
-    """Play this group tonight, and on every projector now."""
+    """Play this group tonight, and on every projector now.
+
+    A show planned for tonight alone plays it too; nothing is planned by it.
+    """
     group = await _load_group(session, group_id)
     plan = await service.load_plan(session)
     plan.show_id = group.show_id
     plan.group_id = group.id
     plan.playlist_id = None
+    entry = await service.pick_for_tonight(session, show_id=group.show_id, group_id=group.id)
     cues = await service.apply_group(session, group)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="scene_group_used",
                       message=f"{user.username} picked {group.name} for tonight "
                               f"({cues} cue{'s' if cues != 1 else ''} changed)"))
     await session.commit()
     bus.publish("mapping_show", {"show_id": group.show_id})
+    if entry is not None:
+        bus.publish("calendar", {})
     service.changed()
     return await _tonight(session)
 
@@ -290,15 +296,22 @@ async def delete_playlist(playlist_id: int, session: SessionDep, admin: RequireA
              dependencies=[Depends(command_rate_limit)])
 async def use_playlist(playlist_id: int, session: SessionDep,
                        user: RequireOperator) -> TonightOut:
-    """Play this playlist at the weekly show time, starting with the step due now."""
+    """Play this playlist tonight, starting with the step due now.
+
+    A show planned for tonight alone plays it; nothing is planned by it.
+    """
     playlist = await _load_playlist(session, playlist_id)
     plan = await service.load_plan(session)
     plan.show_id = playlist.show_id
     plan.playlist_id = playlist.id
+    entry = await service.pick_for_tonight(session, show_id=playlist.show_id,
+                                           playlist_id=playlist.id)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="playlist_used",
                       message=f"{user.username} picked the playlist {playlist.name} for tonight"))
     await session.commit()
     await service.use_playlist_now(playlist.id)
+    if entry is not None:
+        bus.publish("calendar", {})
     service.changed()
     return await _tonight(session)
 
@@ -315,7 +328,7 @@ async def get_tonight(session: SessionDep, _: RequireViewer) -> TonightOut:
 
 @router.put("/tonight", response_model=TonightOut, dependencies=[Depends(write_rate_limit)])
 async def update_tonight(payload: PlanUpdate, session: SessionDep,
-                         user: RequireOperator) -> TonightOut:
+                         _: RequireOperator) -> TonightOut:
     plan = await service.load_plan(session)
     changes = payload.model_dump(exclude_unset=True)
     if "show_id" in changes and changes["show_id"] is not None:
@@ -325,19 +338,6 @@ async def update_tonight(payload: PlanUpdate, session: SessionDep,
             plan.playlist_id = None
     for field, value in changes.items():
         setattr(plan, field, value)
-    if plan.enabled and not (plan.start_at and plan.end_at):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Set both a start time and an end time")
-    if plan.enabled and plan.start_at == plan.end_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="The end time has to be different from the start time")
-    if plan.enabled and not plan.days:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Pick at least one night of the week")
-    if {"start_at", "end_at", "days", "enabled"} & changes.keys():
-        times = f"{plan.start_at} to {plan.end_at}" if plan.enabled else "off"
-        session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="tonight_changed",
-                          message=f"{user.username} set tonight's show time: {times}"))
     await session.commit()
     service.changed()
     return await _tonight(session)

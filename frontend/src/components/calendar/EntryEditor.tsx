@@ -1,15 +1,18 @@
 /**
- * Plan a show on the calendar, or a night with no show: one night, a run of
- * nights, or every week. Used by the Calendar page and the phone remote.
+ * Add a show to the calendar: one night, or a run of nights with a last
+ * night (every night, or the weekdays picked). Nothing repeats by itself,
+ * so a night nobody added a show to has no show. Also changes a "no show"
+ * night made earlier, and takes one night out of a run. Used by the
+ * Calendar page, the Dashboard's Tonight's show card and the phone remote.
  */
 
 import { useMemo, useState } from 'react'
 import { Banner, ConfirmDialog, Modal } from '@/components/ui'
 import { classNames } from '@/lib/format'
-import { calendarApi, isoDate, type CalendarEntry, type EntryBody } from '@/lib/calendar'
+import { addDays, calendarApi, dayText, fromIso, isoDate, weekday, type CalendarEntry, type EntryBody } from '@/lib/calendar'
 import { DAY_NAMES, describeDays, type Playlist, type SceneGroup } from '@/lib/tonight'
 
-type Repeat = 'once' | 'range' | 'weekly'
+type Repeat = 'once' | 'range'
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
 
 function errorText(err: unknown, fallback: string) {
@@ -17,8 +20,38 @@ function errorText(err: unknown, fallback: string) {
 }
 
 function repeatOf(entry: CalendarEntry | null): Repeat {
-  if (!entry || entry.end_date === entry.start_date) return 'once'
-  return entry.end_date ? 'range' : 'weekly'
+  return !entry || entry.end_date === entry.start_date ? 'once' : 'range'
+}
+
+/** Takes one night out of a run: trims an end, or puts a "no show" on a night in the middle. */
+async function skipNight(entry: CalendarEntry, night: string): Promise<void> {
+  const body = (changes: Partial<EntryBody>): EntryBody => ({
+    kind: entry.kind,
+    title: entry.title,
+    show_id: entry.show_id,
+    group_id: entry.group_id,
+    playlist_id: entry.playlist_id,
+    start_date: entry.start_date,
+    end_date: entry.end_date,
+    days: entry.days,
+    start_at: entry.start_at,
+    end_at: entry.end_at,
+    power: entry.power,
+    note: entry.note,
+    ...changes,
+  })
+  // The nights the run still plays, without this one.
+  const last = entry.end_date ?? entry.start_date
+  const plays: string[] = []
+  for (let d = fromIso(entry.start_date); isoDate(d) <= last; d = addDays(d, 1)) {
+    if (entry.days.includes(weekday(d)) && isoDate(d) !== night) plays.push(isoDate(d))
+  }
+  if (plays.length === 0) return calendarApi.remove(entry.id)
+  if (night < plays[0] || night > plays[plays.length - 1]) {
+    await calendarApi.update(entry.id, body({ start_date: plays[0], end_date: plays[plays.length - 1] }))
+    return
+  }
+  await calendarApi.create({ ...body({ start_date: night, end_date: night, days: ALL_DAYS }), kind: 'off', title: '', show_id: null, group_id: null, playlist_id: null, start_at: null, end_at: null, note: '' })
 }
 
 function Segmented<T extends string>({ value, options, onChange, label }: {
@@ -61,7 +94,10 @@ function Field({ label, children, hint }: { label: string; children: React.React
 export function EntryEditor({
   entry,
   date,
-  kind: startKind = 'show',
+  night,
+  like,
+  groupId: startGroupId,
+  playlistId: startPlaylistId,
   groups,
   playlists = [],
   shows,
@@ -73,7 +109,13 @@ export function EntryEditor({
   entry: CalendarEntry | null
   /** The night a new entry starts on. */
   date?: string
-  kind?: 'show' | 'off'
+  /** The night the entry was opened from: a run of nights can skip just that one. */
+  night?: string
+  /** A new show starts from this one's times and look (the newest on the calendar). */
+  like?: CalendarEntry | null
+  /** A new show's look, when one is picked already (tonight's scene group). */
+  groupId?: number | null
+  playlistId?: number | null
   groups: SceneGroup[]
   playlists?: Playlist[]
   shows: { id: number; name: string }[]
@@ -82,19 +124,30 @@ export function EntryEditor({
   onSaved: (message: string) => void
 }) {
   const today = isoDate(new Date())
-  const [kind, setKind] = useState<'show' | 'off'>(entry?.kind ?? startKind)
+  const kind = entry?.kind ?? 'show'
   const [repeat, setRepeat] = useState<Repeat>(repeatOf(entry))
-  const [groupId, setGroupId] = useState<number | null>(entry ? entry.group_id : groups.find((g) => g.show_id === defaultShowId)?.id ?? groups[0]?.id ?? null)
-  const [playlistId, setPlaylistId] = useState<number | null>(entry?.playlist_id ?? null)
-  const [showId, setShowId] = useState<number | null>(entry?.show_id ?? defaultShowId ?? shows[0]?.id ?? null)
+  const pickedPlaylist = startPlaylistId != null && playlists.some((p) => p.id === startPlaylistId) ? startPlaylistId : null
+  const pickedGroup = startGroupId != null && groups.some((g) => g.id === startGroupId) ? startGroupId : null
+  const [groupId, setGroupId] = useState<number | null>(() => {
+    if (entry) return entry.group_id
+    if (pickedPlaylist != null) return null
+    if (pickedGroup != null) return pickedGroup
+    if (like && like.playlist_id == null) return like.group_id
+    return like?.playlist_id != null ? null : groups.find((g) => g.show_id === defaultShowId)?.id ?? groups[0]?.id ?? null
+  })
+  const [playlistId, setPlaylistId] = useState<number | null>(() => {
+    if (entry) return entry.playlist_id
+    if (pickedPlaylist != null) return pickedPlaylist
+    return pickedGroup == null ? like?.playlist_id ?? null : null
+  })
+  const [showId, setShowId] = useState<number | null>(entry?.show_id ?? like?.show_id ?? defaultShowId ?? shows[0]?.id ?? null)
   const [title, setTitle] = useState(entry?.title ?? '')
   const [first, setFirst] = useState(entry?.start_date ?? date ?? today)
   const [last, setLast] = useState(entry?.end_date ?? entry?.start_date ?? date ?? today)
   const [days, setDays] = useState<number[]>(entry?.days ?? ALL_DAYS)
-  const [hasEnd, setHasEnd] = useState(entry ? entry.end_date != null : false)
-  const [start, setStart] = useState(entry?.start_at ?? '18:00')
-  const [end, setEnd] = useState(entry?.end_at ?? '22:00')
-  const [power, setPower] = useState(entry?.power ?? true)
+  const [start, setStart] = useState(entry?.start_at ?? like?.start_at ?? '18:00')
+  const [end, setEnd] = useState(entry?.end_at ?? like?.end_at ?? '22:00')
+  const [power, setPower] = useState(entry?.power ?? like?.power ?? true)
   const [note, setNote] = useState(entry?.note ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -107,7 +160,7 @@ export function EntryEditor({
   const placeholder = kind === 'off' ? 'No show' : playlist?.name ?? group?.name ?? 'Show'
 
   const body = useMemo((): EntryBody => {
-    const endDate = repeat === 'once' ? first : repeat === 'range' ? last : hasEnd ? last : null
+    const endDate = repeat === 'once' ? first : last
     return {
       kind,
       title: title.trim(),
@@ -122,12 +175,14 @@ export function EntryEditor({
       power,
       note: note.trim(),
     }
-  }, [kind, title, group, playlist, showId, groupId, first, last, repeat, hasEnd, days, start, end, power, note])
+  }, [kind, title, group, playlist, showId, groupId, first, last, repeat, days, start, end, power, note])
 
   const problem =
     !first
       ? 'Pick a date.'
-      : body.end_date && body.end_date < first
+      : !body.end_date
+        ? 'Pick the last night.'
+        : body.end_date < first
         ? 'The last night is before the first night.'
         : repeat !== 'once' && days.length === 0
           ? 'Pick at least one night of the week.'
@@ -145,7 +200,8 @@ export function EntryEditor({
     try {
       const saved = entry ? await calendarApi.update(entry.id, body) : await calendarApi.create(body)
       const name = saved.title || placeholder
-      onSaved(entry ? `${name} changed.` : `${name} is on the calendar.`)
+      const when = saved.end_date === saved.start_date ? dayText(saved.start_date) : `${dayText(saved.start_date)} to ${dayText(saved.end_date ?? saved.start_date)}`
+      onSaved(entry ? `${name} changed.` : `${name} is on the calendar for ${when}.`)
     } catch (err) {
       setError(errorText(err, 'Saving did not work'))
       setBusy(false)
@@ -162,6 +218,18 @@ export function EntryEditor({
       setBusy(false)
     }
   }
+  const skip = async () => {
+    if (!entry || !night) return
+    setBusy(true)
+    try {
+      await skipNight(entry, night)
+      onSaved(`No show on ${dayText(night)}. ${entry.title || placeholder} still plays its other nights.`)
+    } catch (err) {
+      setError(errorText(err, 'That did not work'))
+      setBusy(false)
+    }
+  }
+  const multiNight = !!entry && entry.kind === 'show' && entry.end_date !== entry.start_date
   const toggleDay = (day: number) => setDays((current) => (current.includes(day) ? current.filter((d) => d !== day) : [...current, day].sort()))
   const afterMidnight = start && end && end <= start
 
@@ -170,24 +238,14 @@ export function EntryEditor({
       <div className="space-y-4 p-5">
         <div>
           <h3 className="text-base font-semibold text-slate-50">
-            {entry ? `Change “${entry.title || placeholder}”` : kind === 'off' ? 'A night with no show' : 'Plan a show'}
+            {entry ? `Change “${entry.title || placeholder}”` : 'Add a show'}
           </h3>
           <p className="mt-1 text-sm text-slate-400">
             {kind === 'off'
-              ? 'The show does not start by itself on these nights, even if the weekly show time says it should.'
-              : 'On these nights this replaces the weekly show time. The show starts and stops by itself.'}
+              ? 'No show on these nights, even where a longer run of shows covers them.'
+              : 'The show starts and stops by itself on the nights you pick here, and only those. Nights without a show stay dark.'}
           </p>
         </div>
-
-        <Segmented
-          label="What happens"
-          value={kind}
-          onChange={setKind}
-          options={[
-            { id: 'show', label: 'Play a show' },
-            { id: 'off', label: 'No show' },
-          ]}
-        />
 
         {kind === 'show' && (
           <Field
@@ -259,29 +317,16 @@ export function EntryEditor({
             options={[
               { id: 'once', label: 'One night' },
               { id: 'range', label: 'Several nights' },
-              { id: 'weekly', label: 'Every week' },
             ]}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={repeat === 'once' ? 'Date' : repeat === 'range' ? 'First night' : 'Starting'}>
+            <Field label={repeat === 'once' ? 'Date' : 'First night'}>
               <input type="date" className="input w-full" value={first} onChange={(e) => setFirst(e.target.value)} />
             </Field>
             {repeat === 'range' && (
               <Field label="Last night">
                 <input type="date" className="input w-full" value={last} min={first} onChange={(e) => setLast(e.target.value)} />
               </Field>
-            )}
-            {repeat === 'weekly' && (
-              <div className="text-sm">
-                <label className="mb-1 flex items-center gap-2 text-xs font-medium text-slate-400">
-                  <input type="checkbox" checked={hasEnd} onChange={(e) => {
-                    setHasEnd(e.target.checked)
-                    if (e.target.checked && last <= first) setLast(first)
-                  }} />
-                  Stop repeating after
-                </label>
-                <input type="date" className="input w-full" value={hasEnd ? last : ''} min={first} disabled={!hasEnd} onChange={(e) => setLast(e.target.value)} />
-              </div>
             )}
           </div>
           {repeat !== 'once' && (
@@ -331,28 +376,33 @@ export function EntryEditor({
           <textarea className="input min-h-[3.5rem] w-full" value={note} maxLength={2000} placeholder="Trick-or-treat night, neighbours coming over…" onChange={(e) => setNote(e.target.value)} />
         </Field>
 
-        {kind === 'show' && first <= today && (body.end_date == null || body.end_date >= today) && (
+        {kind === 'show' && first <= today && body.end_date != null && body.end_date >= today && (
           <p className="text-xs text-slate-500">If tonight is one of these nights and the start time has passed, the show starts within a minute of saving.</p>
         )}
         {(error || problem) && <Banner tone={error ? 'fault' : 'warn'}>{error ?? problem}</Banner>}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
           {entry && (
             <button className="btn-danger-outline sm:mr-auto" disabled={busy} onClick={() => setConfirmDelete(true)}>
-              Take off the calendar
+              {multiNight ? 'Take off every night' : 'Take off the calendar'}
+            </button>
+          )}
+          {multiNight && night && (
+            <button className="btn-default" disabled={busy} onClick={() => void skip()}>
+              No show on {dayText(night)} only
             </button>
           )}
           <button className="btn-default sm:ml-auto" onClick={onClose}>
             Cancel
           </button>
           <button className="btn-primary" disabled={busy || problem != null} onClick={() => void save()}>
-            {entry ? 'Save' : kind === 'off' ? 'Save no-show nights' : 'Put on the calendar'}
+            {entry ? 'Save' : 'Add to the calendar'}
           </button>
         </div>
       </div>
       <ConfirmDialog
         open={confirmDelete}
         title={`Take “${entry?.title || placeholder}” off the calendar?`}
-        body="Those nights go back to the weekly show time. Scene groups and scenes are kept."
+        body={multiNight ? 'None of its nights will have a show. Scene groups and scenes are kept.' : 'That night will have no show. Scene groups and scenes are kept.'}
         confirmLabel="Take it off"
         danger
         onCancel={() => setConfirmDelete(false)}

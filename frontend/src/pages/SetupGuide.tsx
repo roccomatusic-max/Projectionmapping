@@ -25,10 +25,9 @@ interface Guide {
   }
   sign_in: { admins: string[]; password_hint: string; reset: string | null; reset_where: string | null }
   show: {
-    enabled: boolean
-    start_at: string | null
-    end_at: string | null
-    days: number[]
+    /** The next show planned on the calendar. */
+    next_title: string | null
+    next_starts_at: string | null
     show_name: string | null
     group_name: string | null
   }
@@ -63,19 +62,6 @@ interface Guide {
 }
 
 const SYSTEM = { mac: 'Mac', windows: 'Windows', linux: 'Linux' }
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-function clock(value: string | null) {
-  if (!value) return '—'
-  const [h, m] = value.split(':').map(Number)
-  return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-}
-
-function nights(days: number[]) {
-  const sorted = [...new Set(days)].sort()
-  return sorted.length === 7 ? 'every night' : sorted.map((d) => DAYS[d]).join(', ')
-}
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="break-inside-avoid">
@@ -179,10 +165,10 @@ export default function SetupGuide() {
                       </dd>
                     </div>
                   )}
-                  <Row label="Show time">
-                    {show.enabled && show.start_at
-                      ? `${clock(show.start_at)} to ${clock(show.end_at)}, ${nights(show.days)}${show.group_name ? ` (${show.group_name})` : ''}`
-                      : 'not set (Dashboard → Tonight’s show)'}
+                  <Row label="Next show">
+                    {show.next_starts_at
+                      ? `${show.next_title ?? 'Show'}, ${new Date(show.next_starts_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                      : 'none planned (Calendar → Add a show)'}
                   </Row>
                 </dl>
               </Section>

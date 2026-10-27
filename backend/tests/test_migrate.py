@@ -23,7 +23,7 @@ MAPPING_TABLES = {"media_assets", "mapping_shows", "mapping_outputs", "mapping_c
                   "mapping_scene_groups", "show_plan", "show_calendar",
                   "heaters", "heater_readings", "weather_place",
                   "show_nights", "history_settings", "mapping_playlists"}
-HEAD_REVISION = "d7a3f9c2e5b1"
+HEAD_REVISION = "c7e1a5d9f3b2"
 
 
 def test_classification():
@@ -127,3 +127,69 @@ async def test_stacked_outputs_are_spread_out(sqlite_file):
         assert json.loads(got[4]) == json.loads(full)
     finally:
         await engine.dispose()
+
+
+async def test_the_weekly_show_time_moves_onto_the_calendar(sqlite_file):
+    """Nights the weekly time played this month become one calendar night each."""
+    import calendar
+    from datetime import date, datetime, timedelta
+
+    from app.config import settings
+
+    url = f"sqlite+aiosqlite:///{sqlite_file}"
+    config = Config()
+    config.set_main_option("script_location", str(alembic_dir()))
+    config.set_main_option("sqlalchemy.url", url)
+    await asyncio.to_thread(command.upgrade, config, "d7a3f9c2e5b1")
+
+    today = datetime.now(settings.tz).date()
+    month_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+    tomorrow = today + timedelta(days=1)
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "INSERT INTO mapping_shows (id, name, description, canvas_width, canvas_height,"
+                " camera_view, created_at, updated_at) VALUES"
+                " (1, 'Halloween', '', 1920, 1080, '{}', '2026-10-17', '2026-10-17')"))
+            await conn.execute(text(
+                "INSERT INTO show_plan (id, show_id, enabled, start_at, end_at, days, power,"
+                " last_message, last_start_key, updated_at) VALUES"
+                " (1, 1, 1, '18:45', '23:00', '[0,1,2,3,4,5,6]', 1, '', :key, '2026-10-27')"),
+                {"key": f"{today.isoformat()}:weekly"})
+            now = "2026-10-20 12:00:00"
+            # Tomorrow already planned by hand (when it is still this month),
+            # and a repeat that never ended, from May 2030.
+            if tomorrow <= month_end:
+                await conn.execute(text(
+                    "INSERT INTO show_calendar (kind, title, show_id, start_date, end_date, days,"
+                    " start_at, end_at, power, note, created_at, updated_at) VALUES"
+                    " ('show', 'Party', 1, :d, :d, '[0,1,2,3,4,5,6]', '20:00', '23:00', 1, '',"
+                    " :now, :now)"), {"d": tomorrow.isoformat(), "now": now})
+            await conn.execute(text(
+                "INSERT INTO show_calendar (kind, title, show_id, start_date, end_date, days,"
+                " start_at, end_at, power, note, created_at, updated_at) VALUES"
+                " ('show', 'Fridays', 1, '2030-05-03', NULL, '[4]', '19:00', '22:00', 1, '',"
+                " :now, :now)"), {"now": now})
+        await asyncio.to_thread(command.upgrade, config, "head")
+        async with engine.connect() as conn:
+            plan = (await conn.execute(text(
+                "SELECT enabled, last_start_key FROM show_plan"))).one()
+            rows = (await conn.execute(text(
+                "SELECT id, title, start_date, end_date, start_at, end_at, note"
+                " FROM show_calendar ORDER BY id"))).all()
+    finally:
+        await engine.dispose()
+
+    assert not plan.enabled
+    moved = [r for r in rows if r.note == "Moved from the weekly show time"]
+    expected = [today + timedelta(days=n) for n in range((month_end - today).days + 1)]
+    expected = [d for d in expected if d != tomorrow]
+    assert [r.start_date for r in moved] == [d.isoformat() for d in expected]
+    assert all(r.start_date == r.end_date and (r.start_at, r.end_at) == ("18:45", "23:00")
+               for r in moved)
+    # Tonight's show, started under the weekly time, still counts as started.
+    assert plan.last_start_key == f"{today.isoformat()}:entry{moved[0].id}"
+    fridays = next(r for r in rows if r.title == "Fridays")
+    assert fridays.end_date == "2030-05-31"
+    assert date.fromisoformat(fridays.start_date) == date(2030, 5, 3)

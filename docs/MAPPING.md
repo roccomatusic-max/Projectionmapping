@@ -998,17 +998,23 @@ highest lamp hours, mini PCs connected, the emergency stop, what is playing).
 A **scene group** is a name with a scene for every projector of a show,
 for example "Halloween night": pumpkins on the house, ghosts on the garage.
 One click on a group under **Pick tonight's scenes** makes it tonight's group
-and writes it into every cue of its show (each cue's scene and its "Scenes on
+(and the look of tonight's show, when tonight has a show added for that one
+night alone; a run of nights keeps its own look) and writes it into every cue of its show (each cue's scene and its "Scenes on
 each projector" choices), so every projector follows it at once, mid-cue
 too, through the same path as the Scenes page. Changing tonight's group
 changes the projectors as well. Media is left alone. A new group starts from
 what is set now (the cue playing, else the first cue).
 
-**Show time** (Set show time): a start and end time, the nights it runs, and
-whether to turn the show's projectors on at the start and off at the end
-(the projectors linked to the show's outputs; every projector when none are
-linked). `backend/app/services/tonight.py` checks every 20 seconds, in the
-schedule time zone (SCHEDULE_TIMEZONE, else the computer's own):
+**Show times come only from the calendar** (section 6c): nothing repeats by
+itself, and a night with no show added has no show. The card says what
+tonight has ("No show tonight" otherwise), lists the nights coming up in the
+next two weeks, and has **Add a show tonight** (or **Change tonight's show**),
+which opens the calendar's show editor for tonight with the newest show's
+times and tonight's group filled in. Each show time says whether to turn the
+show's projectors on at the start and off at the end (the projectors linked
+to the show's outputs; every projector when none are linked).
+`backend/app/services/tonight.py` checks every 20 seconds, in the schedule
+time zone (SCHEDULE_TIMEZONE, else the computer's own):
 
 - At the start it uses tonight's group, presses GO on cue 1 and turns the
   projectors on. Once a night: a show stopped by hand is not restarted.
@@ -1041,7 +1047,7 @@ on that browser.
 | GET/POST | `/mapping/scene-groups` | List (optionally `?show_id=`), make one (admin) |
 | PATCH/DELETE | `/mapping/scene-groups/{id}` | Admin; changing tonight's group updates the cues |
 | POST | `/mapping/scene-groups/{id}/use` | Operator: tonight's group, set on every cue now |
-| GET/PUT | `/api/tonight` | Tonight's plan and where in it we are (`state`: off, later, running, done, not_tonight); PUT is operator |
+| GET/PUT | `/api/tonight` | Tonight's plan and where in it we are (`state`: off = nothing planned from today on, later, running, done, not_tonight = nothing tonight); PUT (operator) only sets `show_id`, the show Start now plays |
 | POST | `/api/tonight/start`, `/api/tonight/stop` | Operator: start or stop now |
 | GET | `/mapping/players/{id}/picture` | Viewer: the latest frame (JPEG; `X-Picture-Age` seconds); 204 when none |
 | POST | `/mapping/players/me/picture` | The player page's copy of its frame (player token) |
@@ -1051,51 +1057,59 @@ Changes go out as `scene_groups` and `tonight` messages.
 ## 6c. The show calendar (Calendar page)
 
 **Calendar** (left menu, Mapping show section; the phone remote's Calendar
-tab) plans shows ahead. Each entry is:
+tab) is the only thing that plans shows. Only nights with a show added
+play; nothing fills nights in by itself. **Add a show** makes an entry:
 
-- **Play a show** or **No show**.
-- **When**: one night, several nights (first and last night, and which
-  weekdays), or every week (weekdays from a date, with an optional last
-  night).
+- **When**: one night, or several nights (first and last night, and which
+  weekdays). Every entry has a last night; there is no "every week
+  forever".
 - For a show: a scene group (or "keep the scenes the cues have"), a start
   and end time (an end before the start is after midnight), and whether to
   turn the projectors on and off. An optional name and note.
 
 Which show times a night has (`backend/app/services/show_calendar.py`):
 
-- If the calendar has anything for the night, the calendar decides and the
-  weekly show time (Set show time on the Dashboard) is not used that night.
-  On other nights the weekly show time plays as before.
-- The more specific entry wins: one night beats a run of nights, a run
-  beats a repeat with no end. Equally specific: the newest wins.
+- A night with no entry has no show.
+- The more specific entry wins: one night beats a run of nights, a short
+  run beats a longer one. Equally specific: the newest wins.
 - A "No show" entry cancels every less specific show that night ("No shows
-  Nov 2 to 8" plus "Party on Nov 5" still plays the party).
+  Nov 2 to 8" plus "Party on Nov 5" still plays the party). They are made
+  by **No show on (night) only** in the editor of a run of nights (a night
+  at either end of the run just shortens it instead).
 - A show that would overlap a winning show that night is left out; the
   Calendar page says so under that night.
 
 The same scheduler (services/tonight.py) plays them: at each show time's
 start it uses that entry's scene group, presses GO and turns the
 projectors on; at its end it stops and turns them off. Show times are
-remembered by key ("2026-10-31:entry7", "2026-10-31:weekly"), so a night
-can have several. When one ends exactly as the next starts the show keeps
+remembered by key ("2026-10-31:entry7"; "...:weekly" in the history of
+nights before the weekly show time was removed), so a night can have
+several. When one ends exactly as the next starts the show keeps
 playing with the next group and the projectors stay on. Power-cut catch-up,
-the six-hour end grace and the emergency stop work as for the weekly time.
+the six-hour end grace and the emergency stop work as in section 6b.
 Tonight's show on the Dashboard and the phone's Tonight tab show what the
-calendar plans today ("From the calendar: Halloween, 5:00 PM to 11:30 PM",
-or "The calendar says no show tonight"), and the next show by name. The
-mini PC app holds its updates around calendar show times too.
+calendar plans today ("No show tonight" when nothing), the next show by
+name and the nights coming up. The mini PC app holds its updates around
+calendar show times too.
+
+The weekly show time (`show_plan.enabled`, `start_at`, `end_at`, `days`) was
+removed in migration c7e1a5d9f3b2: the nights it played from the day of the
+upgrade to the end of that month became one-night entries (note "Moved from
+the weekly show time"; nights the calendar already had were left alone), and
+entries with no last night got the end of that month (or of the month they
+start in). The columns stay but plan nothing.
 
 The page has Month, Week and List views (List first on a phone), a colour per
-scene group, the night picked with its details, and "Everything planned"
-with the weekly show time and every entry (past ones folded away).
+scene group, the night picked with its details, and "Your shows" with every
+entry (past ones folded away).
 
 | Method | Path | |
 |---|---|---|
 | GET | `/api/calendar?start=YYYY-MM-DD&days=42` | Viewer: each night's show times (`slots`, with `state` done/running/later), the "no show" entry keeping it dark, shows left out and why, and every entry; up to 124 days |
-| GET/POST | `/api/calendar/entries` | List; add one (operator) |
+| GET/POST | `/api/calendar/entries` | List; add one (operator; `end_date` required, at most a year after `start_date`) |
 | PUT/DELETE | `/api/calendar/entries/{id}` | Operator: change (whole entry) or take off |
 
-`/api/tonight` also returns `source` (weekly or calendar), `title`,
+`/api/tonight` also returns `source` (calendar), `title`,
 `entry_id`, `tonight_slots`, `cancelled_by` and `next_title`. Changes go out
 as `calendar` and `tonight` messages.
 
@@ -1155,8 +1169,9 @@ Changes go out as `show_history` messages.
 A playlist is scene groups taking turns through the night: "Spooky from
 6:45 PM, Pumpkins from 8:00 PM, Quiet from 9:30 PM", each step with a fade
 (cut, or 2 to 30 seconds). Make them in **Playlists** under "Pick tonight's
-scenes" on the Dashboard; clicking one plays it at the weekly show time
-(picking a single group again takes it off). A calendar entry can pick a
+scenes" on the Dashboard; clicking one plays it now and on tonight's show
+when tonight has one added for that night alone (picking a single group
+again takes it off). A calendar entry can pick a
 playlist instead of a scene group. The phone's Tonight tab can pick one too.
 
 How steps are placed on a night (`backend/app/services/playlists.py`):
@@ -1185,12 +1200,12 @@ now changes the projectors at once.
 |---|---|---|
 | GET/POST | `/api/mapping/playlists` | List (`?show_id=`); make one (admin): `name`, `steps` [{`at` "HH:MM", `group_id`, `fade_seconds` 0 to 30}] |
 | PUT/DELETE | `/api/mapping/playlists/{id}` | Admin: change (whole playlist) or delete |
-| POST | `/api/mapping/playlists/{id}/use` | Operator: play it at the weekly show time |
+| POST | `/api/mapping/playlists/{id}/use` | Operator: play it tonight (and on tonight's one-night show) |
 
 Calendar entries and slots carry `playlist_id` (and slots `playlist_name`).
 `/api/tonight` adds `playlist_id`, `playlist_name`, `playlist_steps`
 (`starts_at`, `group_name`, `fade_seconds`, `state` done/now/later/never),
-and `plan_group_id` / `plan_playlist_id` for what the weekly show time plays;
+and `plan_group_id` / `plan_playlist_id` for the group or playlist picked last (what Start now plays with nothing planned);
 `group_id`/`group_name` are then the step on now. Changes go out as
 `playlists` messages. Nothing on the mini PCs changes: the player pages
 already draw a crossfade between the scenes of `previous` and `current`.

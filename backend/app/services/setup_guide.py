@@ -153,10 +153,9 @@ async def collect(session, *, last_backup: dict | None = None) -> dict[str, Any]
                             "windows": "PowerShell as administrator on the server"}.get(host),
         },
         "show": {
-            "enabled": bool(plan and plan["enabled"]),
-            "start_at": plan["start_at"] if plan else None,
-            "end_at": plan["end_at"] if plan else None,
-            "days": plan["days"] if plan else [],
+            # Shows are planned night by night on the calendar: the next one.
+            "next_title": plan["next_title"] if plan else None,
+            "next_starts_at": plan["next_starts_at"] if plan else None,
             "show_name": plan["show_name"] if plan else None,
             "group_name": plan["group_name"] if plan else None,
         },
@@ -189,16 +188,6 @@ async def collect(session, *, last_backup: dict | None = None) -> dict[str, Any]
     }
 
 
-DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-
-def days_text(days: list[int]) -> str:
-    days = sorted(set(days))
-    if days == list(range(7)):
-        return "every night"
-    return ", ".join(DAYS[d] for d in days if 0 <= d < 7) or "no nights"
-
-
 def as_text(guide: dict[str, Any]) -> str:
     """The guide as plain text, for the backup zip."""
     server, sign_in, show = guide["server"], guide["sign_in"], guide["show"]
@@ -218,9 +207,10 @@ def as_text(guide: dict[str, Any]) -> str:
     ]
     if sign_in["reset"]:
         lines.append(f"  Forgot it:     in {sign_in['reset_where']}: {sign_in['reset']}")
-    if show["enabled"] and show["start_at"]:
-        lines.append(f"  Show time:     {show['start_at']} to {show['end_at'] or '-'}, "
-                     f"{days_text(show['days'])} ({server['timezone']})")
+    if show["next_starts_at"]:
+        lines.append(f"  Next show:     {show['next_title'] or 'Show'}, "
+                     f"{show['next_starts_at']:%a %b %d %H:%M} ({server['timezone']}); "
+                     "shows are planned night by night on the Calendar")
     lines += ["", "PROJECTORS"]
     for p in guide["projectors"]:
         lines.append(wrap.fill(
