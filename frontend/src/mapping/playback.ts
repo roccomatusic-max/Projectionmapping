@@ -11,6 +11,10 @@
  * previous cue's) and passes on the people and the show's traced surfaces
  * the scenes react to and are shaped by.
  *
+ * Elements a cue carries (on that cue only) draw over its scenes, and the
+ * show's elements on every cue over those, keeping one clock from the start
+ * of playing so they carry on smoothly from one cue to the next.
+ *
  * A cue can give some projectors a picture of their own instead of their
  * part of the shared one (``output_media``); those are drawn over the
  * projector's own slice and take no part in blending with the others.
@@ -19,6 +23,7 @@
 import { mediaUrl } from './api'
 import type { PeopleTracker, PersonSpot } from './people'
 import type { TextureSource } from './renderer'
+import { cueElementsScene } from './scene/cueElements'
 import type { SceneItem } from './scene/engine'
 import type { Cue, MappingScene, MediaAsset, Surface, TransportCue, TransportState } from './types'
 
@@ -71,6 +76,10 @@ export class Playback {
   private drift: number | null = null
   private scenes = new Map<number, MappingScene>()
   private cues = new Map<number, Cue>()
+  /** The elements each cue carries, by cue id. */
+  private cueElements = new Map<number, MappingScene>()
+  /** The show's elements on every cue. */
+  private everyCue: MappingScene | null = null
   private surfaces: Surface[] = []
   private people: PeopleTracker | null = null
   private peopleAt = -1
@@ -91,8 +100,18 @@ export class Playback {
   /** The show's cues as saved, so scene choices edited during a cue apply at once. */
   setCues(cues: Cue[]) {
     this.cues = new Map(cues.map((cue) => [cue.id, cue]))
+    this.cueElements = new Map()
+    for (const cue of cues) {
+      const scene = cueElementsScene(cue)
+      if (scene) this.cueElements.set(cue.id, scene)
+    }
     // A projector given a picture of its own during the cue starts loading it now.
     if (this.state) this.setState(this.state, true)
+  }
+
+  /** The show's elements on every cue (see scene/cueElements.ts), or null for none. */
+  setEveryCue(scene: MappingScene | null) {
+    this.everyCue = scene
   }
 
   /** The scene a cue plays on one output: its own choice there, else the cue's scene. */
@@ -177,6 +196,31 @@ export class Playback {
     // The outgoing scene first, so the incoming one draws on top of it.
     if (mix < 1) add(state.previous, 1 - mix)
     add(state.current, mix)
+
+    // Then the elements cues carry. A playlist moving on fades out a copy
+    // of the playing cue (an id no saved cue has); its elements are the
+    // playing cue's, so they stay at full strength.
+    const current = state.current
+    const owned = new Map<number, { cue: TransportCue; weight: number }>()
+    let onCues = 0
+    const own = (cue: TransportCue | null, weight: number) => {
+      if (!cue || cue.position < 0 || weight <= 0) return
+      onCues += weight
+      const owner = this.cues.has(cue.id) || cue.position !== current.position ? cue : current
+      owned.set(owner.id, { cue: owner, weight: (owned.get(owner.id)?.weight ?? 0) + weight })
+    }
+    if (mix < 1) own(state.previous, 1 - mix)
+    own(current, mix)
+    for (const { cue, weight } of owned.values()) {
+      const scene = this.cueElements.get(cue.id)
+      if (scene) items.push({ scene, weight: Math.min(1, weight), time: Math.max(0, now - cue.started_at_ms) / 1000, clock: now })
+    }
+    // And the show's elements on every cue, on top, on one clock from the
+    // start of playing (a scene played on its own has none).
+    if (this.everyCue && onCues > 0.001) {
+      const began = state.run_started_at_ms ?? current.started_at_ms
+      items.push({ scene: this.everyCue, weight: Math.min(1, onCues), time: Math.max(0, now - began) / 1000, clock: now })
+    }
     return items
   }
 

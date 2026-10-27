@@ -122,6 +122,11 @@ export interface Cue {
    * null for no media there. Projectors not listed show their part of media_id.
    */
   output_media: Record<string, number | null>
+  /**
+   * Elements on this cue only, drawn over its scenes on every projector.
+   * Scene groups and playlists change the scenes, never these.
+   */
+  elements?: SceneLayer[]
 }
 
 /** How people tracked by a depth camera affect a cue. */
@@ -143,6 +148,8 @@ export interface Show extends ShowSummary {
   camera_view: CameraView | null
   /** The building's parts traced on the canvas, for scenes to decorate. */
   surfaces: Surface[]
+  /** Elements on every cue, in the same place on each, over whatever each cue plays. */
+  every_cue_elements?: SceneLayer[]
   outputs: Output[]
   cues: Cue[]
 }
@@ -178,6 +185,8 @@ export interface TransportState {
   previous: TransportCue | null
   fade_started_at_ms: number | null
   paused_position: number | null
+  /** When playing began after the last stop or blackout; elements on every cue keep time from here. */
+  run_started_at_ms?: number | null
   revision: number
   server_time_ms: number
   /** Set while the emergency stop is on: outputs draw nothing, GO is held. */

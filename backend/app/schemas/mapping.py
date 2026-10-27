@@ -199,6 +199,9 @@ class OutputOut(OutputBase):
 
 Interaction = Literal["none", "spotlight", "ripple"]
 
+#: Most elements one cue, or every cue of a show, can carry: the same as a scene's layers.
+MAX_ELEMENTS = 12
+
 
 class CueBase(BaseModel):
     name: str = Field(default="", max_length=128)
@@ -219,6 +222,10 @@ class CueBase(BaseModel):
     #: blended with the others. Outputs not listed show their part of
     #: ``media_id``.
     output_media: dict[int, int | None] = Field(default_factory=dict)
+    #: Elements (objects, movers, boards, a countdown) on this cue only, drawn
+    #: over its scene on every projector. They belong to the cue, so a scene
+    #: group or playlist changing the cue's scenes leaves them in place.
+    elements: list[SceneLayer] = Field(default_factory=list, max_length=MAX_ELEMENTS)
 
 
 class CueCreate(CueBase):
@@ -236,6 +243,7 @@ class CueUpdate(BaseModel):
     scene_id: int | None = None
     output_scenes: dict[int, int | None] | None = None
     output_media: dict[int, int | None] | None = None
+    elements: list[SceneLayer] | None = Field(default=None, max_length=MAX_ELEMENTS)
 
 
 class CueOut(CueBase):
@@ -382,6 +390,8 @@ class ShowUpdate(BaseModel):
     #: null clears it.
     camera_view: CameraView | None = None
     surfaces: list[Surface] | None = Field(default=None, max_length=MAX_SURFACES)
+    #: null clears it.
+    every_cue_elements: list[SceneLayer] | None = Field(default=None, max_length=MAX_ELEMENTS)
 
 
 class ShowSummary(BaseModel):
@@ -399,6 +409,9 @@ class ShowSummary(BaseModel):
 class ShowOut(ShowSummary):
     camera_view: CameraView | None = None
     surfaces: list[Surface] = Field(default_factory=list)
+    #: Elements on every cue of the show, in the same place on each, drawn
+    #: over whatever each cue plays.
+    every_cue_elements: list[SceneLayer] = Field(default_factory=list)
     outputs: list[OutputOut]
     cues: list[CueOut]
 
@@ -452,6 +465,10 @@ class TransportState(BaseModel):
     fade_started_at_ms: float | None = None
     #: Media position frozen while paused, in seconds.
     paused_position: float | None = None
+    #: When playing began after the last stop or blackout, server epoch
+    #: milliseconds. Elements on every cue keep their own time from here, so
+    #: they carry on smoothly from one cue to the next.
+    run_started_at_ms: float | None = None
     #: Bumped on every change, so a client can ignore a stale message.
     revision: int = 0
     server_time_ms: float = 0.0
@@ -1156,3 +1173,8 @@ class EmergencyResult(BaseModel):
     players: list[EmergencyPlayer] = Field(default_factory=list)
     #: Names of the automations that were running and were stopped.
     automations_stopped: list[str] = Field(default_factory=list)
+
+
+# Cues and shows carry scene layers, which are defined further down.
+for _model in (CueBase, CueCreate, CueUpdate, CueOut, ShowUpdate, ShowOut):
+    _model.model_rebuild()

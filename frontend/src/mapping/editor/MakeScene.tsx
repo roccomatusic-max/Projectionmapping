@@ -695,7 +695,12 @@ export function MakeScene({
               </div>
               <Modal open={picking} label="Add something" size="lg" className="sm:max-w-4xl" onClose={() => setPicking(false)}>
                 <div className="p-4 sm:p-5">
-                  <h2 className="mb-3 text-base font-semibold text-slate-100">Add something</h2>
+                  <h2 className="mb-1 text-base font-semibold text-slate-100">Add something</h2>
+                  <p className="mb-3 text-xs text-slate-400">
+                    It goes in this scene, which plays on every cue where you put it. To put something on one cue only,
+                    or on every cue whatever scene plays, add it in{' '}
+                    <Link to="/mapping/editor?part=elements" className="text-sky-300 hover:underline">Editor → Elements</Link>.
+                  </p>
                   <ElementLibrary onPick={addLayer} />
                 </div>
               </Modal>

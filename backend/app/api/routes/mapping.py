@@ -292,6 +292,7 @@ def _show_out(show: MappingShow) -> ShowOut:
         output_count=len(show.outputs), cue_count=len(show.cues), updated_at=show.updated_at,
         camera_view=show.camera_view or None,
         surfaces=show.surfaces or [],
+        every_cue_elements=show.every_cue_elements or [],
         outputs=[_output_out(o) for o in show.outputs],
         cues=[CueOut.model_validate(c) for c in show.cues],
     )
@@ -352,6 +353,8 @@ async def update_show(show_id: int, payload: ShowUpdate, session: SessionDep,
         changes["camera_view"] = changes["camera_view"] or {}
     if "surfaces" in changes:
         changes["surfaces"] = changes["surfaces"] or []
+    if "every_cue_elements" in changes:
+        changes["every_cue_elements"] = changes["every_cue_elements"] or []
     if "name" in changes and changes["name"] != show.name and (await session.execute(
         select(MappingShow.id).where(MappingShow.name == changes["name"])
     )).first():
@@ -576,6 +579,8 @@ async def update_cue(cue_id: int, payload: CueUpdate, session: SessionDep,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Cue {cue_id} not found")
     changes = payload.model_dump(exclude_unset=True)
+    if "elements" in changes:
+        changes["elements"] = changes["elements"] or []
     if "media_id" in changes:
         await _check_media(session, changes["media_id"])
     if "scene_id" in changes:

@@ -564,7 +564,7 @@ export default function Mapping({ session }: { session: Session }) {
               {part === 'elements' && (
                 <>
                   <Panel title="Media and elements"
-                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects, a flying sleigh, the Santa tracker or a countdown here and drag them into place. To make a new scene for one projector, use Scenes → Make a scene.">
+                    description="A cue's media with its elements on top and each projector's box outlined, so you can see where everything lands. Add objects, a flying sleigh, the Santa tracker or a countdown here, put each on this cue only or on every cue, and drag them into place. To make a new scene for one projector, use Scenes → Make a scene.">
                     <CanvasElements show={show} outputs={outputs} scenes={scenes} media={media} clock={clock}
                       transport={transport} canEdit={canEdit} reloadScenes={runtime.reloadScenes}
                       onShowChanged={() => runtime.refresh()} onError={setError} />
