@@ -1207,6 +1207,39 @@ Ready-made scenes added: Earth Day, ¡Viva México!, For Mom, We remember, Dad's
 day, Juneteenth, Fourth of July parade, Labor Day cookout and Day at the
 beach.
 
+Thirteenth batch (27 more for Halloween and Christmas;
+`halloweenExtraSprites.ts` and `christmasExtraSprites.ts`):
+
+- Real weather and date: a skeleton in a lawn chair in sunglasses with a cold
+  drink, or in a hat, scarf and blanket with a steaming mug (and a shiver)
+  below 50°F ("Nice night for it!" / "Bone-chilling!"); an advent calendar
+  opened up to today's door from 1 to 24 December, today's door glowing for
+  people.
+- Turned around: an elf on the shelf who takes a new pose every few seconds
+  while nobody is near and freezes in whichever pose he was caught in while
+  people are.
+- Watching people (`looks`): a haunted portrait whose eyes follow them, now and
+  then a screaming skull.
+- Growing for people (`level`): a sarcophagus whose lid slides open on glowing
+  eyes and a reaching hand; a man turning into a werewolf who howls at the
+  moon; children building a snowman, hat and scarf last.
+- Performers: a pumpkin carver whose pumpkin lights up ("Boo!"); a mad
+  scientist ("It's alive!"); singing jack-o'-lanterns; bobbing for apples
+  ("Got it!"); a grave digger and the skeleton in the hole ("Yikes!"); a phantom
+  organist; a skeleton photographer ("Say cheese!"); a ghostly tea party
+  ("Boo!"); a witch turning a pumpkin into a frog ("Abracadabra!"); a scaredy
+  ghost hiding behind a headstone ("Eek!"); Santa checking his list ("You're on
+  the nice list!"); a star for the top of the tree ("Merry Christmas!");
+  tangled lights ("Ta-da!"); an ugly sweater dance; a puppy in a present ("A
+  puppy!"); reindeer food ("For the reindeer!"); children peeking for Santa ("Is
+  it him?!"); Mrs Claus's cookies ("Fresh cookies!").
+- Walking: an elf with a teetering tower of presents; a dog in a Christmas
+  sweater.
+
+Ready-made scenes added: Mad laboratory, Haunted parlor, Graveyard shift,
+Pumpkin patch party, The night before Christmas, Deck the halls and Christmas
+morning.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,
