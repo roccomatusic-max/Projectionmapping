@@ -118,11 +118,12 @@ const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons',
 /** Ones that sit on the roofline, or hang under it. */
 const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls', 'wolves', 'robins', 'roof-reindeer', 'gargoyles', 'perched-eagles'])
 /** Ones that peek over a window sill. */
-const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes', 'window-hands', 'window-figures'])
+const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes', 'window-hands', 'window-figures', 'window-santa'])
 /** Ones with a second picture for when people are near. */
-const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 'sugar-skulls', 'buglers'])
+const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 'sugar-skulls', 'buglers', 'nutcracker', 'workshop-elves',
+  'snow-angels', 'north-pole-mailbox', 'bell-ringer', 'ice-fishing-penguins', 'wishbone', 'sign-turkey', 'stuck-santa'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
-  'hanging-skeletons', 'star-lanterns'])
+  'hanging-skeletons', 'star-lanterns', 'singing-wreath', 'mistletoe'])
 
 function hash(n: number) {
   const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453
@@ -601,7 +602,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     stamp(ctx, style, layer, Math.floor(time * 0.35) % 2 ? 'act' : 'main', Math.floor(time * 7), W / 2, H / 2, H * 0.9)
     return
   }
-  if (style === 'bush-eyes' || style === 'pumpkin-tower') {
+  if (style === 'bush-eyes' || style === 'pumpkin-tower' || style === 'lawn-reindeer') {
     const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)
     stamp(ctx, style, layer, 'main', Math.floor(time / 1.2) % 4, W / 2, H / 2, main.h * fit)
     return
@@ -639,8 +640,24 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     })
     return
   }
+  if (style === 'geese') {
+    // A V of five flying past.
+    const x = W * (0.72 - ((time * 0.1) % 1) * 0.3)
+    ;[[0, 0], [1, -1], [1, 1], [2, -1], [2, 1]].forEach(([back, side], w) => {
+      stamp(ctx, style, layer, 'main', f + w * 2, x - back * H * 0.3, H * 0.42 + side * back * H * 0.15, H * 0.2)
+    })
+    return
+  }
+  if (style === 'melting-snowman' || style === 'cookies-for-santa') {
+    // Through its stages, by the real temperature or the real date.
+    const frames = main.frames
+    const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)
+    stamp(ctx, style, layer, 'main', Math.floor(time * (frames > 3 ? 1.5 : 0.5)) % frames, W / 2, H / 2, main.h * fit)
+    return
+  }
   if (style === 'christmas-tree' || style === 'kinara' || style === 'tulips' || style === 'sunflowers' || style === 'haunted-tree'
-    || style === 'candy-bowl' || style === 'creaky-gate' || style === 'ofrenda' || style === 'rangoli') {
+    || style === 'candy-bowl' || style === 'creaky-gate' || style === 'ofrenda' || style === 'rangoli' || style === 'gingerbread-house'
+    || style === 'nativity' || style === 'blow-up-santa' || style === 'lights-elf' || style === 'strutting-tom') {
     // Lighting up (the tree, the candles in their order) or opening, as people come.
     const frames = main.frames
     const k = Math.min(1, ((time * 0.3) % 1.3))

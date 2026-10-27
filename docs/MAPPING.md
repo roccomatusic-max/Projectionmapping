@@ -1069,6 +1069,48 @@ first set in `spriteRows.ts`):
 Ready-made scenes added: Sleepy Hollow, Mad scientist, Monster party, Spooky
 front yard, Haunted manor, Día de Muertos, Veterans Day and Festival of lights.
 
+Ninth batch (30 more, Christmas and Thanksgiving; `christmasSprites.ts` and
+`thanksgivingSprites.ts`):
+
+- Real temperature and date: a snowman who stands proud at freezing or
+  colder and melts into a puddle with his hat in it by 60°F (from the weather
+  where the server is), waving and tipping his hat to people while he still
+  can ("Let it snow!", or "I'm melting!" when it is warm); cookies, milk and a
+  carrot left out for Santa, warm and steaming on Christmas Eve, crumbs and
+  his thank-you note from Christmas morning to the end of the 26th.
+- Performers (the `ACTS` table): a nutcracker who drops his jaw and cracks a
+  walnut ("Crack!"); elves hammering toys at their workbenches; Santa stuck
+  upside down in a chimney at the peak of the roof, kicking ("A little
+  help?"); children making snow angels; a mailbox to the North Pole whose flag
+  goes up and letters fly off for people ("Dear Santa…"); a bell ringer with
+  music rising ("Merry Christmas!"); penguins pulling a fish out of the ice to
+  show people ("Got one!"); a wishbone pulled until it snaps ("Make a wish!");
+  a turkey holding up an "Eat more pie!" sign.
+- Lighting up or filling up as people come: a gingerbread house (windows,
+  the lights along its roof, then the door and a gingerbread man waving); a
+  nativity whose star blazes and an angel appears; a blow-up Santa from flat
+  on the lawn to standing and waving; an elf up a ladder whose string of
+  lights comes on bulb by bulb ("Ta-da!"); a tom turkey puffing up and fanning
+  his tail ("Gobble gobble!"); lit wire lawn reindeer turn their heads to
+  people.
+- Hanging under the gutter (dangling ones can now perform too): a wreath that
+  sings carols for people, notes rising ("Fa la la la la!"); mistletoe sending
+  up hearts for whoever stands under it ("Pucker up!").
+- In the windows: Santa looking left and right, then "shh".
+- Walking: Krampus, who stops to stare with his birch raised and bells
+  rattling ("Have you been good?"); a yeti who roars and beats his chest; a
+  moose whose antler lights blink as it looks up; a one-horse open sleigh
+  whose riders wave ("Jingle all the way!"); sousaphone players who play
+  louder ("Oom-pah-pah!"); the Mayflower rocking on the waves ("Land ho!");
+  turkey trot runners who cheer ("Gobble wobble!").
+- Flying: sugar plum fairies trailing sparkles; a giant parade turkey balloon;
+  geese flying south in a V of five (sharing the jets' formation), honking at
+  people.
+
+Ready-made scenes added: The Nutcracker, Front yard Christmas, Silent night,
+Christmas Eve, Krampus night, Winter wonderland, Carols and bells, Big balloon
+parade, Turkey day and Mayflower.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,
