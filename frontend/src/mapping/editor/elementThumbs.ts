@@ -121,7 +121,9 @@ const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagul
 const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes', 'window-hands', 'window-figures', 'window-santa'])
 /** Ones with a second picture for when people are near. */
 const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 'sugar-skulls', 'buglers', 'nutcracker', 'workshop-elves',
-  'snow-angels', 'north-pole-mailbox', 'bell-ringer', 'ice-fishing-penguins', 'wishbone', 'sign-turkey', 'stuck-santa'])
+  'snow-angels', 'north-pole-mailbox', 'bell-ringer', 'ice-fishing-penguins', 'wishbone', 'sign-turkey', 'stuck-santa', 'latke-chef',
+  'dreidel-game', 'klezmer-band', 'sufganiyot', 'djembe-drummer', 'kwanzaa-dancers', 'unity-cup', 'baby-new-year', 'noisemaker-kids',
+  'polar-plunge', 'sleepy-reveler', 'god-of-fortune', 'festival-drum', 'dumplings', 'gong-xi-kids', 'lucky-cat', 'midnight-toast'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
   'hanging-skeletons', 'star-lanterns', 'singing-wreath', 'mistletoe'])
 
@@ -648,7 +650,8 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     })
     return
   }
-  if (style === 'melting-snowman' || style === 'cookies-for-santa') {
+  if (style === 'melting-snowman' || style === 'cookies-for-santa' || style === 'window-menorah' || style === 'habari-gani'
+    || style === 'zodiac-animal' || style === 'father-time') {
     // Through its stages, by the real temperature or the real date.
     const frames = main.frames
     const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)

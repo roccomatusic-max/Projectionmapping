@@ -25,6 +25,7 @@ import type { PersonSpot } from '../people'
 import type { LayerBlend, ObjectPin, SceneLayer, SourceRect, Surface } from '../types'
 import { nearOf } from './catalog'
 import { SPRITE_ROWS, type SpriteRow } from './spriteRows'
+import { hanukkahEve, lunarNewYear } from './holidays'
 import { weatherFor, weatherLook } from './weather'
 
 // New styles go at the end, after the ones saved scenes already use.
@@ -64,6 +65,10 @@ export const MOVER_STYLES = [
   'stuck-santa', 'krampus', 'snow-angels', 'yeti', 'north-pole-mailbox', 'bell-ringer', 'cookies-for-santa', 'moose',
   'sugar-plum-fairies', 'nativity', 'ice-fishing-penguins', 'lawn-reindeer', 'blow-up-santa', 'lights-elf', 'horse-sleigh',
   'parade-balloons', 'tuba-players', 'mayflower', 'wishbone', 'geese', 'strutting-tom', 'sign-turkey', 'turkey-trot',
+  'latke-chef', 'dreidel-game', 'window-menorah', 'klezmer-band', 'sufganiyot', 'djembe-drummer', 'kwanzaa-dancers',
+  'habari-gani', 'unity-cup', 'harvest-basket', 'baby-new-year', 'father-time', 'noisemaker-kids', 'midnight-toast',
+  'conga-line', 'polar-plunge', 'rose-float', 'mummers', 'sleepy-reveler', 'zodiac-animal', 'god-of-fortune',
+  'festival-drum', 'dumplings', 'gong-xi-kids', 'nian-beast', 'lucky-cat', 'lantern-kid',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -372,6 +377,33 @@ const STYLE: Record<MoverStyle, {
   'strutting-tom': { motion: 'stand', ground: true, height: 0.95, many: 1 },
   'sign-turkey': { motion: 'stand', ground: true, height: 1, many: 1 },
   'turkey-trot': { motion: 'walker', ground: true, height: 1, pace: 0.5 },
+  'latke-chef': { motion: 'stand', ground: true, height: 1.15, many: 1 },
+  'dreidel-game': { motion: 'stand', ground: true, height: 0.8, many: 1 },
+  'window-menorah': { motion: 'stand', ground: false, height: 0.7, many: 0 },
+  'klezmer-band': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  sufganiyot: { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'djembe-drummer': { motion: 'stand', ground: true, height: 1.1, many: 1 },
+  'kwanzaa-dancers': { motion: 'stand', ground: true, height: 1.2, many: 1 },
+  'habari-gani': { motion: 'stand', ground: true, height: 1.25, many: 0 },
+  'unity-cup': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'harvest-basket': { motion: 'walker', ground: true, height: 1.15, pace: 1.3 },
+  'baby-new-year': { motion: 'stand', ground: true, height: 0.8, many: 0 },
+  'father-time': { motion: 'stand', ground: true, height: 1.4, many: 0 },
+  'noisemaker-kids': { motion: 'stand', ground: true, height: 0.9, many: 1 },
+  'midnight-toast': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'conga-line': { motion: 'walker', ground: true, height: 1, pace: 1.6 },
+  'polar-plunge': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'rose-float': { motion: 'walker', ground: true, height: 1.3, pace: 2.4 },
+  mummers: { motion: 'walker', ground: true, height: 1.3, pace: 1.3 },
+  'sleepy-reveler': { motion: 'stand', ground: true, height: 0.9, many: 0 },
+  'zodiac-animal': { motion: 'stand', ground: false, height: 0.9, many: 0 },
+  'god-of-fortune': { motion: 'stand', ground: true, height: 1.25, many: 0 },
+  'festival-drum': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  dumplings: { motion: 'stand', ground: true, height: 0.9, many: 0 },
+  'gong-xi-kids': { motion: 'stand', ground: true, height: 0.9, many: 1 },
+  'nian-beast': { motion: 'walker', ground: true, height: 1.1, pace: 1.6 },
+  'lucky-cat': { motion: 'stand', ground: true, height: 0.8, many: 1 },
+  'lantern-kid': { motion: 'walker', ground: true, height: 1, pace: 1.1 },
 }
 
 /**
@@ -393,6 +425,8 @@ interface Act {
   variants?: number
   notes?: boolean | 'lit'
   together?: boolean
+  /** Never mirrored: it has words or letters on it. */
+  text?: boolean
 }
 const ACTS: Partial<Record<MoverStyle, Act>> = {
   'haunted-tree': { level: 0, peek: true, faces: true },
@@ -428,6 +462,22 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   wishbone: { idle: 2, act: 5 },
   'strutting-tom': { level: 0.1, peek: true, faces: true },
   'sign-turkey': { idle: 4, act: 5, faces: true },
+  'latke-chef': { idle: 4, act: 7 },
+  'dreidel-game': { idle: 2, act: 6, text: true },
+  'klezmer-band': { idle: 4, act: 9, notes: 'lit' },
+  sufganiyot: { idle: 3, act: 6 },
+  'djembe-drummer': { idle: 4, act: 10, notes: 'lit' },
+  'kwanzaa-dancers': { idle: 4, act: 9, together: true },
+  'unity-cup': { idle: 2, act: 5 },
+  'baby-new-year': { idle: 3, act: 8, text: true },
+  'noisemaker-kids': { idle: 2, act: 8 },
+  'polar-plunge': { idle: 6, act: 5 },
+  'sleepy-reveler': { idle: 2, act: 6 },
+  'god-of-fortune': { idle: 2, act: 5, text: true },
+  'festival-drum': { idle: 4, act: 10 },
+  dumplings: { idle: 3, act: 5 },
+  'gong-xi-kids': { idle: 2, act: 6 },
+  'lucky-cat': { idle: 3, act: 8, text: true },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -709,6 +759,31 @@ function heading(dx: number, dy: number, limit: number): { angle: number; flip: 
 
 /** A speech bubble over one ("Ho ho ho!"), showing as someone comes near. */
 /** Music (or hearts, or letters) floating up from (x, y) on one side of it, more of it the more lit. */
+/** Tonight's night of Hanukkah (1 to 8; the candles are lit from the evening it starts), or 0. */
+function hanukkahNight(now: Date) {
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  for (const year of [now.getFullYear() - 1, now.getFullYear()]) {
+    const [y, m, d] = hanukkahEve(year)
+    const days = Math.round((today - Date.UTC(y, m, d)) / 86_400_000)
+    if (days >= 0 && days < 8) return days + 1
+  }
+  return 0
+}
+
+/** Today's day of Kwanzaa (1 on 26 December to 7 on 1 January), or 0. */
+function kwanzaaDay(now: Date) {
+  if (now.getMonth() === 11 && now.getDate() >= 26) return now.getDate() - 25
+  if (now.getMonth() === 0 && now.getDate() === 1) return 7
+  return 0
+}
+
+/** Which of the twelve animals (0 Rat to 11 Pig) is this lunar year's, or the coming one's from a month before. */
+function zodiacIndex(now: Date) {
+  const soon = new Date(now.getTime() + 30 * 86_400_000)
+  const year = soon >= lunarNewYear(now.getFullYear()) ? now.getFullYear() : now.getFullYear() - 1
+  return (((year - 4) % 12) + 12) % 12
+}
+
 function rising(out: Sprite[], x: number, y: number, size: number, dir: number, lit: number, onlyLit: boolean, t: number, ph: number) {
   const count = 2 + Math.round(lit * 3)
   for (let j = 0; j < count; j++) {
@@ -3060,6 +3135,43 @@ export function moverSprites(f: MoverFrame): Sprite[] {
           if (eaten) said.row = 'thanks'
           out.push(said)
         }
+      } else if (style === 'window-menorah' || style === 'habari-gani' || style === 'zodiac-animal' || style === 'father-time') {
+        // Ones that show the real date: the menorah lit for tonight's night of Hanukkah (all eight the rest of the
+        // year), the principle of today's day of Kwanzaa (the seven in turn the rest of the year), the animal of
+        // this lunar year (next year's from a month before it starts) and Father Time's hourglass running out
+        // over the year. People make them glow and speak.
+        sprite.flip = false
+        if (style === 'window-menorah') {
+          sprite.frame = hanukkahNight(now) || 8
+          sprite.glow = 0.1 + 0.05 * Math.sin(t * 7 + ph * 6)
+        } else if (style === 'habari-gani') {
+          const day = kwanzaaDay(now)
+          sprite.frame = day ? day - 1 : Math.floor(t / 4 + ph * 7) % 7
+        } else if (style === 'zodiac-animal') {
+          sprite.frame = zodiacIndex(now)
+          sprite.glow = 0.05
+        } else {
+          const start = new Date(now.getFullYear(), 0, 1).getTime()
+          const end = new Date(now.getFullYear() + 1, 0, 1).getTime()
+          sprite.frame = Math.round(((now.getTime() - start) / (end - start)) * 7)
+        }
+        react(sprite, action === 'light' || action === 'grow' || action === 'hide' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (busy && near.k > 0.3) {
+          const said = bubble(sprite, size, false, near.k)
+          if (style === 'zodiac-animal') said.frame = sprite.frame
+          out.push(said)
+        }
+      } else if (style === 'midnight-toast') {
+        // Chatting, glasses in hand; for people they clink them ("Cheers!"), and for the first half hour of New
+        // Year's Day (by the server's clock) they kiss under a floating heart.
+        const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
+        const midnight = now.getMonth() === 0 && now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() < 30
+        sprite.row = midnight ? 'kiss' : k > 0.3 ? 'act' : 'main'
+        sprite.frame = Math.floor(t * (midnight ? 4 : k > 0.3 ? 6 : 2) + ph * 8)
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (k > 0.3 && !midnight) out.push(bubble(sprite, size, sprite.flip, near.k))
       } else if (ACTS[style]) {
         const act = ACTS[style]!
         const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
@@ -3091,6 +3203,7 @@ export function moverSprites(f: MoverFrame): Sprite[] {
           sprite.frame = Math.floor(t * fps + (act.together && acting ? 0 : ph * 8))
         }
         if (act.faces) sprite.flip = near.k > 0.1 && action !== 'none' ? near.ax > 0 : ph < 0.5
+        if (act.text) sprite.flip = false
         const mine = action === 'light' || action === 'grow' ? action
           : action === 'hide' && act.level == null ? 'hide'
             : action === 'jump' && act.level == null && !hasRow(style, 'act') ? 'jump' : 'none'

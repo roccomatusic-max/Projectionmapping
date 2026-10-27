@@ -1111,6 +1111,39 @@ Ready-made scenes added: The Nutcracker, Front yard Christmas, Silent night,
 Christmas Eve, Krampus night, Winter wonderland, Carols and bells, Big balloon
 parade, Turkey day and Mayflower.
 
+Tenth batch (27 more, Hanukkah, Kwanzaa, New Year's and Lunar New Year;
+`hanukkahKwanzaaSprites.ts` and `newYearSprites.ts`):
+
+- Real date: a menorah in the window with tonight's candles lit, worked out
+  from the Hebrew calendar (all eight the rest of the year); an elder pointing
+  to the principle of today's day of Kwanzaa, Umoja on 26 December to Imani on
+  1 January (the seven in turn the rest of the year), asking people "Habari
+  gani?"; the animal of this lunar year cut in red paper, next year's from a
+  month before Lunar New Year; Father Time, the sand of the year that is left
+  in the top of his hourglass ("Time flies!"); Baby New Year with the coming
+  year on his sash; a rose parade float; a couple who clink glasses for people
+  ("Cheers!") and kiss under a floating heart for the first half hour of New
+  Year's Day.
+- Performers (the `ACTS` table, `text` ones are never mirrored): a chef who
+  flips a latke out of the pan ("Hot latkes!"); children spinning a big
+  dreidel that lands on Gimel; a klezmer band with music rising ("Chag
+  sameach!"); a baker filling jelly doughnuts until the jelly squirts out; a
+  djembe drummer; Kwanzaa dancers; an elder raising the unity cup
+  ("Harambee!"); children blowing party horns in confetti ("Woo-hoo!"); a polar
+  bear plunge into a hole in the ice ("Brrr!"); a party guest asleep in his
+  chair who jumps awake ("Did I miss it?!"); the god of fortune bowing and
+  spilling gold ("Gong xi fa cai!"); a festival drum; grandma's dumplings, the
+  steamer lid lifting; children bowing their new year greeting ("Xin nian kuai
+  le!"); a lucky cat waving faster ("Good fortune!").
+- Walking: a harvest basket carried home; a conga line that kicks higher
+  ("Join the line!"); a Mummers strutter; the Nian beast, who cowers with its
+  paws over its eyes and runs from people; a child with a rabbit lantern who
+  holds it up high.
+
+Ready-made scenes added: Eight nights, Hanukkah kitchen, Habari gani, Kwanzaa
+harvest, Ring in the new year, New Year's party, New Year's Day parade, Gong xi
+fa cai and Chase away the Nian.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

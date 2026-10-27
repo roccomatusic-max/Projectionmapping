@@ -327,7 +327,21 @@ CATALOG: dict[str, dict] = {
                  "sails by (near follow); wishbone snaps (near follow); geese fly south in "
                  "a V and honk (near follow); strutting-tom fans his tail (near follow); "
                  "sign-turkey holds up a sign (near follow); turkey-trot runners cheer "
-                 "(near dance)",
+                 "(near dance); latke-chef flips a latke (near follow); dreidel-game "
+                 "(near follow); window-menorah lit for tonight's night of Hanukkah (near "
+                 "light); klezmer-band (near follow); sufganiyot jelly doughnuts (near "
+                 "follow); djembe-drummer (near follow); kwanzaa-dancers (near follow); "
+                 "habari-gani shows today's Kwanzaa principle (near follow); unity-cup "
+                 "(near follow); harvest-basket carried by (near dance); baby-new-year "
+                 "(near follow); father-time's hourglass runs out over the year (near "
+                 "follow); noisemaker-kids blow party horns (near follow); midnight-toast "
+                 "clink glasses (near follow); conga-line (near dance); polar-plunge "
+                 "(near follow); rose-float (near dance); mummers strut (near dance); "
+                 "sleepy-reveler wakes up (near follow); zodiac-animal of this lunar year "
+                 "(near light); god-of-fortune bows (near follow); festival-drum (near "
+                 "follow); dumplings steam (near follow); gong-xi-kids bow (near follow); "
+                 "nian-beast runs from people (near flee); lucky-cat waves (near follow); "
+                 "lantern-kid carries a rabbit lantern (near dance)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -384,7 +398,14 @@ CATALOG: dict[str, dict] = {
                    "cookies-for-santa", "moose", "sugar-plum-fairies", "nativity",
                    "ice-fishing-penguins", "lawn-reindeer", "blow-up-santa", "lights-elf",
                    "horse-sleigh", "parade-balloons", "tuba-players", "mayflower",
-                   "wishbone", "geese", "strutting-tom", "sign-turkey", "turkey-trot"],
+                   "wishbone", "geese", "strutting-tom", "sign-turkey", "turkey-trot",
+                   "latke-chef", "dreidel-game", "window-menorah", "klezmer-band",
+                   "sufganiyot", "djembe-drummer", "kwanzaa-dancers", "habari-gani",
+                   "unity-cup", "harvest-basket", "baby-new-year", "father-time",
+                   "noisemaker-kids", "midnight-toast", "conga-line", "polar-plunge",
+                   "rose-float", "mummers", "sleepy-reveler", "zodiac-animal",
+                   "god-of-fortune", "festival-drum", "dumplings", "gong-xi-kids",
+                   "nian-beast", "lucky-cat", "lantern-kid"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
