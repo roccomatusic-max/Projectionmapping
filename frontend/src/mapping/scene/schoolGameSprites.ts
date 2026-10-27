@@ -7,7 +7,7 @@
  * Painted the same way as sprites.ts: facing right, one frame at a time, into a cell of w by h design units.
  */
 
-import { arm, dot, head, rr, standing, type Dress } from './figures'
+import { arm, dot, hair, head, person, rr, standing, type Dress } from './figures'
 import {
   circle, ellipse, rgba, saying, shade, SPARKLE, TAU,
   type Ctx, type SpriteColors, type SpriteRow,
@@ -16,23 +16,6 @@ import {
 const PEACH = '#f5c9a0'
 const TAN = '#c68a5a'
 const BROWN = '#8d5a3b'
-
-function person(ctx: Ctx, x: number, g: number, s: number, dir: number, d: Dress, o: Parameters<typeof standing>[5] = {}, arms?: () => void) {
-  ctx.save()
-  ctx.translate(x, g)
-  ctx.scale(s, s)
-  standing(ctx, 0, 0, dir, d, o)
-  arms?.()
-  ctx.restore()
-}
-
-function hair(ctx: Ctx, x: number, y: number, dir: number, color: string) {
-  ctx.fillStyle = color
-  ctx.beginPath()
-  ctx.arc(x, y - 2, 17, Math.PI * 1.02, Math.PI * 1.98)
-  ctx.quadraticCurveTo(x, y - 12, x - dir * 14, y)
-  ctx.fill()
-}
 
 function octagon(ctx: Ctx, x: number, y: number, r: number) {
   ctx.beginPath()

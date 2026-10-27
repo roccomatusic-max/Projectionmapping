@@ -157,12 +157,17 @@ CATALOG: dict[str, dict] = {
                  "Day; dad to Father's Day; juneteenth; stars-stripes to the Fourth of "
                  "July; labor to Labor Day; salute to Veterans Day; harvest to "
                  "Thanksgiving; diya to Diwali; dreidel to Hanukkah; kinara to Kwanzaa; "
-                 "birthday and big-day count to a date the person picks in its settings",
+                 "game-day to the Super Bowl; jester to April Fools'; seder to "
+                 "Passover; apples-honey to Rosh Hashanah; crescent to Eid al-Fitr; "
+                 "three-sisters to Indigenous Peoples' Day; grandparents to "
+                 "Grandparents Day; birthday and big-day count to a date the person picks in its settings",
         "styles": ["gold", "frost", "candy", "marquee", "pumpkin", "ghostly",
                    "fireworks", "champagne", "dream", "lantern", "groundhog", "sweetheart",
                    "presidential", "mardi-gras", "shamrock", "easter-egg", "earth", "fiesta",
                    "roses", "poppy", "dad", "juneteenth", "stars-stripes", "labor", "salute",
-                   "harvest", "diya", "dreidel", "kinara", "birthday", "big-day"],
+                   "harvest", "diya", "dreidel", "kinara", "birthday", "big-day",
+                   "game-day", "jester", "seder", "apples-honey", "crescent",
+                   "three-sisters", "grandparents"],
         "dials": "size: how much of the area it fills; fade: height (1 is the top); "
                  "speed: how fast light sweeps across it; amount: how much it sparkles",
         "nears": ["none", "light", "grow", "jump"],
@@ -396,7 +401,17 @@ CATALOG: dict[str, dict] = {
                  "(near follow); science-volcano (near follow); referee (near follow); "
                  "cheerleaders (near follow); stadium-wave (near follow); field-goal "
                  "(near follow); team-mascot (near follow); snake-can (near follow); "
-                 "squirting-flower (near follow)",
+                 "squirting-flower (near follow); seder-table (near follow); "
+                 "afikomen-hunt (near follow); elijahs-door opens for people (near "
+                 "follow); sea-parting parts for people (near follow); shofar-blower "
+                 "(near follow); apples-and-honey (near follow); tashlich (near "
+                 "follow); sukkah (near follow); moon-sighting shows tonight's real "
+                 "moon (near follow); iftar (near follow); eid-gifts (near follow); "
+                 "fanous-kid (near dance); three-sisters-garden grows for people (near "
+                 "follow); canoe-paddlers (near dance); story-time (near follow); "
+                 "knitting-grandma's scarf grows for people (near follow); porch-swing "
+                 "(near follow); whoopee-cushion (near follow); touchdown-dance (near "
+                 "follow)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -488,7 +503,12 @@ CATALOG: dict[str, dict] = {
                    "crossing-guard", "backpack-kid", "chalkboard-teacher",
                    "spelling-bee", "science-volcano", "referee", "cheerleaders",
                    "stadium-wave", "field-goal", "team-mascot", "snake-can",
-                   "squirting-flower"],
+                   "squirting-flower", "seder-table", "afikomen-hunt", "elijahs-door",
+                   "sea-parting", "shofar-blower", "apples-and-honey", "tashlich", "sukkah",
+                   "moon-sighting", "iftar", "eid-gifts", "fanous-kid",
+                   "three-sisters-garden", "canoe-paddlers", "story-time",
+                   "knitting-grandma", "porch-swing", "whoopee-cushion",
+                   "touchdown-dance"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",

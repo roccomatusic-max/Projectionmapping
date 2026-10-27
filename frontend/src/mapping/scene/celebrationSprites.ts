@@ -7,7 +7,7 @@
  * Painted the same way as sprites.ts: facing right, one frame at a time, into a cell of w by h design units.
  */
 
-import { arm, dot, head, rr, standing, type Dress } from './figures'
+import { arm, dot, hair, head, person, rr, seated, standing, type Dress } from './figures'
 import {
   ellipse, rgba, saying, shade, SPARKLE, TAU, vehicleWheel,
   type Ctx, type SpriteColors, type SpriteRow,
@@ -17,25 +17,6 @@ const PEACH = '#f5c9a0'
 const TAN = '#c68a5a'
 const BROWN = '#8d5a3b'
 const CONFETTI = ['#f43f5e', '#38bdf8', '#facc15', '#a78bfa', '#34d399']
-
-/** Someone drawn at a scale s with their feet at (x, g); arms is painted in their own units (shoulders at ∓10, -98). */
-function person(ctx: Ctx, x: number, g: number, s: number, dir: number, d: Dress, o: Parameters<typeof standing>[5] = {}, arms?: () => void) {
-  ctx.save()
-  ctx.translate(x, g)
-  ctx.scale(s, s)
-  standing(ctx, 0, 0, dir, d, o)
-  arms?.()
-  ctx.restore()
-}
-
-/** Hair over a head redrawn at (x, y). */
-function hair(ctx: Ctx, x: number, y: number, dir: number, color: string) {
-  ctx.fillStyle = color
-  ctx.beginPath()
-  ctx.arc(x, y - 2, 17, Math.PI * 1.02, Math.PI * 1.98)
-  ctx.quadraticCurveTo(x, y - 12, x - dir * 14, y)
-  ctx.fill()
-}
 
 /** A striped party hat on a head at (x, y). */
 function partyHat(ctx: Ctx, x: number, y: number, c: string, c2: string, tilt = 0) {
@@ -380,23 +361,6 @@ function partyHorns(blowing: boolean) {
 }
 
 // -- musical chairs ---------------------------------------------------------------------------------------------
-
-/** A child sitting on a seat at height seatY above (x, g), facing dir, at scale s. */
-function seated(ctx: Ctx, x: number, g: number, seatY: number, s: number, dir: number, d: Dress, open = 0) {
-  ctx.save()
-  ctx.translate(x, g)
-  ctx.scale(s, s)
-  const sy = -seatY / s
-  const pants = d.pants ?? '#64748b'
-  arm(ctx, [0, sy, dir * 26, sy, dir * 28, -6], 11, pants)
-  ctx.fillStyle = d.shoes ?? '#475569'
-  rr(ctx, dir > 0 ? dir * 28 - 6 : dir * 28 - 12, -8, 18, 8, 3)
-  ctx.fillStyle = d.shirt
-  rr(ctx, -15, sy - 50, 30, 52, 10)
-  head(ctx, dir * 2, sy - 62, 16, d.skin, dir, { open })
-  hair(ctx, dir * 2, sy - 62, dir, d.hair)
-  ctx.restore()
-}
 
 function chair(ctx: Ctx, x: number, g: number, c: string, dir: number) {
   ctx.fillStyle = '#94a3b8'

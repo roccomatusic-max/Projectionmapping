@@ -700,12 +700,18 @@ fireworks; "Happy 250th birthday, America"), Labor Day (gear and tools),
 Veterans Day (medal), Thanksgiving (maple leaves and an acorn), Diwali (diyas,
 marigolds), Hanukkah (dreidel, Star of David; "Tonight: night 3 of 8" through
 the eight nights) and Kwanzaa (kinara, corn; "Day 3: Ujima" through the seven
-days). A birthday look and a "your own day" look count to the layer's `date`
+days), the Super Bowl (football and goalposts; the second Sunday of February),
+April Fools' (jester hats), Passover (matzah and Elijah's cup; "Second seder
+tonight" through the eight days), Rosh Hashanah (apples, honey and the shofar;
+"A good and sweet 5787"), Eid al-Fitr (crescent moon and lanterns), Indigenous
+Peoples' Day (corn, beans and squash) and Grandparents Day (yarn and reading
+glasses). A birthday look and a "your own day" look count to the layer's `date`
 (comes round every year) with its `text` as the name ("Days until Emma's
 birthday", "Make a wish, Emma!"); the fields show in the countdown's settings.
 The dates are worked out in `scene/holidays.ts` (nth weekdays, the last Monday
-of May, Easter and Mardi Gras, the Hebrew calendar for Hanukkah, tables for
-Lunar New Year and Diwali). The last minute counts in seconds. Editor →
+of May, Easter and Mardi Gras, the Hebrew calendar for Hanukkah, Passover and
+Rosh Hashanah, tables for Lunar New Year, Diwali, Ramadan and Eid, and the
+moon's phase). The last minute counts in seconds. Editor →
 Elements → Find an element offers one countdown per holiday under
 Countdowns, and the holiday chips include every US holiday. Each part has its own
 colour picker (Editor → Elements → Move and colours, or the layer's card in
@@ -1268,6 +1274,34 @@ football players, graduation caps and school bus now carry too):
 
 Ready-made scenes added: Backyard birthday bash, Party games, Dance party,
 Graduation day, First day of school, Game day and April Fools'.
+
+Fifteenth batch (19 for Passover, the High Holy Days, Ramadan and Eid,
+Indigenous Peoples' Day, Grandparents Day, the Super Bowl and April Fools';
+`faithSprites.ts` and `familySprites.ts`; plus the seven countdowns above, and
+new occasions Passover, Ramadan and Eid, Grandparents Day, High Holy Days and
+Indigenous Peoples' Day):
+
+- Real data: a family watching tonight's real moon through a telescope, drawn
+  in its real phase; for people they cheer, saying "Ramadan Mubarak!" during
+  Ramadan, "Eid Mubarak!" on the days of Eid and "Look at the moon!" the rest
+  of the year.
+- Growing for people (`level`): the door opening for Elijah, starlight pouring
+  in; the sea parting into two walls with travellers crossing; a Three Sisters
+  garden of corn, beans and squash coming up; Grandma's scarf getting longer.
+- Performers: the seder table, where the youngest stands to ask "Why is this
+  night different?"; a child who finds the afikomen ("Found it!"); the shofar
+  blown ("Shanah Tovah!"); apples dipped in honey ("A sweet new year!");
+  tashlich crumbs thrown to the ducks; a family shaking the lulav in their
+  sukkah ("Chag Sameach!"); breaking the fast with dates at iftar; Grandma
+  handing out Eid gifts; Grandpa turning his storybook round to show the
+  dragon ("Once upon a time…"); grandparents waving from the porch swing
+  ("Come visit soon!"); a whoopee cushion ("PFFT!"); a touchdown dance
+  ("TOUCHDOWN!").
+- Walking: a child with a lit Ramadan lantern and two paddlers in a canoe.
+
+Ready-made scenes added: Passover, High Holy Days, Ramadan and Eid, Indigenous
+Peoples' Day and Grandparents Day; Game day and April Fools' gain the new
+elements and their countdowns.
 
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and

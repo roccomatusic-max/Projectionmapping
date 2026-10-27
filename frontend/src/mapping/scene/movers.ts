@@ -25,9 +25,10 @@ import type { PersonSpot } from '../people'
 import type { LayerBlend, ObjectPin, SceneLayer, SourceRect, Surface } from '../types'
 import { nearOf } from './catalog'
 import { CLASS_FIRST_YEAR, CLASS_POSES, CLASS_TOSS, CLASS_YEARS } from './celebrationSprites'
+import { MOON_PHASES } from './faithSprites'
 import { BOARD_HELLO, BOARD_POSES } from './schoolGameSprites'
 import { SPRITE_ROWS, type SpriteRow } from './spriteRows'
-import { hanukkahEve, lastWeekday, lunarNewYear } from './holidays'
+import { hanukkahEve, isEid, lastWeekday, lunarNewYear, moonPhase, ramadanDay } from './holidays'
 import { weatherFor, weatherLook } from './weather'
 
 // New styles go at the end, after the ones saved scenes already use.
@@ -87,6 +88,9 @@ export const MOVER_STYLES = [
   'sack-race', 'face-painter', 'karaoke', 'dj-booth', 'diploma-walk', 'class-of', 'grad-parade', 'valedictorian',
   'crossing-guard', 'backpack-kid', 'chalkboard-teacher', 'spelling-bee', 'science-volcano', 'referee',
   'cheerleaders', 'stadium-wave', 'field-goal', 'team-mascot', 'snake-can', 'squirting-flower',
+  'seder-table', 'afikomen-hunt', 'elijahs-door', 'sea-parting', 'shofar-blower', 'apples-and-honey', 'tashlich',
+  'sukkah', 'moon-sighting', 'iftar', 'eid-gifts', 'fanous-kid', 'three-sisters-garden', 'canoe-paddlers', 'story-time',
+  'knitting-grandma', 'porch-swing', 'whoopee-cushion', 'touchdown-dance',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -531,6 +535,25 @@ const STYLE: Record<MoverStyle, {
   'team-mascot': { motion: 'stand', ground: true, height: 1.2, many: 0 },
   'snake-can': { motion: 'stand', ground: true, height: 1, many: 0 },
   'squirting-flower': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'seder-table': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'afikomen-hunt': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'elijahs-door': { motion: 'stand', ground: true, height: 1.25, many: 0 },
+  'sea-parting': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'shofar-blower': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'apples-and-honey': { motion: 'stand', ground: true, height: 1, many: 0 },
+  tashlich: { motion: 'stand', ground: true, height: 1, many: 0 },
+  sukkah: { motion: 'stand', ground: true, height: 1.25, many: 0 },
+  'moon-sighting': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  iftar: { motion: 'stand', ground: true, height: 1, many: 0 },
+  'eid-gifts': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'three-sisters-garden': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'story-time': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'knitting-grandma': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'porch-swing': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'whoopee-cushion': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'touchdown-dance': { motion: 'stand', ground: true, height: 1.2, many: 0 },
+  'fanous-kid': { motion: 'walker', ground: true, height: 0.95, pace: 0.8 },
+  'canoe-paddlers': { motion: 'walker', ground: true, height: 0.9, pace: 1 },
 }
 
 /**
@@ -685,6 +708,22 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   'team-mascot': { idle: 4, act: 5 },
   'snake-can': { idle: 2, act: 5, text: true },
   'squirting-flower': { idle: 3, act: 4 },
+  'seder-table': { idle: 2, act: 5 },
+  'afikomen-hunt': { idle: 3, act: 6 },
+  'elijahs-door': { level: 0, peek: true },
+  'sea-parting': { level: 0, peek: true },
+  'shofar-blower': { idle: 1, act: 6 },
+  'apples-and-honey': { idle: 2, act: 4 },
+  tashlich: { idle: 3, act: 5 },
+  sukkah: { idle: 2, act: 6 },
+  iftar: { idle: 2, act: 4 },
+  'eid-gifts': { idle: 2, act: 5 },
+  'three-sisters-garden': { level: 0.1, peek: true },
+  'story-time': { idle: 2, act: 4 },
+  'knitting-grandma': { level: 0.1, peek: true },
+  'porch-swing': { idle: 2, act: 4 },
+  'whoopee-cushion': { idle: 2, act: 5, text: true },
+  'touchdown-dance': { idle: 3, act: 6, text: true },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -3442,6 +3481,23 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
         out.push(sprite)
         if (acting && hasRow(style, 'bubble')) out.push(bubble(sprite, size, false, near.k))
+      } else if (style === 'moon-sighting') {
+        // The moon they watch is tonight's real one, in its real phase; for people they cheer, saying
+        // "Ramadan Mubarak!" during Ramadan and "Eid Mubarak!" on the days of Eid.
+        sprite.flip = false
+        const acting = busy && smoothstep(0.1, 0.6, near.k) > 0.3
+        const phase = Math.round(moonPhase(now.getTime()) * MOON_PHASES) % MOON_PHASES
+        const poses = SPRITE_ROWS[style].find((r) => r.id === (acting ? 'act' : 'main'))!.frames / MOON_PHASES
+        sprite.row = acting ? 'act' : 'main'
+        sprite.frame = (Math.floor(t * (acting ? 6 : 1.5) + ph * 8) % poses) * MOON_PHASES + phase
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (acting) {
+          const said = bubble(sprite, size, false, near.k)
+          if (ramadanDay(now)) said.row = 'ramadan'
+          else if (isEid(now)) said.row = 'eid'
+          out.push(said)
+        }
       } else if (style === 'lawn-chair-skeleton') {
         // Dressed for the real temperature where the server is: sunglasses and a cold drink when it's mild, a
         // hat, scarf, blanket and a steaming mug (and a shiver) below 50°F. It waves to people.

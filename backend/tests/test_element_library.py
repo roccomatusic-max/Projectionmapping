@@ -252,3 +252,19 @@ def test_celebration_school_and_game_day_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "class-of", "chalkboard-teacher", "limbo", "grad-parade", "stadium-wave", "snake-can"]
+
+
+def test_faith_and_family_holiday_styles_and_countdowns_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "moon-sighting", "near": "follow"},
+        {"type": "movers", "style": "seder-table", "near": "follow"},
+        {"type": "movers", "style": "sea-parting", "near": "follow"},
+        {"type": "movers", "style": "canoe-paddlers", "near": "dance"},
+        {"type": "movers", "style": "knitting-grandma", "near": "follow"},
+        {"type": "countdown", "style": "seder"},
+        {"type": "countdown", "style": "crescent"},
+        {"type": "countdown", "style": "grandparents"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "moon-sighting", "seder-table", "sea-parting", "canoe-paddlers", "knitting-grandma",
+        "seder", "crescent", "grandparents"]
