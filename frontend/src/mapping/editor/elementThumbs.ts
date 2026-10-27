@@ -12,7 +12,7 @@
 import { OutputRenderer } from '../renderer'
 import type { LibraryItem } from '../scene/library'
 import { paintAtlas } from '../scene/movers'
-import { SPRITE_ROWS, type SpriteRow } from '../scene/sprites'
+import { SPRITE_ROWS, type SpriteRow } from '../scene/spriteRows'
 import type { MappingScene, SceneLayer, Surface } from '../types'
 import { wholeCanvasOutput } from './ScenePreview'
 
@@ -116,10 +116,13 @@ const SCATTER = new Set([
 /** Ones that float up: three of them. */
 const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons', 'floating-candles'])
 /** Ones that sit on the roofline, or hang under it. */
-const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls', 'wolves', 'robins', 'roof-reindeer'])
+const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls', 'wolves', 'robins', 'roof-reindeer', 'gargoyles', 'perched-eagles'])
 /** Ones that peek over a window sill. */
-const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes'])
-const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous'])
+const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes', 'window-hands', 'window-figures'])
+/** Ones with a second picture for when people are near. */
+const ACTORS = new Set(['rocking-chair', 'monster-mailbox', 'fortune-teller', 'sugar-skulls', 'buglers'])
+const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats', 'ornaments', 'pinatas', 'disco-ball', 'firecrackers', 'wind-chimes', 'fanous',
+  'hanging-skeletons', 'star-lanterns'])
 
 function hash(n: number) {
   const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453
@@ -270,7 +273,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     if (up > 0.02) stamp(ctx, style, layer, 'main', f, W / 2, top - jh * up + jh / 2, jh, false, up)
     return
   }
-  if (style === 'moles' || style === 'burrow-bunnies') {
+  if (style === 'moles' || style === 'burrow-bunnies' || style === 'swamp-monster') {
     ;[[0.25, 0.4], [0.52, 1], [0.78, 0.7]].forEach(([x, up], i) => {
       const k = Math.min(1, Math.max(0, up + Math.sin(time * 1.4 + i * 2) * 0.3))
       const mh = H * 0.5
@@ -303,7 +306,7 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     }
     return
   }
-  if (style === 'zombie-hands') {
+  if (style === 'zombie-hands' || style === 'tentacles') {
     ;[[0.25, 0.55], [0.52, 0.95], [0.78, 0.7]].forEach(([x, up], i) => {
       const k = Math.min(1, up + Math.sin(time * 1.2 + i * 2) * 0.12)
       stamp(ctx, style, layer, 'main', f + i * 3, W * x, H * (0.98 - k * 0.42), H * 0.5)
@@ -593,7 +596,51 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
     }
     return
   }
-  if (style === 'christmas-tree' || style === 'kinara' || style === 'tulips' || style === 'sunflowers') {
+  if (ACTORS.has(style)) {
+    // Now doing its thing for people, now waiting.
+    stamp(ctx, style, layer, Math.floor(time * 0.35) % 2 ? 'act' : 'main', Math.floor(time * 7), W / 2, H / 2, H * 0.9)
+    return
+  }
+  if (style === 'bush-eyes' || style === 'pumpkin-tower') {
+    const fit = Math.min((H * 0.9) / main.h, (W * 0.92) / main.w)
+    stamp(ctx, style, layer, 'main', Math.floor(time / 1.2) % 4, W / 2, H / 2, main.h * fit)
+    return
+  }
+  if (style === 'skeleton-band') {
+    ;(['main', 'v1', 'v2'] as const).forEach((row, i) => stamp(ctx, style, layer, row, f + i * 2, W * (0.22 + 0.28 * i), H / 2, H * 0.85))
+    return
+  }
+  if (style === 'tesla-coil') {
+    const u = (H * 0.9) / 300
+    const tx = W * 0.3
+    const ty = H * 0.05 + 76 * u
+    stamp(ctx, style, layer, 'main', f, tx, H / 2, H * 0.9)
+    if (time % 1.6 < 1) {
+      const dx = W * 0.42
+      const dy = H * 0.9 - ty
+      const d = Math.hypot(dx, dy)
+      ctx.save()
+      ctx.translate(tx + dx / 2, ty + dy / 2)
+      ctx.rotate(Math.atan2(-dx, dy))
+      stamp(ctx, style, layer, 'arc', Math.floor(time * 14), 0, 0, d)
+      ctx.restore()
+    }
+    return
+  }
+  if (style === 'fighter-jets') {
+    const x = W * (0.75 - ((time * 0.15) % 1) * 0.3)
+    ;[[0, 0], [-1, -1], [-1, 1]].forEach(([back, side], w) => {
+      const jx = x + back * H * 0.42
+      const jy = H * 0.45 + side * H * 0.2
+      for (let j = 1; j <= 14; j++) {
+        stamp(ctx, style, layer, 'smoke', [1, 0, 2][w], jx - H * 0.3 - j * H * 0.07, jy + j * j * H * 0.0008, H * (0.08 + 0.008 * j))
+      }
+      stamp(ctx, style, layer, 'main', f + w, jx, jy, H * 0.22)
+    })
+    return
+  }
+  if (style === 'christmas-tree' || style === 'kinara' || style === 'tulips' || style === 'sunflowers' || style === 'haunted-tree'
+    || style === 'candy-bowl' || style === 'creaky-gate' || style === 'ofrenda' || style === 'rangoli') {
     // Lighting up (the tree, the candles in their order) or opening, as people come.
     const frames = main.frames
     const k = Math.min(1, ((time * 0.3) % 1.3))

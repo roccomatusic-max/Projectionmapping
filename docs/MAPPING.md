@@ -988,6 +988,42 @@ bloom, Kwanzaa, Ramadan nights, Luau, Serenade, Harvest walk, Firecrackers,
 Class of the year, Night on the coast, Hockey night, School's out and Pipes and
 drums.
 
+Eighth batch (30 more, Halloween, the Day of the Dead, Veterans Day and Diwali;
+the painters live in `halloweenSprites.ts` and `autumnSprites.ts`, joined to the
+first set in `spriteRows.ts`):
+
+- New performer branch for standing movers, set up per style in the `ACTS`
+  table in `movers.ts` (how fast it plays when nobody is there and when
+  someone is, whether it wakes up from asleep, looks towards people, plays
+  its act row, rings a bell of musical notes, moves in step):
+  a haunted tree that opens its eyes and mouth as people come ("Who goes
+  there?"); a candy bowl whose hand reaches up ("Take one…"); a skeleton band
+  (drums, guitar, horn) that plays faster with notes rising; a Tesla coil
+  that throws lightning to the nearest person; a rocking chair that rocks
+  harder; a monster mailbox that snaps its lid ("Feed me!"); eyes in the
+  bushes and a tower of jack-o'-lanterns that look at people; a fortune
+  teller over her crystal ball ("I see… candy!"); zombies dancing in step; a
+  creaky gate that swings open ("Creeeak…"); catrinas and sugar skulls; an
+  ofrenda whose candles light up ("We remember").
+- Walking: the headless horseman on a pale horse, rearing with his pumpkin up
+  ("Beware!"); snakes that rear up and hiss ("Hsss!"); an honor guard with the
+  flag that halts for people; elephants that trumpet ("Happy Diwali!").
+- In the windows: hands pressed on the glass and figures watching from
+  inside, which look at people.
+- On the roof and walls: gargoyles that turn their heads and fly off from
+  people; perched eagles that screech and take off ("Skreee!"); spiders on the
+  wall; skeletons and star lanterns hanging from the gutter.
+- From the ground: a swamp monster rising out of the muck; tentacles out of
+  cracked ground.
+- In the sky: fighter jets flying past in a V with red, white and blue smoke,
+  waggling their wings for people.
+- Buglers playing taps for people, and a rangoli that glows brighter.
+- New occasion in the picker: Day of the Dead (it comes first from
+  1 to 2 November).
+
+Ready-made scenes added: Sleepy Hollow, Mad scientist, Monster party, Spooky
+front yard, Haunted manor, Día de Muertos, Veterans Day and Festival of lights.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

@@ -24,7 +24,7 @@
 import type { PersonSpot } from '../people'
 import type { LayerBlend, ObjectPin, SceneLayer, SourceRect, Surface } from '../types'
 import { nearOf } from './catalog'
-import { SPRITE_ROWS, type SpriteRow } from './sprites'
+import { SPRITE_ROWS, type SpriteRow } from './spriteRows'
 import { weatherFor, weatherLook } from './weather'
 
 // New styles go at the end, after the ones saved scenes already use.
@@ -56,6 +56,10 @@ export const MOVER_STYLES = [
   'rain-clouds', 'hockey-players', 'lighthouse', 'tumbleweeds', 'bigfoot', 'skeleton-dogs', 'sunflowers', 'tulips',
   'bird-feeder', 'beehive', 'wind-chimes', 'campfire', 'kinara', 'fanous', 'hula-dancers', 'mariachi', 'bagpipers',
   'pilgrims', 'cornucopia', 'christmas-tree', 'cows',
+  'headless-horseman', 'haunted-tree', 'candy-bowl', 'skeleton-band', 'tesla-coil', 'window-hands', 'window-figures',
+  'rocking-chair', 'swamp-monster', 'gargoyles', 'monster-mailbox', 'hanging-skeletons', 'bush-eyes', 'wall-spiders',
+  'snakes', 'tentacles', 'fortune-teller', 'dancing-zombies', 'creaky-gate', 'pumpkin-tower', 'catrinas', 'sugar-skulls',
+  'ofrenda', 'honor-guard', 'buglers', 'fighter-jets', 'perched-eagles', 'rangoli', 'star-lanterns', 'elephants',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -302,6 +306,75 @@ const STYLE: Record<MoverStyle, {
   cornucopia: { motion: 'stand', ground: true, height: 0.55, many: 0 },
   'christmas-tree': { motion: 'stand', ground: true, height: 1.5, many: 2 },
   cows: { motion: 'walker', ground: true, height: 0.85, pace: 2 },
+  // Holidays, Halloween to Diwali.
+  'headless-horseman': { motion: 'walker', ground: true, height: 1.2, pace: 0.6 },
+  'haunted-tree': { motion: 'stand', ground: true, height: 1.6, many: 1 },
+  'candy-bowl': { motion: 'stand', ground: true, height: 1, many: 1 },
+  'skeleton-band': { motion: 'stand', ground: true, height: 1, many: 2 },
+  'tesla-coil': { motion: 'stand', ground: true, height: 1.3, many: 1 },
+  'window-hands': { motion: 'peek', ground: false, height: 0.6 },
+  'window-figures': { motion: 'peek', ground: false, height: 0.75 },
+  'rocking-chair': { motion: 'stand', ground: true, height: 1.1, many: 1 },
+  'swamp-monster': { motion: 'popup', ground: true, height: 1, rises: true },
+  gargoyles: { motion: 'perch', ground: false, height: 0.8, look: true },
+  'monster-mailbox': { motion: 'stand', ground: true, height: 1.1, many: 1 },
+  'hanging-skeletons': { motion: 'dangle', ground: false, height: 1, still: true, animate: true, under: true },
+  'bush-eyes': { motion: 'stand', ground: true, height: 0.6, many: 2 },
+  'wall-spiders': { motion: 'wander', ground: true, height: 0.55, steady: true },
+  snakes: { motion: 'walker', ground: true, height: 0.5, pace: 0.7 },
+  tentacles: { motion: 'popup', ground: true, height: 1 },
+  'fortune-teller': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'dancing-zombies': { motion: 'stand', ground: true, height: 1, many: 4 },
+  'creaky-gate': { motion: 'stand', ground: true, height: 1.5, many: 0 },
+  'pumpkin-tower': { motion: 'stand', ground: true, height: 1.4, many: 2 },
+  catrinas: { motion: 'stand', ground: true, height: 1, many: 3 },
+  'sugar-skulls': { motion: 'stand', ground: true, height: 0.5, many: 6 },
+  ofrenda: { motion: 'stand', ground: true, height: 1.4, many: 0 },
+  'honor-guard': { motion: 'walker', ground: true, height: 1, pace: 1.4, halts: true },
+  buglers: { motion: 'stand', ground: true, height: 1, many: 0 },
+  'fighter-jets': { motion: 'flyer', ground: false, height: 0.4 },
+  'perched-eagles': { motion: 'perch', ground: false, height: 0.85, look: true },
+  rangoli: { motion: 'stand', ground: true, height: 0.7, many: 2 },
+  'star-lanterns': { motion: 'dangle', ground: false, height: 0.6, still: true, animate: true, under: true },
+  elephants: { motion: 'walker', ground: true, height: 1.1, pace: 1.6 },
+}
+
+/**
+ * Standing ones that perform, and how: idle and act are how fast their frames go by themselves and for people
+ * (act plays the 'act' row when it has one), level picks the frame by how near people are (from shut to wide open,
+ * asleep to awake, unlit to lit) with peek waking it a little now and then by itself, looks turns it to watch
+ * whoever is near (frames left, ahead, right, and a fourth for a blink or a laugh), faces turns it towards them,
+ * variants gives each its own picture (rows main, v1, v2), notes sends music up from it, and together has them
+ * fall into step with each other for people.
+ */
+interface Act {
+  idle?: number
+  act?: number
+  level?: number
+  peek?: boolean
+  looks?: boolean
+  faces?: boolean
+  variants?: number
+  notes?: boolean
+  together?: boolean
+}
+const ACTS: Partial<Record<MoverStyle, Act>> = {
+  'haunted-tree': { level: 0, peek: true, faces: true },
+  'candy-bowl': { level: 0, peek: true, faces: true },
+  'skeleton-band': { idle: 6, act: 11, variants: 3, notes: true },
+  'tesla-coil': { idle: 12, act: 18 },
+  'rocking-chair': { idle: 4, act: 7 },
+  'monster-mailbox': { idle: 2, act: 9 },
+  'bush-eyes': { looks: true },
+  'fortune-teller': { idle: 4, act: 8 },
+  'dancing-zombies': { idle: 6, act: 9, together: true },
+  'creaky-gate': { level: 0, peek: true },
+  'pumpkin-tower': { looks: true },
+  catrinas: { idle: 5, act: 9 },
+  'sugar-skulls': { idle: 1, act: 8 },
+  ofrenda: { level: 0.25 },
+  buglers: { idle: 0.5, act: 3, notes: true },
+  rangoli: { level: 0.3 },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -786,6 +859,54 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         })
       }
       out.push(cloud)
+    }
+    return out
+  }
+
+  if (style === 'fighter-jets') {
+    // Three jets in a V flying straight over the house now and then (each pass from one side or the other),
+    // trailing red, white and blue smoke; for people they dip their wings in salute (Dance), light their
+    // afterburners (Light up) or stay away (Hide).
+    const n = 1 + Math.round(layer.amount * 2)
+    const ratio = ratioOf(style)
+    let top = Infinity
+    for (let k = 0; k <= 24; k++) top = Math.min(top, path.at((L * k) / 24).y)
+    const v = 0.25 + 0.8 * layer.speed
+    const span = aspect + 1.2
+    const period = (span + 2.5) / v
+    for (let i = 0; i < n; i++) {
+      const u = (t + (i / n) * period + hash(i + own) * period) / period
+      const cycle = Math.floor(u)
+      const lead = (u - cycle) * period * v - 0.6
+      if (lead > span) continue
+      const fromLeft = hash(cycle * 3.7 + i) < 0.5
+      const dir = fromLeft ? 1 : -1
+      const y0 = Math.max(H * 1.3, top - H * (1 + 0.8 * hash(cycle * 1.9 + i)))
+      const lx = fromLeft ? lead : aspect - lead
+      const near = nearAt(lx, y0, H * 2, people, reach, aspect)
+      if (action === 'hide' && near.k > 0.3) continue
+      const salute = action === 'dance' || action === 'jump' ? smoothstep(0.1, 0.5, near.k) : 0
+      for (let w = 0; w < 3; w++) {
+        // The leader in front, wingmen behind either side of it.
+        const x = lx - dir * (w === 0 ? 0 : H * 1.7)
+        const y = y0 + (w === 0 ? 0 : (w === 1 ? -1 : 1) * H * 0.7) - (x / aspect) * H * 0.3 * dir
+        if (x < -0.6 || x > aspect + 0.6) continue
+        const jet: Sprite = {
+          x, y, hw: (H * ratio) / 2, hh: H / 2, angle: Math.sin(t * 7 + w) * 0.3 * salute - 0.05 * dir, flip: !fromLeft, alpha: 1,
+          glow: action === 'light' ? near.k : 0, row: 'main', frame: Math.floor(t * 12 + w),
+        }
+        // The smoke, drifting down and spreading behind.
+        const puffs = 12 + Math.round(layer.fade * 24)
+        for (let j = 1; j <= puffs; j++) {
+          const gap = jet.hw * 0.9 + j * H * 0.3
+          const sz = H * (0.18 + 0.025 * j)
+          out.push({
+            x: x - dir * gap, y: y + gap * 0.05 * dir * dir + j * j * H * 0.002 + Math.sin(t + j) * H * 0.03,
+            hw: sz, hh: sz, angle: 0, flip: false, alpha: 0.6 * (1 - j / (puffs + 1)), glow: 0, row: 'smoke', frame: [1, 0, 2][w],
+          })
+        }
+        out.push(jet)
+      }
     }
     return out
   }
@@ -2795,6 +2916,73 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         sprite.glow = level >= 1 ? 0.2 : 0
         if (action === 'light') sprite.glow = Math.max(sprite.glow, near.k * 0.5)
         out.push(sprite)
+      } else if (ACTS[style]) {
+        const act = ACTS[style]!
+        const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
+        const frames = SPRITE_ROWS[style][0].frames
+        const v = act.variants ? i % act.variants : 0
+        sprite.row = v ? `v${v}` : 'main'
+        let lit = k
+        if (act.level != null) {
+          // From shut (asleep, unlit) to wide open as people come; now and then a little by itself.
+          let level = act.level
+          if (act.peek) level = Math.max(level, 0.35 * Math.pow(Math.max(0, Math.sin(t * 0.35 + ph * 9)), 8))
+          level = Math.max(level, k)
+          if (action === 'hide') level *= 1 - smoothstep(0.2, 0.6, near.k)
+          sprite.frame = Math.round(level * (frames - 1))
+          lit = level > 0.85 ? 1 : 0
+        } else if (act.looks) {
+          // Watching whoever is near (left, ahead, right), laughing or blinking now and then.
+          const r = hash(Math.floor(t / 1.4 + ph * 5) * 1.7 + i)
+          const side = -near.ax * near.dist
+          sprite.flip = false
+          sprite.frame = near.k > 0.08 && action !== 'none'
+            ? (r > 0.8 ? 3 : side < -size * 0.3 ? 0 : side > size * 0.3 ? 2 : 1)
+            : r < 0.3 ? 0 : r < 0.6 ? 1 : r < 0.9 ? 2 : 3
+        } else {
+          // Playing (dancing, rocking) by itself, and its act for people; ones that dance together fall into step.
+          const acting = k > 0.3
+          if (acting && hasRow(style, 'act')) sprite.row = 'act'
+          const fps = (acting ? act.act ?? 8 : act.idle ?? 6) * (0.6 + 0.8 * layer.speed)
+          sprite.frame = Math.floor(t * fps + (act.together && acting ? 0 : ph * 8))
+        }
+        if (act.faces) sprite.flip = near.k > 0.1 && action !== 'none' ? near.ax > 0 : ph < 0.5
+        const mine = action === 'light' || action === 'grow' ? action
+          : action === 'hide' && act.level == null ? 'hide'
+            : action === 'jump' && act.level == null && !hasRow(style, 'act') ? 'jump' : 'none'
+        react(sprite, mine, near, t, ph * 6, reach)
+        if (hasRow(style, 'arc') && busy) {
+          // The coil throws lightning at whoever comes near (people are down on the ground), flickering.
+          const who = nearestAcross(p.x)
+          const zap = smoothstep(0.1, 0.45, who.k)
+          if (zap > 0.05 && (t * 6 + ph) % 1 < 0.7) {
+            const tx = p.x
+            const ty = p.y - size + (size * 76) / 300
+            const dx = who.px - tx
+            const dy = Math.max(0.02, who.py - 0.02 - ty)
+            const d = Math.hypot(dx, dy)
+            out.push({
+              x: tx + dx / 2, y: ty + dy / 2, hw: size * 0.16, hh: d / 2, angle: Math.atan2(-dx, dy), flip: false,
+              alpha: zap, glow: 0.8, row: 'arc', frame: Math.floor(t * 14 + i),
+            })
+            sprite.glow = Math.max(sprite.glow, 0.5 * zap)
+          }
+        }
+        out.push(sprite)
+        if (act.notes && (style !== 'buglers' || lit > 0.3)) {
+          // Music floating up off it, more of it for people.
+          const count = 2 + Math.round(lit * 3)
+          const dir = sprite.flip ? -1 : 1
+          for (let j = 0; j < count; j++) {
+            const q = (t * 0.45 + j / count + ph) % 1
+            out.push({
+              x: p.x + dir * size * 0.3 + Math.sin(q * 6 + j) * size * 0.15, y: p.y - size * 0.85 - q * size,
+              hw: size * 0.09, hh: size * 0.09, angle: Math.sin(q * 5 + j) * 0.3, flip: false,
+              alpha: Math.sin(q * Math.PI) * (style === 'buglers' ? lit : 0.5 + 0.5 * lit), glow: 0.3, row: 'note', frame: j,
+            })
+          }
+        }
+        if (hasRow(style, 'bubble') && lit > 0.3) out.push(bubble(sprite, size, sprite.flip, Math.max(near.k, 0.6)))
       } else {
         // Fountains: sparks spraying up, the spray higher (Grow) or brighter (Light up) for people.
         sprite.flip = false

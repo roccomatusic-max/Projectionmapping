@@ -23,7 +23,8 @@ function seasonNow(): Occasion | null {
   const now = new Date()
   const m = now.getMonth()
   const d = now.getDate()
-  if (m === 9 || (m === 10 && d === 1)) return 'halloween'
+  if (m === 9) return 'halloween'
+  if (m === 10 && d <= 2) return 'day-of-the-dead'
   if (m === 10) return 'thanksgiving'
   if (m === 11 && d < 27) return 'christmas'
   if ((m === 11 && d >= 27) || (m === 0 && d <= 2)) return 'new-year'

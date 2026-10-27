@@ -13,7 +13,7 @@
  * the context already scaled; f runs from 0 to frames - 1 and wraps.
  */
 
-type Ctx = CanvasRenderingContext2D
+export type Ctx = CanvasRenderingContext2D
 
 export interface SpriteColors {
   color: string
@@ -29,31 +29,31 @@ export interface SpriteRow {
   paint: (ctx: Ctx, f: number, frames: number, c: SpriteColors) => void
 }
 
-const TAU = Math.PI * 2
+export const TAU = Math.PI * 2
 
-function shade(hex: string, k: number): string {
+export function shade(hex: string, k: number): string {
   const n = parseInt(hex.slice(1), 16)
   const ch = (v: number) => Math.max(0, Math.min(255, Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k))))
   return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`
 }
 
-function rgba(hex: string, a: number): string {
+export function rgba(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16)
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
 }
 
-function ellipse(ctx: Ctx, x: number, y: number, rx: number, ry: number, rot = 0) {
+export function ellipse(ctx: Ctx, x: number, y: number, rx: number, ry: number, rot = 0) {
   ctx.beginPath()
   ctx.ellipse(x, y, rx, ry, rot, 0, TAU)
 }
 
-function circle(ctx: Ctx, x: number, y: number, r: number) {
+export function circle(ctx: Ctx, x: number, y: number, r: number) {
   ctx.beginPath()
   ctx.arc(x, y, r, 0, TAU)
 }
 
 /** A leg in two parts from the hip, bending at the knee; angles in radians from straight down. */
-function leg(ctx: Ctx, x: number, y: number, upper: number, lower: number, a1: number, a2: number, width: number, color: string, hoof: string) {
+export function leg(ctx: Ctx, x: number, y: number, upper: number, lower: number, a1: number, a2: number, width: number, color: string, hoof: string) {
   const kx = x + Math.sin(a1) * upper
   const ky = y + Math.cos(a1) * upper
   const fx = kx + Math.sin(a1 + a2) * lower
@@ -72,7 +72,7 @@ function leg(ctx: Ctx, x: number, y: number, upper: number, lower: number, a1: n
   ctx.fill()
 }
 
-function glow(ctx: Ctx, x: number, y: number, r: number, color: string, a = 1) {
+export function glow(ctx: Ctx, x: number, y: number, r: number, color: string, a = 1) {
   const g = ctx.createRadialGradient(x, y, 0, x, y, r)
   g.addColorStop(0, rgba(color, a))
   g.addColorStop(0.35, rgba(color, a * 0.45))
@@ -82,7 +82,7 @@ function glow(ctx: Ctx, x: number, y: number, r: number, color: string, a = 1) {
   ctx.fill()
 }
 
-function present(ctx: Ctx, x: number, y: number, w: number, h: number, box: string, ribbon: string) {
+export function present(ctx: Ctx, x: number, y: number, w: number, h: number, box: string, ribbon: string) {
   ctx.fillStyle = box
   ctx.fillRect(x, y, w, h)
   ctx.fillStyle = shade(box, -0.25)
@@ -96,8 +96,8 @@ function present(ctx: Ctx, x: number, y: number, w: number, h: number, box: stri
   ctx.fill()
 }
 
-const SKIN = '#f2c08f'
-const FUR = '#fbfbf7'
+export const SKIN = '#f2c08f'
+export const FUR = '#fbfbf7'
 
 // -- Santa's sleigh and reindeer --------------------------------------------------------
 
@@ -335,7 +335,7 @@ function sleighTeam(ctx: Ctx, f: number, frames: number, { color, color2 }: Spri
 
 // -- the Christmas train -------------------------------------------------------------------
 
-function wheel(ctx: Ctx, x: number, y: number, r: number, turn: number, rim: string) {
+export function wheel(ctx: Ctx, x: number, y: number, r: number, turn: number, rim: string) {
   ctx.fillStyle = '#1f2937'
   circle(ctx, x, y, r)
   ctx.fill()
@@ -479,7 +479,7 @@ function car(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColor
   wheel(ctx, 300, 236, 26, turn * 1.6, color)
 }
 
-function puff(ctx: Ctx) {
+export function puff(ctx: Ctx) {
   const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 60)
   g.addColorStop(0, 'rgba(255,255,255,0.95)')
   g.addColorStop(0.55, 'rgba(235,240,248,0.6)')
@@ -491,7 +491,7 @@ function puff(ctx: Ctx) {
 
 // -- birds, bats and ghosts -----------------------------------------------------------------
 
-function bird(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+export function bird(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
   const flap = Math.sin((f / frames) * TAU)
   const body = color
   // Far wing.
@@ -788,7 +788,7 @@ function penguin(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteC
 
 // -- sparkle and shooting star ---------------------------------------------------------------
 
-function sparkle(ctx: Ctx, f: number, frames: number, { color2 }: SpriteColors) {
+export function sparkle(ctx: Ctx, f: number, frames: number, { color2 }: SpriteColors) {
   const s = 0.6 + 0.4 * Math.sin((f / frames) * TAU)
   glow(ctx, 32, 32, 30 * s, color2, 0.8)
   ctx.fillStyle = '#ffffff'
@@ -826,7 +826,7 @@ function shootingStar(ctx: Ctx, _f: number, _n: number, { color, color2 }: Sprit
 
 // -- speech bubbles -----------------------------------------------------------------------------
 
-function saying(words: string) {
+export function saying(words: string) {
   return (ctx: Ctx, _f: number, _n: number, { color }: SpriteColors) => {
     ctx.fillStyle = 'rgba(255,255,255,0.95)'
     ctx.beginPath()
@@ -851,7 +851,7 @@ function saying(words: string) {
 }
 
 /** A bone: a thick rounded stroke with knobs at both ends. */
-function bone(ctx: Ctx, x1: number, y1: number, x2: number, y2: number, w: number, color: string) {
+export function bone(ctx: Ctx, x1: number, y1: number, x2: number, y2: number, w: number, color: string) {
   ctx.strokeStyle = color
   ctx.lineCap = 'round'
   ctx.lineWidth = w
@@ -867,7 +867,7 @@ function bone(ctx: Ctx, x1: number, y1: number, x2: number, y2: number, w: numbe
 }
 
 /** A limb in two parts from the joint at (x, y): angles in radians from straight down; returns the end. */
-function limb(ctx: Ctx, x: number, y: number, upper: number, lower: number, a1: number, a2: number, width: number, color: string) {
+export function limb(ctx: Ctx, x: number, y: number, upper: number, lower: number, a1: number, a2: number, width: number, color: string) {
   const kx = x + Math.sin(a1) * upper
   const ky = y + Math.cos(a1) * upper
   const ex = kx + Math.sin(a1 + a2) * lower
@@ -1647,7 +1647,7 @@ function bunny(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteCol
   ctx.restore()
 }
 
-function eagle(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+export function eagle(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
   const flap = Math.sin((f / frames) * TAU)
   const body = color
   const wing = (lift: number, k: number) => {
@@ -2029,7 +2029,7 @@ function confetti(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteColo
   }
 }
 
-function heartPath(ctx: Ctx, cx: number, cy: number, s: number) {
+export function heartPath(ctx: Ctx, cx: number, cy: number, s: number) {
   ctx.beginPath()
   ctx.moveTo(cx, cy + s * 0.9)
   ctx.bezierCurveTo(cx - s * 1.3, cy + s * 0.1, cx - s * 0.9, cy - s * 0.95, cx, cy - s * 0.4)
@@ -2137,7 +2137,7 @@ function hangingSpider(ctx: Ctx, f: number, frames: number, { color, color2 }: S
 }
 
 /** The spider's silk: a thin bright line, stretched to length where drawn. */
-function silk(ctx: Ctx) {
+export function silk(ctx: Ctx) {
   const g = ctx.createLinearGradient(0, 0, 0, 256)
   g.addColorStop(0, 'rgba(255,255,255,0.25)')
   g.addColorStop(1, 'rgba(255,255,255,0.8)')
@@ -2536,7 +2536,7 @@ function dragonFire(ctx: Ctx, f: number, _n: number, { color2 }: SpriteColors) {
 }
 
 /** An owl flying across, head turned to look at you; big eyes in the element's second colour. */
-function owl(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
+export function owl(ctx: Ctx, f: number, frames: number, { color, color2 }: SpriteColors) {
   const lift = 0.35 + 0.65 * Math.sin((f / frames) * TAU)
   const wing = (front: boolean) => {
     const tip = 110 - lift * (front ? 90 : 70)
@@ -3273,7 +3273,7 @@ function zombieHand(ctx: Ctx, f: number, frames: number, { color, color2 }: Spri
 }
 
 /** A mound of dug-up earth the hand comes out of. */
-function dirtMound(ctx: Ctx) {
+export function dirtMound(ctx: Ctx) {
   const g = ctx.createLinearGradient(0, 10, 0, 60)
   g.addColorStop(0, '#6b4a2b')
   g.addColorStop(1, '#3b2614')
@@ -5577,7 +5577,7 @@ function jingleBell(ctx: Ctx, f: number, _n: number, { color, color2 }: SpriteCo
 }
 
 /** A ribbon the bells and stockings hang on. */
-function ribbon(ctx: Ctx, _f: number, _n: number, { color2 }: SpriteColors) {
+export function ribbon(ctx: Ctx, _f: number, _n: number, { color2 }: SpriteColors) {
   ctx.fillStyle = color2
   ctx.fillRect(1, 0, 6, 256)
   ctx.fillStyle = 'rgba(255,255,255,0.35)'
@@ -6070,7 +6070,7 @@ function chick(ctx: Ctx, f: number, frames: number) {
   ctx.fill()
 }
 
-function vehicleWheel(ctx: Ctx, x: number, y: number, r: number, turn: number) {
+export function vehicleWheel(ctx: Ctx, x: number, y: number, r: number, turn: number) {
   ctx.fillStyle = '#111827'
   circle(ctx, x, y, r)
   ctx.fill()
@@ -7188,11 +7188,11 @@ function rollingPumpkin(ctx: Ctx, f: number, frames: number, { color, color2 }: 
 // -- peeking over the window sills, eyes in the dark, owls and gulls on the roof ---------------
 
 /** Frames 0–3 of a peeker: looking left, ahead, right, then blinking. */
-function peekLook(f: number): { look: number; blink: boolean } {
+export function peekLook(f: number): { look: number; blink: boolean } {
   return { look: [-1, 0, 1, 0][f % 4], blink: f % 4 === 3 }
 }
 
-function peekEyes(ctx: Ctx, x: number, y: number, gap: number, r: number, look: number, blink: boolean, iris = '#111') {
+export function peekEyes(ctx: Ctx, x: number, y: number, gap: number, r: number, look: number, blink: boolean, iris = '#111') {
   for (const d of [-1, 1]) {
     const ex = x + d * gap
     if (blink) {
@@ -13217,7 +13217,7 @@ function cow(look: boolean) {
 
 // -- the rows each style is made of ------------------------------------------------------
 
-const SPARKLE: SpriteRow = { id: 'sparkle', frames: 4, w: 64, h: 64, paint: sparkle }
+export const SPARKLE: SpriteRow = { id: 'sparkle', frames: 4, w: 64, h: 64, paint: sparkle }
 
 export const SPRITE_ROWS: Record<string, SpriteRow[]> = {
   sleigh: [
