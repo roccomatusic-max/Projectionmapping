@@ -90,8 +90,9 @@ function atlasFor(style: string, layer: SceneLayer) {
   return atlas
 }
 
+/** One picture centred on cx, cy; with crop below 1 only its top part shows (still placed as if whole). */
 function stamp(ctx: CanvasRenderingContext2D, style: string, layer: SceneLayer, rowId: string, frame: number,
-  cx: number, cy: number, height: number, flip = false) {
+  cx: number, cy: number, height: number, flip = false, crop = 1) {
   const rows: SpriteRow[] = SPRITE_ROWS[style]
   const row = rows.find((r) => r.id === rowId) ?? rows[0]
   const { canvas, cells } = atlasFor(style, layer)
@@ -101,12 +102,12 @@ function stamp(ctx: CanvasRenderingContext2D, style: string, layer: SceneLayer, 
   ctx.save()
   ctx.translate(cx, cy)
   if (flip) ctx.scale(-1, 1)
-  ctx.drawImage(canvas, cell.u * canvas.width, cell.v * canvas.height, cell.du * canvas.width, cell.dv * canvas.height,
-    -w / 2, -height / 2, w, height)
+  ctx.drawImage(canvas, cell.u * canvas.width, cell.v * canvas.height, cell.du * canvas.width, cell.dv * canvas.height * crop,
+    -w / 2, -height / 2, w, height * crop)
   ctx.restore()
 }
 
-const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees', 'dragonflies', 'hummingbirds', 'pufferfish', 'koi'])
+const FLOCKS = new Set(['birds', 'bats', 'butterflies', 'fish', 'bees', 'dragonflies', 'hummingbirds', 'pufferfish', 'koi', 'ladybugs', 'moths'])
 /** Small things that come many at a time: shown as a scatter. */
 const SCATTER = new Set([
   'snowfall', 'leaves', 'petals', 'confetti', 'falling-hearts', 'clovers', 'fireflies', 'rising-bubbles', 'falling-presents',
@@ -115,7 +116,9 @@ const SCATTER = new Set([
 /** Ones that float up: three of them. */
 const RISERS = new Set(['balloons', 'lanterns', 'jellyfish', 'hot-air-balloons', 'floating-candles'])
 /** Ones that sit on the roofline, or hang under it. */
-const PERCHERS = new Set(['crows', 'doves', 'cardinals'])
+const PERCHERS = new Set(['crows', 'doves', 'cardinals', 'perched-owls', 'seagulls'])
+/** Ones that peek over a window sill. */
+const PEEKERS = new Set(['peeking-ghosts', 'peeking-elves', 'window-cats', 'window-eyes'])
 const HANGERS = new Set(['jingle-bells', 'stockings', 'hanging-bats'])
 
 function hash(n: number) {
@@ -217,6 +220,86 @@ function paintSprites(layer: SceneLayer, ctx: CanvasRenderingContext2D, time: nu
         ctx.restore()
       }
     })
+    return
+  }
+  if (PEEKERS.has(style)) {
+    // A window with one coming up over the sill and ducking down again (or eyes opening in the dark).
+    const wx = W * 0.5
+    const sill = H * 0.86
+    ctx.fillStyle = '#0b1220'
+    ctx.fillRect(W * 0.24, H * 0.1, W * 0.52, sill - H * 0.1)
+    ctx.strokeStyle = 'rgba(148,163,184,0.8)'
+    ctx.lineWidth = 3
+    ctx.strokeRect(W * 0.24, H * 0.1, W * 0.52, sill - H * 0.1)
+    const look = Math.floor(time / 1.2) % 4
+    if (style === 'window-eyes') {
+      const eh = H * 0.34
+      const cy = H * 0.46
+      stamp(ctx, style, layer, 'main', look === 3 ? 3 : 0, wx, cy, eh)
+      if (look !== 3) {
+        const u = eh / 110
+        const lx = Math.sin(time * 0.8)
+        for (const d of [-1, 1]) stamp(ctx, style, layer, 'pupil', 0, wx + (d * 50 + lx * 17) * u, cy, 46 * u)
+      }
+      return
+    }
+    const up = Math.min(1, Math.max(0, 1.6 * Math.sin(((time * 0.25) % 1) * Math.PI) - 0.2))
+    const ph = H * 0.6
+    stamp(ctx, style, layer, 'main', look, wx, sill + ph * 0.04 - ph * up + ph / 2, ph, false, up)
+    ctx.fillStyle = 'rgba(148,163,184,0.9)'
+    ctx.fillRect(W * 0.2, sill, W * 0.6, H * 0.05)
+    return
+  }
+  if (style === 'snowball-kids' || style === 'water-balloon-kids') {
+    // A throw in an arc to a splat on the wall.
+    const k = (time * 0.5) % 1
+    const fr = k < 0.35 ? 0 : k < 0.45 ? 1 : k < 0.55 ? 2 : k < 0.65 ? 3 : 0
+    stamp(ctx, style, layer, 'main', fr, W * 0.2, H * 0.6, H * 0.72)
+    const a = (k - 0.5) / 0.3
+    if (a > 0 && a < 1) stamp(ctx, style, layer, 'ball', 0, W * (0.28 + 0.5 * a), H * (0.36 - Math.sin(a * Math.PI) * 0.25 - 0.1 * a), H * 0.1)
+    else if (a >= 1) stamp(ctx, style, layer, 'splat', 0, W * 0.78, H * 0.26, H * 0.24)
+    return
+  }
+  if (style === 'jack-in-the-box') {
+    const up = Math.min(1, Math.max(0, 2 * Math.sin(((time * 0.3) % 1) * Math.PI) - 0.3))
+    const bh = H * 0.4
+    stamp(ctx, style, layer, 'box', up > 0.03 ? 1 : 0, W / 2, H * 0.96 - bh / 2, bh)
+    const top = H * 0.96 - bh + (bh * 30) / 110
+    const jh = H * 0.7
+    if (up > 0.02) stamp(ctx, style, layer, 'main', f, W / 2, top - jh * up + jh / 2, jh, false, up)
+    return
+  }
+  if (style === 'moles') {
+    ;[[0.25, 0.4], [0.52, 1], [0.78, 0.7]].forEach(([x, up], i) => {
+      const k = Math.min(1, Math.max(0, up + Math.sin(time * 1.4 + i * 2) * 0.3))
+      const mh = H * 0.5
+      if (k > 0.02) stamp(ctx, style, layer, 'main', f + i * 3, W * x, H * 0.86 - mh * k + mh / 2, mh, false, k)
+      stamp(ctx, style, layer, 'mound', 0, W * x, H * 0.88, H * 0.2)
+    })
+    return
+  }
+  if (style === 'grave-ghosts') {
+    const up = 0.5 + 0.5 * Math.sin(time * 0.9)
+    ctx.save()
+    ctx.globalAlpha = 0.85 * Math.min(1, up * 2)
+    stamp(ctx, style, layer, 'main', f, W / 2, H * (0.6 - up * 0.32), H * 0.5)
+    ctx.restore()
+    stamp(ctx, style, layer, 'stone', 0, W / 2, H * 0.72, H * 0.5)
+    return
+  }
+  if (style === 'party-poppers') {
+    // Going off: confetti fanning out of it.
+    stamp(ctx, style, layer, 'main', 0, W * 0.42, H * 0.76, H * 0.42)
+    const k = (time * 0.5) % 1
+    for (let j = 0; j < 16; j++) {
+      const a = -Math.PI / 2 + (hash(j) - 0.5) * 1.4
+      const r = H * (0.25 + 0.5 * hash(j + 3)) * Math.min(1, k * 2.5)
+      ctx.save()
+      ctx.translate(W * 0.42 + Math.cos(a) * r, H * 0.56 + Math.sin(a) * r + k * k * H * 0.25)
+      ctx.rotate(time * 3 + j)
+      stamp(ctx, style, layer, 'burst', j, 0, 0, H * 0.09)
+      ctx.restore()
+    }
     return
   }
   if (style === 'zombie-hands') {

@@ -102,3 +102,16 @@ def test_batch_four_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "crows", "sledders", "jingle-bells", "parachute-presents", "hens", "koi"]
+
+
+def test_batch_five_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "peeking-ghosts", "near": "follow"},
+        {"type": "movers", "style": "window-eyes"},
+        {"type": "movers", "style": "snowball-kids", "near": "follow"},
+        {"type": "movers", "style": "birthday-cakes", "near": "hide"},
+        {"type": "movers", "style": "skunks", "near": "hide"},
+        {"type": "movers", "style": "moths", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "peeking-ghosts", "window-eyes", "snowball-kids", "birthday-cakes", "skunks", "moths"]

@@ -208,7 +208,22 @@ CATALOG: dict[str, dict] = {
                  "or drive along the bottom; love-letters (fly to people: near follow), "
                  "seahorses, mermaids, submarines and origami-cranes fly over the roof; "
                  "pufferfish (puff up: near grow) and koi (gather round people: near "
-                 "follow) are flocks",
+                 "follow) are flocks; peeking-ghosts, peeking-elves and window-cats "
+                 "peek over the window sills and come up to watch people (near "
+                 "follow), window-eyes open in the windows and follow people with "
+                 "their pupils; perched-owls on the roof turn their heads to watch "
+                 "people, seagulls squawk and fly off (near flee); snowball-kids and "
+                 "water-balloon-kids throw at the house and at people (near follow); "
+                 "jack-in-the-box, coffins and grave-ghosts come out for people (near "
+                 "jump); moles duck into their holes (near hide); party-poppers go "
+                 "off for people (near jump); birthday-cakes have their candles blown "
+                 "out by people (near hide); skiers slide down the roof (near jump); "
+                 "ice-skaters twirl for people (near dance); snails, tortoises, "
+                 "hedgehogs and skunks hide from people (near hide); uncle-sam on "
+                 "stilts and football-players walk along the bottom; storks, "
+                 "flying-pigs, unicorns, magic-carpet and superheroes fly over the "
+                 "roof; fairies flit about (near follow); ladybugs (near flee) and "
+                 "moths (near follow) are flocks",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -230,7 +245,14 @@ CATALOG: dict[str, dict] = {
                    "rolling-pumpkins", "snowmen", "santa-walking", "hens",
                    "ice-cream-truck", "fire-truck", "race-cars", "drummers", "scarecrows",
                    "love-letters", "seahorses", "mermaids", "submarines", "origami-cranes",
-                   "pufferfish", "koi"],
+                   "pufferfish", "koi", "peeking-ghosts", "peeking-elves",
+                   "window-cats", "window-eyes", "perched-owls", "seagulls",
+                   "snowball-kids", "water-balloon-kids", "jack-in-the-box", "moles",
+                   "coffins", "grave-ghosts", "party-poppers", "birthday-cakes",
+                   "skiers", "ice-skaters", "snails", "tortoises", "hedgehogs",
+                   "skunks", "uncle-sam", "football-players", "storks", "flying-pigs",
+                   "unicorns", "magic-carpet", "fairies", "superheroes", "ladybugs",
+                   "moths"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
