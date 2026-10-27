@@ -1178,6 +1178,35 @@ Ready-made scenes added: I have a dream, Groundhog Day, Be my Valentine,
 Presidents' Day, Laissez les bons temps rouler, Luck of the Irish and Hoppy
 Easter.
 
+Twelfth batch (27 more, Earth Day, Cinco de Mayo, Mother's Day, Memorial Day,
+Father's Day, Juneteenth, the Fourth of July, Labor Day and summer;
+`mayJuneSprites.ts` and `summerSprites.ts`):
+
+- Real weather and date: a rain barrel that fills under its downspout while it
+  really rains where the server is, a child in a raincoat jumping in the
+  puddles for people (on dry days, watering the flowers, which lift their
+  heads for people); a lemonade stand that turns into a hot cocoa stand below
+  55°F; the flag at half-staff on the morning of Memorial Day and raised to
+  the top at noon, a wreath of poppies at its foot.
+- Growing for people (`level`): Mom's garden coming into bloom; the Statue of
+  Liberty's torch blazing; a sandcastle rising tower by tower.
+- Performers: a child tossing a bottle into the recycling bin ("Recycle!"); a
+  folklórico dancer ("¡Viva México!"); a piñata broken by a blindfolded child
+  ("¡Dale, dale, dale!"); flowers for Mom and a hug ("Happy Mother's Day!"); a
+  soldier in dress blues who turns to salute ("Thank you for remembering");
+  Dad flipping a burger high ("Who's hungry?"); fishing off the dock ("Got
+  one!"); the reading of General Order No. 3 ("Happy Juneteenth!"); double
+  Dutch; a hot dog eating contest ("Ten more!"); children writing USA with
+  sparklers; ironworkers on a beam who wave down ("Happy Labor Day!"); a
+  cannonball into the pool ("Cannonball!"); cornhole ("Cornhole!").
+- Walking: picking up litter; breakfast in bed; mowing the lawn; a Juneteenth
+  flag bearer; a drum major throwing his baton; ants carrying off the picnic
+  (they run from people); a bike parade.
+
+Ready-made scenes added: Earth Day, ¡Viva México!, For Mom, We remember, Dad's
+day, Juneteenth, Fourth of July parade, Labor Day cookout and Day at the
+beach.
+
 More Christmas decorations for the objects layer: gingerbread people,
 stockings, wreaths, Santa hats, reindeer, poinsettias, holly, mittens (and
 turkeys for Thanksgiving). Ready-made scenes added: Christmas night (lights,

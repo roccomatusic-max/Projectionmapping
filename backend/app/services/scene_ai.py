@@ -355,7 +355,21 @@ CATALOG: dict[str, dict] = {
                  "irish-dancers (near follow); leprechaun-trap snaps shut (near follow); "
                  "harpist (near follow); egg-hunt (near follow); bunny-painter (near "
                  "follow); lambs spring (near dance); egg-roll (near dance); "
-                 "easter-bonnet (near dance)",
+                 "easter-bonnet (near dance); litter-pickers (near dance); recycle-bins "
+                 "(near follow); rain-barrel fills when it really rains (near follow); "
+                 "folklorico (near follow); pinata-party (near follow); flowers-for-mom "
+                 "(near follow); breakfast-tray (near dance); mom-garden blooms for people "
+                 "(near follow); saluting-soldier (near follow); memorial-flag at "
+                 "half-staff on Memorial Day morning (near light); grill-dad (near "
+                 "follow); fishing-dock (near follow); lawn-mower (near dance); "
+                 "order-reader for Juneteenth (near follow); juneteenth-flag (near "
+                 "dance); double-dutch (near follow); statue-of-liberty's torch (near "
+                 "light); hot-dog-contest (near follow); drum-major (near dance); "
+                 "picnic-ants run from people (near flee); sparkler-writers (near "
+                 "follow); bike-parade (near dance); ironworkers wave (near follow); "
+                 "cannonball (near follow); lemonade-stand turns to hot cocoa when it's "
+                 "cold (near follow); sandcastle grows for people (near follow); "
+                 "cornhole (near follow)",
         "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
                    "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
                    "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
@@ -426,7 +440,13 @@ CATALOG: dict[str, dict] = {
                    "fife-and-drum", "bead-balcony", "brass-band", "jester", "king-cake",
                    "carnival-mask", "crawfish", "irish-dancers", "leprechaun-trap",
                    "harpist", "egg-hunt", "bunny-painter", "lambs", "egg-roll",
-                   "easter-bonnet"],
+                   "easter-bonnet", "litter-pickers", "recycle-bins", "rain-barrel",
+                   "folklorico", "pinata-party", "flowers-for-mom", "breakfast-tray",
+                   "mom-garden", "saluting-soldier", "memorial-flag", "grill-dad",
+                   "fishing-dock", "lawn-mower", "order-reader", "juneteenth-flag",
+                   "double-dutch", "statue-of-liberty", "hot-dog-contest", "drum-major",
+                   "picnic-ants", "sparkler-writers", "bike-parade", "ironworkers",
+                   "cannonball", "lemonade-stand", "sandcastle", "cornhole"],
         "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
                  "fade: sparkle trail and steam",
         "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
