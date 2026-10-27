@@ -25,7 +25,7 @@ import type { PersonSpot } from '../people'
 import type { LayerBlend, ObjectPin, SceneLayer, SourceRect, Surface } from '../types'
 import { nearOf } from './catalog'
 import { SPRITE_ROWS, type SpriteRow } from './spriteRows'
-import { hanukkahEve, lunarNewYear } from './holidays'
+import { hanukkahEve, lastWeekday, lunarNewYear } from './holidays'
 import { weatherFor, weatherLook } from './weather'
 
 // New styles go at the end, after the ones saved scenes already use.
@@ -72,7 +72,11 @@ export const MOVER_STYLES = [
   'dreamers-march', 'unity-circle', 'dove-release', 'tree-planters', 'groundhog', 'serenade', 'candy-heart',
   'waltzing-couple', 'pebble-penguins', 'heart-balloon', 'rushmore', 'liberty-bell', 'cherry-tree', 'fife-and-drum',
   'bead-balcony', 'brass-band', 'jester', 'king-cake', 'carnival-mask', 'crawfish', 'irish-dancers',
-  'leprechaun-trap', 'harpist', 'egg-hunt', 'bunny-painter', 'lambs', 'egg-roll', 'easter-bonnet',
+  'leprechaun-trap', 'harpist', 'egg-hunt', 'bunny-painter', 'lambs', 'egg-roll', 'easter-bonnet', 'litter-pickers',
+  'recycle-bins', 'rain-barrel', 'folklorico', 'pinata-party', 'flowers-for-mom', 'breakfast-tray', 'mom-garden',
+  'saluting-soldier', 'memorial-flag', 'grill-dad', 'fishing-dock', 'lawn-mower', 'order-reader', 'juneteenth-flag',
+  'double-dutch', 'statue-of-liberty', 'hot-dog-contest', 'drum-major', 'picnic-ants', 'sparkler-writers', 'bike-parade',
+  'ironworkers', 'cannonball', 'lemonade-stand', 'sandcastle', 'cornhole',
 ] as const
 export type MoverStyle = (typeof MOVER_STYLES)[number]
 
@@ -436,6 +440,33 @@ const STYLE: Record<MoverStyle, {
   lambs: { motion: 'walker', ground: true, height: 0.6, pace: 0.8 },
   'egg-roll': { motion: 'walker', ground: true, height: 0.85, pace: 0.7 },
   'easter-bonnet': { motion: 'walker', ground: true, height: 1.1, pace: 1 },
+  'litter-pickers': { motion: 'walker', ground: true, height: 1.05, pace: 0.8 },
+  'recycle-bins': { motion: 'stand', ground: true, height: 0.9, many: 0 },
+  'rain-barrel': { motion: 'stand', ground: true, height: 1, many: 0 },
+  folklorico: { motion: 'stand', ground: true, height: 1.1, many: 1 },
+  'pinata-party': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'flowers-for-mom': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'breakfast-tray': { motion: 'walker', ground: true, height: 1, pace: 0.8 },
+  'mom-garden': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'saluting-soldier': { motion: 'stand', ground: true, height: 1.2, many: 1 },
+  'memorial-flag': { motion: 'stand', ground: true, height: 1.4, many: 0 },
+  'grill-dad': { motion: 'stand', ground: true, height: 1.1, many: 0 },
+  'fishing-dock': { motion: 'stand', ground: true, height: 1, many: 0 },
+  'lawn-mower': { motion: 'walker', ground: true, height: 1.05, pace: 0.9 },
+  'order-reader': { motion: 'stand', ground: true, height: 1.15, many: 0 },
+  'juneteenth-flag': { motion: 'walker', ground: true, height: 1.2, pace: 1.1 },
+  'double-dutch': { motion: 'stand', ground: true, height: 1, many: 1 },
+  'statue-of-liberty': { motion: 'stand', ground: true, height: 1.5, many: 0 },
+  'hot-dog-contest': { motion: 'stand', ground: true, height: 0.95, many: 0 },
+  'drum-major': { motion: 'walker', ground: true, height: 1.3, pace: 1.2 },
+  'picnic-ants': { motion: 'walker', ground: true, height: 0.5, pace: 0.4 },
+  'sparkler-writers': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  'bike-parade': { motion: 'walker', ground: true, height: 1, pace: 1.8 },
+  ironworkers: { motion: 'stand', ground: false, height: 0.95, many: 0 },
+  cannonball: { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  'lemonade-stand': { motion: 'stand', ground: true, height: 1.05, many: 0 },
+  sandcastle: { motion: 'stand', ground: true, height: 0.8, many: 0 },
+  cornhole: { motion: 'stand', ground: true, height: 0.9, many: 0 },
 }
 
 /**
@@ -529,6 +560,23 @@ const ACTS: Partial<Record<MoverStyle, Act>> = {
   harpist: { idle: 3, act: 6, notes: true },
   'egg-hunt': { idle: 2, act: 4 },
   'bunny-painter': { idle: 2, act: 3 },
+  'recycle-bins': { idle: 2, act: 5 },
+  folklorico: { idle: 3, act: 7, together: true },
+  'pinata-party': { idle: 2, act: 5 },
+  'flowers-for-mom': { idle: 2, act: 4 },
+  'mom-garden': { level: 0.15, peek: true },
+  'saluting-soldier': { idle: 1, act: 1.5, faces: true },
+  'grill-dad': { idle: 3, act: 6 },
+  'fishing-dock': { idle: 2, act: 4 },
+  'order-reader': { idle: 2, act: 4 },
+  'double-dutch': { idle: 6, act: 10 },
+  'statue-of-liberty': { level: 0.25, peek: true },
+  'hot-dog-contest': { idle: 2, act: 6 },
+  'sparkler-writers': { idle: 6, act: 5, text: true },
+  ironworkers: { idle: 2, act: 6 },
+  cannonball: { idle: 3, act: 5 },
+  sandcastle: { level: 0.1, peek: true },
+  cornhole: { idle: 2, act: 5 },
 }
 
 /** How much flyers bob up and down (ghosts float, the rest hardly), and how fast their frames go. */
@@ -3234,6 +3282,37 @@ export function moverSprites(f: MoverFrame): Sprite[] {
         if (level > 0.95 && (k > 0.3 || day)) {
           const said = bubble(sprite, size, false, Math.max(near.k, 0.6))
           if (!sunny) said.row = 'early'
+          out.push(said)
+        }
+      } else if (style === 'rain-barrel' || style === 'lemonade-stand' || style === 'memorial-flag') {
+        // Ones that follow the real weather or date where the server is: the rain barrel filling under its
+        // downspout while it really rains (a child jumping in the puddles for people; watering the flowers when
+        // it's dry), the lemonade stand turning to hot cocoa below 55°F, and the flag at half-staff on the
+        // morning of Memorial Day, raised to the top at noon.
+        const k = busy ? smoothstep(0.1, 0.6, near.k) : 0
+        const acting = k > 0.3
+        const sky = weatherFor('').data
+        const cold = style === 'lemonade-stand' && sky?.temperature_f != null && sky.temperature_f < 55
+        if (style === 'rain-barrel') {
+          const wet = !!sky && ['rain', 'storm'].includes(weatherLook(sky.code).icon)
+          sprite.row = wet ? (acting ? 'splash' : 'rain') : acting ? 'act' : 'main'
+          sprite.frame = Math.floor(t * (acting ? 6 : 3) + ph * 8)
+        } else if (style === 'lemonade-stand') {
+          sprite.flip = false
+          sprite.row = cold ? (acting ? 'coldact' : 'cold') : acting ? 'act' : 'main'
+          sprite.frame = Math.floor(t * (acting ? 4 : 2) + ph * 8)
+        } else {
+          const day = lastWeekday(now.getFullYear(), 4, 1)
+          const half = now.getMonth() === 4 && now.getDate() === day.getDate() && hour < 12
+          sprite.flip = false
+          sprite.row = half ? 'half' : 'main'
+          sprite.frame = Math.floor(t * 4 + ph * 6)
+        }
+        react(sprite, action === 'light' || action === 'grow' ? action : 'none', near, t, ph * 6, reach)
+        out.push(sprite)
+        if (acting) {
+          const said = bubble(sprite, size, false, near.k)
+          if (cold) said.row = 'cocoa'
           out.push(said)
         }
       } else if (style === 'midnight-toast') {

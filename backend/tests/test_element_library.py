@@ -215,3 +215,15 @@ def test_late_winter_and_spring_styles_survive_describe_a_scene():
     ])
     assert [layer.style for layer in layers] == [
         "groundhog", "rushmore", "brass-band", "leprechaun-trap", "lambs"]
+
+
+def test_spring_and_summer_holiday_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "rain-barrel", "near": "follow"},
+        {"type": "movers", "style": "memorial-flag", "near": "light"},
+        {"type": "movers", "style": "lemonade-stand", "near": "follow"},
+        {"type": "movers", "style": "picnic-ants", "near": "flee"},
+        {"type": "movers", "style": "juneteenth-flag", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "rain-barrel", "memorial-flag", "lemonade-stand", "picnic-ants", "juneteenth-flag"]
