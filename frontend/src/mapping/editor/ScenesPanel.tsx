@@ -856,7 +856,7 @@ export function ScenesPanel({
                     <option value="none">Black</option>
                     {show.camera_view && <option value="camera">Camera photo of the house</option>}
                     {hasHousePhoto && <option value="house">Your photo of the house, lined up</option>}
-                    {media.map((m) => (
+                    {media.filter((m) => m.kind !== 'audio').map((m) => (
                       <option key={m.id} value={`m${m.id}`}>
                         {m.name}
                       </option>

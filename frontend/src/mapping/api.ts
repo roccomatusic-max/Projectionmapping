@@ -159,7 +159,9 @@ export function probeMedia(file: File): Promise<ProbedMedia> {
       img.src = url
       return
     }
-    const video = document.createElement('video')
+    // Sounds are probed the same way, for their length; <audio> reads every format <video> does.
+    const sound = file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac)$/i.test(file.name)
+    const video = document.createElement(sound ? 'audio' : 'video') as HTMLVideoElement
     video.preload = 'metadata'
     video.muted = true
     video.onloadedmetadata = () =>

@@ -34,7 +34,7 @@ class MediaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
-    kind: Literal["video", "image"]
+    kind: Literal["video", "image", "audio"]
     content_type: str
     size_bytes: int
     width: int | None = None
@@ -226,6 +226,9 @@ class CueBase(BaseModel):
     #: over its scene on every projector. They belong to the cue, so a scene
     #: group or playlist changing the cue's scenes leaves them in place.
     elements: list[SceneLayer] = Field(default_factory=list, max_length=MAX_ELEMENTS)
+    #: Videos, pictures, elements and sounds that come and go at set times
+    #: while the cue plays (Mapping → Show designer). None for no timeline.
+    timeline: Timeline | None = None
 
 
 class CueCreate(CueBase):
@@ -244,6 +247,8 @@ class CueUpdate(BaseModel):
     output_scenes: dict[int, int | None] | None = None
     output_media: dict[int, int | None] | None = None
     elements: list[SceneLayer] | None = Field(default=None, max_length=MAX_ELEMENTS)
+    #: null takes the timeline off the cue.
+    timeline: Timeline | None = None
 
 
 class CueOut(CueBase):
@@ -1016,6 +1021,101 @@ class SceneLayer(BaseModel):
     text: str | None = Field(default=None, max_length=200)
     #: The date a "days until" counts to (comes round every year).
     date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+# -- timelines (the show designer) ------------------------------------------------
+
+#: The longest a cue's timeline can be, seconds.
+MAX_TIMELINE_SECONDS = 3600
+#: Most clips one timeline holds; every one is drawn on every projector.
+MAX_CLIPS = 80
+#: Most rows a timeline has.
+MAX_TRACKS = 12
+#: Most moves (key points) one clip has.
+MAX_KEYS = 60
+
+#: How a clip comes in or goes out: faded, slid in from (out to) an edge,
+#: grown from nothing (shrunk away), spun in, or straight in.
+ClipEntrance = Literal["none", "fade", "left", "right", "top", "bottom", "grow", "spin"]
+
+
+class ClipPin(BaseModel):
+    """Where a clip (or one of an element's objects) is at a moment: its
+    middle on the canvas, its size and its turn. Looser than ``ObjectPin``
+    so a picture can sit partly off the house or be made very small."""
+    x: float = Field(ge=-1, le=2)
+    y: float = Field(ge=-1, le=2)
+    #: A picture or video's height in canvas heights; an element's object size.
+    size: float = Field(default=1.0, ge=0.02, le=6)
+    #: Degrees clockwise.
+    rotation: float = Field(default=0.0, ge=-360, le=360)
+
+
+class ClipKey(BaseModel):
+    """Where a clip is at ``t`` seconds after it starts. Between keys it
+    glides from one to the next."""
+    t: float = Field(ge=0, le=MAX_TIMELINE_SECONDS)
+    #: The picture's place (one pin), or each object of an element.
+    pins: list[ClipPin] = Field(default_factory=list, max_length=MAX_PINS)
+    opacity: float = Field(default=1.0, ge=0, le=1)
+
+
+class TimelineClip(BaseModel):
+    """One thing on the timeline: a video or picture, an element, or a sound."""
+    id: str = Field(default_factory=_layer_id, min_length=1, max_length=32,
+                    pattern=r"^[A-Za-z0-9_-]+$")
+    kind: Literal["media", "element", "sound"]
+    name: str = Field(default="", max_length=64)
+    #: The row it sits on; higher rows are drawn on top.
+    track: int = Field(default=0, ge=0, lt=MAX_TRACKS)
+    #: Seconds from the start of the cue.
+    start: float = Field(default=0.0, ge=0, le=MAX_TIMELINE_SECONDS)
+    length: float = Field(default=5.0, ge=0.1, le=MAX_TIMELINE_SECONDS)
+    enter: ClipEntrance = "fade"
+    enter_seconds: float = Field(default=1.0, ge=0, le=60)
+    exit: ClipEntrance = "fade"
+    exit_seconds: float = Field(default=1.0, ge=0, le=60)
+    opacity: float = Field(default=1.0, ge=0, le=1)
+    #: A video, picture or sound from the media library.
+    media_id: int | None = None
+    #: Where a video or picture sits when it has no moves.
+    pin: ClipPin | None = None
+    #: Seconds into the video or sound where the clip starts playing.
+    offset: float = Field(default=0.0, ge=0, le=86400)
+    #: Start the video or sound again when it ends before the clip does.
+    loop: bool = True
+    #: How loud a sound (or a video's own sound) plays, 0..1.
+    volume: float = Field(default=1.0, ge=0, le=1)
+    #: Play a video's own sound as well as its picture.
+    sound: bool = False
+    #: The projector whose mini PC plays the sound; None is the show's first.
+    output_id: int | None = None
+    #: Where a video or picture may show: all of it, or only the walls, the windows...
+    target: LayerTarget = "everywhere"
+    #: The element, for an element clip, placed as it is when it has no moves.
+    layer: SceneLayer | None = None
+    #: Moves over time: where it is at each key, in order of time.
+    keys: list[ClipKey] = Field(default_factory=list, max_length=MAX_KEYS)
+
+    @model_validator(mode="after")
+    def _check(self) -> TimelineClip:
+        if self.kind == "element" and self.layer is None:
+            raise ValueError("an element clip needs its element")
+        if self.kind != "element" and self.media_id is None:
+            raise ValueError(f"a {self.kind} clip needs a file from the media library")
+        self.keys.sort(key=lambda k: k.t)
+        return self
+
+
+class Timeline(BaseModel):
+    """What happens over time while a cue plays, like a video editor's timeline."""
+    #: Seconds.
+    length: float = Field(default=30.0, ge=1, le=MAX_TIMELINE_SECONDS)
+    #: At the end: start again, go on to the next cue, or stay on the last moment.
+    end: Literal["loop", "next", "hold"] = "loop"
+    #: How many rows the designer shows.
+    tracks: int = Field(default=4, ge=1, le=MAX_TRACKS)
+    clips: list[TimelineClip] = Field(default_factory=list, max_length=MAX_CLIPS)
 
 
 class WeatherNow(BaseModel):

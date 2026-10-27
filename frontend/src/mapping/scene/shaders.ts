@@ -475,11 +475,30 @@ vec4 layer() {
 
   picture: `
 uniform sampler2D uPicture;
+uniform int uBoxOn;
+// A timeline clip's box: its middle (canvas fractions), then half its
+// width and height (canvas heights); uTurn turns it clockwise, radians.
+uniform vec4 uBox;
+uniform float uTurn;
 vec4 layer() {
-  // The picture covers the whole canvas, top row first.
-  vec3 c = texture(uPicture, vC).rgb * mix(0.3, 1.7, uDial.z);
-  if (uStyle == 1) c *= 0.82 + 0.18 * sin(uTime * mix(0.3, 3.0, uDial.y));
-  return vec4(c, 1.0);
+  if (uBoxOn == 0) {
+    // The picture covers the whole canvas, top row first.
+    vec3 c = texture(uPicture, vC).rgb * mix(0.3, 1.7, uDial.z);
+    if (uStyle == 1) c *= 0.82 + 0.18 * sin(uTime * mix(0.3, 3.0, uDial.y));
+    return vec4(c, 1.0);
+  }
+  vec2 d = toH(vC) - toH(uBox.xy);
+  float cs = cos(uTurn);
+  float sn = sin(uTurn);
+  // Undo the clockwise turn (y points down).
+  vec2 l = vec2(d.x * cs + d.y * sn, -d.x * sn + d.y * cs);
+  vec2 uv = l / (2.0 * uBox.zw) + 0.5;
+  // A soft edge a pixel or so wide, so a turned picture is not jagged.
+  vec2 edge = (0.5 - abs(l / (2.0 * uBox.zw))) * 2.0 * uBox.zw * uPx;
+  float inside = clamp(min(edge.x, edge.y) + 0.5, 0.0, 1.0);
+  if (inside <= 0.0) return vec4(0.0);
+  vec4 t = texture(uPicture, clamp(uv, 0.0, 1.0));
+  return vec4(t.rgb * mix(0.3, 1.7, uDial.z), t.a * inside);
 }`,
 
 

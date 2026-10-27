@@ -13,6 +13,7 @@ import {
   CameraIcon,
   ControlIcon,
   DashboardIcon,
+  DesignerIcon,
   EditorIcon,
   GroupsIcon,
   HeaterIcon,
@@ -82,6 +83,13 @@ export const NAV: NavSection[] = [
         icon: EditorIcon,
         hint: 'Cues, media, where each projector lands, warp and blends.',
         keywords: 'cues media canvas outputs warp corner pin mesh mask blend elements countdown sleigh santa tracker weather message board saved maps',
+      },
+      {
+        to: '/mapping/designer',
+        label: 'Show designer',
+        icon: DesignerIcon,
+        hint: 'A video editor for a cue: things come in, move and go at set times.',
+        keywords: 'timeline video editor show design keyframes moves clips tracks sound music audio gif animation sequence story',
       },
       {
         to: '/mapping/scenes',

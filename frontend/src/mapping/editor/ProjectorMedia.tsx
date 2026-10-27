@@ -94,7 +94,7 @@ export function ProjectorMedia({
                     >
                       <option value={SHARED}>Shared picture</option>
                       <option value={NOTHING}>Nothing</option>
-                      {media.map((m) => (
+                      {media.filter((m) => m.kind !== 'audio').map((m) => (
                         <option key={m.id} value={String(m.id)}>
                           Own: {m.name}
                         </option>

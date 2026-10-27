@@ -1195,6 +1195,49 @@ and `plan_group_id` / `plan_playlist_id` for what the weekly show time plays;
 `playlists` messages. Nothing on the mini PCs changes: the player pages
 already draw a crossfade between the scenes of `previous` and `current`.
 
+## 6f. The show designer: a timeline per cue (Mapping → Show designer)
+
+A cue can carry a **timeline** (`mapping_cues.timeline`, migration
+d7a3f9c2e5b1): a video editor's worth of clips that come and go while the
+cue plays. `{length, end, tracks, clips[]}`:
+
+- `length` seconds (1 to 3600); `end` is `loop` (round and round),
+  `next` (the server's auto-follow moves on after `length`, unless the cue's
+  own `follow_seconds` is set) or `hold` (stay on the last moment).
+- Each clip has `kind` `media` (a video or picture), `element` (any element
+  from the library, as a scene layer in `layer`) or `sound`; a row
+  (`track`, higher rows draw on top), `start` and `length`; `enter` / `exit`
+  (`fade`, slide from `left`/`right`/`top`/`bottom`, `grow`, `spin`, `none`)
+  with their seconds; `opacity`.
+- Pictures and videos sit in a box: `pin` {x, y (middle, canvas
+  fractions), size (height in canvas heights), rotation}, shown at the
+  file's own shape, and may be kept to a house part with `target`
+  (windows, walls…). Videos and sounds have `offset` (seconds into the
+  file), `loop`, `volume`; a video's own sound plays with `sound`.
+- `keys` are moves: `{t (seconds into the clip), pins[], opacity}`; the
+  clip glides from key to key (eased). For an element the pins are each of
+  its objects (or a mover's path points); for a picture, its box.
+- Sounds (and a video's own sound) play on **one** mini PC: the projector in
+  `output_id`, or the show's first projector. Every other output stays
+  silent, so several projectors never echo. Chrome on the mini PCs already
+  runs with `--autoplay-policy=no-user-gesture-required`.
+
+Drawing: `scene/timeline.ts` turns the clips on at the cue's moment into
+scene items, one per clip, drawn between the cue's scenes and its elements;
+pictures and videos are the engine's `picture` layer in a box
+(`SceneItem.media`). `timelineMedia.ts` keeps each video and sound clip's
+`<video>`/`<audio>` at the timeline's time, like cue media (rate nudges,
+seeks past 0.15 s), made 3 s before the clip starts; GIF, animated WebP and
+AVIF move frame by frame through WebCodecs' ImageDecoder (a still where it
+is missing). Pause holds the timeline at `paused_position`.
+
+Media the library takes: video MP4/M4V/MOV (H.264 or HEVC), WebM (VP8, VP9,
+AV1), OGV; pictures PNG, JPEG, WebP, GIF, AVIF, BMP; sound MP3, WAV, M4A,
+AAC, OGG/OGA/Opus, FLAC (`kind` `audio`; they play only on timelines, a cue
+or projector cannot show one). ProRes, HAP and MKV are refused: Chrome does
+not play them. HEVC needs the mini PC's graphics to decode it (any Intel
+from 7th generation on does); H.264 plays everywhere.
+
 ## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`

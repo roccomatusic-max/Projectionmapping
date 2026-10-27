@@ -121,7 +121,7 @@ export function CueList({
                 onChange={(event) => onUpdate(cue, { media_id: event.target.value ? Number(event.target.value) : null })}
               >
                 <option value="">Black</option>
-                {media.map((m) => (
+                {media.filter((m) => m.kind !== 'audio').map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
@@ -167,6 +167,12 @@ export function CueList({
               {(cue.elements?.length || show.every_cue_elements?.length) ? (
                 <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Added and placed under Editor → Elements">
                   {elementsLine(cue.elements?.length ?? 0, show.every_cue_elements?.length ?? 0)}
+                </p>
+              ) : null}
+              {cue.timeline ? (
+                <p className="col-span-2 text-[11px] text-rose-200/80 lg:col-span-3" title="Made in Mapping → Show designer">
+                  Timeline: {cue.timeline.clips.length} clip{cue.timeline.clips.length === 1 ? '' : 's'} over {formatDuration(cue.timeline.length)}
+                  {cue.timeline.end === 'next' ? ', then the next cue' : cue.timeline.end === 'loop' ? ', round and round' : ''}
                 </p>
               ) : null}
             </div>
@@ -228,7 +234,18 @@ export function CueList({
 
 // -- media library ---------------------------------------------------------------
 
-const ACCEPT = '.mp4,.m4v,.mov,.webm,.png,.jpg,.jpeg,.webp'
+/** Every kind of file the media library takes (backend MEDIA_TYPES). */
+export const ACCEPT = '.mp4,.m4v,.mov,.webm,.ogv,.png,.jpg,.jpeg,.webp,.gif,.avif,.bmp,.mp3,.wav,.m4a,.aac,.ogg,.oga,.opus,.flac'
+
+/** What the media library takes, in words. */
+export const ACCEPT_WORDS = 'Video: MP4, MOV, WebM (H.264, HEVC, VP9 or AV1). Pictures: PNG, JPEG, WebP, GIF (moving ones move), AVIF, BMP. Sound: MP3, WAV, M4A, AAC, OGG, FLAC.'
+
+/** The word for a file's kind in the library list. */
+export function mediaKindLabel(asset: MediaAsset): string {
+  if (asset.kind === 'audio') return 'sound'
+  if (asset.kind === 'image' && asset.content_type === 'image/gif') return 'GIF'
+  return asset.kind === 'image' ? 'picture' : 'video'
+}
 
 interface Upload {
   id: number
@@ -239,18 +256,10 @@ interface Upload {
 
 let uploadId = 0
 
-export function MediaLibrary({
-  media,
-  canEdit,
-  onUploaded,
-  onDelete,
-  onAddCue,
-}: {
-  media: MediaAsset[]
-  canEdit: boolean
-  onUploaded: () => void
-  onDelete: (asset: MediaAsset) => void
-  onAddCue: (asset: MediaAsset) => void
+/** Drop files here (or choose them) to add them to the media library, with each upload's progress. */
+export function MediaDrop({ onUploaded, hint = 'Drop videos, pictures or sounds here' }: {
+  onUploaded: (asset: MediaAsset) => void
+  hint?: string
 }) {
   const [uploads, setUploads] = useState<Upload[]>([])
   const [over, setOver] = useState(false)
@@ -264,9 +273,9 @@ export function MediaLibrary({
         setUploads((list) => list.map((u) => (u.id === id ? { ...u, ...patch } : u)))
       try {
         const probed = await probeMedia(file)
-        await uploadMedia(file, probed, (progress) => set({ progress }))
+        const asset = await uploadMedia(file, probed, (progress) => set({ progress }))
         setUploads((list) => list.filter((u) => u.id !== id))
-        onUploaded()
+        onUploaded(asset)
       } catch (err) {
         set({ error: err instanceof Error ? err.message : 'Upload failed' })
       }
@@ -274,33 +283,34 @@ export function MediaLibrary({
   }
 
   return (
-    <div className="space-y-3">
-      {canEdit && (
-        <div
-          className={classNames(
-            'flex flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 py-5 text-center text-sm transition-colors',
-            over ? 'border-sky-400 bg-sky-500/10 text-sky-200' : 'border-white/15 text-slate-400',
-          )}
-          onDragOver={(event) => {
-            event.preventDefault()
-            setOver(true)
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(event) => {
-            event.preventDefault()
-            setOver(false)
-            void upload(event.dataTransfer.files)
-          }}
-        >
-          <p>Drop video or images here</p>
-          <button className="btn-ghost text-xs" onClick={() => input.current?.click()}>
-            or choose files
-          </button>
-          <p className="text-xs text-slate-500">H.264 or HEVC (.mp4 .mov .webm), PNG, JPEG, WebP</p>
-          <input ref={input} type="file" multiple accept={ACCEPT} className="hidden"
-            onChange={(event) => event.target.files && void upload(event.target.files)} />
-        </div>
-      )}
+    <div className="space-y-2">
+      <div
+        className={classNames(
+          'flex flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 py-5 text-center text-sm transition-colors',
+          over ? 'border-sky-400 bg-sky-500/10 text-sky-200' : 'border-white/15 text-slate-400',
+        )}
+        onDragOver={(event) => {
+          event.preventDefault()
+          setOver(true)
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(event) => {
+          event.preventDefault()
+          setOver(false)
+          void upload(event.dataTransfer.files)
+        }}
+      >
+        <p>{hint}</p>
+        <button className="btn-ghost text-xs" onClick={() => input.current?.click()}>
+          or choose files
+        </button>
+        <p className="text-xs text-slate-500">{ACCEPT_WORDS}</p>
+        <input ref={input} type="file" multiple accept={ACCEPT} className="hidden"
+          onChange={(event) => {
+            if (event.target.files) void upload(event.target.files)
+            event.target.value = ''
+          }} />
+      </div>
       {uploads.map((u) => (
         <div key={u.id} className="rounded-md bg-panel-850 px-3 py-2 text-xs ring-1 ring-white/5">
           <div className="flex justify-between gap-2">
@@ -316,23 +326,45 @@ export function MediaLibrary({
           )}
         </div>
       ))}
-      {media.length === 0 && uploads.length === 0 && <p className="text-sm text-slate-500">The library is empty.</p>}
+    </div>
+  )
+}
+
+export function MediaLibrary({
+  media,
+  canEdit,
+  onUploaded,
+  onDelete,
+  onAddCue,
+}: {
+  media: MediaAsset[]
+  canEdit: boolean
+  onUploaded: () => void
+  onDelete: (asset: MediaAsset) => void
+  onAddCue: (asset: MediaAsset) => void
+}) {
+  return (
+    <div className="space-y-3">
+      {canEdit && <MediaDrop onUploaded={() => onUploaded()} />}
+      {media.length === 0 && <p className="text-sm text-slate-500">The library is empty.</p>}
       <ul className="divide-y divide-white/5">
         {media.map((asset) => (
           <li key={asset.id} className="flex items-center gap-3 py-2">
-            <span className="chip shrink-0 bg-panel-800 text-slate-400 ring-1 ring-white/5">{asset.kind}</span>
+            <span className="chip shrink-0 bg-panel-800 text-slate-400 ring-1 ring-white/5">{mediaKindLabel(asset)}</span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm text-slate-200">{asset.name}</p>
               <p className="text-xs text-slate-500">
-                {asset.width && asset.height ? `${asset.width} × ${asset.height}` : 'size unknown'}
-                {asset.kind === 'video' ? ` · ${formatDuration(asset.duration)}` : ''} · {formatBytes(asset.size_bytes)}
+                {asset.kind === 'audio' ? 'plays on a timeline (Show designer)' : asset.width && asset.height ? `${asset.width} × ${asset.height}` : 'size unknown'}
+                {asset.kind !== 'image' ? ` · ${formatDuration(asset.duration)}` : ''} · {formatBytes(asset.size_bytes)}
               </p>
             </div>
             {canEdit && (
               <>
-                <button className="btn-default px-2 py-1 text-xs" onClick={() => onAddCue(asset)}>
-                  Add cue
-                </button>
+                {asset.kind !== 'audio' && (
+                  <button className="btn-default px-2 py-1 text-xs" onClick={() => onAddCue(asset)}>
+                    Add cue
+                  </button>
+                )}
                 <button className="btn-ghost px-2 py-1 text-xs text-red-300" onClick={() => onDelete(asset)}>
                   Delete
                 </button>
