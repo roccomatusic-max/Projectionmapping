@@ -68,7 +68,7 @@ It has no Dock or menu bar icon while it runs in the background.
 - **Other computers on the network:** `http://YOUR-MAC.local:8765`, where
   YOUR-MAC is the **Local hostname** shown at the bottom of System Settings →
   General → Sharing on the server Mac.
-- **Phone, from anywhere:** scan the QR code on the **Phone remote** page.
+- **Phone, from anywhere:** scan the QR code on **Settings → Phone**.
 
 ### Settings on the server Mac
 
@@ -83,7 +83,7 @@ In System Settings:
 ### The phone remote from anywhere
 
 Install [Tailscale](https://tailscale.com/download/mac) on the server Mac and
-sign in with the same account as your iPhone. Then open **Phone remote** in
+sign in with the same account as your iPhone. Then open **Settings → Phone** in
 the dashboard and scan the new QR code with the phone to pair it with this
 server once.
 

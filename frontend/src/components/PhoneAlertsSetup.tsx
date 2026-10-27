@@ -16,7 +16,7 @@ const TOPICS: Array<{ id: PhoneAlertTopic; label: string; hint: string }> = [
 ]
 
 /**
- * Settings → Phone alerts. iPhones only take web push from https sites and
+ * Settings → Phone. iPhones only take web push from https sites and
  * this server is plain http on the home network, so alerts go through the
  * free ntfy app (no account, no key) or Pushover (a key to paste).
  */

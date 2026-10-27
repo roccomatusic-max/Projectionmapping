@@ -109,7 +109,7 @@ open the entry, choose **Allow on device**, and run the line again.
   `http://servername.local:8765`, the form the Mac uses, may also work from
   iPhones and Macs, because recent Windows versions answer it, but this has
   not been tried on your network; the number always works.
-- **Phone, from anywhere:** scan the QR code on the **Phone remote** page. It
+- **Phone, from anywhere:** scan the QR code on **Settings → Phone**. It
   uses the number, so it works whether or not the name does.
 
 ### Settings on the server
@@ -128,7 +128,7 @@ open the entry, choose **Allow on device**, and run the line again.
 ### The phone remote from anywhere
 
 Install [Tailscale](https://tailscale.com/download/windows) on the server and
-sign in with the same account as your iPhone. Then open **Phone remote** in
+sign in with the same account as your iPhone. Then open **Settings → Phone** in
 the dashboard and scan the new QR code with the phone to pair it with this
 server once.
 

@@ -374,7 +374,7 @@ On each Windows mini PC, with the projector as its only or main display:
 
 ## Stage 12 — The phone remote
 
-1. **On the venue Wi-Fi.** Open **Phone remote** in the dashboard, scan the QR
+1. **On the venue Wi-Fi.** Open **Settings → Phone** in the dashboard, scan the QR
    code, **Share → Add to Home Screen**, open it from the Home Screen and
    sign in. Expected: it opens full screen with its own icon.
 2. **The buttons.** GO, pause, stop and blackout act on the show within a

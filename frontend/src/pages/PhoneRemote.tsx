@@ -26,7 +26,7 @@ const TAILSCALE_IPHONE = 'https://tailscale.com/download/ios'
  * connection, privately. Without it, the code points at this computer's
  * address on the local network.
  */
-export default function PhoneRemote() {
+export default function PhoneRemote({ embedded = false }: { embedded?: boolean }) {
   const [network, setNetwork] = useState<NetworkInfo | null>(null)
 
   // Tailscale may be switched on while this page is open; follow it.
@@ -53,8 +53,10 @@ export default function PhoneRemote() {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={PhoneIcon} title="Phone remote"
-        subtitle="GO, pause, stop, blackout, the cue list and projector power, from your phone." />
+      {!embedded && (
+        <PageHeader icon={PhoneIcon} title="Phone remote"
+          subtitle="GO, pause, stop, blackout, the cue list and projector power, from your phone." />
+      )}
 
       {network?.local_only && (
         <div className="space-y-2 rounded-xl bg-amber-500/10 p-4 text-sm text-amber-100 ring-1 ring-amber-500/30">

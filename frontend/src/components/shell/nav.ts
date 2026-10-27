@@ -39,6 +39,8 @@ export interface NavItem {
   badge?: 'offline' | 'alerts' | 'players'
   /** Extra words the "Go to" search matches on. */
   keywords?: string
+  /** Other addresses that are tabs of this page, so the menu marks it there too. */
+  also?: string[]
 }
 
 export interface NavSection {
@@ -116,34 +118,17 @@ export const NAV: NavSection[] = [
     ],
   },
   {
-    section: 'Projectors',
+    section: 'Projectors and health',
     items: [
       {
         to: '/projectors',
         label: 'Projectors',
         icon: ProjectorIcon,
         badge: 'offline',
-        hint: 'Every projector: power, shutter, input, condition. Add or edit one here.',
-        keywords: 'add edit power shutter input lamp temperature',
+        also: ['/control', '/groups'],
+        hint: 'Every projector: power, shutter, input, condition; control several at once, and groups.',
+        keywords: 'add edit power shutter input lamp temperature control center bulk several groups',
       },
-      {
-        to: '/control',
-        label: 'Control Center',
-        icon: ControlIcon,
-        hint: 'Pick several projectors and power or shutter them together.',
-        keywords: 'bulk several all power on off shutters',
-      },
-      {
-        to: '/groups',
-        label: 'Groups',
-        icon: GroupsIcon,
-        hint: 'Name a set of projectors so one press reaches all of them.',
-      },
-    ],
-  },
-  {
-    section: 'Health',
-    items: [
       {
         to: '/alerts',
         label: 'Alerts',
@@ -156,15 +141,9 @@ export const NAV: NavSection[] = [
         to: '/monitoring',
         label: 'Monitoring',
         icon: MonitoringIcon,
-        hint: 'Lamp hours, hours switched on, enclosures and upkeep records.',
-        keywords: 'lamp hours maintenance enclosure charts history',
-      },
-      {
-        to: '/heater',
-        label: 'Heater',
-        icon: HeaterIcon,
-        hint: 'The heater in a projector box: on when it gets cold, never with the projector on.',
-        keywords: 'heater heating freezing cold winter enclosure box smart plug shelly temperature warm up',
+        also: ['/heater', '/logs'],
+        hint: 'Temperatures, lamp hours and upkeep; the box heater; the log of every command.',
+        keywords: 'lamp hours maintenance enclosure charts history heater box log logs commands events',
       },
       {
         to: '/history',
@@ -173,25 +152,11 @@ export const NAV: NavSection[] = [
         hint: 'Every show night, energy used and cost, and a wrap-up of each season.',
         keywords: 'nights log energy electricity cost kwh watts season wrap-up summary halloween christmas report',
       },
-      {
-        to: '/logs',
-        label: 'Logs',
-        icon: LogsIcon,
-        hint: 'Every command sent and what each projector answered.',
-        keywords: 'history commands events',
-      },
     ],
   },
   {
     section: 'Setup',
     items: [
-      {
-        to: '/phone',
-        label: 'Phone remote',
-        icon: PhoneIcon,
-        hint: 'Put the show remote on your iPhone’s Home Screen.',
-        keywords: 'iphone qr tailscale home screen',
-      },
       {
         to: '/automation',
         label: 'Automation',
@@ -210,13 +175,52 @@ export const NAV: NavSection[] = [
   },
 ]
 
+/**
+ * Pages that share one menu entry, each a tab with its own address, so old
+ * links and bookmarks still land on the right tab.
+ */
+export interface PageGroupTab {
+  to: string
+  label: string
+  hint: string
+}
+
+export interface PageGroupDef {
+  title: string
+  icon: LucideIcon
+  tabs: PageGroupTab[]
+}
+
+export const PAGE_GROUPS = {
+  projectors: {
+    title: 'Projectors',
+    icon: ProjectorIcon,
+    tabs: [
+      { to: '/projectors', label: 'All projectors', hint: 'Every projector: power, shutter, input, condition. Add or edit one here.' },
+      { to: '/control', label: 'Control several', hint: 'Pick several projectors and power or shutter them together.' },
+      { to: '/groups', label: 'Groups', hint: 'Name a set of projectors so one press reaches all of them.' },
+    ],
+  },
+  monitoring: {
+    title: 'Monitoring',
+    icon: MonitoringIcon,
+    tabs: [
+      { to: '/monitoring', label: 'Temperatures and lamps', hint: 'Temperatures, lamp hours, hours switched on, enclosures and upkeep records.' },
+      { to: '/heater', label: 'Box heater', hint: 'The heater in a projector box: on when it gets cold, never with the projector on.' },
+      { to: '/logs', label: 'Log', hint: 'Every command sent and what each projector answered.' },
+    ],
+  },
+} satisfies Record<string, PageGroupDef>
+
+export type PageGroupId = keyof typeof PAGE_GROUPS
+
 export const NAV_ITEMS: NavItem[] = NAV.flatMap((section) => section.items)
 
 /** The page a path belongs to: the longest matching prefix wins. */
 export function navItemFor(pathname: string): NavItem | undefined {
   let best: NavItem | undefined
   for (const item of NAV_ITEMS) {
-    const hit = item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(`${item.to}/`)
+    const hit = item.end ? pathname === item.to : [item.to, ...(item.also ?? [])].some((to) => pathname === to || pathname.startsWith(`${to}/`))
     if (hit && (!best || item.to.length > best.to.length)) best = item
   }
   return best
@@ -261,12 +265,23 @@ export const PLACES: Place[] = [
     hint: 'Trace the walls, roof, windows and doors.', keywords: 'trace walls roof windows doors surfaces' },
   { to: '/mapping/scenes?part=paint', label: 'Paint the house', where: 'Scenes', icon: ScenesIcon,
     hint: 'An AI repaints a photo of your house as you describe it.', keywords: 'openai ai picture' },
+  { to: '/control', label: 'Control several', where: 'Projectors', icon: ControlIcon,
+    hint: 'Pick several projectors and power or shutter them together.', keywords: 'control center bulk several all power on off shutters full screen' },
+  { to: '/groups', label: 'Groups', where: 'Projectors', icon: GroupsIcon,
+    hint: 'Name a set of projectors so one press reaches all of them.', keywords: 'group area set' },
+  { to: '/heater', label: 'Box heater', where: 'Monitoring', icon: HeaterIcon,
+    hint: 'The heater in a projector box: on when it gets cold, never with the projector on.',
+    keywords: 'heater heating freezing cold winter enclosure box smart plug shelly temperature warm up weather' },
+  { to: '/logs', label: 'Log', where: 'Monitoring', icon: LogsIcon,
+    hint: 'Every command sent and what each projector answered.', keywords: 'logs history commands events' },
   { to: '/history?part=energy', label: 'Energy report', where: 'Show history', icon: ShowHistoryIcon,
     hint: 'Hours each projector was on and roughly what it cost, week by week.', keywords: 'electricity cost kwh watts price bill power' },
   { to: '/history?part=season', label: 'Season wrap-up', where: 'Show history', icon: ShowHistoryIcon,
     hint: 'Nights played, hours, the hottest night and problems for a whole season.', keywords: 'summary halloween christmas report season' },
   { to: '/settings', label: 'App updates and password', where: 'Settings', icon: SettingsIcon,
     hint: 'Check for a new version, install it, change your password.', keywords: 'update version install account' },
+  { to: '/settings?part=phone', label: 'Phone remote', where: 'Settings', icon: PhoneIcon,
+    hint: 'Put the show remote on your iPhone’s Home Screen.', keywords: 'iphone qr tailscale home screen remote' },
   { to: '/settings?part=phone', label: 'Phone alerts', where: 'Settings', icon: SettingsIcon,
     hint: 'A notification on your phone when a projector runs hot, a mini PC goes offline or the show does not start.',
     keywords: 'notification push ntfy pushover iphone text alert sms' },

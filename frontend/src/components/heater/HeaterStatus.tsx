@@ -3,7 +3,7 @@
  * temperature inside and outside, and Automatic / On for an hour / Keep off.
  *
  * On the Dashboard and Monitoring; shows nothing until a heater is added
- * on the Heater page.
+ * on Monitoring → Box heater.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -164,7 +164,7 @@ export function HeaterStatus({ session, title = 'Box heaters' }: { session: Sess
       description="Keeps the projector boxes above freezing, never running for too long."
       action={
         <Link to="/heater" className="text-xs text-slate-400 hover:text-slate-200">
-          Heater page →
+          Box heater →
         </Link>
       }
     >

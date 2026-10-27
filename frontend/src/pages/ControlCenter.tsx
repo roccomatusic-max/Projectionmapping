@@ -114,7 +114,7 @@ export default function ControlCenter({ session, fullscreen = false }: { session
     <div className={classNames('space-y-4', fullscreen && 'min-h-screen bg-panel-950 p-3 sm:p-4')}>
       <PageHeader
         icon={ControlIcon}
-        title="Control Center"
+        title="Control several"
         subtitle={
           <span className="inline-flex items-center gap-1.5">
             <StatusDot tone={live ? 'ok' : 'warn'} />

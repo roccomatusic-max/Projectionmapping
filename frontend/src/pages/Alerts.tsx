@@ -183,7 +183,7 @@ export default function Alerts({ session }: { session: Session }) {
             <PhoneIcon size={13} aria-hidden />
             Get them on your phone, even with the app closed:{' '}
             <Link to="/settings?part=phone" className="text-sky-300 hover:underline">
-              Settings → Phone alerts
+              Settings → Phone
             </Link>
           </p>
         )}
