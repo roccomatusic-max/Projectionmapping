@@ -927,7 +927,7 @@ function StepEditor({ step, onChange, projectors, groups, scenes, lights, enclos
           </div>
           {action === 'start' && (
             lights.shows.length === 0 ? (
-              <p className="text-xs text-yellow-300">You have no shows yet. Make one in the Editor.</p>
+              <p className="text-xs text-yellow-300">You have no shows yet. Make one in Mapping → Set up.</p>
             ) : (
               <>
                 <div>

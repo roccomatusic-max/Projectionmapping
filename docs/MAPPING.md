@@ -50,8 +50,8 @@ an ordered cue list driven by GO.
 | Test pattern | Canvas grid, output ID and crosshair, solid colours. The canvas grid is drawn in canvas space, so it lines up across projectors: aligning is making the grids meet. **(phase 1)** |
 
 **A picture of its own.** A cue can give some projectors their own picture
-or video instead of their part of the shared one (Editor → **Pictures on
-each projector**; the cue's `output_media`), or nothing. It fills that
+or video instead of their part of the shared one (Show designer → **Each
+projector**; the cue's `output_media`), or nothing. It fills that
 output's slice, shaped like the projector's image, and takes no part in
 blending. An output set to never blend is also left out of fit-canvas and
 apply-calibration on the Camera tab (and out of **Calibrate all**), so it
@@ -62,7 +62,7 @@ power and shutter state and the show can refuse to start into a projector
 that is off.
 
 **Saved map.** Lining a show up with a building is the slow part, so it can
-be kept by name and reused: Editor → **Saved maps** → **Save this show's map**.
+be kept by name and reused: Set up → **Saved maps and show** → **Save this show's map**.
 A map holds the canvas size, every output (slice, corner pin, mesh, masks,
 blends, colour, linked projector, camera calibration), where the canvas sits
 in the camera's view, and the traced house parts. **Use in this show** copies
@@ -269,7 +269,7 @@ Each paired mini PC also has its own controls on the Players page:
   resolution, frame rate, clock and drift, whether its media is saved on
   it, its computer name and network address;
 - **Projector: Show / Grid / White / Black** puts a test picture on that
-  one projector (it is its output's test pattern, so the Editor shows the
+  one projector (it is its output's test pattern, so Set up shows the
   same; saved maps leave it out) and **Show** goes back to the show;
 - **Info on screen** shows the status overlay on the projector itself;
 - **Restart output** closes and reopens the full-screen window (the Mini
@@ -313,7 +313,7 @@ the mini PC's own account may call, and only for its own show, projector
 and output. With no projector linked to its output, the screen (and Projector
 on/off) uses the only projector when there is one; otherwise it offers each
 projector as a button that links it to the output, once (`link_projector`
-never replaces a link made in the Editor).
+never replaces a link made in Set up).
 
 Approval creates a dedicated viewer account for the player, so a player
 can watch the show but cannot change it; the status screen's buttons above
@@ -551,9 +551,9 @@ every cue of the show gets the scene on that projector (`output_scenes`, or
 ticked scene groups, tonight's ticked by default, because a scene group sets
 every cue when tonight's show starts. **Change a scene** keeps every setting;
 its "Put it on a projector" opens Make a scene with that scene picked.
-**Cue by cue** is the per-cue, per-projector table.
+The per-cue, per-projector table is Show designer → **Each projector** (§6h).
 
-**Elements on one cue or every cue** (Editor → Elements,
+**Elements on one cue or every cue** (Show designer → Elements,
 `editor/CanvasElements.tsx`): each element picked there goes on "This cue
 only" (`mapping_cues.elements`) or "Every cue" (`mapping_shows.every_cue_elements`),
 both lists of scene layers (up to 12 each) kept apart from the scene library,
@@ -563,7 +563,7 @@ over the whole canvas (`scene/cueElements.ts`, `playback.ts`). Every-cue
 elements keep one clock from `run_started_at_ms` (the first GO after a stop or
 blackout), so they carry on smoothly from cue to cue; a scene played on its
 own has none. Each element's row switches where it lives; elements placed in
-the Editor before there was a choice live in the cue's scene, are marked "In
+the Elements tab before there was a choice live in the cue's scene, are marked "In
 the scene", and can be moved out of it.
 
 - **A scene is a stack of layers**, bottom first, stored in a global library
@@ -588,7 +588,7 @@ the scene", and can be moved out of it.
   to look square on that part from the street. Objects and countdowns whose
   centre is on the part keep their place but are drawn through that
   perspective (`scene/flat.ts`, the objects and countdown shaders), so they
-  are not stretched. The corners are dragged on Scenes → House parts →
+  are not stretched. The corners are dragged on Set up → Your house → House parts →
   Straighten, or with the mouse on a mini PC's status screen
   (`POST /mapping/players/me/flat`), while a checkerboard square with a
   circle shows on the projectors (`flat.test_until`, server clock).
@@ -611,7 +611,7 @@ the scene", and can be moved out of it.
   corners; the grid shows while fitting, never while a show plays, and goes
   off on Done, after ten minutes untouched or when the screen closes), with
   Turn left, Turn right, Upside down and Mirror, so the picture's top faces
-  the house and reads the right way up from the street. The Editor's
+  the house and reads the right way up from the street. Set up's
   Warp tab has the same turn buttons (`turnCorners`).
 - **Ready-made scenes**: Gingerbread house, Haunted house, Winter lights,
   Underwater, Party, Shadow play.
@@ -638,7 +638,7 @@ one. Claude (`claude-opus-5-5`, structured JSON output) chooses from the same
 catalog; the answer is validated like any saved scene. Picture layers are
 kept as they are when a scene is changed in words.
 
-**Start from a photo** (Scenes → Start from a photo): take or pick a photo of
+**Start from a photo** (Set up → Your house → Start from a photo): take or pick a photo of
 the house (on a phone the file picker opens the camera), or use the camera's
 photo. It is kept in the media library as "House photo.jpg" (up to 2048 px).
 With an Anthropic key, Claude (`claude-opus-5-5`, image input, structured JSON
@@ -711,10 +711,10 @@ birthday", "Make a wish, Emma!"); the fields show in the countdown's settings.
 The dates are worked out in `scene/holidays.ts` (nth weekdays, the last Monday
 of May, Easter and Mardi Gras, the Hebrew calendar for Hanukkah, Passover and
 Rosh Hashanah, tables for Lunar New Year, Diwali, Ramadan and Eid, and the
-moon's phase). The last minute counts in seconds. Editor →
+moon's phase). The last minute counts in seconds. Show designer →
 Elements → Find an element offers one countdown per holiday under
 Countdowns, and the holiday chips include every US holiday. Each part has its own
-colour picker (Editor → Elements → Move and colours, or the layer's card in
+colour picker (Show designer → Elements → Move and colours, or the layer's card in
 Scenes): big number, its 3D side, words above the number, banner, words on the
 banner, banner stitching, clock numbers, clock words, decorations (holly,
 snowflakes, peppermints, pumpkins, ghosts, bats, stars) and glow. Every part
@@ -772,7 +772,7 @@ bottom of the picture.
   a box to change the words (admins).
 
 **The element library** (`frontend/src/mapping/scene/library.ts`, the
-"Find an element…" button under Editor → Elements, a search box rather than a
+"Find an element…" button under Show designer → Elements, a search box rather than a
 list): every element on its own, with a moving picture, searchable by name,
 by holiday (Halloween, Thanksgiving, Christmas, New Year's, Valentine's,
 St Patrick's, Easter, Fourth of July, birthdays and more) and by kind (flies,
@@ -1658,8 +1658,8 @@ output window's real pixels, so nothing is made "for" one display.
   stretched (`projectorShape.ts`: `shapeRatio`, `stretchOf`). Boxes of
   projectors nobody lined up by hand or by camera (untouched warp, no
   calibration) more than 3% off get a "Fix the shape" button (same middle and
-  width), in the Show designer and in Editor → Projectors. Resizing a box in
-  Editor → Projectors keeps its shape unless Shift is held, or the projector
+  width), in the Show designer and in Set up → Your projectors. Resizing a box
+  there keeps its shape unless Shift is held, or the projector
   has been lined up.
 - **Lay them out.** Side by side, Overlapping (15% of the narrower
   neighbour, auto blend) or Apart (4% gaps): each box in its projector's
@@ -1672,6 +1672,31 @@ output window's real pixels, so nothing is made "for" one display.
   projector: its box, in its shape, with its own scene for the cue; clips
   added while looking at one projector go on that projector only, sized to
   its box.
+
+## 6h. Where things are: Set up, Cues, Show designer, Scenes
+
+The Mapping pages follow the order a show is built in, and each job has one
+place (`pages/Mapping.tsx`; old addresses redirect, `movedTo`):
+
+| Page | Parts | What it holds |
+|---|---|---|
+| **Set up** (`/mapping/setup`) | Your projectors · Your house · Saved maps and show | Each projector's box on the house picture (sizes, Lay them out, drag), lining it up (warp, masks, blends, colour, test patterns); the house photo, traced parts and Paint the house (`ScenesPanel` with `house`; `?part=photo`, `house`, `paint`); saved maps, the show's name and the shape of its picture |
+| **Cues** (`/mapping/cues`) | | The list GO plays and the media library |
+| **Show designer** (`/mapping/designer`) | Timeline · Elements · Each projector | A cue's timeline (§6f), its elements on this cue or every cue (`CanvasElements`), and per cue and projector its picture (`output_media`) and scene (`output_scenes`) in one table (`EachProjector.tsx`) |
+| **Scenes** (`/mapping/scenes`) | Make a scene · Change a scene | The library of looks that react to people |
+| **Run the show**, Calendar, Camera, Players | | Unchanged |
+
+Old addresses: `/mapping/editor` → Cues; `?part=projectors` → Set up;
+`?part=maps` → Set up's Saved maps and show; `?part=elements` → Show designer
+→ Elements; `/mapping/scenes?part=house|photo|paint` → Set up → Your house;
+`/mapping/scenes?part=projectors` → Show designer → Each projector.
+
+**The house picture's shape.** New show and Show settings ask for the shape
+of the house picture, not a resolution (`PictureShape.tsx`): 16:9, 16:10,
+4:3, 21:9, 32:9, 48:9, 9:16, "just fits my projectors side by side" (the sum
+of their width-to-height ratios, so Lay them out → Side by side then fills
+the picture exactly), or a shape of its own. It is stored as pixels 2160 tall
+(or wide); nothing else reads the pixel count.
 
 ## 7. Show control integration (phase 2)
 

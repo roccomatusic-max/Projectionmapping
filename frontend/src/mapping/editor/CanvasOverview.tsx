@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
 import { dragRect, type RectHandle } from '../geometry'
-import { keepShape, shapeRatio, warpUntouched } from '../projectorShape'
+import { keepShape, shapeIsOff, shapeRatio, warpUntouched } from '../projectorShape'
 import type { ServerClock } from '../live'
 import { OutputView } from '../OutputView'
 import type { Playback } from '../playback'
@@ -193,7 +193,7 @@ export function CanvasOverview({
                   fontSize={font * 0.7}
                   style={{ pointerEvents: 'none' }}
                 >
-                  {Math.round(w)} × {Math.round(h)} of the canvas
+                  {o.width} × {o.height}{shapeIsOff(o, show.canvas_width, show.canvas_height) ? ' · stretched' : ''}
                 </text>
               )}
               {editable &&

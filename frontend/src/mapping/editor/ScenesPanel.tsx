@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ConfirmDialog, EmptyState, Panel, SectionBar } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { mappingApi } from '../api'
@@ -35,7 +35,7 @@ import { HousePhotoPanel } from './HousePhoto'
 import { MakeScene } from './MakeScene'
 import { InfoFields } from './InfoFields'
 import { PaintHouse } from './PaintHouse'
-import { ProjectorScenes, sceneOn } from './ProjectorScenes'
+import { sceneOn } from './EachProjector'
 import { type Backdrop, type Drawing, type PeopleSource, ScenePreview, SURFACE_KINDS } from './ScenePreview'
 import { SceneRecorder } from './SceneRecorder'
 
@@ -48,18 +48,16 @@ const FLAT_TEST_MS = 10 * 60 * 1000
 const FLAT_SEND_MS = 600
 const DIALS: Dial[] = ['size', 'amount', 'speed', 'fade']
 
-type ScenePart = 'make' | 'edit' | 'projectors' | 'house'
+type ScenePart = 'make' | 'edit' | 'house'
 
 /** The Scenes tab, one part at a time; the preview stays beside the part that needs it. */
 export const SCENE_PARTS: Array<{ id: ScenePart; label: string; hint: string }> = [
   { id: 'make', label: 'Make a scene', hint: 'Step by step: pick the projector, pick how it looks, put things in place, put it on the house' },
   { id: 'edit', label: 'Change a scene', hint: 'Every setting of your scenes, their layers, and a live preview' },
-  { id: 'projectors', label: 'Cue by cue', hint: 'A different scene, or none, on one projector in one cue' },
-  { id: 'house', label: 'Your house', hint: 'The walls, roof, windows and doors: from a photo, traced by hand, or painted by an AI' },
 ]
 
-/** Old addresses of parts of Your house (?part=photo, ?part=paint), each now a box on that tab. */
-const HOUSE_BOXES = ['photo', 'house', 'paint'] as const
+/** The boxes of Your house (Set up → Your house), each with an address of its own (?part=photo, ?part=paint). */
+export const HOUSE_BOXES = ['photo', 'house', 'paint'] as const
 
 /** Layers whose things can be placed by hand on the preview (for flying and walking ones, the points of their path). */
 export const PLACEABLE = new Set<LayerType>(['shapes', 'countdown', 'info', 'movers'])
@@ -105,6 +103,7 @@ export function ScenesPanel({
   reloadScenes,
   reloadMedia,
   onShowChanged,
+  house = false,
 }: {
   show: Show
   scenes: MappingScene[]
@@ -117,12 +116,15 @@ export function ScenesPanel({
   reloadScenes: () => Promise<void>
   reloadMedia: () => Promise<unknown>
   onShowChanged: () => Promise<void> | void
+  /** Only Your house (on Set up): the photo, the traced parts and painting, with the preview. */
+  house?: boolean
 }) {
   const [search, setSearch] = useSearchParams()
+  const navigate = useNavigate()
   const asked = search.get('part')
-  // Start from a photo, House parts and Paint the house share the Your house tab now.
-  const houseBox = HOUSE_BOXES.find((box) => box === asked) ?? null
-  const part: ScenePart = houseBox ? 'house' : SCENE_PARTS.find((p) => p.id === asked)?.id ?? 'make'
+  // Start from a photo, House parts and Paint the house share Your house.
+  const houseBox = house ? HOUSE_BOXES.find((box) => box === asked) ?? 'house' : null
+  const part: ScenePart = house ? 'house' : SCENE_PARTS.find((p) => p.id === asked)?.id ?? 'make'
   // An old link to one of them lands on its box.
   useEffect(() => {
     if (!houseBox || houseBox === 'house') return
@@ -132,7 +134,10 @@ export function ScenesPanel({
   }, [houseBox])
   const showHouseBox = (box: (typeof HOUSE_BOXES)[number]) =>
     document.getElementById(`house-${box}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  const setPart = (id: ScenePart) => setSearch(id === 'make' ? {} : { part: id }, { replace: true })
+  // From Your house, making or changing a scene goes over to the Scenes page.
+  const setPart = (id: ScenePart) =>
+    house ? navigate(id === 'edit' ? '/mapping/scenes?part=edit' : '/mapping/scenes')
+      : setSearch(id === 'make' ? {} : { part: id }, { replace: true })
   // "Put it on a projector" opens Make a scene with the scene (and maybe a projector) picked.
   const startWith = useMemo(() => ({
     sceneId: Number(search.get('scene')) || null,
@@ -140,7 +145,12 @@ export function ScenesPanel({
   }), [search])
   const putOnProjector = (target: MappingScene) => setSearch({ scene: String(target.id) }, { replace: true })
   const startNew = () => setPart('make')
-  const [selectedId, setSelectedId] = useState<number | null>(() => Number(localStorage.getItem(SCENE_KEY)) || null)
+  const [selectedId, setSelected] = useState<number | null>(() => Number(localStorage.getItem(SCENE_KEY)) || null)
+  // Kept at once, not after the next paint: from Your house the Scenes page opens straight after.
+  const setSelectedId = (id: number | null) => {
+    setSelected(id)
+    if (id != null) localStorage.setItem(SCENE_KEY, String(id))
+  }
   const [drafts, setDrafts] = useState<Map<number, MappingScene>>(new Map())
   const [ai, setAi] = useState<AiStatus | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<MappingScene | null>(null)
@@ -194,10 +204,6 @@ export function ScenesPanel({
   const list = useMemo(() => scenes.map((s) => drafts.get(s.id) ?? s), [scenes, drafts])
   // Nothing picked yet (or the picked one was deleted): show the first.
   const scene = list.find((s) => s.id === selectedId) ?? list[0] ?? null
-
-  useEffect(() => {
-    if (selectedId != null) localStorage.setItem(SCENE_KEY, String(selectedId))
-  }, [selectedId])
 
   useEffect(() => {
     mappingApi.aiStatus().then(setAi).catch(() => setAi(null))
@@ -390,7 +396,7 @@ export function ScenesPanel({
 
   return (
     <div className="space-y-4">
-      <SectionBar label="Scenes sections" value={part} onChange={setPart} sections={SCENE_PARTS} />
+      {!house && <SectionBar label="Scenes sections" value={part} onChange={setPart} sections={SCENE_PARTS} />}
 
       {part === 'make' && (
         <MakeScene
@@ -415,10 +421,6 @@ export function ScenesPanel({
         />
       )}
 
-      {part === 'projectors' && (
-        <ProjectorScenes show={show} scenes={list} canEdit={canEdit} onChanged={onShowChanged} onError={onError} />
-      )}
-
       {part === 'house' && (
         <div id="house-photo" className="scroll-mt-28">
           <HousePhotoPanel
@@ -432,10 +434,7 @@ export function ScenesPanel({
               setPhotoSaves((n) => n + 1)
               await onShowChanged()
             }}
-            onDescribe={(prompt) => {
-              setPart('edit')
-              void describe(prompt, null)
-            }}
+            onDescribe={(prompt) => void describe(prompt, null).then(() => setPart('edit'))}
             onStartNew={startNew}
             reloadMedia={reloadMedia}
             onError={onError}
@@ -629,7 +628,7 @@ export function ScenesPanel({
                 title="House parts"
                 description={
                   hasHouse
-                    ? 'Traced on the canvas, so scenes can decorate walls, roof, windows and doors separately.'
+                    ? 'Traced on the picture of the house, so scenes can decorate walls, roof, windows and doors separately.'
                     : 'Trace the walls, roof, windows and doors, so scenes can decorate each part. Without them, scenes cover the whole picture.'
                 }
                 action={

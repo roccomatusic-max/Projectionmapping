@@ -591,7 +591,7 @@ export function ShowDesigner({
       {viewed && cue.output_media && String(viewed.id) in cue.output_media && (
         <p className="text-xs text-amber-200">
           In this cue {viewed.name} plays a picture of its own instead of its part of the cue’s picture
-          (Editor → Elements → Pictures on each projector); this preview shows the cue’s picture.
+          (Each projector tab); this preview shows the cue’s picture.
         </p>
       )}
       {hint && <p className="text-xs text-slate-500">{hint}</p>}
@@ -750,7 +750,7 @@ export function ShowDesigner({
   )
 }
 
-/** Each projector's box over the preview, as in Editor → Elements. */
+/** Each projector's box over the preview, as on the Elements tab. */
 function ProjectorBoxes({ show, outputs }: { show: Show; outputs: Output[] }) {
   const W = show.canvas_width
   const H = show.canvas_height

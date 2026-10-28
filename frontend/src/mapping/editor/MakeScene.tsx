@@ -16,7 +16,7 @@ import type {
 } from '../types'
 import { ElementLibrary } from './ElementLibrary'
 import { outputColor } from './panels'
-import { sceneOn } from './ProjectorScenes'
+import { sceneOn } from './EachProjector'
 import { type Backdrop, ScenePreview, SURFACE_KINDS } from './ScenePreview'
 import { LayerCard, PLACEABLE, placingFor, SINGLE } from './ScenesPanel'
 
@@ -491,8 +491,8 @@ export function MakeScene({
     return (
       <Panel>
         <EmptyState title="No projectors in this show yet"
-          action={canEdit ? <Link className="btn-primary" to="/mapping/editor?part=projectors">Add a projector</Link> : undefined}>
-          A scene goes on a projector. Add one for each projector that lights the house (Editor → Projectors), then come
+          action={canEdit ? <Link className="btn-primary" to="/mapping/setup">Add a projector</Link> : undefined}>
+          A scene goes on a projector. Add one for each projector that lights the house (Set up → Your projectors), then come
           back here.
         </EmptyState>
       </Panel>
@@ -592,8 +592,8 @@ export function MakeScene({
                   ) : (
                     <p className="mt-1 text-xs text-slate-500">
                       All of it. To put a scene on just the roof, the windows or the driveway, trace them once
-                      in <Link className="text-sky-300 hover:underline" to="/mapping/scenes?part=house">Your house</Link> or
-                      let Claude find them in <Link className="text-sky-300 hover:underline" to="/mapping/scenes?part=photo">Start from a photo</Link>.
+                      in <Link className="text-sky-300 hover:underline" to="/mapping/setup?part=house">Set up → Your house</Link> or
+                      let Claude find them in <Link className="text-sky-300 hover:underline" to="/mapping/setup?part=photo">Start from a photo</Link>.
                     </p>
                   )}
                 </div>
@@ -699,7 +699,7 @@ export function MakeScene({
                   <p className="mb-3 text-xs text-slate-400">
                     It goes in this scene, which plays on every cue where you put it. To put something on one cue only,
                     or on every cue whatever scene plays, add it in{' '}
-                    <Link to="/mapping/editor?part=elements" className="text-sky-300 hover:underline">Editor → Elements</Link>.
+                    <Link to="/mapping/designer?part=elements" className="text-sky-300 hover:underline">Show designer → Elements</Link>.
                   </p>
                   <ElementLibrary onPick={addLayer} />
                 </div>
