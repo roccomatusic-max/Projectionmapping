@@ -1641,6 +1641,38 @@ or projector cannot show one). ProRes, HAP and MKV are refused: Chrome does
 not play them. HEVC needs the mini PC's graphics to decode it (any Intel
 from 7th generation on does); H.264 plays everywhere.
 
+## 6g. Projectors of different resolutions
+
+A show is made on one picture of the whole house (the canvas; its pixel size
+only sets its shape). Each projector shows its own box of it (`source`, canvas
+fractions) at its own resolution: the scene engine and media are drawn at the
+output window's real pixels, so nothing is made "for" one display.
+
+- **Real size.** A mini PC's heartbeat carries its output page's size in
+  device pixels. When the Mini PC app runs it (so the page is full screen on
+  the projector) and two heartbeats in a row agree, the server sets the
+  output's `width`/`height` to it (`mapping_players._real_size`). Warp, masks
+  and blends are fractions, so they stay put; masks and camera calibration
+  use the real size from then on.
+- **Shape.** A box must have its projector's shape, or what it shows is
+  stretched (`projectorShape.ts`: `shapeRatio`, `stretchOf`). Boxes of
+  projectors nobody lined up by hand or by camera (untouched warp, no
+  calibration) more than 3% off get a "Fix the shape" button (same middle and
+  width), in the Show designer and in Editor → Projectors. Resizing a box in
+  Editor → Projectors keeps its shape unless Shift is held, or the projector
+  has been lined up.
+- **Lay them out.** Side by side, Overlapping (15% of the narrower
+  neighbour, auto blend) or Apart (4% gaps): each box in its projector's
+  shape, one common height, filling the picture's width, centred
+  (`arrange`). Hand-set edge blends are cleared so the auto blend does the
+  overlaps. Asks first when any projector is lined up.
+- **Per projector.** A timeline clip's `outputs` (output ids; none is every
+  projector) limits where it draws; a projector window does not even load a
+  video only meant for others. The Show designer previews the show "as" one
+  projector: its box, in its shape, with its own scene for the cue; clips
+  added while looking at one projector go on that projector only, sized to
+  its box.
+
 ## 7. Show control integration (phase 2)
 
 - Automation step `{"type": "mapping", "action": "go", "show_id": 1, "cue": 0}`

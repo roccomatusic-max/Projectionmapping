@@ -52,7 +52,8 @@ async def test_a_cue_keeps_a_timeline(api):
              "pin": {"x": 0.5, "y": 0.4, "size": 0.3},
              "keys": [{"t": 4, "pins": [{"x": 0.8, "y": 0.2, "size": 0.2}]},
                       {"t": 0, "pins": [{"x": 0.2, "y": 0.5, "size": 0.3}]}]},
-            {"id": "ghost", "kind": "element", "layer": GHOSTS, "start": 5, "length": 10, "exit": "grow"},
+            {"id": "ghost", "kind": "element", "layer": GHOSTS, "start": 5, "length": 10, "exit": "grow",
+             "outputs": [7]},
             {"id": "howl", "kind": "sound", "media_id": sound["id"], "start": 0, "length": 4, "volume": 0.6},
         ],
     }
@@ -63,6 +64,9 @@ async def test_a_cue_keeps_a_timeline(api):
     # Moves are kept in order of time.
     assert [k["t"] for k in body["clips"][0]["keys"]] == [0, 4]
     assert body["clips"][1]["layer"]["style"] == "ghosts"
+    # Only on some projectors, or (unsaid) on every one.
+    assert body["clips"][1]["outputs"] == [7]
+    assert body["clips"][0]["outputs"] is None
 
     # Changing something else leaves it be; null takes it off.
     renamed = await api.patch(f"/api/mapping/cues/{cue['id']}", headers=headers, json={"name": "Tale"})

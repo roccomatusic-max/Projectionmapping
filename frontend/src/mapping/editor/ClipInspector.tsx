@@ -1,9 +1,11 @@
 import { Copy, Trash2 } from 'lucide-react'
+import { classNames } from '@/lib/format'
 import type { ClipEntrance, MediaAsset, Output, SceneLayer, Show, TimelineClip } from '../types'
 import { ENTRANCES, fillPin, fitPin, mediaAspect } from '../scene/timeline'
 import { Slider } from './controls'
 import { CountdownColorPickers } from './CountdownColors'
 import { InfoFields } from './InfoFields'
+import { outputColor } from './panels'
 import { clockText } from './TimelineTracks'
 
 /** Where a picture or video may show, as layers can (scene/catalog targets). */
@@ -68,6 +70,7 @@ export function ClipInspector({
   onDuplicate,
   onRemove,
   onPinIndex,
+  viewed = null,
 }: {
   clip: TimelineClip
   asset: MediaAsset | undefined
@@ -87,6 +90,8 @@ export function ClipInspector({
   onDuplicate: () => void
   onRemove: () => void
   onPinIndex: (index: number | null) => void
+  /** The projector the preview shows, if just one: "Cover" buttons fill its box. */
+  viewed?: Output | null
 }) {
   const off = !canEdit
   const sound = clip.kind === 'sound'
@@ -184,6 +189,10 @@ export function ClipInspector({
         </label>
       )}
 
+      {!sound && outputs.length > 1 && (
+        <ShowsOn clip={clip} outputs={outputs} disabled={off} onChange={(ids) => onChange({ outputs: ids.length ? ids : null })} />
+      )}
+
       {!sound && (
         <Slider label="How strongly it shows" min={0} max={1} step={0.01} value={clip.opacity} disabled={off}
           format={(v) => `${Math.round(v * 100)} %`} onChange={(opacity) => onChange({ opacity })} />
@@ -203,12 +212,25 @@ export function ClipInspector({
           </label>
           {canEdit && pin && (
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => onChange({ pin: fillPin(canvasAspect, aspect) })}>
-                Cover the whole house
-              </button>
-              <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => onChange({ pin: fitPin(canvasAspect, aspect) })}>
-                Show all of it
-              </button>
+              {viewed ? (
+                <>
+                  <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => onChange({ pin: fillPin(canvasAspect, aspect, viewed.source) })}>
+                    Cover {viewed.name}
+                  </button>
+                  <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => onChange({ pin: fitPin(canvasAspect, aspect, viewed.source) })}>
+                    Show all of it on {viewed.name}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => onChange({ pin: fillPin(canvasAspect, aspect) })}>
+                    Cover the whole house
+                  </button>
+                  <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => onChange({ pin: fitPin(canvasAspect, aspect) })}>
+                    Show all of it
+                  </button>
+                </>
+              )}
               <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => onChange({ pin: { ...pin, rotation: 0 } })}>
                 Straighten
               </button>
@@ -322,6 +344,49 @@ function KeyOpacity({ clip, local, onChange }: { clip: TimelineClip; local: numb
       <Slider label={`Shows at ${clockText(key.t)}`} min={0} max={1} step={0.01} value={key.opacity}
         format={(v) => `${Math.round(v * 100)} %`}
         onChange={(opacity) => onChange({ keys: clip.keys.map((k, i) => (i === index ? { ...k, opacity } : k)) })} />
+    </div>
+  )
+}
+
+/** Which projectors a clip shows on: every one, or only those picked. */
+function ShowsOn({ clip, outputs, disabled, onChange }: {
+  clip: TimelineClip
+  outputs: Output[]
+  disabled: boolean
+  onChange: (ids: number[]) => void
+}) {
+  const known = (clip.outputs ?? []).filter((id) => outputs.some((o) => o.id === id))
+  const every = known.length === 0
+  const toggle = (id: number) => {
+    const next = known.includes(id) ? known.filter((k) => k !== id) : [...known, id]
+    // Every projector picked is the same as every projector.
+    onChange(next.length === outputs.length ? [] : next)
+  }
+  const chip = (on: boolean) => classNames(
+    'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs ring-1 transition disabled:opacity-60',
+    on ? 'bg-sky-500/20 text-sky-100 ring-sky-400/60' : 'bg-panel-800 text-slate-400 ring-white/10 hover:text-slate-200',
+  )
+  return (
+    <div>
+      <span className="label">Shows on</span>
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={chip(every)} disabled={disabled} aria-pressed={every} onClick={() => onChange([])}>
+          Every projector
+        </button>
+        {[...outputs].sort((a, b) => a.position - b.position).map((o, i) => (
+          <button key={o.id} type="button" className={chip(known.includes(o.id))} disabled={disabled}
+            aria-pressed={known.includes(o.id)} onClick={() => toggle(o.id)}
+            title={`Show it on ${o.name}${known.includes(o.id) ? ' (on)' : ''}`}>
+            <span className="h-2 w-2 rounded-full" style={{ background: outputColor(i) }} aria-hidden />
+            {o.name}
+          </button>
+        ))}
+      </div>
+      {!every && (
+        <span className="mt-1 block text-xs text-slate-500">
+          Only on {known.map((id) => outputs.find((o) => o.id === id)!.name).join(' and ')}; the other projectors leave it out, even where their boxes overlap.
+        </span>
+      )}
     </div>
   )
 }

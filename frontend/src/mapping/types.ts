@@ -183,6 +183,8 @@ export interface TimelineClip {
   output_id?: number | null
   /** Where a video or picture may show: all of it, or only the walls, the windows… */
   target?: LayerTarget
+  /** The projectors (output ids) it shows on; none or empty is every projector. */
+  outputs?: number[] | null
   /** An element clip's element, placed as it is when it has no moves. */
   layer?: SceneLayer | null
   /** Moves over time, in order of time. */

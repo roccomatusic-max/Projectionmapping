@@ -904,3 +904,31 @@ async def test_a_mini_pc_showing_the_show_may_update(api, release, monkeypatch):
     await api.post(f"/api/mapping/players/{player_id}/screen", headers=headers, json={"pattern": "grid"})
     reply = await app_checkin(api, version="1.0.50", update={"state": "ready", "version": "1.0.60"})
     assert reply["update"] is None
+
+
+async def test_a_projector_takes_the_size_its_mini_pc_really_shows(api):
+    headers = await login(api)
+    player_id, token = await paired(api, headers)
+    show = (await api.post("/api/mapping/shows", headers=headers, json={"name": "Sizes"})).json()
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "Left"})).json()
+    assert (output["width"], output["height"]) == (1920, 1200)
+    await api.patch(f"/api/mapping/players/{player_id}", headers=headers, json={"output_id": output["id"]})
+
+    async def size_after(*reports) -> tuple[int, int]:
+        for report in reports:
+            beat = await api.post("/api/mapping/players/me", headers=token, json=report)
+            assert beat.status_code == 200, beat.text
+        full = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+        out = next(o for o in full["outputs"] if o["id"] == output["id"])
+        return out["width"], out["height"]
+
+    hd = {"width": 1920, "height": 1080}
+    # A page opened by hand in a browser (no Mini PC app) may be any size.
+    assert await size_after(hd, hd) == (1920, 1200)
+    await app_checkin(api)
+    # One report alone may be half-way through a change of display mode.
+    assert await size_after({"width": 1280, "height": 800}, hd) == (1920, 1200)
+    assert await size_after(hd) == (1920, 1080)
+    # Nonsense sizes are left alone.
+    assert await size_after({"width": 10, "height": 10}, {"width": 10, "height": 10}) == (1920, 1080)

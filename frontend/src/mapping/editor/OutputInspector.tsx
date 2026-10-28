@@ -7,6 +7,7 @@ import type { Playback } from '../playback'
 import type { BlendEdge, Mask, Output, Show, TestPattern } from '../types'
 import { NumberField, Segmented, Slider, Toggle } from './controls'
 import { type EditMode, WarpEditor } from './WarpEditor'
+import { fitShape, shapeIsOff, shapeRatio, stretchOf, stretchWords } from '../projectorShape'
 
 type Tab = 'geometry' | 'masks' | 'blend' | 'color' | 'output'
 
@@ -465,14 +466,31 @@ function OutputSettings({
           ))}
         </select>
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <NumberField label="Width" value={output.width} min={16} disabled={!canEdit} suffix="px"
-          onChange={(width) => onChange({ width: Math.round(width) })} />
-        <NumberField label="Height" value={output.height} min={16} disabled={!canEdit} suffix="px"
-          onChange={(height) => onChange({ height: Math.round(height) })} />
-      </div>
       <div>
-        <p className="label">Slice of the canvas ({cw} × {ch})</p>
+        <p className="label">Resolution</p>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField label="Width" value={output.width} min={16} disabled={!canEdit} suffix="px"
+            onChange={(width) => onChange({ width: Math.round(width) })} />
+          <NumberField label="Height" value={output.height} min={16} disabled={!canEdit} suffix="px"
+            onChange={(height) => onChange({ height: Math.round(height) })} />
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Set by itself from the mini PC that drives this projector, once one is picked for it on the Players page.
+        </p>
+      </div>
+      {shapeIsOff(output, cw, ch) && (
+        <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-100 ring-1 ring-amber-500/20">
+          Its box is {stretchWords(stretchOf(output, cw, ch))} for this projector, so what it shows looks stretched.
+          {canEdit && (
+            <button type="button" className="btn-default ml-2 px-2 py-0.5 text-xs"
+              onClick={() => onChange({ source: fitShape(output.source, shapeRatio(output, cw, ch)) })}>
+              Fix the shape
+            </button>
+          )}
+        </div>
+      )}
+      <div>
+        <p className="label">Its box on the picture ({cw} × {ch})</p>
         <div className="grid grid-cols-2 gap-2">
           <NumberField label="X" value={s.x * cw} disabled={!canEdit} suffix="px" onChange={(x) => setSource({ x: x / cw })} />
           <NumberField label="Y" value={s.y * ch} disabled={!canEdit} suffix="px" onChange={(y) => setSource({ y: y / ch })} />
