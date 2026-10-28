@@ -11,6 +11,8 @@ export {
   CircleHelp as HelpIcon,
   Cpu as MiniPcIcon,
   PenTool as EditorIcon,
+  ListVideo as CuesIcon,
+  Frame as SetupIcon,
   Sparkles as ScenesIcon,
   Captions as OsdIcon,
   ChevronDown as ChevronDownIcon,

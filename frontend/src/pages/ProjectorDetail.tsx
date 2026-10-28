@@ -804,7 +804,7 @@ function PictureControls({
             label: 'Test patterns',
             reason: testPattern
               ? gate.reason('image.test_pattern') ?? 'Test patterns have no control here yet.'
-              : 'No test-pattern command has been confirmed for this projector. Use the projector’s own menu (Remote & lens tab), or the test patterns in Mapping → Editor → Projectors.',
+              : 'No test-pattern command has been confirmed for this projector. Use the projector’s own menu (Remote & lens tab), or the test patterns in Mapping → Set up → Your projectors.',
           },
         ]}
       />

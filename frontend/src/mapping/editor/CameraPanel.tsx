@@ -451,7 +451,7 @@ export function CameraPanel({
               {camera?.report.depth && (
                 <p className="text-xs text-slate-500">
                   {people.length ? `Tracking ${people.length} ${people.length === 1 ? 'person' : 'people'}. ` : 'Nobody in view. '}
-                  Pick an effect per cue in Editor → Cues and media → People.
+                  Pick an effect per cue on the Cues page → People.
                 </p>
               )}
             </section>
@@ -469,7 +469,7 @@ export function CameraPanel({
                   onClick={() => void calibrate(combined)}>
                   Calibrate all projectors
                 </button>
-                {outputs.length === 0 && <span className="text-xs text-amber-300">Add a projector in Editor → Projectors first.</span>}
+                {outputs.length === 0 && <span className="text-xs text-amber-300">Add a projector in Set up → Your projectors first.</span>}
               </div>
               <div className="space-y-2">
                 {outputs.map((output, index) => {
@@ -481,7 +481,7 @@ export function CameraPanel({
                       <span className="text-sm text-slate-200">{output.name}</span>
                       <span className="text-xs text-slate-500">
                         {output.blend.auto === false
-                          ? 'shows a picture apart from the others, so it is left out (Editor → Blend)'
+                          ? 'shows a picture apart from the others, so it is left out (Set up → Your projectors → Blend)'
                           : output.calibration?.camera_id === cameraId
                             ? `calibrated ${new Date(output.calibration!.captured_at).toLocaleString()} · ${Math.round(output.calibration!.coverage * 100)}% of the photo`
                             : 'not calibrated'}
@@ -603,13 +603,13 @@ export function CameraPanel({
               {calibrated.length < combined.length && (
                 <p className="text-xs text-slate-500">
                   Projectors the camera has not calibrated ({combined.filter((o) => !calibrated.includes(o)).map((o) => o.name).join(', ')})
-                  do not follow; run their patterns, or adjust them by hand in Editor → Projectors.
+                  do not follow; run their patterns, or adjust them by hand in Set up → Your projectors.
                 </p>
               )}
               {combined.length < outputs.length && (
                 <p className="text-xs text-slate-500">
                   Left out because they show a picture apart from the others ({outputs.filter((o) => !combined.includes(o)).map((o) => o.name).join(', ')}):
-                  line them up by hand in Editor → Projectors.
+                  line them up by hand in Set up → Your projectors.
                 </p>
               )}
               <ResultList results={results} />

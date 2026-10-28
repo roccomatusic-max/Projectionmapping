@@ -541,7 +541,7 @@ function GroupEditor({
           </div>
         )}
         {show && outputs.length === 0 && (
-          <p className="text-xs text-slate-500">This show has no projectors yet. Add them in the Editor, then pick a scene for each here.</p>
+          <p className="text-xs text-slate-500">This show has no projectors yet. Add them in Mapping → Set up, then pick a scene for each here.</p>
         )}
         {scenes.length === 0 && (
           <p className="text-xs text-slate-500">
@@ -634,8 +634,8 @@ export function TonightShow({ session }: { session: Session }) {
   if (status.ready && status.shows.length === 0) {
     return (
       <div className="panel">
-        <EmptyState icon={RunShowIcon} title="Tonight's show" action={canEdit && <Link to="/mapping/editor" className="btn-primary">Open the Editor</Link>}>
-          Make a show in the Editor first: add your projectors and a cue. Then pick tonight's scenes here.
+        <EmptyState icon={RunShowIcon} title="Tonight's show" action={canEdit && <Link to="/mapping/setup" className="btn-primary">Set up the show</Link>}>
+          Set up a show first: add your projectors (Mapping → Set up) and a cue (Mapping → Cues). Then pick tonight's scenes here.
         </EmptyState>
       </div>
     )

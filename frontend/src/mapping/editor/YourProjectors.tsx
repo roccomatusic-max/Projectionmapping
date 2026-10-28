@@ -12,14 +12,15 @@ import type { Player } from './PlayersPanel'
 /**
  * The show's projectors, each with the resolution it really shows, whether
  * its box on the house picture has its shape, and a button to see the show
- * as that projector shows it. Under them, one press lays them all out side
- * by side, overlapping or apart.
+ * as that projector shows it (or, on Set up, to pick the one to line up).
+ * Under them, one press lays them all out side by side, overlapping or apart.
  */
 export function YourProjectors({
   show,
   outputs,
   viewId,
   onView,
+  pick = false,
   canEdit,
   onChanged,
   onError,
@@ -29,6 +30,8 @@ export function YourProjectors({
   /** The projector the preview shows; null is the whole house. */
   viewId: number | null
   onView: (id: number | null) => void
+  /** The chips pick the projector to set up, rather than how to see the show. */
+  pick?: boolean
   canEdit: boolean
   onChanged: () => Promise<unknown>
   onError: (message: string | null) => void
@@ -76,7 +79,7 @@ export function YourProjectors({
     return (
       <div className="rounded-lg border border-dashed border-white/10 px-4 py-3 text-sm text-slate-400">
         No projectors in this show yet. Add one for each projector in{' '}
-        <Link className="text-sky-300 hover:underline" to="/mapping/editor?part=projectors">Editor → Projectors</Link>.
+        <Link className="text-sky-300 hover:underline" to="/mapping/setup">Set up → Your projectors</Link>.
       </div>
     )
   }
@@ -95,17 +98,19 @@ export function YourProjectors({
         onCancel={() => setAsking(null)}
       />
       <div className="flex flex-wrap items-center gap-2">
-        <span className="label mb-0 mr-1">See it as</span>
-        <ViewChip active={viewId == null} onClick={() => onView(null)} title="The whole house picture, with every projector's box on it">
-          The whole house
-        </ViewChip>
+        <span className="label mb-0 mr-1">{pick ? 'Projectors' : 'See it as'}</span>
+        {!pick && (
+          <ViewChip active={viewId == null} onClick={() => onView(null)} title="The whole house picture, with every projector's box on it">
+            The whole house
+          </ViewChip>
+        )}
         {outputs.map((o, i) => {
           const player = players.find((p) => p.kind === 'player' && p.output_id === o.id)
           const real = player?.report.width === o.width && player?.report.height === o.height
           const off = shapeIsOff(o, cw, ch)
           return (
             <ViewChip key={o.id} active={viewId === o.id} onClick={() => onView(o.id)}
-              title={`What ${o.name} shows, in its own shape. ${o.width} × ${o.height}${real ? ', as its mini PC shows it' : player ? '' : ' (no mini PC on it yet, so this size was set by hand)'}.`}>
+              title={`${pick ? `Line up ${o.name}.` : `What ${o.name} shows, in its own shape.`} ${o.width} × ${o.height}${real ? ', as its mini PC shows it' : player ? '' : ' (no mini PC on it yet, so this size was set by hand)'}.`}>
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: outputColor(i) }} aria-hidden />
               {o.name}
               <span className="tnum text-[11px] font-normal text-slate-400">{o.width} × {o.height}</span>
@@ -144,7 +149,11 @@ export function YourProjectors({
             </button>
           ))}
           <span className="text-slate-500">or</span>
-          <Link className="text-sky-300 hover:underline" to="/mapping/editor?part=projectors">drag the boxes yourself and line them up on the house</Link>
+          {pick ? (
+            <span className="text-slate-500">drag the boxes on the picture below</span>
+          ) : (
+            <Link className="text-sky-300 hover:underline" to="/mapping/setup">drag the boxes yourself and line them up on the house</Link>
+          )}
         </div>
       )}
     </div>

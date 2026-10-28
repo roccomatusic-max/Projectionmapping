@@ -160,12 +160,12 @@ export function CueList({
                 </p>
               )}
               {Object.keys(cue.output_media ?? {}).length > 0 && (
-                <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Set under Editor → Elements → Pictures on each projector">
+                <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Set under Show designer → Each projector">
                   Some projectors show a picture of their own
                 </p>
               )}
               {(cue.elements?.length || show.every_cue_elements?.length) ? (
-                <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Added and placed under Editor → Elements">
+                <p className="col-span-2 text-[11px] text-sky-300/80 lg:col-span-3" title="Added and placed under Show designer → Elements">
                   {elementsLine(cue.elements?.length ?? 0, show.every_cue_elements?.length ?? 0)}
                 </p>
               ) : null}

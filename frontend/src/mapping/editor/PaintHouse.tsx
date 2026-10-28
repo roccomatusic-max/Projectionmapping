@@ -94,8 +94,8 @@ export function PaintHouse({
         </p>
       ) : !source ? (
         <p className="text-xs text-slate-400">
-          This needs a picture of the house lined up with the canvas: take one on the Camera tab, or upload a photo
-          of the house that matches the canvas to the media library.
+          This needs a photo of the house lined up with the show's picture: take one on the Camera tab, or upload a photo
+          of the house the same shape as the show's picture (Saved maps and show) to the media library.
         </p>
       ) : (
         <form
