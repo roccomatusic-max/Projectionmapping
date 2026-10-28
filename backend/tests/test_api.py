@@ -21,7 +21,10 @@ async def api(panasonic_sim, monkeypatch):
     handle, path = tempfile.mkstemp(suffix=".db")
     os.close(handle)
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
-    media = tempfile.mkdtemp(prefix="media-")
+    # The media folder's parent is the data folder (key files, backups).
+    data = tempfile.mkdtemp(prefix="data-")
+    media = os.path.join(data, "media")
+    os.mkdir(media)
     monkeypatch.setenv("MEDIA_DIR", media)
 
     # Rebuild the settings-dependent modules against this database.
@@ -37,31 +40,49 @@ async def api(panasonic_sim, monkeypatch):
     import app.services.alerts as alerts_module
     import app.services.audit as audit_module
     import app.services.automation as automation_module
+    import app.services.backups as backups_module
+    import app.services.emergency as emergency_module
+    import app.services.heater as heater_module
     import app.services.mapping as mapping_module
+    import app.services.minipc_updates as minipc_updates_module
     import app.services.monitor as monitor_module
+    import app.services.setup_guide as setup_guide_module
+    import app.services.show_history as show_history_module
+    import app.services.tonight as tonight_module
+    import app.services.walkthrough as walkthrough_module
     for module in (audit_module, monitor_module, alerts_module, automation_module,
-                   mapping_module):
+                   mapping_module, emergency_module, show_history_module, tonight_module,
+                   minipc_updates_module, heater_module, setup_guide_module, backups_module,
+                   walkthrough_module):
         importlib.reload(module)
     import app.api.deps as deps_module
     import app.api.routes.auth as auth_routes
     import app.api.routes.automation as automation_routes
+    import app.api.routes.backups as backup_routes
+    import app.api.routes.emergency as emergency_routes
     import app.api.routes.enclosure as enclosure_routes
     import app.api.routes.groups as group_routes
+    import app.api.routes.heaters as heater_routes
     import app.api.routes.integration as integration_routes
     import app.api.routes.mapping as mapping_routes
     import app.api.routes.mapping_camera as camera_routes
     import app.api.routes.mapping_players as player_routes
     import app.api.routes.mapping_scenes as scene_routes
     import app.api.routes.monitoring as monitoring_routes
+    import app.api.routes.phone_alerts as phone_alert_routes
     import app.api.routes.projectors as projector_routes
+    import app.api.routes.show_history as history_routes
     import app.api.routes.system as system_routes
+    import app.api.routes.tonight as tonight_routes
     import app.api.routes.updates as update_routes
+    import app.api.routes.walkthrough as walkthrough_routes
     import app.api.routes.ws as ws_routes
     importlib.reload(deps_module)
     for module in (auth_routes, projector_routes, group_routes, monitoring_routes,
                    automation_routes, enclosure_routes, integration_routes,
                    mapping_routes, player_routes, camera_routes, scene_routes, ws_routes, system_routes,
-                   update_routes):
+                   update_routes, emergency_routes, tonight_routes, phone_alert_routes,
+                   heater_routes, backup_routes, walkthrough_routes, history_routes):
         importlib.reload(module)
     import app.main as main_module
     importlib.reload(main_module)
@@ -74,7 +95,7 @@ async def api(panasonic_sim, monkeypatch):
     for suffix in ("", "-wal", "-shm"):
         with contextlib.suppress(FileNotFoundError):
             os.unlink(path + suffix)
-    shutil.rmtree(media, ignore_errors=True)
+    shutil.rmtree(data, ignore_errors=True)
 
 
 async def login(client, username="admin", password="test-admin-password") -> dict:
@@ -413,6 +434,25 @@ async def test_connectivity_test_endpoint(api):
     assert "authenticated" in body["detail"]
 
 
+async def test_connectivity_test_in_protect_mode_without_password_fails(api):
+    """A projector asking for a password must not pass the test without one,
+    and saving the password must make it pass straight away."""
+    api.sim.state.password = "panasonic"
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    body = (await api.post(f"/api/projectors/{pid}/test", headers=headers)).json()
+    assert body["reachable"] is True
+    assert body["authenticated"] is False
+    assert body["outcome"] == "auth_failed"
+    assert "Control password" in body["detail"]
+
+    response = await api.patch(f"/api/projectors/{pid}", headers=headers,
+                               json={"password": "panasonic"})
+    assert response.status_code == 200, response.text
+    body = (await api.post(f"/api/projectors/{pid}/test", headers=headers)).json()
+    assert body["authenticated"] is True, body
+
+
 async def test_connectivity_test_on_dead_host_explains_itself(api):
     headers = await login(api)
     pid = await add_projector(api, headers, name="Dead", port=1)
@@ -703,6 +743,93 @@ async def test_usage_analytics_endpoint(api):
     body = response.json()
     assert "estimate" in body["note"]
     assert isinstance(body["usage"], list)
+
+
+async def test_temperatures_are_recorded_and_charted(api):
+    """A deep poll stores one sample per sensor; the chart endpoint serves them."""
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    await api.get(f"/api/projectors/{pid}/status?refresh=true", headers=headers)
+
+    rows = (await api.get(f"/api/projectors/{pid}/telemetry?prefix=temp_",
+                          headers=headers)).json()["points"]
+    assert sorted(r["metric"] for r in rows) == ["temp_exhaust", "temp_intake", "temp_optics"]
+
+    response = await api.get(f"/api/analytics/temperatures?projector_id={pid}&hours=1",
+                             headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [s["key"] for s in body["sensors"]] == ["intake", "exhaust", "optics"]
+    intake = body["sensors"][0]
+    assert intake["label"] == "Intake air"
+    assert intake["latest"]["celsius"] == 24.0 and intake["latest"]["fahrenheit"] == 75.2
+    assert intake["state"] == "ok" and intake["limit_celsius"] == 45.0
+    assert body["sensors"][1]["limit_celsius"] is None  # no published exhaust limit
+    assert body["hottest"]["key"] == "exhaust"
+    assert body["warnings"] == []
+    assert len(body["points"]) == 240
+    assert sum(1 for p in body["points"] if p["intake"] is not None) == 1
+
+
+async def test_temperature_warning_near_the_limit(api):
+    from datetime import datetime, timedelta
+
+    from app.db.models import Telemetry
+    from app.db.session import session_scope
+
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    now = datetime.now(UTC)
+    async with session_scope() as session:
+        session.add_all([
+            # Hot an hour ago, normal now: the warning says it was, not is.
+            Telemetry(projector_id=pid, metric="temp_intake", value_num=42.0,
+                      recorded_at=now - timedelta(hours=2)),
+            Telemetry(projector_id=pid, metric="temp_intake", value_num=30.0,
+                      recorded_at=now - timedelta(seconds=30)),
+        ])
+    body = (await api.get(f"/api/analytics/temperatures?projector_id={pid}&hours=12",
+                          headers=headers)).json()
+    intake = body["sensors"][0]
+    assert intake["state"] == "ok" and intake["hottest_state"] == "near"
+    assert intake["hottest"]["celsius"] == 42.0
+    assert len(body["warnings"]) == 1 and "reached 108 °F (42 °C)" in body["warnings"][0]
+
+    async with session_scope() as session:
+        session.add(Telemetry(projector_id=pid, metric="temp_intake", value_num=46.0,
+                              recorded_at=now))
+    body = (await api.get(f"/api/analytics/temperatures?projector_id={pid}&hours=1",
+                          headers=headers)).json()
+    assert body["sensors"][0]["state"] == "over"
+    assert "at or above" in body["warnings"][0]
+
+    missing = await api.get("/api/analytics/temperatures?projector_id=9999", headers=headers)
+    assert missing.status_code == 404
+
+
+async def test_old_temperature_samples_are_pruned_sooner(api):
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.db.models import Telemetry
+    from app.db.session import session_scope
+    from app.services.monitor import monitor
+
+    headers = await login(api)
+    pid = await add_projector(api, headers)
+    old = datetime.now(UTC) - timedelta(days=45)
+    async with session_scope() as session:
+        session.add_all([
+            Telemetry(projector_id=pid, metric="temp_intake", value_num=25.0, recorded_at=old),
+            Telemetry(projector_id=pid, metric="power", value_num=1.0, recorded_at=old),
+        ])
+    await monitor._prune()
+    async with session_scope() as session:
+        metrics = (await session.execute(
+            select(Telemetry.metric).where(Telemetry.recorded_at <= old + timedelta(minutes=1))
+        )).scalars().all()
+    assert metrics == ["power"]
 
 
 async def test_unexpected_shutdown_alert_only_when_nobody_asked(api):

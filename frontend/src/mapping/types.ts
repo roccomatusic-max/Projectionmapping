@@ -5,7 +5,8 @@ export type Point = [number, number]
 export interface MediaAsset {
   id: number
   name: string
-  kind: 'video' | 'image'
+  /** Sounds play only on a show designer timeline. */
+  kind: 'video' | 'image' | 'audio'
   content_type: string
   size_bytes: number
   width: number | null
@@ -69,7 +70,7 @@ export interface ColorAdjust {
   blue: number
 }
 
-export type TestPattern = 'none' | 'grid' | 'id' | 'white' | 'black' | 'red' | 'green' | 'blue'
+export type TestPattern = 'none' | 'grid' | 'id' | 'white' | 'black' | 'red' | 'green' | 'blue' | 'sync'
 
 export interface Output {
   id: number
@@ -122,6 +123,81 @@ export interface Cue {
    * null for no media there. Projectors not listed show their part of media_id.
    */
   output_media: Record<string, number | null>
+  /**
+   * Elements on this cue only, drawn over its scenes on every projector.
+   * Scene groups and playlists change the scenes, never these.
+   */
+  elements?: SceneLayer[]
+  /** Videos, pictures, elements and sounds that come and go while the cue plays (Show designer). */
+  timeline?: Timeline | null
+}
+
+// -- timelines (the show designer) ----------------------------------------------
+
+/** How a clip comes in or goes out. */
+export type ClipEntrance = 'none' | 'fade' | 'left' | 'right' | 'top' | 'bottom' | 'grow' | 'spin'
+
+/**
+ * Where a clip, or one of an element's objects, is at a moment: its middle
+ * in canvas fractions, its size (a picture's height in canvas heights; an
+ * object's size as on an element) and its turn in degrees clockwise.
+ */
+export interface ClipPin {
+  x: number
+  y: number
+  size: number
+  rotation?: number
+}
+
+/** Where a clip is ``t`` seconds after it starts; it glides from key to key. */
+export interface ClipKey {
+  t: number
+  pins: ClipPin[]
+  opacity: number
+}
+
+export interface TimelineClip {
+  id: string
+  kind: 'media' | 'element' | 'sound'
+  name: string
+  /** The row; higher rows draw on top. */
+  track: number
+  /** Seconds from the start of the cue. */
+  start: number
+  length: number
+  enter: ClipEntrance
+  enter_seconds: number
+  exit: ClipEntrance
+  exit_seconds: number
+  opacity: number
+  media_id?: number | null
+  /** Where a video or picture sits when it has no moves. */
+  pin?: ClipPin | null
+  /** Seconds into the video or sound where the clip starts playing. */
+  offset: number
+  loop: boolean
+  volume: number
+  /** Play a video's own sound too. */
+  sound: boolean
+  /** The projector whose mini PC plays the sound; null is the show's first. */
+  output_id?: number | null
+  /** Where a video or picture may show: all of it, or only the walls, the windows… */
+  target?: LayerTarget
+  /** The projectors (output ids) it shows on; none or empty is every projector. */
+  outputs?: number[] | null
+  /** An element clip's element, placed as it is when it has no moves. */
+  layer?: SceneLayer | null
+  /** Moves over time, in order of time. */
+  keys: ClipKey[]
+}
+
+export interface Timeline {
+  length: number
+  /** At the end: start again, go on to the next cue, or stay on the last moment. */
+  end: 'loop' | 'next' | 'hold'
+  /** Rows the designer shows. */
+  tracks: number
+  clips: TimelineClip[]
 }
 
 /** How people tracked by a depth camera affect a cue. */
@@ -143,11 +219,14 @@ export interface Show extends ShowSummary {
   camera_view: CameraView | null
   /** The building's parts traced on the canvas, for scenes to decorate. */
   surfaces: Surface[]
+  /** Elements on every cue, in the same place on each, over whatever each cue plays. */
+  every_cue_elements?: SceneLayer[]
   outputs: Output[]
   cues: Cue[]
 }
 
 export interface TransportCue {
+  /** A scene played on its own (an automation's Play a scene) has id -scene id and position -1. */
   id: number
   position: number
   name: string
@@ -162,6 +241,12 @@ export interface TransportCue {
   started_at_ms: number
 }
 
+/** "cue 3 · Ghosts", or "scene · Haunted house" for a scene played on its own. */
+export function liveLabel(cue: TransportCue): string {
+  if (cue.position < 0) return `scene · ${cue.name}`
+  return `cue ${cue.position + 1}${cue.name ? ` · ${cue.name}` : ''}`
+}
+
 export type TransportStatus = 'stopped' | 'playing' | 'paused' | 'blackout'
 
 export interface TransportState {
@@ -171,8 +256,18 @@ export interface TransportState {
   previous: TransportCue | null
   fade_started_at_ms: number | null
   paused_position: number | null
+  /** When playing began after the last stop or blackout; elements on every cue keep time from here. */
+  run_started_at_ms?: number | null
   revision: number
   server_time_ms: number
+  /** Set while the emergency stop is on: outputs draw nothing, GO is held. */
+  emergency?: EmergencyState | null
+}
+
+export interface EmergencyState {
+  /** Server epoch milliseconds when it was pressed. */
+  at_ms: number
+  by: string | null
 }
 
 export type TransportAction = 'go' | 'goto' | 'pause' | 'resume' | 'stop' | 'blackout'
@@ -227,6 +322,8 @@ export interface CalibrationStepMessage {
   steps: number
   status: 'running' | 'done' | 'failed'
   message: string
+  /** Sent when the calibration was removed, to end a run in progress. */
+  removed?: boolean
 }
 
 /** A person a depth camera sees. ``x``/``y`` are canvas fractions, when mapped. */
@@ -261,15 +358,26 @@ export interface ApplyResult {
 
 // -- scenes --------------------------------------------------------------------
 
-export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other'
+/** "ground" is a driveway, path or lawn seen from above, not part of the building. */
+export type SurfaceKind = 'wall' | 'roof' | 'window' | 'door' | 'other' | 'ground'
 
 /** One part of the building traced on the canvas. */
+/** Where a true square has to be drawn on the canvas to look square on a house part (scene/flat.ts). */
+export interface SurfaceFlat {
+  /** Top-left, top-right, bottom-right, bottom-left, in canvas fractions. */
+  corners: Point[]
+  /** Show a checkerboard square on the projectors until this time (server clock, epoch ms). */
+  test_until?: number | null
+}
+
 export interface Surface {
   id: string
   name: string
   kind: SurfaceKind
   /** Outline in canvas fractions. */
   points: Point[]
+  /** Straightened: objects on this part are drawn through its flat view. */
+  flat?: SurfaceFlat | null
 }
 
 export type LayerType =
@@ -277,9 +385,10 @@ export type LayerType =
   | 'wash' | 'field' | 'texture' | 'outline' | 'lights' | 'falling' | 'shapes'
   | 'picture'
   | 'countdown'
+  | 'movers' | 'info' | 'snowcap'
 
 export type ReactsTo = 'presence' | 'movement' | 'count' | 'closeness' | 'always'
-export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside'
+export type LayerTarget = 'everywhere' | 'building' | 'walls' | 'roof' | 'windows' | 'doors' | 'outside' | 'ground'
 export type LayerBlend = 'normal' | 'add' | 'screen'
 /** How an object moves by itself. */
 export type Motion = 'none' | 'bob' | 'sway' | 'spin' | 'drift' | 'bounce' | 'orbit' | 'rise' | 'flutter'
@@ -332,6 +441,31 @@ export interface SceneLayer {
   pins?: ObjectPin[] | null
   /** The image a "picture" layer shows, stretched over the whole canvas. */
   media_id?: number | null
+  /** A countdown's own colour for each part; missing keeps its look's colours. */
+  colors?: CountdownColors | null
+  /**
+   * Words a live info element shows: the message board's message, the
+   * weather's town, or what a "days until" counts to.
+   */
+  text?: string | null
+  /** The day a "days until" counts to, YYYY-MM-DD; it repeats every year. */
+  date?: string | null
+}
+
+/**
+ * A countdown's colour for each part, picked over its look. A part left out
+ * (or null) keeps the look's own colouring; the banner and the glow are the
+ * layer's ``color`` and ``color2``.
+ */
+export interface CountdownColors {
+  number?: string | null
+  depth?: string | null
+  top?: string | null
+  caption?: string | null
+  stitch?: string | null
+  clock?: string | null
+  labels?: string | null
+  decorations?: string | null
 }
 
 export interface MappingScene {
@@ -342,6 +476,26 @@ export interface MappingScene {
   layers: SceneLayer[]
   created_at: string
   updated_at: string
+}
+
+/** A part of the building Claude found on a photo, in fractions of the photo. */
+export interface TracedPart {
+  kind: SurfaceKind
+  name: string
+  points: Point[]
+}
+
+export interface TracedHouse {
+  /** The house in a sentence or two, for designing its scene. */
+  description: string
+  parts: TracedPart[]
+}
+
+/** The show's photo of the house and where the canvas's corners are on it (TL, TR, BR, BL). */
+export interface HousePhoto {
+  media_id: number
+  corners: Point[]
+  description: string
 }
 
 export interface AiStatus {
@@ -376,4 +530,21 @@ export interface MapParts {
   outputs: boolean
   surfaces: boolean
   players: boolean
+}
+
+/** The weather now, for the weather element (from Open-Meteo, through the server). */
+export interface WeatherNow {
+  /** The town it is for, as found. */
+  place: string
+  temperature_f: number
+  feels_like_f: number | null
+  high_f: number | null
+  low_f: number | null
+  /** WMO weather code (0 clear … 95 thunder). */
+  code: number
+  is_day: boolean
+  wind_mph: number | null
+  humidity: number | null
+  /** When the server fetched it, ISO time. */
+  updated_at: string
 }

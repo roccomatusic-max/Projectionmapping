@@ -37,7 +37,7 @@ from app.drivers import (
 from app.drivers import (
     build as build_driver,
 )
-from app.drivers.transport import TransportError, probe_tcp
+from app.drivers.transport import AuthenticationError, TransportError, probe_tcp
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +45,8 @@ log = logging.getLogger(__name__)
 class Priority(IntEnum):
     """Lower sorts first. Operator intent always outranks housekeeping."""
 
+    #: The emergency stop: ahead of everything, operator commands included.
+    EMERGENCY = -1
     USER = 0
     AUTOMATION = 1
     VERIFY = 2
@@ -62,6 +64,9 @@ class _QueueItem:
     job: str | None = field(compare=False, default=None)
     #: How many times this poll has stepped aside for an operator command.
     preempted: int = field(compare=False, default=0)
+    #: A power command refused during cool-down may be held and re-sent.
+    #: False for the re-sends themselves, so they cannot queue again.
+    allow_queue: bool = field(compare=False, default=True)
 
 
 @dataclass(slots=True)
@@ -116,6 +121,9 @@ class DeviceWorker:
         #: Background state-verification tasks, cancelled on stop so a worker
         #: teardown never leaves a poll running against a closed transport.
         self._verifications: set[asyncio.Task] = set()
+        #: A power command waiting for the projector to finish cooling down
+        #: (or starting up). At most one; a newer power command replaces it.
+        self._power_queue: asyncio.Task | None = None
 
         self.status = ProjectorStatus()
         #: The last deep read while the device has stayed online. Shallow
@@ -126,6 +134,8 @@ class DeviceWorker:
         self.last_success_at: float | None = None
         self.consecutive_failures = 0
         self.last_error: str | None = None
+        #: The last connect failed on the password, not the network.
+        self._auth_failed = False
         #: Exponential backoff so an unreachable projector is not hammered.
         self._reconnect_delay = 1.0
         self._max_reconnect_delay = 60.0
@@ -147,6 +157,8 @@ class DeviceWorker:
             connect_timeout=settings.connect_timeout,
             command_gap=gap,
             allow_unverified_commands=record.allow_unverified_commands,
+            pjlink_port=getattr(record, "pjlink_port", None),
+            pjlink_password=decrypt_secret(getattr(record, "pjlink_password_enc", None)),
             label=record.name,
         )
 
@@ -205,6 +217,7 @@ class DeviceWorker:
         *,
         priority: Priority = Priority.USER,
         job: str | None = None,
+        allow_queue: bool = True,
     ) -> asyncio.Future:
         """Enqueue work. Returns a future resolving to a CommandResult."""
         loop = asyncio.get_running_loop()
@@ -212,7 +225,7 @@ class DeviceWorker:
         item = _QueueItem(
             priority=int(priority), sequence=0,
             capability=capability, params=dict(params or {}),
-            future=future, job=job,
+            future=future, job=job, allow_queue=allow_queue,
         )
         if self._stopped:
             # A caller holding on to a replaced worker (a monitor tier that
@@ -240,8 +253,9 @@ class DeviceWorker:
         *,
         priority: Priority = Priority.USER,
         timeout: float = 120.0,
+        allow_queue: bool = True,
     ) -> CommandResult:
-        future = self.submit(capability, params, priority=priority)
+        future = self.submit(capability, params, priority=priority, allow_queue=allow_queue)
         try:
             return await asyncio.wait_for(future, timeout=timeout)
         except TimeoutError:
@@ -265,11 +279,14 @@ class DeviceWorker:
                 return
             if item.priority <= Priority.AUTOMATION:
                 self._urgent_waiting -= 1
-            if item.future is not None and item.future.done():
+            if (item.future is not None and item.future.done()
+                    and item.priority != Priority.EMERGENCY):
                 # The caller stopped waiting (its timeout fired) while this
                 # sat in the queue, and was told the command did not reach
                 # the device. Sending it now, minutes later, would make that
                 # untrue: a power-off nobody is waiting for any more.
+                # The emergency stop is the exception: it was told "still
+                # trying", and late is better than never for that one.
                 self._queue.task_done()
                 continue
             try:
@@ -336,10 +353,17 @@ class DeviceWorker:
                 capability=item.capability, outcome=CommandOutcome.UNSUPPORTED, error=reason
             )
 
+        if item.capability == "power.set" and item.allow_queue:
+            # The operator changed their mind (or pressed again): whatever
+            # power command was waiting for cool-down is no longer wanted.
+            self._cancel_power_queue()
+
         connected = await self._ensure_connection()
         if not connected:
             return CommandResult(
-                capability=item.capability, outcome=CommandOutcome.CONNECTION_ERROR,
+                capability=item.capability,
+                outcome=(CommandOutcome.AUTH_FAILED if self._auth_failed
+                         else CommandOutcome.CONNECTION_ERROR),
                 error=self.last_error or "could not connect to the projector",
             )
 
@@ -349,6 +373,13 @@ class DeviceWorker:
 
         if result.outcome is CommandOutcome.CONNECTION_ERROR:
             await self._safe_disconnect()
+
+        # Refused only for now: cooling down after a power-off, or still
+        # starting up. Hold the command and send it when the projector will
+        # take it, instead of making the operator wait and press again.
+        if (item.capability == "power.set" and item.allow_queue
+                and result.outcome is CommandOutcome.BUSY and result.raw_response):
+            result = self._queue_power(item.params, result)
 
         # Capability discovery: a device-side "unsupported" is durable
         # knowledge about this unit, so stop offering the control.
@@ -378,6 +409,89 @@ class DeviceWorker:
             **result.as_dict(),
         })
         return result
+
+    # -- power held during cool-down ---------------------------------------
+
+    def _cancel_power_queue(self) -> bool:
+        task, self._power_queue = self._power_queue, None
+        if task is not None and not task.done():
+            task.cancel()
+            return True
+        return False
+
+    def cancel_held_power(self) -> bool:
+        """Drop a power command waiting for cool-down; True if there was one.
+
+        The emergency stop calls this for a projector it does not send a
+        power off to (already off or cooling), so a power on held from
+        before cannot switch it back on a minute later.
+        """
+        return self._cancel_power_queue()
+
+    def _queue_power(self, params: Mapping[str, Any], refusal: CommandResult) -> CommandResult:
+        state = str(params.get("state", "")).strip().lower()
+        task = asyncio.create_task(
+            self._send_power_when_ready(dict(params)),
+            name=f"power-queue-{self.projector_id}",
+        )
+        self._power_queue = task
+        self._verifications.add(task)
+        task.add_done_callback(self._verifications.discard)
+        why = (refusal.error or "The projector is not taking power commands right now.").strip()
+        return CommandResult(
+            capability="power.set", outcome=CommandOutcome.QUEUED,
+            raw_request=refusal.raw_request, raw_response=refusal.raw_response,
+            error=f"{why} Power {state} will be sent by itself as soon as the projector "
+                  f"accepts it.",
+            latency_ms=refusal.latency_ms,
+        )
+
+    async def _send_power_when_ready(self, params: dict[str, Any]) -> None:
+        """Re-send a refused power command until the projector takes it.
+
+        Each round reads the power state first: a re-send that timed out may
+        still have acted, and a projector already in the wanted state needs
+        nothing more. Gives up after ``power_queue_seconds`` and says so.
+        """
+        expected = self._expected_state("power.set", params)
+        deadline = time.monotonic() + settings.power_queue_seconds
+        last: CommandResult | None = None
+        try:
+            while self._running and time.monotonic() < deadline:
+                await asyncio.sleep(settings.power_queue_interval)
+                check = await self.execute("power.get", priority=Priority.VERIFY, timeout=30.0)
+                if check.ok and (check.value == expected or (
+                        expected is PowerState.OFF and check.value is PowerState.COOLING)):
+                    bus.publish("command_verified", {
+                        "projector_id": self.projector_id, "name": self.name,
+                        "capability": "power.set", "outcome": CommandOutcome.CONFIRMED.value,
+                        "state": str(expected),
+                    })
+                    return
+                result = await self.execute("power.set", params, priority=Priority.AUTOMATION,
+                                            timeout=60.0, allow_queue=False)
+                if result.ok:
+                    return  # _handle verifies it and announces the outcome
+                last = result
+                if result.outcome in (CommandOutcome.AUTH_FAILED, CommandOutcome.REJECTED,
+                                      CommandOutcome.UNSUPPORTED, CommandOutcome.DEVICE_FAULT):
+                    break
+        finally:
+            if self._power_queue is asyncio.current_task():
+                self._power_queue = None
+        if not self._running:
+            return
+        state = str(params.get("state", "")).strip().lower()
+        detail = (last.error or last.outcome.value) if last else "no answer"
+        bus.publish("command_unverified", {
+            "projector_id": self.projector_id, "name": self.name,
+            "capability": "power.set",
+            "message": (
+                f"Power {state} was held for the projector, but it did not accept it "
+                f"({detail}). Check the projector for a warning light, then press "
+                f"Power {state} again."
+            ),
+        })
 
     async def _retry_if_appropriate(
         self, item: _QueueItem, result: CommandResult
@@ -447,7 +561,10 @@ class DeviceWorker:
             actual = check.value
             if expected is None:
                 break
-            if self._matches(actual, expected):
+            # Cooling is the projector turning off: the lamp is out, and a
+            # Panasonic cool-down can outlast the verification window.
+            if self._matches(actual, expected) or (
+                    expected is PowerState.OFF and actual is PowerState.COOLING):
                 bus.publish("command_verified", {
                     "projector_id": self.projector_id, "name": self.name,
                     "capability": capability, "outcome": CommandOutcome.CONFIRMED.value,
@@ -502,11 +619,13 @@ class DeviceWorker:
                 await self._safe_disconnect()
             else:
                 return True
+        self._auth_failed = False
         try:
             await self.driver.connect()
             await self.driver.authenticate()
         except TransportError as exc:
             self.last_error = str(exc)
+            self._auth_failed = isinstance(exc, AuthenticationError)
             await self._safe_disconnect()
             return False
         except Exception as exc:  # noqa: BLE001

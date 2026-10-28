@@ -588,3 +588,129 @@ async def test_people_over_the_live_feed_socket(api):
             await asyncio.wait_for(next_message(queue, "mapping_people"), timeout=0.3)
     finally:
         await bus.unsubscribe(queue)
+
+
+# -- undoing a calibration ---------------------------------------------------------
+
+
+async def calibrated_show(client, headers, camera_id, camera):
+    """Two outputs placed by hand, then calibrated, fitted and corrected."""
+    show = await make_show(client, headers)
+    hand = [
+        {"source": {"x": 0.0, "y": 0.0, "w": 0.6, "h": 1.0},
+         "warp": {"corners": [[0.02, 0.01], [0.97, 0.03], [0.99, 0.98], [0.01, 0.96]]}},
+        {"source": {"x": 0.4, "y": 0.0, "w": 0.6, "h": 1.0},
+         "warp": {"corners": [[0.05, 0.0], [1.0, 0.0], [0.95, 1.0], [0.0, 1.0]]}},
+    ]
+    outputs = []
+    for name, placed in zip(("Left", "Right"), hand, strict=True):
+        outputs.append((await client.post(f"/api/mapping/shows/{show['id']}/outputs",
+                                          headers=headers, json={"name": name, **placed})).json())
+    target = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    slices = [{"x": 0.0, "y": 0.0, "w": 0.55, "h": 1.0}, {"x": 0.45, "y": 0.0, "w": 0.55, "h": 1.0}]
+    for output, source in zip(outputs, slices, strict=True):
+        stored = await client.put(f"/api/mapping/outputs/{output['id']}/calibration",
+                                  headers=camera, json=decoded_grid(source, target, bulge=0.04))
+        assert stored.status_code == 200, stored.text
+    fitted = await client.post(f"/api/mapping/shows/{show['id']}/fit-canvas", headers=headers,
+                               json={"camera_id": camera_id})
+    assert fitted.status_code == 200, fitted.text
+    applied = await client.post(f"/api/mapping/shows/{show['id']}/apply-calibration",
+                                headers=headers, json={})
+    assert all(r["applied"] for r in applied.json()), applied.text
+    return show, outputs
+
+
+async def test_removing_the_calibration_puts_everything_back(api):
+    headers = await login(api)
+    camera_id, camera = await pair(api, headers, CAMERA)
+    show, outputs = await calibrated_show(api, headers, camera_id, camera)
+    changed = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert changed["camera_view"] is not None
+    assert [o["source"] for o in changed["outputs"]] != [o["source"] for o in outputs]
+    # A second run of the same output keeps what was there before the first.
+    again = await api.put(f"/api/mapping/outputs/{outputs[0]['id']}/calibration", headers=camera,
+                          json=decoded_grid({"x": 0.0, "y": 0.0, "w": 0.55, "h": 1.0},
+                                            [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]))
+    assert again.status_code == 200, again.text
+
+    queue = await bus.subscribe()
+    try:
+        removed = await api.post(f"/api/mapping/shows/{show['id']}/remove-calibration",
+                                 headers=headers)
+        assert removed.status_code == 200, removed.text
+        assert sorted(removed.json()["restored"]) == sorted(o["id"] for o in outputs)
+        stop = await next_message(queue, "mapping_calib_pattern")
+        assert stop["status"] == "failed" and stop["pattern"] is None
+    finally:
+        await bus.unsubscribe(queue)
+
+    back = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert back["camera_view"] is None
+    for was, now in zip(outputs, back["outputs"], strict=True):
+        assert now["source"] == was["source"]
+        assert now["warp"] == was["warp"]
+        assert now["calibration"] is None
+    gone = await api.get(f"/api/mapping/outputs/{outputs[0]['id']}/calibration", headers=headers)
+    assert gone.status_code == 404
+
+    # A run still going on the camera is refused from here on, so it stops...
+    step = {"output_id": outputs[0]["id"], "pattern": {"kind": "white"}}
+    assert (await api.post("/api/mapping/calibration/step", headers=camera,
+                           json=step)).status_code == 409
+    late = await api.put(f"/api/mapping/outputs/{outputs[0]['id']}/calibration", headers=camera,
+                         json=decoded_grid({"x": 0, "y": 0, "w": 1, "h": 1}, VIEW))
+    assert late.status_code == 409
+    # ...until it is asked to calibrate again.
+    asked = await api.post(f"/api/mapping/outputs/{outputs[0]['id']}/calibrate", headers=headers,
+                           json={"camera_id": camera_id})
+    assert asked.status_code == 202, asked.text
+    assert (await api.post("/api/mapping/calibration/step", headers=camera,
+                           json=step)).status_code == 204
+
+    # Nothing calibrated: removing again is harmless.
+    nothing = await api.post(f"/api/mapping/shows/{show['id']}/remove-calibration", headers=headers)
+    assert nothing.status_code == 200 and nothing.json()["restored"] == []
+
+
+async def test_removing_one_projector_keeps_the_others(api):
+    headers = await login(api)
+    camera_id, camera = await pair(api, headers, CAMERA)
+    show, outputs = await calibrated_show(api, headers, camera_id, camera)
+    left, right = outputs
+    cleared = await api.delete(f"/api/mapping/outputs/{left['id']}/calibration", headers=headers)
+    assert cleared.status_code == 204
+    now = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    by_id = {o["id"]: o for o in now["outputs"]}
+    assert by_id[left["id"]]["warp"] == left["warp"] and by_id[left["id"]]["calibration"] is None
+    assert by_id[right["id"]]["calibration"] is not None
+    assert now["camera_view"] is not None  # still used by the calibrated one
+
+    await api.delete(f"/api/mapping/outputs/{right['id']}/calibration", headers=headers)
+    now = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert now["camera_view"] is None
+    assert {o["id"]: o["source"] for o in now["outputs"]} == {o["id"]: o["source"] for o in outputs}
+
+
+async def test_an_older_calibration_goes_back_to_flat(api):
+    """Calibrated before the earlier shape was kept: flat, side by side, as a new show."""
+    from app.db.models import MappingOutput
+    from app.db.session import SessionLocal
+
+    headers = await login(api)
+    camera_id, camera = await pair(api, headers, CAMERA)
+    show, outputs = await calibrated_show(api, headers, camera_id, camera)
+    async with SessionLocal() as session:
+        for output in outputs:
+            row = await session.get(MappingOutput, output["id"])
+            row.calibration = {k: v for k, v in row.calibration.items() if k != "before"}
+        await session.commit()
+    removed = await api.post(f"/api/mapping/shows/{show['id']}/remove-calibration", headers=headers)
+    assert removed.status_code == 200, removed.text
+    back = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
+    assert back["camera_view"] is None
+    assert [o["source"] for o in back["outputs"]] == [
+        {"x": 0.0, "y": 0.0, "w": 0.5, "h": 1.0}, {"x": 0.5, "y": 0.0, "w": 0.5, "h": 1.0}]
+    for output in back["outputs"]:
+        assert output["warp"] == {"corners": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+                                  "mesh": None}

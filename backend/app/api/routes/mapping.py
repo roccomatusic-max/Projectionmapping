@@ -32,6 +32,7 @@ from app.db.models import (
     MappingCue,
     MappingOutput,
     MappingScene,
+    MappingSceneGroup,
     MappingShow,
     MediaAsset,
     Projector,
@@ -53,28 +54,42 @@ from app.schemas.mapping import (
     ShowOut,
     ShowSummary,
     ShowUpdate,
+    Timeline,
     TransportCommand,
     TransportState,
 )
 from app.services import canvas_layout
 from app.services.calibration import calibration_summary
-from app.services.mapping import TransportError, now_ms, transport
+from app.services.mapping import TransportError, describe_live, now_ms, transport
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/mapping", tags=["mapping"])
 
-#: Extensions the output renderer can play, with the type served for each.
-#: ProRes and HAP are absent on purpose: browsers do not decode them, and
-#: accepting a file that will render black is worse than refusing it.
+#: Extensions the output renderer (Chrome or Edge on the mini PCs) can play,
+#: with the type served for each. ProRes and HAP are absent on purpose:
+#: browsers do not decode them, and accepting a file that will render black
+#: is worse than refusing it. Sounds play in the show designer's timeline.
 MEDIA_TYPES: dict[str, tuple[str, str]] = {
     ".mp4": ("video", "video/mp4"),
     ".m4v": ("video", "video/mp4"),
     ".mov": ("video", "video/quicktime"),
     ".webm": ("video", "video/webm"),
+    ".ogv": ("video", "video/ogg"),
     ".png": ("image", "image/png"),
     ".jpg": ("image", "image/jpeg"),
     ".jpeg": ("image", "image/jpeg"),
     ".webp": ("image", "image/webp"),
+    ".gif": ("image", "image/gif"),
+    ".avif": ("image", "image/avif"),
+    ".bmp": ("image", "image/bmp"),
+    ".mp3": ("audio", "audio/mpeg"),
+    ".wav": ("audio", "audio/wav"),
+    ".m4a": ("audio", "audio/mp4"),
+    ".aac": ("audio", "audio/aac"),
+    ".ogg": ("audio", "audio/ogg"),
+    ".oga": ("audio", "audio/ogg"),
+    ".opus": ("audio", "audio/ogg"),
+    ".flac": ("audio", "audio/flac"),
 }
 
 #: Upload bytes gathered before each write to disk.
@@ -163,7 +178,8 @@ async def upload_media(
     asset = MediaAsset(
         name=Path(name).name, stored_name=stored_name, kind=kind,
         content_type=content_type, size_bytes=written,
-        width=width, height=height, duration=duration if kind == "video" else None,
+        width=width if kind != "audio" else None, height=height if kind != "audio" else None,
+        duration=duration if kind in ("video", "audio") else None,
     )
     session.add(asset)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="media_uploaded",
@@ -249,6 +265,11 @@ async def delete_media(media_id: int, session: SessionDep, admin: RequireAdmin) 
         if media_id in (cue.output_media or {}).values():
             cue.output_media = {output: (None if used == media_id else used)
                                 for output, used in cue.output_media.items()}
+        # Timeline clips playing it go, so the timeline still saves.
+        clips = (cue.timeline or {}).get("clips") or []
+        if any(clip.get("media_id") == media_id for clip in clips):
+            cue.timeline = {**cue.timeline,
+                            "clips": [c for c in clips if c.get("media_id") != media_id]}
     stored = asset.stored_name
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="media_deleted",
                       message=f"{admin.username} deleted {asset.name}"))
@@ -291,6 +312,7 @@ def _show_out(show: MappingShow) -> ShowOut:
         output_count=len(show.outputs), cue_count=len(show.cues), updated_at=show.updated_at,
         camera_view=show.camera_view or None,
         surfaces=show.surfaces or [],
+        every_cue_elements=show.every_cue_elements or [],
         outputs=[_output_out(o) for o in show.outputs],
         cues=[CueOut.model_validate(c) for c in show.cues],
     )
@@ -351,6 +373,8 @@ async def update_show(show_id: int, payload: ShowUpdate, session: SessionDep,
         changes["camera_view"] = changes["camera_view"] or {}
     if "surfaces" in changes:
         changes["surfaces"] = changes["surfaces"] or []
+    if "every_cue_elements" in changes:
+        changes["every_cue_elements"] = changes["every_cue_elements"] or []
     if "name" in changes and changes["name"] != show.name and (await session.execute(
         select(MappingShow.id).where(MappingShow.name == changes["name"])
     )).first():
@@ -433,6 +457,25 @@ async def update_output(output_id: int, payload: OutputUpdate, session: SessionD
     return out
 
 
+# A corner, mesh point, mask or blend on the move in the editor, sent many
+# times a second while the handle is dragged. Nothing is written: players
+# move the picture straight away and the editor saves (PATCH above) when
+# the handle is let go.
+LIVE_FIELDS = {"width", "height", "source", "warp", "masks", "blend", "color", "test_pattern", "enabled"}
+
+
+@router.post("/outputs/{output_id}/live", status_code=status.HTTP_204_NO_CONTENT,
+             response_model=None)
+async def live_output(output_id: int, payload: OutputUpdate, session: SessionDep,
+                      _: RequireAdmin) -> None:
+    output = await _load_output(session, output_id)
+    changes = {field: getattr(payload, field) for field in payload.model_fields_set & LIVE_FIELDS
+               if getattr(payload, field) is not None}
+    out = _output_out(output).model_copy(update=changes)
+    _touch(output.show_id, kind="mapping_output",
+           payload={"output": out.model_dump(mode="json"), "live": True})
+
+
 @router.delete("/outputs/{output_id}", status_code=status.HTTP_204_NO_CONTENT,
                response_model=None, dependencies=[Depends(write_rate_limit)])
 async def delete_output(output_id: int, session: SessionDep, _: RequireAdmin) -> None:
@@ -447,6 +490,11 @@ async def delete_output(output_id: int, session: SessionDep, _: RequireAdmin) ->
             choices = getattr(cue, field) or {}
             if key in choices:
                 setattr(cue, field, {k: v for k, v in choices.items() if k != key})
+    for group in (await session.execute(
+        select(MappingSceneGroup).where(MappingSceneGroup.show_id == show_id)
+    )).scalars():
+        if key in (group.output_scenes or {}):
+            group.output_scenes = {k: v for k, v in group.output_scenes.items() if k != key}
     await session.delete(output)
     await session.flush()
     remaining = (await session.execute(
@@ -471,9 +519,15 @@ async def identify_output(output_id: int, session: SessionDep, _: RequireAdmin) 
 
 
 async def _check_media(session, media_id: int | None) -> None:
-    if media_id is not None and await session.get(MediaAsset, media_id) is None:
+    if media_id is None:
+        return
+    asset = await session.get(MediaAsset, media_id)
+    if asset is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"Unknown media id {media_id}")
+    if asset.kind == "audio":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"{asset.name} is a sound; put it on a timeline in the Show designer")
 
 
 async def _check_scene(session, scene_id: int | None) -> None:
@@ -513,6 +567,24 @@ async def _check_output_media(session, show_id: int, output_media: dict | None) 
     return {str(output_id): media_id for output_id, media_id in output_media.items()}
 
 
+async def _check_timeline(session, timeline: Timeline | None) -> None:
+    """Every file a timeline plays is in the media library, and of the right kind."""
+    if timeline is None:
+        return
+    for clip in timeline.clips:
+        if clip.media_id is None:
+            continue
+        asset = await session.get(MediaAsset, clip.media_id)
+        if asset is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Unknown media id {clip.media_id}")
+        wanted = ("audio",) if clip.kind == "sound" else ("video", "image")
+        if asset.kind not in wanted:
+            what = "a sound" if clip.kind == "sound" else "a video or picture"
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"{asset.name} is not {what}")
+
+
 async def _renumber_cues(session, show_id: int, order: list[int] | None = None) -> None:
     cues = (await session.execute(
         select(MappingCue).where(MappingCue.show_id == show_id).order_by(MappingCue.position)
@@ -534,6 +606,7 @@ async def create_cue(show_id: int, payload: CueCreate, session: SessionDep,
     fields = payload.model_dump()
     fields["output_scenes"] = await _check_output_scenes(session, show.id, payload.output_scenes)
     fields["output_media"] = await _check_output_media(session, show.id, payload.output_media)
+    await _check_timeline(session, payload.timeline)
     cue = MappingCue(show_id=show.id, position=len(show.cues), **fields)
     session.add(cue)
     await session.commit()
@@ -551,6 +624,8 @@ async def update_cue(cue_id: int, payload: CueUpdate, session: SessionDep,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Cue {cue_id} not found")
     changes = payload.model_dump(exclude_unset=True)
+    if "elements" in changes:
+        changes["elements"] = changes["elements"] or []
     if "media_id" in changes:
         await _check_media(session, changes["media_id"])
     if "scene_id" in changes:
@@ -561,6 +636,8 @@ async def update_cue(cue_id: int, payload: CueUpdate, session: SessionDep,
     if "output_media" in changes:
         changes["output_media"] = await _check_output_media(
             session, cue.show_id, changes["output_media"])
+    if "timeline" in changes:
+        await _check_timeline(session, payload.timeline)
     for field, value in changes.items():
         setattr(cue, field, value)
     await session.commit()
@@ -613,10 +690,11 @@ async def command_transport(payload: TransportCommand, session: SessionDep,
                             user: RequireOperator) -> TransportState:
     try:
         state = await transport.command(payload.action, show_id=payload.show_id,
-                                        cue=payload.cue)
+                                        cue=payload.cue, scene_id=payload.scene_id,
+                                        fade_seconds=payload.fade_seconds)
     except TransportError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
-    cue = f" cue {state.current.position + 1}" if state.current else ""
+    cue = describe_live(state)
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="show_transport",
                       message=f"{user.username}: {payload.action}{cue}"))
     await session.commit()
@@ -627,7 +705,8 @@ async def command_transport(payload: TransportCommand, session: SessionDep,
 async def clock(_: RequireViewer) -> dict:
     """Server time for the output windows' clock-offset estimate.
 
-    ``monotonic`` lets a client discard a sample taken across a server
-    clock step; ``now_ms`` is what transport timestamps are expressed in.
+    ``now_ms`` is the show clock every transport time is told in (see
+    services/mapping.ShowClock): it never jumps when the computer's time is
+    adjusted. ``monotonic`` is kept for older pages.
     """
     return {"now_ms": now_ms(), "monotonic": time.monotonic()}

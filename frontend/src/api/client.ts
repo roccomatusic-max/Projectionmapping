@@ -19,6 +19,7 @@ import type {
   Role,
   Scene,
   TelemetryPoint,
+  TemperatureHistory,
 } from './types'
 
 const TOKEN_KEY = 'pc.token'
@@ -137,6 +138,33 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
   return parsed as T
 }
 
+export type HomeAssistantSetupStatus = {
+  connected: boolean
+  connected_since: string | null
+  last_seen: string | null
+  integration_version: string | null
+  installed_version: string | null
+  server_address: string | null
+  local_only: boolean
+}
+
+export type PhoneAlertTopic = 'hot' | 'offline' | 'minipc' | 'show' | 'other' | 'showtime'
+
+export type PhoneAlertsStatus = {
+  service: 'off' | 'ntfy' | 'pushover'
+  ready: boolean
+  ntfy_server: string
+  ntfy_topic: string
+  pushover_user_hint: string | null
+  pushover_token_hint: string | null
+  topics: Record<PhoneAlertTopic, boolean>
+  all_clear: boolean
+  last_ok: boolean | null
+  last_message: string | null
+  /** Seconds since 1970. */
+  last_at: number | null
+}
+
 export const api = {
   // -- auth ---------------------------------------------------------------
   /** ``remember``: stay signed in for months (the phone remote) rather than a day. */
@@ -210,9 +238,9 @@ export const api = {
     }),
 
   // -- history ------------------------------------------------------------
-  telemetry: (id: number, metric?: string, days = 7) =>
+  telemetry: (id: number, metric?: string, days = 7, prefix?: string) =>
     request<{ points: TelemetryPoint[] }>(
-      `/projectors/${id}/telemetry?days=${days}${metric ? `&metric=${metric}` : ''}`,
+      `/projectors/${id}/telemetry?days=${days}${metric ? `&metric=${metric}` : ''}${prefix ? `&prefix=${encodeURIComponent(prefix)}` : ''}`,
     ),
   commandHistory: (id: number, limit = 100) =>
     request<{ commands: CommandLogRow[] }>(`/projectors/${id}/commands?limit=${limit}`),
@@ -262,6 +290,8 @@ export const api = {
       usage: Array<{ projector_id: number; day: string; estimated_on_hours: number }>
       faults: Array<{ projector_id: number; count: number }>
     }>(`/analytics/usage?days=${days}`),
+  temperatures: (projectorId: number, hours: number) =>
+    request<TemperatureHistory>(`/analytics/temperatures?projector_id=${projectorId}&hours=${hours}`),
 
   // -- automation ---------------------------------------------------------
   listAutomations: () => request<Automation[]>('/automations'),
@@ -302,6 +332,29 @@ export const api = {
   addMaintenance: (body: Record<string, unknown>) =>
     request<MaintenanceRecord>('/maintenance', { method: 'POST', body }),
   maintenanceCsvUrl: () => '/api/maintenance/export.csv',
+
+  // -- Home Assistant -----------------------------------------------------
+  homeAssistantSetup: () => request<HomeAssistantSetupStatus>('/integration/homeassistant/setup'),
+  homeAssistantInstallLine: () =>
+    request<{ line: string; code: string; expires_at: string; server_address: string }>(
+      '/integration/homeassistant/install-line', { method: 'POST' }),
+  homeAssistantKey: () =>
+    request<{ key: string; expires_at: string; server_address: string | null }>(
+      '/integration/homeassistant/key', { method: 'POST' }),
+  homeAssistantDisconnect: () =>
+    request<void>('/integration/homeassistant/key', { method: 'DELETE' }),
+
+  // -- phone alerts -------------------------------------------------------
+  phoneAlerts: () => request<PhoneAlertsStatus>('/phone-alerts'),
+  setPhoneAlerts: (body: {
+    service?: PhoneAlertsStatus['service']
+    pushover_user?: string
+    pushover_token?: string
+    topics?: Partial<Record<PhoneAlertTopic, boolean>>
+    all_clear?: boolean
+  }) => request<PhoneAlertsStatus>('/phone-alerts', { method: 'PUT', body }),
+  newPhoneAlertChannel: () => request<PhoneAlertsStatus>('/phone-alerts/new-channel', { method: 'POST' }),
+  testPhoneAlert: () => request<{ ok: boolean; message: string }>('/phone-alerts/test', { method: 'POST' }),
 
   // -- system -------------------------------------------------------------
   health: () => request<{ status: string; devices_registered: number }>('/health'),

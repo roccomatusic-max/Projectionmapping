@@ -1,9 +1,11 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { withDefaults } from './geometry'
-import { useLocalChannel } from './live'
+import { type LinkStatus, type ServerClock, useLocalChannel } from './live'
 import { type CalibrationFrame, type FrameStats, OutputView } from './OutputView'
 import type { CalibrationStepMessage, Show } from './types'
+import { liveLabel } from './types'
+import { timelineMediaIds } from './scene/timeline'
 import { useShowRuntime } from './useShowRuntime'
 
 /** A calibration that stops sending frames (camera gone) ends after this. */
@@ -38,6 +40,29 @@ const STATUS_LABEL = {
   blackout: 'Blackout',
 } as const
 
+/** What a player reports about its picture, for the Players page. */
+export type OutputStats = FrameStats & {
+  width: number
+  height: number
+  cue: string | null
+  /** Half the round trip to the server clock (ms), null until it is set. */
+  clockMs: number | null
+  /** How far this projector's picture can be from the show clock, by its
+   *  own measure (ms): the clock's uncertainty, what it is still easing in,
+   *  and the video's drift. Null until the clock is set. */
+  syncMs: number | null
+  /** Times the clock had to jump rather than ease into step. */
+  clockSteps: number
+  /** This page's show clock, for the heartbeat's own check on it. */
+  clock: ServerClock
+  link: LinkStatus
+  /** The status overlay is on the projector. */
+  overlay: boolean
+}
+
+/** A player page asks its output to show or hide the status overlay with this event. */
+export const OVERLAY_EVENT = 'pc:player-overlay'
+
 /** An output window opened from the editor on an operator's computer. */
 export default function OutputPage() {
   const params = useParams()
@@ -56,13 +81,16 @@ export function OutputScreen({
   hudExtra,
   onStats,
   onShow,
+  trimMs = 0,
 }: {
   showId: number
   outputId: number
+  /** Draw this much later (ms; negative is earlier), set on the Players page. */
+  trimMs?: number
   /** Set on a paired player, so "identify" requests for it are honoured. */
   playerId?: number
   hudExtra?: ReactNode
-  onStats?: (stats: FrameStats & { width: number; height: number; cue: string | null }) => void
+  onStats?: (stats: OutputStats) => void
   /** The show, and the pictures its cues' scenes show, to download ahead. */
   onShow?: (show: Show, sceneMedia: number[]) => void
 }) {
@@ -112,7 +140,7 @@ export function OutputScreen({
   const { show, setShow, scenes, transport, link, clock, playback, error } = runtime
   const [hud, setHud] = useState(playerId == null)
   const [identify, setIdentify] = useState(false)
-  const [stats, setStats] = useState<FrameStats>({ fps: 0, drift: null, sceneScale: null })
+  const [stats, setStats] = useState<FrameStats>({ fps: 0, drift: null, dropped: 0, sceneScale: null })
   const [size, setSize] = useState<[number, number]>(() => pixelSize())
   const identifyTimer = useRef<number>()
 
@@ -127,21 +155,44 @@ export function OutputScreen({
     const ids = scenes
       .filter((s) => used.has(s.id))
       .flatMap((s) => s.layers.map((l) => l.media_id).filter((id): id is number => id != null))
-    return [...new Set(ids)].sort((a, b) => a - b)
-  }, [show, scenes])
+    // And every video, picture and sound the cues' timelines play.
+    const timelines = show?.cues.flatMap((c) => timelineMediaIds(c.timeline)) ?? []
+    return [...new Set([...ids, ...timelines])].sort((a, b) => a - b)
+  }, [show?.cues, scenes])
   const sceneMediaKey = sceneMedia.join(',')
 
+  // Not again for a corner nudged live (only the outputs change then, many
+  // times a second); a reloaded show brings new cues and checks again.
   useEffect(() => {
     if (show) onShow?.(show, sceneMedia)
-  }, [show, sceneMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [show?.id, show?.cues, sceneMediaKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const statsRef = useRef({ size, transport })
-  statsRef.current = { size, transport }
+  // Shown when asked from the Players page; H on a keyboard still toggles it.
+  useEffect(() => {
+    if (playerId == null) return
+    const onOverlay = (event: Event) => setHud(Boolean((event as CustomEvent<boolean>).detail))
+    window.addEventListener(OVERLAY_EVENT, onOverlay)
+    return () => window.removeEventListener(OVERLAY_EVENT, onOverlay)
+  }, [playerId])
+
+  const statsRef = useRef({ size, transport, clock, link, hud })
+  statsRef.current = { size, transport, clock, link, hud }
   const handleStats = useCallback(
     (frame: FrameStats) => {
       setStats(frame)
-      const { size: [width, height], transport: t } = statsRef.current
-      onStats?.({ ...frame, width, height, cue: t?.current ? `${t.current.position + 1} ${t.current.name}` : null })
+      const { size: [width, height], transport: t, clock: c, link: l, hud: h } = statsRef.current
+      onStats?.({
+        ...frame,
+        width,
+        height,
+        cue: t?.current ? (t.current.position < 0 ? `scene ${t.current.name}` : `${t.current.position + 1} ${t.current.name}`) : null,
+        clockMs: c.synced ? Math.round(c.rtt / 2) : null,
+        syncMs: c.synced ? Math.round(c.uncertainty + Math.abs(c.easing) + Math.abs((frame.drift ?? 0) * 1000)) : null,
+        clockSteps: c.steps,
+        clock: c,
+        link: l,
+        overlay: h,
+      })
     },
     [onStats],
   )
@@ -184,13 +235,22 @@ export function OutputScreen({
     return () => playback.setOutputs(null)
   }, [playback, outputId])
 
+  // And plays the timeline sounds meant for its projector (the show's
+  // first one plays those not given to a projector of their own).
+  const firstOutput = show ? [...show.outputs].sort((a, b) => a.position - b.position)[0]?.id ?? null : null
+  useEffect(() => {
+    playback.setSound(true, firstOutput)
+    return () => playback.setSound(false, null)
+  }, [playback, firstOutput])
+
   useEffect(() => {
     document.title = output ? `${output.name} · Output` : 'Output'
   }, [output])
 
   // Hide the cursor over the image once the overlay is away. During a
-  // calibration nothing but the pattern may be on screen.
-  const showHud = hud && !calibration
+  // calibration nothing but the pattern may be on screen, and during the
+  // emergency stop nothing at all.
+  const showHud = hud && !calibration && !transport?.emergency
   const cursor = showHud ? 'default' : 'none'
 
   if (error) return <Message text={error} />
@@ -214,6 +274,7 @@ export function OutputScreen({
         calibration={calibration}
         interaction={transport?.current?.interaction ?? 'none'}
         outputs={show.outputs}
+        trimMs={trimMs}
       />
       {showHud && (
         <div className="pointer-events-none absolute left-4 top-4 space-y-1 rounded-lg bg-black/70 px-4 py-3 font-mono text-xs text-slate-200 ring-1 ring-white/10">
@@ -222,11 +283,14 @@ export function OutputScreen({
           </p>
           <p>
             {transport ? STATUS_LABEL[transport.status] : '—'}
-            {transport?.current ? ` · cue ${transport.current.position + 1} ${transport.current.name}` : ''}
+            {transport?.current ? ` · ${liveLabel(transport.current)}` : ''}
           </p>
           <p>
-            link {link} · clock {clock.synced ? `±${Math.round(clock.rtt / 2)} ms` : 'syncing'} · {stats.fps.toFixed(0)} fps
+            link {link} · clock {clock.synced ? `±${Math.max(1, Math.round(clock.uncertainty))} ms` : 'syncing'}
+            {clock.steps ? ` (${clock.steps} jump${clock.steps === 1 ? '' : 's'})` : ''} · {stats.fps.toFixed(0)} fps
+            {stats.dropped ? ` · ${stats.dropped} dropped` : ''}
             {stats.drift != null ? ` · drift ${(stats.drift * 1000).toFixed(0)} ms` : ''}
+            {trimMs ? ` · shifted ${trimMs > 0 ? '+' : ''}${trimMs} ms` : ''}
             {stats.sceneScale != null ? ` · scene detail ${Math.round(stats.sceneScale * 100)}%` : ''}
           </p>
           <p className={mismatch ? 'text-amber-300' : 'text-slate-400'}>

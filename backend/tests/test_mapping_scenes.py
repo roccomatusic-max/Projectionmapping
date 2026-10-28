@@ -136,6 +136,26 @@ async def test_surfaces_are_traced_per_show(api):
     assert cleared.json()["surfaces"] == []
 
 
+async def test_a_house_part_can_be_straightened(api):
+    headers = await login(api)
+    show = await make_show(api, headers)
+    roof = {"id": "roof", "kind": "roof", "points": [[0.1, 0.1], [0.9, 0.1], [0.7, 0.4], [0.3, 0.4]],
+            "flat": {"corners": [[0.4, 0.15], [0.6, 0.15], [0.65, 0.35], [0.35, 0.35]],
+                     "test_until": 1.9e12}}
+    saved = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers,
+                            json={"surfaces": [HOUSE[0], roof]})
+    assert saved.status_code == 200, saved.text
+    parts = saved.json()["surfaces"]
+    assert parts[0]["flat"] is None
+    assert parts[1]["flat"] == roof["flat"]
+
+    # Four corners, on or near the canvas.
+    for corners in ([[0, 0], [1, 0], [1, 1]], [[0, 0], [1, 0], [1, 1], [0, 99]]):
+        refused = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers,
+                                  json={"surfaces": [{**roof, "flat": {"corners": corners}}]})
+        assert refused.status_code == 422
+
+
 async def test_simulated_people_reach_the_outputs(api):
     headers = await login(api)
     show = await make_show(api, headers)
@@ -438,6 +458,17 @@ async def test_christmas_countdown_is_a_scene_layer(api):
     assert moved.status_code == 200, moved.text
     assert moved.json()["layers"][0]["pins"] == [{"x": 0.3, "y": 0.6, "size": 1.4, "rotation": -12.0}]
 
+    # Its own colour for each part; parts left out keep the look's.
+    recoloured = await api.patch(f"/api/mapping/scenes/{created.json()['id']}", headers=headers, json={
+        "layers": [{**countdown, "colors": {"number": "#00ff88", "caption": "#ffffff", "decorations": "#123abc"}}]})
+    assert recoloured.status_code == 200, recoloured.text
+    colors = recoloured.json()["layers"][0]["colors"]
+    assert colors["number"] == "#00ff88" and colors["decorations"] == "#123abc"
+    assert colors["depth"] is None and colors["clock"] is None
+    refused = await api.patch(f"/api/mapping/scenes/{created.json()['id']}", headers=headers, json={
+        "layers": [{**countdown, "colors": {"number": "green"}}]})
+    assert refused.status_code == 422
+
     assert "countdown" in scene_ai._catalog_text()
     layers = scene_ai.to_layers([{"type": "countdown", "style": "sparkly", "size": 3, "near": "flee"}])
     assert layers[0].style == "gold" and layers[0].size == 1.0 and layers[0].near == "none"
@@ -450,7 +481,8 @@ async def test_changing_a_scene_keeps_objects_placed_by_hand(api, monkeypatch):
     pins = [{"x": 0.3, "y": 0.8, "size": 1.0, "rotation": 0.0}, {"x": 0.6, "y": 0.8, "size": 2.0, "rotation": 15.0}]
     scene = (await api.post("/api/mapping/scenes", headers=headers, json={
         "name": "Porch pumpkins", "layers": [
-            {"type": "countdown", "style": "gold", "pins": [{"x": 0.7, "y": 0.3, "rotation": 10}]},
+            {"type": "countdown", "style": "gold", "pins": [{"x": 0.7, "y": 0.3, "rotation": 10}],
+             "colors": {"number": "#00ff88", "clock": "#ff00aa"}},
             {"type": "shapes", "style": "pumpkins", "pins": pins}]})).json()
 
     calls: list = []
@@ -478,8 +510,12 @@ async def test_changing_a_scene_keeps_objects_placed_by_hand(api, monkeypatch):
     assert pumpkins["pins"] == pins
     assert countdown["pins"] == [{"x": 0.7, "y": 0.3, "size": 1.0, "rotation": 10.0}]
     assert bats["pins"] is None
-    # Claude is not sent the positions.
+    # The countdown keeps the colours picked for its parts.
+    assert countdown["colors"]["number"] == "#00ff88" and countdown["colors"]["clock"] == "#ff00aa"
+    assert bats["colors"] is None
+    # Claude is not sent the positions or the part colours.
     assert '"pins"' not in calls[-1]["messages"][0]["content"]
+    assert '"colors"' not in calls[-1]["messages"][0]["content"]
 
 
 async def test_a_cue_plays_different_scenes_on_different_projectors(api):
@@ -525,3 +561,29 @@ async def test_a_cue_plays_different_scenes_on_different_projectors(api):
     reloaded = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()
     assert reloaded["cues"][0]["output_scenes"] == {str(garage): None, str(house): None}
     assert reloaded["cues"][0]["scene_id"] == ghosts["id"]
+
+
+async def test_a_driveway_is_a_ground_part_scenes_can_target(api):
+    """A projector on the roof pointing down: the driveway is traced as a
+    ground part, and its scenes put footprints and a welcome mat on it."""
+    headers = await login(api)
+    show = await make_show(api, headers)
+    driveway = {"id": "drive", "name": "Driveway", "kind": "ground",
+                "points": [[0.6, 0.6], [1.0, 0.6], [1.0, 1.0], [0.6, 1.0]]}
+    saved = await api.patch(f"/api/mapping/shows/{show['id']}", headers=headers,
+                            json={"surfaces": [*HOUSE, driveway]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["surfaces"][-1]["kind"] == "ground"
+
+    created = await api.post("/api/mapping/scenes", headers=headers, json={
+        "name": "Welcome mat", "layers": [
+            {"type": "shapes", "style": "welcome-mat", "target": "ground",
+             "pins": [{"x": 0.8, "y": 0.8, "size": 0.9}]},
+            {"type": "trails", "style": "footprints"},
+            {"type": "lights", "style": "chase", "target": "ground"},
+        ]})
+    assert created.status_code == 201, created.text
+    mat, steps, lights = created.json()["layers"]
+    assert (mat["style"], mat["target"]) == ("welcome-mat", "ground")
+    assert steps["style"] == "footprints"
+    assert lights["target"] == "ground"

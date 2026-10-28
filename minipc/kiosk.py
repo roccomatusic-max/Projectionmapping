@@ -210,6 +210,38 @@ class Kiosk:
             self.process = None
             self._next_start = self._started_at + MAX_BACKOFF_SECONDS
 
+    def adopt(self, secure_origin: str | None) -> bool:
+        """Keep the window an app that updated itself left open, instead of
+        reopening it: the projector never sees the desktop."""
+        open_now = browsers_on(self.profile)
+        if not open_now:
+            return False
+        self.process = open_now[0]
+        self.secure_origin = secure_origin
+        self._started_at = time.monotonic()
+        log.info("kept the output window that was already open")
+        return True
+
+    def adopt_leftover(self) -> bool:
+        """Keep a window an earlier run of the app left open on the show.
+
+        When the app stops and starts again (a crash, an update, the
+        watchdog), the window may still be playing: closing and reopening it
+        would flash the desktop on the projector. Only a window that was
+        showing a server's player page is kept; one still on the local
+        waiting page is closed and reopened as before.
+        """
+        flag = "--unsafely-treat-insecure-origin-as-secure="
+        for process in browsers_on(self.profile):
+            try:
+                command = process.cmdline()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            origin = next((arg[len(flag):] for arg in command if arg.startswith(flag)), None)
+            if origin:
+                return self.adopt(origin)
+        return False
+
     def ensure(self) -> None:
         """Open the window if it is not open; call this regularly."""
         if self.running:

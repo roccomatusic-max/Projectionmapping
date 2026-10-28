@@ -2,10 +2,13 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 import { api, clearSession, getSession, type Session } from '@/api/client'
 import type { CommandResult, Projector } from '@/api/types'
 import { ConfirmDialog } from '@/components/ui'
+import { EmergencyBanner, EmergencyStopButton, type UsePower } from '@/components/EmergencyStop'
 import {
   AddToHomeIcon,
   BlackoutIcon,
+  CalendarIcon,
   ChevronDownIcon,
+  ClockIcon,
   MoreIcon,
   PauseIcon,
   PowerIcon,
@@ -19,10 +22,15 @@ import {
 import { useFleet } from '@/hooks/useLiveData'
 import { OUTCOME_LABEL, classNames } from '@/lib/format'
 import { mappingApi } from '@/mapping/api'
+import { useWalkInfo } from '@/lib/walkthrough'
 import { formatDuration } from '@/mapping/editor/controls'
 import { ServerClock, useMappingFeed } from '@/mapping/live'
 import type { Show, ShowSummary, TransportAction, TransportState } from '@/mapping/types'
 import { addHomeScreenTags, onHomeScreen, phoneKind } from './homeScreen'
+import TonightTab from './TonightTab'
+import CalendarTab from './CalendarTab'
+import MessageBoards from './MessageBoards'
+import WalkTheYard, { WalkCard } from './WalkTheYard'
 
 /**
  * Show Remote: run the show and switch the projectors from a phone.
@@ -34,7 +42,7 @@ import { addHomeScreenTags, onHomeScreen, phoneKind } from './homeScreen'
  */
 
 const SHOW_KEY = 'pc.remote.show'
-type Tab = 'show' | 'projectors'
+type Tab = 'show' | 'tonight' | 'calendar' | 'projectors'
 
 export default function RemotePage() {
   const [session, setSession] = useState<Session | null>(() => getSession())
@@ -57,18 +65,67 @@ export default function RemotePage() {
       {!session ? (
         <Welcome onSignedIn={setSession} />
       ) : (
-        <>
-          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {tab === 'show' ? <ShowTab session={session} onSignOut={signOut} /> : <ProjectorsTab session={session} />}
-          </main>
-          <nav className="grid grid-cols-2 border-t border-white/[0.06] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
-            <TabButton active={tab === 'show'} onClick={() => setTab('show')} icon={<SceneIcon size={22} />} label="Show" />
-            <TabButton active={tab === 'projectors'} onClick={() => setTab('projectors')}
-              icon={<ProjectorIcon size={22} />} label="Projectors" />
-          </nav>
-        </>
+        <SignedIn session={session} tab={tab} onTab={setTab} onSignOut={signOut} />
       )}
     </div>
+  )
+}
+
+/** Each projector's power, read only while the emergency stop's report is open. */
+const usePhonePower: UsePower = () => {
+  const { projectors } = useFleet(5000)
+  return (id) => projectors.find((p) => p.id === id)?.state.power
+}
+
+function SignedIn({ session, tab, onTab, onSignOut }: {
+  session: Session
+  tab: Tab
+  onTab: (tab: Tab) => void
+  onSignOut: () => void
+}) {
+  const canRun = session.role === 'admin' || session.role === 'operator'
+  const [showId, setShowId] = useState<number | null>(() => Number(localStorage.getItem(SHOW_KEY)) || null)
+  // One live link for both tabs: the emergency stop is on either.
+  const live = useTransport(showId)
+  const [walking, setWalking] = useState(false)
+  const walkInfo = useWalkInfo(walking ? 60_000 : 15_000)
+
+  useEffect(() => {
+    if (showId != null) localStorage.setItem(SHOW_KEY, String(showId))
+  }, [showId])
+
+  return (
+    <>
+      {canRun && (
+        <div className="space-y-2 px-4 pt-2">
+          <EmergencyBanner emergency={live.transport?.emergency} canClear={canRun} variant="remote" />
+          <EmergencyStopButton variant="remote" usePower={usePhonePower} />
+        </div>
+      )}
+      {walkInfo?.active && !walking && (
+        <div className="px-4 pt-2">
+          <WalkCard info={walkInfo} onWalk={() => setWalking(true)} />
+        </div>
+      )}
+      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {tab === 'show'
+          ? <ShowTab session={session} onSignOut={onSignOut} showId={showId} onShowId={setShowId} live={live} />
+          : tab === 'tonight'
+            ? <TonightTab session={session} transport={live.transport} onCalendar={() => onTab('calendar')}
+                walk={<WalkCard info={walkInfo} onWalk={() => setWalking(true)} />} />
+            : tab === 'calendar'
+              ? <CalendarTab session={session} />
+              : <ProjectorsTab session={session} walk={<WalkCard info={walkInfo} onWalk={() => setWalking(true)} />} />}
+      </main>
+      {walking && <WalkTheYard session={session} onClose={() => setWalking(false)} />}
+      <nav className="grid grid-cols-4 border-t border-white/[0.06] bg-panel-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+        <TabButton active={tab === 'show'} onClick={() => onTab('show')} icon={<SceneIcon size={22} />} label="Show" />
+        <TabButton active={tab === 'tonight'} onClick={() => onTab('tonight')} icon={<ClockIcon size={22} />} label="Tonight" />
+        <TabButton active={tab === 'calendar'} onClick={() => onTab('calendar')} icon={<CalendarIcon size={22} />} label="Calendar" />
+        <TabButton active={tab === 'projectors'} onClick={() => onTab('projectors')}
+          icon={<ProjectorIcon size={22} />} label="Projectors" />
+      </nav>
+    </>
   )
 }
 
@@ -237,15 +294,20 @@ function useTransport(showId: number | null) {
   return { show, transport, clock, link, error }
 }
 
-function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+function ShowTab({ session, onSignOut, showId, onShowId: setShowId, live }: {
+  session: Session
+  onSignOut: () => void
+  showId: number | null
+  onShowId: (update: number | null | ((current: number | null) => number | null)) => void
+  live: ReturnType<typeof useTransport>
+}) {
   const canRun = session.role === 'admin' || session.role === 'operator'
   const [shows, setShows] = useState<ShowSummary[] | null>(null)
-  const [showId, setShowId] = useState<number | null>(() => Number(localStorage.getItem(SHOW_KEY)) || null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [picked, setPicked] = useState<number | null>(null)
   const [menu, setMenu] = useState(false)
-  const { show, transport, clock, link, error } = useTransport(showId)
+  const { show, transport, clock, link, error } = live
   const [, tick] = useState(0)
 
   useEffect(() => {
@@ -256,16 +318,12 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
         setShowId((current) => (current && list.some((s) => s.id === current) ? current : list[0]?.id ?? null))
       })
       .catch((err) => setProblem(err instanceof Error ? err.message : 'Could not load the shows'))
-  }, [])
+  }, [setShowId])
 
   // Follow the show that goes live, wherever it was started from.
   useEffect(() => {
     if (transport?.show_id && transport.status !== 'stopped') setShowId(transport.show_id)
-  }, [transport?.show_id, transport?.status])
-
-  useEffect(() => {
-    if (showId != null) localStorage.setItem(SHOW_KEY, String(showId))
-  }, [showId])
+  }, [transport?.show_id, transport?.status, setShowId])
 
   useEffect(() => {
     const timer = window.setInterval(() => tick((n) => n + 1), 250)
@@ -288,7 +346,9 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
     }
   }
 
-  const thisShow = !!show && transport?.show_id === show.id
+  const held = !!transport?.emergency
+  // A scene an automation plays on its own is live on every show; GO then starts this one.
+  const thisShow = !!show && (transport?.show_id === show.id || (transport?.current?.position ?? 0) < 0)
   const status = thisShow && transport ? transport.status : 'stopped'
   const look = STATUS[status]
   const current = thisShow ? transport?.current ?? null : null
@@ -378,7 +438,7 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
               </div>
               <p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">Now</p>
               <p className="mt-0.5 truncate text-[22px] font-semibold leading-tight text-slate-50">
-                {current ? <><span className="text-slate-500">{current.position + 1}</span>  {current.name || 'Untitled cue'}</> : 'Nothing playing'}
+                {current ? <><span className="text-slate-500">{current.position < 0 ? 'Scene' : current.position + 1}</span>  {current.name || 'Untitled cue'}</> : 'Nothing playing'}
               </p>
               <div className="mt-4 border-t border-white/[0.06] pt-3">
                 <p className="truncate text-[15px] text-slate-400">
@@ -392,16 +452,17 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
 
           <button
             className="group relative flex h-40 flex-col items-center justify-center overflow-hidden rounded-3xl bg-gradient-to-b from-emerald-500 to-emerald-700 text-white shadow-[0_18px_40px_-16px_rgba(16,185,129,0.75),inset_0_1px_0_rgba(255,255,255,0.25)] transition duration-100 active:scale-[0.97] active:from-emerald-400 disabled:from-panel-750 disabled:to-panel-800 disabled:text-slate-500 disabled:shadow-none"
-            disabled={!canRun || busy || !next}
+            disabled={!canRun || busy || !next || held}
             onClick={() => void command('go')}
           >
             <span className="text-6xl font-bold tracking-wider">GO</span>
-            {next && <span className="mt-1 max-w-[85%] truncate text-sm font-medium text-white/80">{next.name || `Cue ${nextIndex + 1}`}</span>}
+            {held ? <span className="mt-1 text-sm font-medium">Held by the emergency stop</span>
+              : next && <span className="mt-1 max-w-[85%] truncate text-sm font-medium text-white/80">{next.name || `Cue ${nextIndex + 1}`}</span>}
           </button>
 
           <div className="grid grid-cols-3 gap-3">
             {status === 'paused' ? (
-              <BigButton icon={<SceneIcon size={22} />} label="Resume" disabled={!canRun || busy} onClick={() => void command('resume')} />
+              <BigButton icon={<SceneIcon size={22} />} label="Resume" disabled={!canRun || busy || held} onClick={() => void command('resume')} />
             ) : (
               <BigButton icon={<PauseIcon size={22} />} label="Pause" disabled={!canRun || busy || status !== 'playing'}
                 onClick={() => void command('pause')} />
@@ -434,7 +495,7 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
                     </button>
                     {open && (
                       <div className="flex gap-2 px-4 pb-4">
-                        <button className="btn-primary flex-1 rounded-xl py-3 text-[15px]" disabled={!canRun || busy}
+                        <button className="btn-primary flex-1 rounded-xl py-3 text-[15px]" disabled={!canRun || busy || held}
                           onClick={() => {
                             setPicked(null)
                             void command('goto', cue.position)
@@ -450,6 +511,7 @@ function ShowTab({ session, onSignOut }: { session: Session; onSignOut: () => vo
               {show.cues.length === 0 && <li className="px-4 py-4 text-[15px] text-slate-500">Add cues on the Mapping tab.</li>}
             </ol>
           </section>
+          <MessageBoards canEdit={session.role === 'admin'} />
         </>
       )}
     </div>
@@ -494,7 +556,7 @@ const POWER_LABEL: Record<Projector['state']['power'], string> = {
 
 type Pending = { title: string; body: string; run: () => Promise<void> }
 
-function ProjectorsTab({ session }: { session: Session }) {
+function ProjectorsTab({ session, walk }: { session: Session; walk?: ReactNode }) {
   const canControl = session.role === 'admin' || session.role === 'operator'
   const { projectors, loading, error, refresh, wsStatus } = useFleet(10000)
   const [busy, setBusy] = useState(false)
@@ -543,6 +605,8 @@ function ProjectorsTab({ session }: { session: Session }) {
           {note ?? error}
         </button>
       )}
+
+      {walk}
 
       {canControl && enabled.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
@@ -601,7 +665,7 @@ function ProjectorsTab({ session }: { session: Session }) {
           )
         })}
         {!loading && projectors.length === 0 && (
-          <li className="px-4 py-4 text-[15px] text-slate-500">No projectors yet. Add them in Projector Control on the Mac.</li>
+          <li className="px-4 py-4 text-[15px] text-slate-500">No projectors yet. Add them in the Projector Control dashboard.</li>
         )}
       </ul>
 
@@ -621,7 +685,7 @@ function ProjectorsTab({ session }: { session: Session }) {
   )
 }
 
-const TOOK_IT = new Set(['confirmed', 'accepted', 'ok'])
+const TOOK_IT = new Set(['confirmed', 'accepted', 'ok', 'queued'])
 
 /** What happened, without claiming more than the projectors said. The
  *  list below shows each one's state as read back from it. */

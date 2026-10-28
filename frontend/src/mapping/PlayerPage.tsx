@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, enterPlayerMode, getToken, request, setPlayerToken } from '@/api/client'
-import { enterFullscreen, OutputScreen } from './OutputPage'
+import { enterFullscreen, OutputScreen, OVERLAY_EVENT } from './OutputPage'
+import { captureOutput } from './OutputView'
+import type { ServerClock } from './live'
 import { trackingDelayMs } from './people'
 import type { Show } from './types'
 
@@ -17,6 +19,10 @@ import type { Show } from './types'
 const PLAYER_KEY = 'pc.player'
 const HELLO_MS = 3000
 const REPORT_MS = 5000
+/** How often a picture goes to the Dashboard's live view while someone watches it,
+ *  unless the server asks for another pace (the status screen beside the projector). */
+const PICTURE_MS = 3000
+const PICTURE_WIDTH = 480
 
 interface Identity {
   device_id: string
@@ -29,6 +35,33 @@ interface Assignment {
   name: string
   output_id: number | null
   show_id: number | null
+  /** Asked from the Players page, each to do once: "reload", "overlay_on", "overlay_off". */
+  commands?: string[]
+  /** Someone has the Dashboard's live view open: send copies of the frames drawn. */
+  picture?: boolean
+  /** How often and how wide: faster and larger while this mini PC's own
+   *  status screen, on a monitor beside the projector, shows them. */
+  picture_ms?: number
+  picture_width?: number
+  /** Draw this much later (ms; negative is earlier), set on the Players page. */
+  trim_ms?: number
+}
+
+function base64Of(picture: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(picture)
+  })
+}
+
+function obey(commands: string[] | undefined) {
+  for (const command of commands ?? []) {
+    if (command === 'reload') window.location.reload()
+    if (command === 'overlay_on' || command === 'overlay_off')
+      window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: command === 'overlay_on' }))
+  }
 }
 
 type CacheState = { mode: 'off' | 'syncing' | 'on'; bytes: number; failed: number }
@@ -76,7 +109,21 @@ export default function PlayerPage() {
   const [assignment, setAssignment] = useState<Assignment | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [cache, setCache] = useState<CacheState>({ mode: 'off', bytes: 0, failed: 0 })
+  const [pictureWanted, setPictureWanted] = useState(false)
+  const [picturePace, setPicturePace] = useState({ ms: PICTURE_MS, width: PICTURE_WIDTH })
   const stats = useRef<Record<string, unknown>>({})
+  const showClock = useRef<ServerClock | null>(null)
+  // The server version this page came from: an older page is reloaded by the
+  // server while no show plays, so updates reach mini PCs that never restart.
+  const pageVersion = useRef<string | null>(null)
+  useEffect(() => {
+    fetch('/api/health', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((health: { version?: string }) => {
+        pageVersion.current = health.version ?? null
+      })
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     document.title = 'Player'
@@ -116,13 +163,24 @@ export default function PlayerPage() {
     try {
       const next = await request<Assignment>('/mapping/players/me', {
         method: 'POST',
-        body: { ...stats.current, cache: cache.mode, cached_bytes: cache.bytes },
+        // The show clock as this leaves, for the server's own check on it.
+        body: {
+          ...stats.current, cache: cache.mode, cached_bytes: cache.bytes,
+          clock_now: showClock.current?.synced ? showClock.current.now() : null,
+          page_version: pageVersion.current,
+        },
       })
+      obey(next.commands)
+      setPictureWanted(next.picture === true)
+      const ms = Math.max(500, next.picture_ms ?? PICTURE_MS)
+      const width = Math.min(1920, Math.max(160, next.picture_width ?? PICTURE_WIDTH))
+      setPicturePace((pace) => (pace.ms === ms && pace.width === width ? pace : { ms, width }))
       setAssignment((current) =>
         current &&
         current.output_id === next.output_id &&
         current.show_id === next.show_id &&
-        current.name === next.name
+        current.name === next.name &&
+        (current.trim_ms ?? 0) === (next.trim_ms ?? 0)
           ? current
           : next,
       )
@@ -151,6 +209,27 @@ export default function PlayerPage() {
       window.removeEventListener('pc:player-changed', onChange)
     }
   }, [token, report])
+
+  // -- live view -------------------------------------------------------------
+  useEffect(() => {
+    if (!token || !pictureWanted) return
+    let busy = false
+    const send = async () => {
+      if (busy) return
+      busy = true
+      try {
+        const picture = await captureOutput(picturePace.width)
+        if (picture) await request('/mapping/players/me/picture', { method: 'POST', body: { image: await base64Of(picture) } })
+      } catch {
+        // A missed picture is not worth a message on the projector.
+      } finally {
+        busy = false
+      }
+    }
+    void send()
+    const timer = window.setInterval(() => void send(), picturePace.ms)
+    return () => window.clearInterval(timer)
+  }, [token, pictureWanted, picturePace])
 
   // -- media cache -----------------------------------------------------------
   useEffect(() => {
@@ -218,14 +297,22 @@ export default function PlayerPage() {
       outputId={assignment.output_id}
       playerId={assignment.player_id}
       onShow={syncMedia}
+      trimMs={assignment.trim_ms ?? 0}
       onStats={(s) => {
+        showClock.current = s.clock
         stats.current = {
           fps: Math.round(s.fps * 10) / 10,
           drift_ms: s.drift == null ? null : Math.round(s.drift * 1000),
+          sync_ms: s.syncMs,
+          clock_steps: s.clockSteps,
+          dropped: s.dropped,
           width: s.width,
           height: s.height,
           cue: s.cue,
           people_ms: trackingDelayMs(),
+          clock_ms: s.clockMs,
+          link: s.link,
+          overlay: s.overlay,
         }
       }}
       hudExtra={

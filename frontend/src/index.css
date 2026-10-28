@@ -253,3 +253,19 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The printable setup guide (pages/SetupGuide.tsx): paper on screen and on
+   the printer, whatever the app's dark theme. */
+.paper-page {
+  color-scheme: light;
+}
+@media print {
+  @page {
+    size: letter;
+    margin: 0.45in;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator, model_validator
 
@@ -34,7 +34,7 @@ class MediaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
-    kind: Literal["video", "image"]
+    kind: Literal["video", "image", "audio"]
     content_type: str
     size_bytes: int
     width: int | None = None
@@ -144,7 +144,7 @@ class ColorAdjust(BaseModel):
     blue: float = Field(default=1.0, ge=0, le=2)
 
 
-TestPattern = Literal["none", "grid", "id", "white", "black", "red", "green", "blue"]
+TestPattern = Literal["none", "grid", "id", "white", "black", "red", "green", "blue", "sync"]
 
 
 class OutputBase(BaseModel):
@@ -199,6 +199,9 @@ class OutputOut(OutputBase):
 
 Interaction = Literal["none", "spotlight", "ripple"]
 
+#: Most elements one cue, or every cue of a show, can carry: the same as a scene's layers.
+MAX_ELEMENTS = 12
+
 
 class CueBase(BaseModel):
     name: str = Field(default="", max_length=128)
@@ -219,6 +222,13 @@ class CueBase(BaseModel):
     #: blended with the others. Outputs not listed show their part of
     #: ``media_id``.
     output_media: dict[int, int | None] = Field(default_factory=dict)
+    #: Elements (objects, movers, boards, a countdown) on this cue only, drawn
+    #: over its scene on every projector. They belong to the cue, so a scene
+    #: group or playlist changing the cue's scenes leaves them in place.
+    elements: list[SceneLayer] = Field(default_factory=list, max_length=MAX_ELEMENTS)
+    #: Videos, pictures, elements and sounds that come and go at set times
+    #: while the cue plays (Mapping → Show designer). None for no timeline.
+    timeline: Timeline | None = None
 
 
 class CueCreate(CueBase):
@@ -236,6 +246,9 @@ class CueUpdate(BaseModel):
     scene_id: int | None = None
     output_scenes: dict[int, int | None] | None = None
     output_media: dict[int, int | None] | None = None
+    elements: list[SceneLayer] | None = Field(default=None, max_length=MAX_ELEMENTS)
+    #: null takes the timeline off the cue.
+    timeline: Timeline | None = None
 
 
 class CueOut(CueBase):
@@ -324,10 +337,36 @@ class FitResult(BaseModel):
     sliced: list[int] = Field(default_factory=list)
 
 
-SurfaceKind = Literal["wall", "roof", "window", "door", "other"]
+#: "ground" is a driveway, path or lawn seen from above: not part of the
+#: building, so "Whole building" leaves it out.
+SurfaceKind = Literal["wall", "roof", "window", "door", "other", "ground"]
 
 #: Traced building parts per show.
 MAX_SURFACES = 64
+
+
+class SurfaceFlat(BaseModel):
+    """How a house part lies, so things drawn on it are not stretched.
+
+    ``corners`` is where a true square has to be drawn on the canvas for it
+    to look square on this part from where people watch: on a sloped roof
+    seen at an angle it is a slanted four-sided shape. Objects on the part
+    are drawn through it (frontend/src/mapping/scene/flat.ts).
+    """
+    #: Top-left, top-right, bottom-right, bottom-left, in canvas fractions.
+    corners: list[Point]
+    #: While someone is setting the corners: show a checkerboard square on
+    #: the projectors until this time (server clock, epoch milliseconds).
+    test_until: float | None = None
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point]) -> list[Point]:
+        if len(corners) != 4:
+            raise ValueError("a house part's flat view needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "flat view")
+        return corners
 
 
 class Surface(BaseModel):
@@ -337,6 +376,8 @@ class Surface(BaseModel):
     kind: SurfaceKind = "wall"
     #: Outline in canvas fractions.
     points: list[Point] = Field(min_length=3, max_length=256)
+    #: Straightened: objects on this part are drawn through its flat view.
+    flat: SurfaceFlat | None = None
 
     @field_validator("points")
     @classmethod
@@ -354,6 +395,8 @@ class ShowUpdate(BaseModel):
     #: null clears it.
     camera_view: CameraView | None = None
     surfaces: list[Surface] | None = Field(default=None, max_length=MAX_SURFACES)
+    #: null clears it.
+    every_cue_elements: list[SceneLayer] | None = Field(default=None, max_length=MAX_ELEMENTS)
 
 
 class ShowSummary(BaseModel):
@@ -371,6 +414,9 @@ class ShowSummary(BaseModel):
 class ShowOut(ShowSummary):
     camera_view: CameraView | None = None
     surfaces: list[Surface] = Field(default_factory=list)
+    #: Elements on every cue of the show, in the same place on each, drawn
+    #: over whatever each cue plays.
+    every_cue_elements: list[SceneLayer] = Field(default_factory=list)
     outputs: list[OutputOut]
     cues: list[CueOut]
 
@@ -379,13 +425,17 @@ class ShowOut(ShowSummary):
 
 
 class TransportCommand(BaseModel):
-    action: Literal["go", "goto", "pause", "resume", "stop", "blackout"]
+    action: Literal["go", "goto", "pause", "resume", "stop", "blackout", "scene"]
     show_id: int | None = None
     #: Cue position for ``goto``; ``go`` advances to the next cue.
     cue: int | None = Field(default=None, ge=0)
+    #: For ``scene``: a scene from the library, played alone on every projector.
+    scene_id: int | None = None
+    fade_seconds: float = Field(default=0.0, ge=0, le=30)
 
 
 class TransportCue(BaseModel):
+    #: A scene played on its own (not from a cue) has id -scene_id and position -1.
     id: int
     position: int
     name: str
@@ -401,6 +451,15 @@ class TransportCue(BaseModel):
     started_at_ms: float
 
 
+class EmergencyState(BaseModel):
+    """The emergency stop, while it is on: every output black, shows held."""
+
+    #: Server epoch milliseconds when it was pressed.
+    at_ms: float
+    #: Who pressed it.
+    by: str | None = None
+
+
 class TransportState(BaseModel):
     show_id: int | None = None
     status: Literal["stopped", "playing", "paused", "blackout"] = "stopped"
@@ -411,9 +470,17 @@ class TransportState(BaseModel):
     fade_started_at_ms: float | None = None
     #: Media position frozen while paused, in seconds.
     paused_position: float | None = None
+    #: When playing began after the last stop or blackout, server epoch
+    #: milliseconds. Elements on every cue keep their own time from here, so
+    #: they carry on smoothly from one cue to the next.
+    run_started_at_ms: float | None = None
     #: Bumped on every change, so a client can ignore a stale message.
     revision: int = 0
     server_time_ms: float = 0.0
+    #: Set while the emergency stop is on. Outputs draw nothing at all, not
+    #: even a test pattern or a calibration frame, and GO is refused until
+    #: someone clears it.
+    emergency: EmergencyState | None = None
 
 
 # -- players -------------------------------------------------------------------
@@ -438,6 +505,56 @@ class PlayerHelloResponse(BaseModel):
     access_token: str | None = None
 
 
+class PlayerScreens(BaseModel):
+    """A mini PC's screens, as its app sees them (minipc/screens.py).
+
+    A monitor plugged in beside the projector shows the status screen
+    (``/player/screen``): the show, the projector and the output.
+    """
+
+    #: "one": only the projector; "on": the status screen is showing on the
+    #: other screen; "duplicate": Windows shows the same picture on both;
+    #: "waiting": the output window is not open yet; "failed": the status
+    #: window would not stay on the other screen; "off": turned off.
+    state: Literal["one", "on", "duplicate", "waiting", "failed", "off"]
+    #: Screens Windows has (two mirrored screens count as one).
+    count: int = Field(default=1, ge=0, le=16)
+    #: Each screen in a few words, "1920 × 1200, on the left".
+    projector: str | None = Field(default=None, max_length=80)
+    second: str | None = Field(default=None, max_length=80)
+
+
+class PlayerApp(BaseModel):
+    """What the Mini PC app on a player's computer last said about itself."""
+
+    #: Heard from in the last few seconds: commands for it arrive.
+    connected: bool
+    #: It can restart and shut down its computer (Windows).
+    power: bool = False
+    #: The computer's own name in Windows.
+    computer: str | None = None
+    #: Its network card's hardware address, for turning it on over the network.
+    mac: str | None = None
+    #: Windows starts the app again by itself if it stops (the watchdog).
+    watchdog: bool = False
+    #: When this server last got its log (Get the log), if ever.
+    log_at: datetime | None = None
+    #: The Mini PC app's version; None for apps too old to update themselves.
+    version: str | None = None
+    #: old_app, up_to_date, waiting, updating or failed.
+    update: str = "old_app"
+    #: The newest Mini PC app this server has.
+    latest: str | None = None
+    #: The update state in words, for the Players page.
+    update_message: str = ""
+    #: What keeps its computer from staying on 24/7, in words: empty when
+    #: nothing does, None for apps that do not check (older than this).
+    awake: list[str] | None = None
+    #: Its second screen (a monitor beside the projector) and what is on it;
+    #: None for apps older than the status screen.
+    screens: PlayerScreens | None = None
+
+
 class PlayerOut(BaseModel):
     id: int
     name: str
@@ -452,6 +569,10 @@ class PlayerOut(BaseModel):
     #: The other half of a mini PC: its camera, on a player; its player,
     #: on a camera. Approved and removed together.
     companion_id: int | None = None
+    #: What its output is set to show instead of the show ("none": the show).
+    screen: TestPattern | None = None
+    #: The Mini PC app around the player page, when it has been heard from.
+    app: PlayerApp | None = None
 
 
 class NetworkInfo(BaseModel):
@@ -463,6 +584,8 @@ class NetworkInfo(BaseModel):
     discoverable: bool
     #: Where to point one by hand on this network, when known.
     address: str | None = None
+    #: The server's own system ("mac", "windows", "linux"), for the setup steps.
+    server_os: str = "linux"
     #: Where a phone with Tailscale reaches it from any internet connection.
     tailscale_address: str | None = None
 
@@ -493,12 +616,33 @@ class PlayerReport(BaseModel):
     tracking_ms: float | None = None
     # Players: how old the camera's people reports are on arrival (ms).
     people_ms: float | None = None
+    #: Players: half the round trip to the server clock (ms), and the live link.
+    clock_ms: float | None = None
+    link: str | None = Field(default=None, max_length=16)
+    #: Players: the status overlay is showing on the projector.
+    overlay: bool | None = None
+    #: Players: what this mini PC takes the show clock to be as it sends this
+    #: report (ms). The server compares it with its own, as a check on the
+    #: mini PC's clock that does not rely on the mini PC's own sums.
+    clock_now: float | None = None
+    #: Players: how far from the show clock its picture can be, by its own
+    #: measure (ms): the clock's uncertainty plus the video's drift.
+    sync_ms: float | None = None
+    #: Players: how many times its clock had to jump rather than ease into
+    #: step (a jump is a visible skip), since the output page opened.
+    clock_steps: int | None = None
+    #: Players: frames the display had time for but the page did not draw, last second.
+    dropped: int | None = None
+    #: Players: the server version the output page was loaded from. A page
+    #: older than the server is reloaded while no show plays (mapping_players.report).
+    page_version: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def _finite(self) -> PlayerReport:
         # A Python sender writes NaN for "no measurement yet"; stored, it would
         # make the players list unreadable for everyone. Keep the report.
-        for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms"):
+        for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms", "clock_ms",
+                     "clock_now", "sync_ms"):
             value = getattr(self, name)
             if value is not None and not math.isfinite(value):
                 setattr(self, name, None)
@@ -510,6 +654,178 @@ class PlayerAssignment(BaseModel):
     name: str
     output_id: int | None
     show_id: int | None
+    #: Things to do once, sent from the Players page ("reload", "overlay_on", "overlay_off").
+    commands: list[str] = Field(default_factory=list)
+    #: Someone is watching the Dashboard's live view: send copies of the frames drawn.
+    picture: bool = False
+    #: How often and how wide: faster and larger while the status screen on
+    #: this mini PC's own second monitor is showing them.
+    picture_ms: int = 3000
+    picture_width: int = 480
+    #: Draw this much later (positive) or earlier (negative), ms: evens out
+    #: projectors that take different times to show a picture.
+    trim_ms: int = 0
+
+
+PlayerAction = Literal["restart_output", "overlay_on", "overlay_off", "reboot", "shutdown", "wake",
+                       "update", "swap_screens", "extend_screens", "send_log"]
+
+
+class PlayerTrim(BaseModel):
+    """Shift one mini PC's picture in time, ms (later is positive)."""
+
+    trim_ms: int = Field(ge=-500, le=500)
+
+
+class PlayerCommand(BaseModel):
+    action: PlayerAction
+
+
+ScreenAction = Literal["start_tonight", "stop_tonight", "go", "pause", "resume", "blackout",
+                       "power_on", "power_off", "restart_output", "link_projector"]
+
+
+class ScreenControl(BaseModel):
+    """A button on the status screen of a mini PC's own monitor."""
+
+    action: ScreenAction
+    #: For ``link_projector``: the projector its output drives.
+    projector_id: int | None = None
+    #: Power off asks twice, like everywhere else.
+    confirm: bool = False
+
+
+class ScreenFlat(BaseModel):
+    """The four corners of a house part, dragged on a mini PC's status screen."""
+    surface_id: str = Field(min_length=1, max_length=32)
+    #: null takes the part's straightening away.
+    corners: list[Point] | None = None
+    #: Show the checkerboard square on the projectors while dragging.
+    test: bool = True
+
+
+class ScreenWarp(BaseModel):
+    """This mini PC's own picture fitted onto the ground (a driveway, from a
+    projector on the roof): its output's four corners, dragged with the mouse
+    on the status screen."""
+    #: Top-left, top-right, bottom-right, bottom-left in the output's own
+    #: fractions; null puts the picture back square, filling the projector.
+    corners: list[Point] | None = None
+    #: Show the canvas grid on this projector while fitting (its squares
+    #: look square on the ground when the fit is right); false takes it off.
+    grid: bool = True
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point] | None) -> list[Point] | None:
+        if corners is None:
+            return None
+        if len(corners) != 4:
+            raise ValueError("the picture needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "corner")
+        return corners
+
+
+class ScreenControlResult(BaseModel):
+    ok: bool
+    message: str
+
+
+class PlayerCommandResult(BaseModel):
+    #: What it was handed to: the Mini PC app, the player page, or the network.
+    via: Literal["app", "page", "network"]
+    message: str
+
+
+class PlayerSyncTest(BaseModel):
+    #: True puts the sync test on every mini PC's projector; false takes it off.
+    on: bool
+
+
+class PlayerScreen(BaseModel):
+    #: "none" goes back to the show.
+    pattern: TestPattern
+
+
+class PlayerSensor(BaseModel):
+    """The newest reading of a USB temperature sensor on a mini PC."""
+
+    name: str = Field(default="USB sensor", max_length=64)
+    celsius: float = Field(ge=-40, le=125)
+    humidity: float | None = Field(default=None, ge=0, le=100)
+
+
+class PlayerAppHello(BaseModel):
+    """The Mini PC app checking in for commands, next to its player page."""
+
+    device_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    secret: str = Field(min_length=32, max_length=128)
+    power: bool = False
+    computer: str | None = Field(default=None, max_length=128)
+    mac: str | None = Field(default=None, pattern=r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+    #: Sent by apps that update themselves (minipc/selfupdate.py).
+    version: str | None = Field(default=None, max_length=32, pattern=r"^(dev|\d+\.\d+\.\d+)$")
+    #: How its last update went: {"state": "downloading" | "installing" | "failed",
+    #: "version": ..., "error": ...}.
+    update: dict[str, str | None] | None = None
+    #: What keeps the computer from staying on day and night (sleep, the
+    #: screen turning off, a lock, Windows Update), in words; empty when
+    #: nothing does. Sent by apps that keep Windows awake (minipc/stayawake.py).
+    awake: list[Annotated[str, Field(max_length=500)]] | None = Field(default=None, max_length=8)
+    #: Its screens and the status screen on the second one (minipc/screens.py).
+    screens: PlayerScreens | None = None
+    #: Windows starts the app again by itself if it stops (installer.iss).
+    watchdog: bool = False
+    #: A USB temperature sensor plugged into it (minipc/usbsensor.py), for
+    #: the heater in the projector's box.
+    sensor: PlayerSensor | None = None
+
+
+#: The tail of a Mini PC app's logs it sends: plenty for a day's story.
+MAX_APP_LOG_CHARS = 600_000
+
+
+class PlayerAppLog(BaseModel):
+    """The Mini PC app sending its log, asked for or after an update."""
+
+    device_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    secret: str = Field(min_length=32, max_length=128)
+    #: "asked" (Get the log on the Players page) or "update" (after an update).
+    reason: str = Field(default="asked", max_length=40)
+    text: str = Field(max_length=MAX_APP_LOG_CHARS)
+
+
+class PlayerAppLogOut(BaseModel):
+    text: str
+    reason: str
+    received_at: datetime
+
+
+class PlayerAppUpdate(BaseModel):
+    """A newer Mini PC app to install now, from this server."""
+
+    version: str
+    sha256: str
+    size: int
+    url: str
+
+
+class PlayerAppReply(BaseModel):
+    #: "restart_output", "reboot" or "shutdown", each to do once.
+    commands: list[str] = Field(default_factory=list)
+    #: Install this version now (apps that update themselves only).
+    update: PlayerAppUpdate | None = None
+
+
+#: A small JPEG, base64: about 20 KB at the size the live view asks for.
+MAX_PICTURE_CHARS = 400_000
+
+
+class PlayerPicture(BaseModel):
+    """A copy of the frame the player page is drawing, for the live view (base64 JPEG)."""
+
+    image: str = Field(min_length=16, max_length=MAX_PICTURE_CHARS)
 
 
 # -- cameras -------------------------------------------------------------------
@@ -572,6 +888,11 @@ class ApplyCalibration(BaseModel):
     output_ids: list[int] | None = None
 
 
+class RemoveResult(BaseModel):
+    #: Outputs put back as they were before calibration.
+    restored: list[int] = Field(default_factory=list)
+
+
 class ApplyResult(BaseModel):
     output_id: int
     name: str
@@ -622,12 +943,20 @@ LayerType = Literal[
     "picture",
     # days until Christmas as holiday graphics
     "countdown",
+    # things that fly or walk along a path (a sleigh, a train, birds, elves...)
+    "movers",
+    # live info boards: the Santa tracker, the weather, days until, a message
+    "info",
+    # snow settling on window sills and the roof
+    "snowcap",
 ]
 #: What makes a layer stronger: someone there, how fast people move, how many
 #: there are, how close they come, or nothing (always at full strength).
 ReactsTo = Literal["presence", "movement", "count", "closeness", "always"]
 #: Which traced surfaces a layer is drawn on; "everywhere" ignores them.
-LayerTarget = Literal["everywhere", "building", "walls", "roof", "windows", "doors", "outside"]
+LayerTarget = Literal[
+    "everywhere", "building", "walls", "roof", "windows", "doors", "outside", "ground"
+]
 LayerBlend = Literal["normal", "add", "screen"]
 #: How an object moves by itself, changes by itself, and what it does when a
 #: person comes near (see frontend/src/mapping/scene/catalog.ts).
@@ -657,6 +986,28 @@ class ObjectPin(BaseModel):
     size: float = Field(default=1.0, ge=0.3, le=3)
     #: Degrees clockwise.
     rotation: float = Field(default=0.0, ge=-180, le=180)
+
+
+class CountdownColors(BaseModel):
+    """A countdown's own colour for each part, picked over its look. A part
+    left empty keeps the look's own colouring; the banner and the glow are
+    the layer's ``color`` and ``color2``."""
+    #: The big number (and the greeting on the day itself).
+    number: str | None = Field(default=None, pattern=_HEX)
+    #: The number's 3D side.
+    depth: str | None = Field(default=None, pattern=_HEX)
+    #: The small words over the number ("Only") and the lines beside them.
+    top: str | None = Field(default=None, pattern=_HEX)
+    #: The words on the banner ("Days until Christmas").
+    caption: str | None = Field(default=None, pattern=_HEX)
+    #: The stitching along the banner's edges.
+    stitch: str | None = Field(default=None, pattern=_HEX)
+    #: The ticking clock's numbers and dots.
+    clock: str | None = Field(default=None, pattern=_HEX)
+    #: The words under the clock ("Hours", "Minutes", "Seconds").
+    labels: str | None = Field(default=None, pattern=_HEX)
+    #: Holly, snowflakes, peppermints, pumpkins, ghosts, bats and stars.
+    decorations: str | None = Field(default=None, pattern=_HEX)
 
 
 class SceneLayer(BaseModel):
@@ -693,6 +1044,126 @@ class SceneLayer(BaseModel):
     pins: list[ObjectPin] | None = Field(default=None, max_length=MAX_PINS)
     #: The image a "picture" layer shows (stretched over the whole canvas).
     media_id: int | None = None
+    #: A countdown's colour for each part; None keeps its look's colours.
+    colors: CountdownColors | None = None
+    #: Words an info board shows: the message board's message, what a "days
+    #: until" counts to, or the town or ZIP code the weather is for.
+    text: str | None = Field(default=None, max_length=200)
+    #: The date a "days until" counts to (comes round every year).
+    date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+# -- timelines (the show designer) ------------------------------------------------
+
+#: The longest a cue's timeline can be, seconds.
+MAX_TIMELINE_SECONDS = 3600
+#: Most clips one timeline holds; every one is drawn on every projector.
+MAX_CLIPS = 80
+#: Most rows a timeline has.
+MAX_TRACKS = 12
+#: Most moves (key points) one clip has.
+MAX_KEYS = 60
+
+#: How a clip comes in or goes out: faded, slid in from (out to) an edge,
+#: grown from nothing (shrunk away), spun in, or straight in.
+ClipEntrance = Literal["none", "fade", "left", "right", "top", "bottom", "grow", "spin"]
+
+
+class ClipPin(BaseModel):
+    """Where a clip (or one of an element's objects) is at a moment: its
+    middle on the canvas, its size and its turn. Looser than ``ObjectPin``
+    so a picture can sit partly off the house or be made very small."""
+    x: float = Field(ge=-1, le=2)
+    y: float = Field(ge=-1, le=2)
+    #: A picture or video's height in canvas heights; an element's object size.
+    size: float = Field(default=1.0, ge=0.02, le=6)
+    #: Degrees clockwise.
+    rotation: float = Field(default=0.0, ge=-360, le=360)
+
+
+class ClipKey(BaseModel):
+    """Where a clip is at ``t`` seconds after it starts. Between keys it
+    glides from one to the next."""
+    t: float = Field(ge=0, le=MAX_TIMELINE_SECONDS)
+    #: The picture's place (one pin), or each object of an element.
+    pins: list[ClipPin] = Field(default_factory=list, max_length=MAX_PINS)
+    opacity: float = Field(default=1.0, ge=0, le=1)
+
+
+class TimelineClip(BaseModel):
+    """One thing on the timeline: a video or picture, an element, or a sound."""
+    id: str = Field(default_factory=_layer_id, min_length=1, max_length=32,
+                    pattern=r"^[A-Za-z0-9_-]+$")
+    kind: Literal["media", "element", "sound"]
+    name: str = Field(default="", max_length=64)
+    #: The row it sits on; higher rows are drawn on top.
+    track: int = Field(default=0, ge=0, lt=MAX_TRACKS)
+    #: Seconds from the start of the cue.
+    start: float = Field(default=0.0, ge=0, le=MAX_TIMELINE_SECONDS)
+    length: float = Field(default=5.0, ge=0.1, le=MAX_TIMELINE_SECONDS)
+    enter: ClipEntrance = "fade"
+    enter_seconds: float = Field(default=1.0, ge=0, le=60)
+    exit: ClipEntrance = "fade"
+    exit_seconds: float = Field(default=1.0, ge=0, le=60)
+    opacity: float = Field(default=1.0, ge=0, le=1)
+    #: A video, picture or sound from the media library.
+    media_id: int | None = None
+    #: Where a video or picture sits when it has no moves.
+    pin: ClipPin | None = None
+    #: Seconds into the video or sound where the clip starts playing.
+    offset: float = Field(default=0.0, ge=0, le=86400)
+    #: Start the video or sound again when it ends before the clip does.
+    loop: bool = True
+    #: How loud a sound (or a video's own sound) plays, 0..1.
+    volume: float = Field(default=1.0, ge=0, le=1)
+    #: Play a video's own sound as well as its picture.
+    sound: bool = False
+    #: The projector whose mini PC plays the sound; None is the show's first.
+    output_id: int | None = None
+    #: Where a video or picture may show: all of it, or only the walls, the windows...
+    target: LayerTarget = "everywhere"
+    #: The projectors (output ids) it shows on; None or empty is every projector.
+    outputs: list[int] | None = Field(default=None, max_length=32)
+    #: The element, for an element clip, placed as it is when it has no moves.
+    layer: SceneLayer | None = None
+    #: Moves over time: where it is at each key, in order of time.
+    keys: list[ClipKey] = Field(default_factory=list, max_length=MAX_KEYS)
+
+    @model_validator(mode="after")
+    def _check(self) -> TimelineClip:
+        if self.kind == "element" and self.layer is None:
+            raise ValueError("an element clip needs its element")
+        if self.kind != "element" and self.media_id is None:
+            raise ValueError(f"a {self.kind} clip needs a file from the media library")
+        self.keys.sort(key=lambda k: k.t)
+        return self
+
+
+class Timeline(BaseModel):
+    """What happens over time while a cue plays, like a video editor's timeline."""
+    #: Seconds.
+    length: float = Field(default=30.0, ge=1, le=MAX_TIMELINE_SECONDS)
+    #: At the end: start again, go on to the next cue, or stay on the last moment.
+    end: Literal["loop", "next", "hold"] = "loop"
+    #: How many rows the designer shows.
+    tracks: int = Field(default=4, ge=1, le=MAX_TRACKS)
+    clips: list[TimelineClip] = Field(default_factory=list, max_length=MAX_CLIPS)
+
+
+class WeatherNow(BaseModel):
+    """The weather right now, for a scene's "Weather" board."""
+    place: str
+    temperature_f: float
+    feels_like_f: float | None = None
+    high_f: float | None = None
+    low_f: float | None = None
+    #: The WMO weather code (0 clear ... 95 thunderstorm).
+    code: int = 0
+    is_day: bool = True
+    wind_mph: float | None = None
+    humidity: float | None = None
+    #: Unix seconds.
+    updated_at: float
 
 
 class SceneBase(BaseModel):
@@ -762,3 +1233,80 @@ class PaintHouse(BaseModel):
     #: The picture, as base64 JPEG or PNG, already the canvas's shape.
     image: str = Field(min_length=100, max_length=30_000_000)
     show_id: int
+
+
+class TraceHousePhoto(BaseModel):
+    """A photo of the house for Claude to trace, as base64 JPEG, PNG or WebP."""
+    image: str = Field(min_length=100, max_length=15_000_000)
+    width: int = Field(ge=64, le=8000)
+    height: int = Field(ge=64, le=8000)
+
+
+class TracedPart(BaseModel):
+    kind: SurfaceKind
+    name: str
+    #: Outline in fractions of the photo.
+    points: list[Point]
+
+
+class TracedHouse(BaseModel):
+    #: The house in a sentence or two, for designing its scene.
+    description: str = ""
+    parts: list[TracedPart]
+
+
+class HousePhoto(BaseModel):
+    """The show's photo of the house and how it lines up with the canvas."""
+    media_id: int
+    #: Where the canvas's corners are on the photo (TL, TR, BR, BL), in
+    #: fractions of the photo; outside it when the canvas reaches past it.
+    corners: list[Point]
+    description: str = Field(default="", max_length=600)
+
+    @field_validator("corners")
+    @classmethod
+    def _four(cls, corners: list[Point]) -> list[Point]:
+        if len(corners) != 4:
+            raise ValueError("the photo needs exactly four corners (TL, TR, BR, BL)")
+        for point in corners:
+            _check_point(point, "corner")
+        return corners
+
+
+# -- emergency stop --------------------------------------------------------------
+
+
+class EmergencyProjector(BaseModel):
+    projector_id: int
+    name: str | None = None
+    #: "off" (took the power off), "waiting" (busy; held and sent by itself
+    #: once it accepts), "already_off" (off or cooling; nothing sent),
+    #: "failed" (did not take it; may still be on).
+    result: Literal["off", "waiting", "already_off", "failed"]
+    #: What happened, in words, for the operator.
+    detail: str
+    #: Raw outcomes of the commands sent, when they were sent.
+    shutter: str | None = None
+    power: str | None = None
+    error: str | None = None
+
+
+class EmergencyPlayer(BaseModel):
+    id: int
+    name: str
+    #: Connected now, so it went black at once; one that is not goes black
+    #: as soon as it reconnects.
+    online: bool
+
+
+class EmergencyResult(BaseModel):
+    transport: TransportState
+    projectors: list[EmergencyProjector] = Field(default_factory=list)
+    players: list[EmergencyPlayer] = Field(default_factory=list)
+    #: Names of the automations that were running and were stopped.
+    automations_stopped: list[str] = Field(default_factory=list)
+
+
+# Cues and shows carry scene layers, which are defined further down.
+for _model in (CueBase, CueCreate, CueUpdate, CueOut, ShowUpdate, ShowOut):
+    _model.model_rebuild()

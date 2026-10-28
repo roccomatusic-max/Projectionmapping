@@ -152,6 +152,7 @@ class ProjectorOut(ProjectorBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     has_password: bool = False
+    has_pjlink_password: bool = False
     created_at: datetime | None = None
     state: ProjectorStateOut = Field(default_factory=ProjectorStateOut)
 
@@ -320,7 +321,7 @@ class AutomationIn(BaseModel):
     @classmethod
     def _validate_steps(cls, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         known = {"command", "wait_state", "delay", "check_online", "check_faults",
-                 "check_enclosure", "scene", "notify"}
+                 "check_enclosure", "scene", "play_scene", "show", "notify"}
         for index, step in enumerate(steps):
             kind = step.get("type", "command")
             if kind not in known:

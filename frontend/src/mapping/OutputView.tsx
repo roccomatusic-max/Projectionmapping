@@ -13,14 +13,69 @@ export interface CalibrationFrame {
 export interface FrameStats {
   fps: number
   drift: number | null
+  /** Frames the display had time for but this page did not draw, in the last second. */
+  dropped: number
   /** Share of the output's resolution scenes are drawn at; null with no scene playing. */
   sceneScale: number | null
 }
 
 const NO_OUTPUTS: Output[] = []
 
+interface CaptureRequest {
+  width: number
+  resolve: (picture: Blob | null) => void
+}
+
+const captureRequests: CaptureRequest[] = []
+
+/**
+ * A small JPEG of the next frame an output on this page draws, for the
+ * Dashboard's live view; null when nothing is drawn within a second.
+ * Taken right after drawing, while the WebGL picture is still there.
+ */
+export function captureOutput(width = 480): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const request = { width, resolve }
+    captureRequests.push(request)
+    window.setTimeout(() => {
+      const index = captureRequests.indexOf(request)
+      if (index >= 0) {
+        captureRequests.splice(index, 1)
+        resolve(null)
+      }
+    }, 1000)
+  })
+}
+
+/** Never lets a picture for the Dashboard get in the way of the show itself. */
+function serveCaptures(canvas: HTMLCanvasElement) {
+  for (const request of captureRequests.splice(0)) {
+    try {
+      const width = Math.max(1, Math.min(request.width, canvas.width))
+      const height = Math.max(1, Math.round((canvas.height * width) / canvas.width))
+      const small = document.createElement('canvas')
+      small.width = width
+      small.height = height
+      const context = small.getContext('2d')
+      if (!context) {
+        request.resolve(null)
+        continue
+      }
+      context.drawImage(canvas, 0, 0, width, height)
+      small.toBlob((picture) => request.resolve(picture), 'image/jpeg', 0.6)
+    } catch {
+      request.resolve(null)
+    }
+  }
+}
+
 /** Seconds of dropped frames before scenes are drawn with less detail. */
 const SLOW_SECONDS = 3
+
+/** The people effects' ripples run on the show clock wrapped to this many
+ *  seconds (800π): short enough for the GPU's numbers to stay exact, and a
+ *  whole number of their waves, so the wrap does not show. */
+const RIPPLE_WRAP_S = 800 * Math.PI
 
 /**
  * A canvas rendering one output, live.
@@ -45,6 +100,7 @@ export function OutputView({
   calibration = null,
   interaction = 'none',
   outputs,
+  trimMs = 0,
 }: {
   output: Output
   canvasWidth: number
@@ -58,11 +114,14 @@ export function OutputView({
   interaction?: Interaction
   /** Every output of the show, so overlaps with them blend by themselves. */
   outputs?: Output[]
+  /** Draw this much later (ms; negative is earlier), for a projector that
+   *  shows its picture sooner or later than the others. */
+  trimMs?: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OutputRenderer | null>(null)
-  const latest = useRef({ output, canvasWidth, canvasHeight, onStats, calibration, interaction, outputs })
-  latest.current = { output, canvasWidth, canvasHeight, onStats, calibration, interaction, outputs }
+  const latest = useRef({ output, canvasWidth, canvasHeight, onStats, calibration, interaction, outputs, trimMs })
+  latest.current = { output, canvasWidth, canvasHeight, onStats, calibration, interaction, outputs, trimMs }
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -82,9 +141,25 @@ export function OutputView({
     let sceneFrames = 0
     let bestFps = 0
     let slowFor = 0
+    let dropped = 0
+    // How long one frame stays on the display, from the gaps between frames.
+    let interval = 1000 / 60
+    let lastTs = 0
+    let note = ''
 
-    const tick = () => {
+    const tick = (ts: number) => {
       raf = requestAnimationFrame(tick)
+      if (lastTs) {
+        const gap = ts - lastTs
+        if (gap > 0 && gap < 100) {
+          // Quick to follow a shorter beat, slow to believe a longer one
+          // (a dropped frame is not a slower display).
+          const g = Math.max(4, Math.min(50, gap))
+          interval += (g - interval) * (g < interval ? 0.2 : 0.01)
+          if (gap > interval * 1.5) dropped += Math.round(gap / interval) - 1
+        }
+      }
+      lastTs = ts
       if (!pixelSize) {
         const dpr = Math.min(window.devicePixelRatio || 1, 2)
         const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
@@ -94,11 +169,18 @@ export function OutputView({
           canvas.height = h
         }
       }
-      const { output: current, canvasWidth: cw, canvasHeight: ch, calibration: calib, outputs: all } = latest.current
-      const frame = playback.frame(clock.now(), current.id)
+      const { output: current, canvasWidth: cw, canvasHeight: ch, calibration: calib, outputs: all, trimMs: trim } = latest.current
+      // Every projector draws the moment its frame will be on screen: the
+      // frame's own start (the display's beat, not whenever this code got
+      // to run) plus one frame, on the show clock, shifted by the trim.
+      const at = clock.at(ts) + interval - trim
+      const frame = playback.frame(at, current.id)
       renderer.setOutput(current, cw, ch, all ?? NO_OUTPUTS, frame.separate)
       lastFrame = frame
-      if (calib) {
+      if (frame.emergency) {
+        // The emergency stop: black, whatever else this output was asked to show.
+        renderer.renderPattern(null)
+      } else if (calib) {
         renderer.renderPattern(calib.pattern)
       } else {
         renderer.setSource('a', frame.a)
@@ -107,13 +189,16 @@ export function OutputView({
           mix: frame.mix,
           blackout: frame.blackout,
           interaction: latest.current.interaction,
-          time: performance.now() / 1000,
+          time: (at / 1000) % RIPPLE_WRAP_S,
           scenes: frame.scenes,
           people: frame.people,
           surfaces: frame.surfaces,
+          now: at,
+          syncNote: note,
         })
         if (frame.scenes.length) sceneFrames++
       }
+      if (captureRequests.length) serveCaptures(canvas)
       frames++
       const now = performance.now()
       if (now - since >= 1000) {
@@ -129,8 +214,18 @@ export function OutputView({
         latest.current.onStats?.({
           fps,
           drift: lastFrame?.drift ?? null,
+          dropped,
           sceneScale: scenesOn ? renderer.sceneScale : null,
         })
+        const drift = lastFrame?.drift
+        note = [
+          clock.synced ? `clock ±${Math.max(1, Math.round(clock.uncertainty))} ms` : 'clock not in step yet',
+          drift != null ? `video ${Math.round(drift * 1000)} ms` : null,
+          trim ? `shifted ${trim > 0 ? '+' : ''}${trim} ms` : null,
+          `${fps.toFixed(0)} fps`,
+          dropped ? `${dropped} dropped` : null,
+        ].filter(Boolean).join(' · ')
+        dropped = 0
         frames = 0
         sceneFrames = 0
         since = now

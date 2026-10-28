@@ -475,11 +475,30 @@ vec4 layer() {
 
   picture: `
 uniform sampler2D uPicture;
+uniform int uBoxOn;
+// A timeline clip's box: its middle (canvas fractions), then half its
+// width and height (canvas heights); uTurn turns it clockwise, radians.
+uniform vec4 uBox;
+uniform float uTurn;
 vec4 layer() {
-  // The picture covers the whole canvas, top row first.
-  vec3 c = texture(uPicture, vC).rgb * mix(0.3, 1.7, uDial.z);
-  if (uStyle == 1) c *= 0.82 + 0.18 * sin(uTime * mix(0.3, 3.0, uDial.y));
-  return vec4(c, 1.0);
+  if (uBoxOn == 0) {
+    // The picture covers the whole canvas, top row first.
+    vec3 c = texture(uPicture, vC).rgb * mix(0.3, 1.7, uDial.z);
+    if (uStyle == 1) c *= 0.82 + 0.18 * sin(uTime * mix(0.3, 3.0, uDial.y));
+    return vec4(c, 1.0);
+  }
+  vec2 d = toH(vC) - toH(uBox.xy);
+  float cs = cos(uTurn);
+  float sn = sin(uTurn);
+  // Undo the clockwise turn (y points down).
+  vec2 l = vec2(d.x * cs + d.y * sn, -d.x * sn + d.y * cs);
+  vec2 uv = l / (2.0 * uBox.zw) + 0.5;
+  // A soft edge a pixel or so wide, so a turned picture is not jagged.
+  vec2 edge = (0.5 - abs(l / (2.0 * uBox.zw))) * 2.0 * uBox.zw * uPx;
+  float inside = clamp(min(edge.x, edge.y) + 0.5, 0.0, 1.0);
+  if (inside <= 0.0) return vec4(0.0);
+  vec4 t = texture(uPicture, clamp(uv, 0.0, 1.0));
+  return vec4(t.rgb * mix(0.3, 1.7, uDial.z), t.a * inside);
 }`,
 
 
@@ -516,6 +535,29 @@ void main() {
     float r = s.z * mix(0.15, 1.4, uDial.x);
     float d = sdSegment(p, a, b);
     float f = exp(-d * d / (r * r * 0.35)) * s.w;
+    if (uStyle == 3) {
+      // Footprints: a left or right foot stamped twice a second while the
+      // person walks, pointing the way they go, left on the ground to fade.
+      float pace = uTime * 2.0 + float(i) * 0.37;
+      float speed = length(m.xy);
+      f = 0.0;
+      if (speed > 0.02 && fract(pace) < uDt * 2.0 + 0.001) {
+        vec2 fwd = m.xy / speed;
+        vec2 side = vec2(-fwd.y, fwd.x);
+        float foot = mod(floor(pace), 2.0) < 1.0 ? -1.0 : 1.0;
+        float len = s.z * mix(0.5, 1.6, uDial.x);
+        vec2 o = p - (b + side * foot * len * 0.32);
+        vec2 l = vec2(dot(o, side) * foot, -dot(o, fwd)) / len;
+        float sole = length((l - vec2(0.0, -0.1)) / vec2(0.24, 0.36)) - 1.0;
+        float heel = length((l - vec2(0.0, 0.36)) / vec2(0.18, 0.2)) - 1.0;
+        float toes = 1e9;
+        for (int t = 0; t < 5; t++) {
+          float ft = float(t);
+          toes = min(toes, length(l - vec2(-0.16 + ft * 0.08, -0.58 + abs(ft - 1.0) * 0.03)) - mix(0.07, 0.045, ft / 4.0));
+        }
+        f = (min(min(sole, heel), toes) < 0.0 ? 1.0 : 0.0) * s.w;
+      }
+    }
     vec3 c = uStyle == 2
       ? mix(uColor, uColor2, 0.5 + 0.5 * sin(uTime * 1.5 + m.w * 6.28))
       : mix(uColor, uColor2, clamp(length(m.xy) * 2.0, 0.0, 1.0));
@@ -523,7 +565,8 @@ void main() {
   }
   // New paint goes over the old (premultiplied "over"), so a trail keeps
   // its colour instead of piling up to white where people linger.
-  float k = clamp(add.a * min(1.0, uDt * 15.0), 0.0, 1.0);
+  // Footprints are stamped whole in one frame; brushes build up over several.
+  float k = clamp(add.a * (uStyle == 3 ? 1.0 : min(1.0, uDt * 15.0)), 0.0, 1.0);
   vec3 paint = add.rgb / max(add.a, 1e-3);
   outColor = vec4(prev.rgb * (1.0 - k) + paint * k, prev.a * (1.0 - k) + k);
 }`
@@ -716,6 +759,12 @@ uniform int uPlaceOn;
 uniform int uMotion;
 uniform int uPinCount;
 uniform vec4 uPins[64];
+// Straightened house parts (flat.ts): which part each spot is on, and each
+// part's flat space → canvas and back, in canvas heights.
+uniform sampler2D uFlatIdx;
+uniform int uFlatOn;
+uniform mat3 uFlatTo[8];
+uniform mat3 uFlatFrom[8];
 out vec2 vQ;
 out float vAA;
 flat out float vSeed;
@@ -727,6 +776,12 @@ flat out float vPhase;
 flat out float vBlink;
 flat out float vFlip;
 flat out vec2 vLook;
+// The object's part: flat space → canvas (the identity off a straightened part).
+mat3 gTo = mat3(1.0);
+vec2 onCanvas(vec2 p) {
+  vec3 r = gTo * vec3(p, 1.0);
+  return r.xy / r.z;
+}
 void main() {
   int id = gl_VertexID / 6;
   int v = gl_VertexID - id * 6;
@@ -757,6 +812,21 @@ void main() {
     if (hidden) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
+    }
+  }
+  // On a straightened part (a roof sloping away) the object moves and
+  // changes in the part's flat space and is drawn through it, so it is not
+  // stretched there. Rising objects cross everything and stay as they are.
+  int part = -1;
+  if (uFlatOn == 1 && !(uMotion == M_RISE && uPinCount == 0)) {
+    float level = textureLod(uFlatIdx, vec2(c.x / aspect, c.y), 0.0).r * 255.0 / 16.0;
+    part = int(floor(level + 0.5)) - 1;
+    if (part >= 0 && part < 8) {
+      gTo = uFlatTo[part];
+      vec3 f = uFlatFrom[part] * vec3(c, 1.0);
+      c = f.xy / f.z;
+    } else {
+      part = -1;
     }
   }
   float R = cs * 0.3 * own;
@@ -813,7 +883,7 @@ void main() {
   vec2 pc = c + off;
   vec2 away;
   float dist;
-  float k = uNear == N_NONE ? 0.0 : nearAt(pc, away, dist);
+  float k = uNear == N_NONE ? 0.0 : nearAt(onCanvas(pc), away, dist);
   if (uNear == N_LIGHT) { bright *= 1.0 + 0.8 * k; glow = k; }
   else if (uNear == N_GROW) scale *= 1.0 + 1.2 * k;
   else if (uNear == N_SHRINK) scale *= 1.0 - 0.8 * k;
@@ -843,7 +913,7 @@ void main() {
     float best = 1e9;
     for (int i = 0; i < 16; i++) {
       if (i >= uSpots) break;
-      vec2 d = toH(uSpot[i].xy) - pc;
+      vec2 d = toH(uSpot[i].xy) - onCanvas(pc);
       float dd = length(d);
       if (dd < best && uSpot[i].w > 0.2) { best = dd; look = d / max(dd, 1e-4) * min(1.0, dd / (R * 3.0)); }
     }
@@ -855,10 +925,25 @@ void main() {
   float cr = cos(rot);
   float sr = sin(rot);
   vec2 pH = pc + vec2(cr * corner.x - sr * corner.y, sr * corner.x + cr * corner.y) * size;
-  vec2 uv = (vec2(pH.x / aspect, pH.y) - uRect.xy) / uRect.zw;
-  gl_Position = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0);
+  // Through the part's perspective; w carries it so the look inside the
+  // quad is perspective-correct too (w is 1 off a straightened part).
+  vec3 hc = gTo * vec3(pH, 1.0);
+  if (hc.z <= 1e-6) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
+  vec2 uv = (vec2(hc.x / hc.z / aspect, hc.y / hc.z) - uRect.xy) / uRect.zw;
+  gl_Position = vec4((uv.x * 2.0 - 1.0) * hc.z, (1.0 - uv.y * 2.0) * hc.z, 0.0, hc.z);
+  // How much the part's perspective grows or shrinks the object here, for its soft edge.
+  float js = 1.0;
+  if (part >= 0) {
+    vec2 o = onCanvas(pc);
+    vec2 ex = onCanvas(pc + vec2(R, 0.0)) - o;
+    vec2 ey = onCanvas(pc + vec2(0.0, R)) - o;
+    js = sqrt(abs(ex.x * ey.y - ex.y * ey.x)) / max(R, 1e-5);
+  }
   vQ = corner * 1.4;
-  vAA = 1.5 / max(R * max(scale, 0.05) * uPx, 1.0);
+  vAA = 1.5 / max(R * max(scale, 0.05) * js * uPx, 1.0);
   vSeed = hash(cell + 5.5);
   vTint = tint;
   vBright = bright;
@@ -931,6 +1016,23 @@ float sdHeart(vec2 p) {
   p.x = abs(p.x);
   if (p.y + p.x > 1.0) return sqrt(dot2(p - vec2(0.25, 0.75))) - 0.35355;
   return sqrt(min(dot2(p - vec2(0.0, 1.0)), dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
+}
+// Any triangle.
+float sdTri(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
+  vec2 e0 = p1 - p0;
+  vec2 e1 = p2 - p1;
+  vec2 e2 = p0 - p2;
+  vec2 v0 = p - p0;
+  vec2 v1 = p - p1;
+  vec2 v2 = p - p2;
+  vec2 pq0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);
+  vec2 pq1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);
+  vec2 pq2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
+  float s = sign(e0.x * e2.y - e0.y * e2.x);
+  vec2 d = min(min(vec2(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
+                   vec2(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
+                   vec2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+  return -sqrt(d.x) * sign(d.y);
 }
 // y up, apex up, side 2r.
 float sdEqTri(vec2 p, float r) {
@@ -1027,7 +1129,7 @@ void main() {
     sd = min(min(wing, body), ears);
     c = uColor * (0.8 + 0.3 * (0.5 - p.y));
     if (length(vec2(abs(q.x) - 0.08, q.y + 0.08)) < 0.05) c = uColor2 * 1.5;
-  } else if (uStyle == S_SPIDERS) {
+  } else if (uStyle == S_SPIDERS || uStyle == S_CRAWLING_SPIDERS) {
     float body = length(q - vec2(0.0, 0.2)) - 0.33;
     float head = length(q - vec2(0.0, -0.18)) - 0.18;
     vec2 pm = vec2(abs(q.x), q.y);
@@ -1040,7 +1142,8 @@ void main() {
       legs = min(legs, min(sdSegment(pm, vec2(0.15, y0 + 0.1), knee), sdSegment(pm, knee, foot)));
     }
     legs -= 0.04;
-    float thread = sdSegment(q, vec2(0.0, -0.3), vec2(0.0, -1.5)) - 0.015;
+    // Crawling ones walk on the ground, without the thread they hang from.
+    float thread = uStyle == S_CRAWLING_SPIDERS ? 1e9 : sdSegment(q, vec2(0.0, -0.3), vec2(0.0, -1.5)) - 0.015;
     sd = min(min(body, head), min(legs, thread));
     if (thread < min(min(body, head), legs)) c = vec3(0.6);
     if (length(vec2(abs(q.x) - 0.07, q.y + 0.2)) < 0.045) c = uColor2 * 1.5;
@@ -1239,6 +1342,353 @@ void main() {
     if (r > 0.66) c *= 0.8;
     if (abs(r - 0.5) < 0.03) c *= 1.25;
     c += 0.5 * smoothstep(0.1, 0.0, abs(q.x + q.y - 0.6 * sin(vPhase))) * step(r, 0.8);
+  } else if (uStyle == S_FOOTPRINTS) {
+    // A left and a right footprint, stepping: each glows in turn.
+    float step2 = fract(vPhase * 0.25);
+    sd = 1e9;
+    float lit = 0.0;
+    for (int f = 0; f < 2; f++) {
+      float side = f == 0 ? -1.0 : 1.0;
+      vec2 p = vec2((q.x - side * 0.32) * side, q.y - side * 0.2) / 0.95;
+      float foot = min(min(sdEl(p - vec2(0.0, -0.08), vec2(0.25, 0.38)), sdEl(p - vec2(0.0, 0.4), vec2(0.19, 0.21))),
+                       min(min(length(p - vec2(-0.16, -0.6)) - 0.085, length(p - vec2(-0.04, -0.64)) - 0.07),
+                           min(length(p - vec2(0.07, -0.61)) - 0.06, length(p - vec2(0.16, -0.55)) - 0.05)));
+      foot *= 0.95;
+      if (foot < sd) { sd = foot; lit = f == 0 ? step(step2, 0.5) : step(0.5, step2); }
+    }
+    c = mix(uColor, uColor2, lit * 0.6) * mix(0.7, 1.25, lit);
+    ec = uColor;
+    ea = exp(-max(sd, 0.0) * 12.0) * 0.25 * lit;
+  } else if (uStyle == S_WELCOME_MAT) {
+    // A doormat with a border and WELCOME across it, wider than tall.
+    float mat = sdBox(q, vec2(0.95, 0.55)) - 0.04;
+    sd = mat;
+    c = uColor * (0.75 + 0.35 * hash(floor(q * 40.0) + vSeed));
+    float border = abs(sdBox(q, vec2(0.82, 0.43))) - 0.025;
+    float word = 1e9;
+    for (int i = 0; i < 7; i++) {
+      vec2 p = (q - vec2(-0.615 + float(i) * 0.205, 0.0)) / vec2(0.07, 0.13);
+      float d;
+      if (i == 0) {
+        d = min(min(sdSegment(p, vec2(-1.0, -1.0), vec2(-0.5, 1.0)), sdSegment(p, vec2(-0.5, 1.0), vec2(0.0, -0.2))),
+                min(sdSegment(p, vec2(0.0, -0.2), vec2(0.5, 1.0)), sdSegment(p, vec2(0.5, 1.0), vec2(1.0, -1.0))));
+      } else if (i == 1 || i == 6) {
+        d = min(min(sdSegment(p, vec2(-1.0, -1.0), vec2(-1.0, 1.0)), sdSegment(p, vec2(-1.0, -1.0), vec2(1.0, -1.0))),
+                min(sdSegment(p, vec2(-1.0, 0.0), vec2(0.6, 0.0)), sdSegment(p, vec2(-1.0, 1.0), vec2(1.0, 1.0))));
+      } else if (i == 2) {
+        d = min(sdSegment(p, vec2(-1.0, -1.0), vec2(-1.0, 1.0)), sdSegment(p, vec2(-1.0, 1.0), vec2(1.0, 1.0)));
+      } else if (i == 3) {
+        d = min(min(sdSegment(p, vec2(1.0, -1.0), vec2(-1.0, -1.0)), sdSegment(p, vec2(-1.0, -1.0), vec2(-1.0, 1.0))),
+                sdSegment(p, vec2(-1.0, 1.0), vec2(1.0, 1.0)));
+      } else if (i == 4) {
+        d = abs(sdBox(p, vec2(1.0)));
+      } else {
+        d = min(min(sdSegment(p, vec2(-1.0, 1.0), vec2(-1.0, -1.0)), sdSegment(p, vec2(-1.0, -1.0), vec2(0.0, 0.2))),
+                min(sdSegment(p, vec2(0.0, 0.2), vec2(1.0, -1.0)), sdSegment(p, vec2(1.0, -1.0), vec2(1.0, 1.0))));
+      }
+      // Back from letter units to the object's square (the smaller scale).
+      word = min(word, d * 0.07 - 0.022);
+    }
+    if (min(border, word) < 0.0 && mat < 0.0) c = uColor2 * 1.15;
+  } else if (uStyle == S_RUNWAY_ARROWS) {
+    // A glowing chevron pointing up the picture, like a landing strip.
+    vec2 p = vec2(abs(q.x), q.y);
+    sd = sdSegment(p, vec2(0.0, -0.45), vec2(0.65, 0.3)) - 0.13;
+    float sweep = 0.5 + 0.5 * sin(vPhase * 3.0 - q.y * 3.0);
+    c = mix(uColor, uColor2, sweep) * (0.9 + 0.5 * sweep);
+    ec = uColor;
+    ea = exp(-max(sd, 0.0) * 8.0) * 0.35;
+  } else if (uStyle == S_GINGERBREAD) {
+    float head = length(q - vec2(0.0, -0.58)) - 0.27;
+    float body = sdEl(q - vec2(0.0, 0.02), vec2(0.3, 0.36));
+    float arms = sdSegment(q, vec2(-0.62, -0.22), vec2(0.62, -0.22)) - 0.14;
+    vec2 pl = vec2(abs(q.x), q.y);
+    float legs = sdSegment(pl, vec2(0.08, 0.2), vec2(0.36, 0.84)) - 0.15;
+    sd = min(min(head, body), min(arms, legs));
+    c = uColor * (0.8 + 0.3 * (0.5 - q.y * 0.4)) * (0.92 + 0.12 * hash(floor(q * 14.0) + vSeed));
+    // White icing squiggles on the hands and feet, buttons, eyes and a smile.
+    float wig = 0.03 * sin(q.y * 40.0);
+    if (abs(abs(q.x) - 0.5 + wig) < 0.035 && arms < 0.0) c = vec3(1.0);
+    if (abs(q.y - 0.68 + 0.03 * sin(q.x * 40.0)) < 0.035 && legs < 0.0) c = vec3(1.0);
+    if (length(vec2(q.x, mod(q.y + 0.12, 0.2) - 0.1)) < 0.06 && abs(q.y) < 0.25) c = uColor2;
+    if (length(vec2(abs(q.x) - 0.1, q.y + 0.64)) < 0.045) c = vec3(1.0);
+    if (abs(length(q - vec2(0.0, -0.6)) - 0.15) < 0.025 && q.y > -0.53) c = vec3(1.0);
+  } else if (uStyle == S_STOCKINGS) {
+    float leg = sdBox(q - vec2(-0.08, -0.2), vec2(0.28, 0.5)) - 0.04;
+    float foot = sdEl(q - vec2(0.16, 0.42), vec2(0.48, 0.28));
+    float cuff = sdBox(q - vec2(-0.08, -0.74), vec2(0.38, 0.16)) - 0.05;
+    sd = min(min(leg, foot), cuff);
+    c = mix(uColor, uColor2, step(0.5, fract((q.y - q.x * 0.6) * 3.0))) * (0.8 + 0.25 * (0.4 - q.x));
+    if (length(q - vec2(0.42, 0.45)) < 0.2 || length(q - vec2(-0.22, 0.52)) < 0.16) c = vec3(1.0) * 0.95;
+    if (cuff < min(leg, foot)) c = vec3(1.0) * (0.88 + 0.12 * hash(floor(q * 18.0)));
+  } else if (uStyle == S_WREATHS) {
+    float a = atan(q.y, q.x);
+    float r = length(q);
+    float ring = abs(r - 0.58) - 0.24 - 0.05 * abs(sin(a * 9.0)) - 0.03 * sin(a * 23.0 + vSeed * 9.0);
+    vec2 bp = q - vec2(0.0, 0.62);
+    float bow = min(sdEl(rot2(0.5) * (bp - vec2(-0.18, -0.02)), vec2(0.2, 0.11)), sdEl(rot2(-0.5) * (bp - vec2(0.18, -0.02)), vec2(0.2, 0.11)));
+    float tails = min(sdSegment(bp, vec2(0.0), vec2(-0.16, 0.3)), sdSegment(bp, vec2(0.0), vec2(0.16, 0.3))) - 0.06;
+    sd = min(ring, min(bow, tails));
+    c = uColor * (0.65 + 0.5 * hash(floor(vec2(a * 6.0, r * 9.0)) + vSeed));
+    vec2 bc = vec2(cos(floor(a * 1.6 + 0.5) / 1.6), sin(floor(a * 1.6 + 0.5) / 1.6)) * 0.6;
+    if (length(q - bc) < 0.08 && ring < 0.0) c = vec3(0.95, 0.1, 0.12);
+    if (min(bow, tails) < ring) c = uColor2 * (0.85 + 0.3 * (0.5 - bp.y));
+  } else if (uStyle == S_SANTA_HATS) {
+    float cone = sdTri(q, vec2(-0.6, 0.38), vec2(0.58, 0.38), vec2(0.5, -0.66)) - 0.05;
+    float brim = sdBox(q - vec2(0.0, 0.48), vec2(0.7, 0.13)) - 0.06;
+    float pom = length(q - vec2(0.52, -0.7)) - 0.19;
+    sd = min(min(cone, brim), pom);
+    c = uColor * (0.75 + 0.4 * (0.5 - q.x * 0.4));
+    if (min(brim, pom) < cone) c = uColor2 * (0.9 + 0.1 * hash(floor(q * 20.0)));
+  } else if (uStyle == S_REINDEER) {
+    float head = sdEl(q - vec2(0.0, 0.08), vec2(0.4, 0.5));
+    float snout = sdEl(q - vec2(0.0, 0.42), vec2(0.3, 0.22));
+    vec2 pe = vec2(abs(q.x), q.y);
+    float ear = sdEl(rot2(-0.6) * (pe - vec2(0.46, -0.24)), vec2(0.2, 0.09));
+    float antler = min(min(sdSegment(pe, vec2(0.2, -0.36), vec2(0.42, -0.86)), sdSegment(pe, vec2(0.33, -0.62), vec2(0.6, -0.7))),
+      sdSegment(pe, vec2(0.38, -0.76), vec2(0.28, -0.98))) - 0.055;
+    float nose = length(q - vec2(0.0, 0.34)) - 0.13;
+    sd = min(min(min(head, snout), min(ear, antler)), nose);
+    c = uColor * (0.75 + 0.35 * (0.5 - q.y * 0.5));
+    if (snout < 0.0) c = mix(uColor, vec3(0.95, 0.85, 0.7), 0.55);
+    if (antler < min(head, ear)) c = vec3(0.9, 0.8, 0.6);
+    if (length(pe - vec2(0.17, -0.02)) < 0.065) c = vec3(0.05);
+    if (nose < 0.0) c = uColor2 * 1.3 + 0.5 * exp(-dot2(q - vec2(-0.04, 0.3)) * 120.0);
+    ec = uColor2;
+    ea = 0.7 * exp(-max(nose, 0.0) * 9.0);
+  } else if (uStyle == S_POINSETTIAS) {
+    float petals = 1e9;
+    float inner = 1e9;
+    for (int i = 0; i < 6; i++) {
+      float a = float(i) * 1.0472;
+      petals = min(petals, sdEl(rot2(a) * q - vec2(0.0, -0.5), vec2(0.17, 0.42)));
+      inner = min(inner, sdEl(rot2(a + 0.5236) * q - vec2(0.0, -0.32), vec2(0.13, 0.28)));
+    }
+    float centre = length(q) - 0.14;
+    sd = min(min(petals, inner), centre);
+    c = uColor * (0.7 + 0.35 * (1.0 - length(q)));
+    if (inner < petals) c = uColor * 1.1;
+    if (centre < 0.0 || (length(q) < 0.2 && hash(floor(q * 30.0) + vSeed) > 0.6)) c = uColor2 * 1.2;
+  } else if (uStyle == S_HOLLY) {
+    vec2 l1 = rot2(0.5) * (q - vec2(-0.38, 0.18));
+    vec2 l2 = rot2(-0.5) * (q - vec2(0.38, 0.18));
+    float leaf1 = sdEl(l1, vec2(0.52, 0.22)) + 0.05 * abs(sin(l1.x * 13.0));
+    float leaf2 = sdEl(l2, vec2(0.52, 0.22)) + 0.05 * abs(sin(l2.x * 13.0));
+    float berries = min(min(length(q - vec2(-0.12, -0.12)) - 0.16, length(q - vec2(0.13, -0.14)) - 0.16), length(q - vec2(0.0, -0.36)) - 0.16);
+    sd = min(min(leaf1, leaf2), berries);
+    c = uColor * (0.75 + 0.3 * (0.5 - q.y * 0.5));
+    if (abs((leaf1 < leaf2 ? l1 : l2).y) < 0.02) c *= 1.4;
+    if (berries < min(leaf1, leaf2)) c = uColor2 * (0.85 + 0.2 * (0.5 - q.y)) + 0.6 * exp(-dot2(q - vec2(-0.05, -0.42)) * 90.0);
+  } else if (uStyle == S_MITTENS) {
+    float palm = sdEl(q - vec2(0.05, -0.12), vec2(0.42, 0.56));
+    float thumb = sdEl(rot2(-0.6) * (q - vec2(-0.4, 0.02)), vec2(0.15, 0.3));
+    float cuff = sdBox(q - vec2(0.05, 0.56), vec2(0.4, 0.17)) - 0.04;
+    sd = min(min(palm, thumb), cuff);
+    c = uColor * (0.75 + 0.35 * (0.5 - q.x * 0.5));
+    if (abs(q.y + 0.08) < 0.09 && palm < 0.0) c = uColor2;
+    if (abs(q.y + 0.08) < 0.04 && palm < 0.0 && fract(q.x * 6.0) < 0.5) c = vec3(1.0);
+    if (cuff < min(palm, thumb)) c = mix(vec3(1.0), uColor2, step(0.5, fract(q.x * 8.0))) * 0.95;
+  } else if (uStyle == S_TURKEYS) {
+    float a = atan(q.x, -(q.y - 0.3));
+    float fan = max(length(q - vec2(0.0, 0.3)) - 0.92 - 0.06 * abs(sin(a * 6.0)), q.y - 0.32);
+    float body = length(q - vec2(0.0, 0.32)) - 0.4;
+    float head = length(q - vec2(0.0, -0.12)) - 0.2;
+    float beak = sdTri(q, vec2(-0.06, -0.08), vec2(0.06, -0.08), vec2(0.0, 0.06));
+    sd = min(min(fan, body), min(head, beak));
+    float band = floor((length(q - vec2(0.0, 0.3)) - 0.4) / 0.17);
+    c = band < 1.0 ? uColor2 : band < 2.0 ? vec3(0.95, 0.55, 0.1) : band < 3.0 ? vec3(0.85, 0.2, 0.1) : vec3(0.95, 0.8, 0.2);
+    if (body < 0.0 || head < 0.0) c = uColor * (0.8 + 0.3 * (0.5 - q.y));
+    if (length(vec2(abs(q.x) - 0.08, q.y + 0.17)) < 0.04) c = vec3(0.05);
+    if (beak < 0.0) c = vec3(1.0, 0.7, 0.1);
+    if (length(q - vec2(0.06, 0.08)) < 0.06) c = vec3(0.9, 0.1, 0.1);
+  } else if (uStyle == S_CANDY_CORN) {
+    float body = sdTri(q, vec2(-0.62, -0.72), vec2(0.62, -0.72), vec2(0.0, 0.92)) - 0.12;
+    sd = body;
+    c = q.y < -0.25 ? vec3(1.0, 0.97, 0.88) : q.y < 0.3 ? uColor : uColor2;
+    c *= 0.85 + 0.25 * (0.4 - q.x * 0.5);
+    c += 0.3 * exp(-dot2(q - vec2(-0.2, -0.4)) * 25.0);
+  } else if (uStyle == S_SKULLS) {
+    float cranium = length(q - vec2(0.0, -0.18)) - 0.68;
+    float jaw = sdBox(q - vec2(0.0, 0.5), vec2(0.36, 0.2)) - 0.08;
+    sd = min(cranium, jaw);
+    c = uColor * (0.8 + 0.25 * (0.5 - q.y * 0.5));
+    vec2 pe = vec2(abs(q.x) - 0.27, q.y + 0.1);
+    float eye = sdEl(pe, vec2(0.17, 0.2));
+    float nose = sdTri(q, vec2(-0.08, 0.32), vec2(0.08, 0.32), vec2(0.0, 0.14));
+    float teeth = step(0.5, fract(q.x * 6.0 + 0.5)) * step(abs(q.y - 0.52), 0.12) * step(abs(q.x), 0.3);
+    if (eye < 0.0) {
+      c = uColor2 * (1.2 + 0.8 * exp(-dot2(pe) * 60.0));
+      ec = uColor2;
+    }
+    if (nose < 0.0) c = vec3(0.05);
+    if (teeth > 0.5 && jaw < 0.0) c *= 0.55;
+    ea = 0.45 * exp(-max(eye, 0.0) * 10.0) * step(0.0, -cranium + 0.3);
+  } else if (uStyle == S_TOMBSTONES) {
+    float stone = min(sdBox(q - vec2(0.0, 0.2), vec2(0.6, 0.6)), length(q - vec2(0.0, -0.4)) - 0.6);
+    float mound = sdEl(q - vec2(0.0, 0.86), vec2(0.95, 0.16));
+    sd = min(stone, mound);
+    c = uColor * (0.7 + 0.35 * (0.5 - q.y * 0.5)) * (0.9 + 0.15 * hash(floor(q * 16.0) + vSeed));
+    // R.I.P. carved in, and grass on the mound.
+    vec2 r = q - vec2(0.0, -0.2);
+    float letters = min(min(sdSegment(r, vec2(-0.38, -0.12), vec2(-0.38, 0.14)), sdSegment(r, vec2(-0.38, -0.12), vec2(-0.24, -0.06))),
+      min(min(sdSegment(r, vec2(-0.24, -0.06), vec2(-0.38, 0.0)), sdSegment(r, vec2(-0.38, 0.0), vec2(-0.24, 0.14))),
+      min(sdSegment(r, vec2(0.0, -0.12), vec2(0.0, 0.14)), min(sdSegment(r, vec2(0.22, -0.12), vec2(0.22, 0.14)),
+      min(sdSegment(r, vec2(0.22, -0.12), vec2(0.36, -0.06)), sdSegment(r, vec2(0.36, -0.06), vec2(0.22, 0.02)))))));
+    if (letters < 0.035 && stone < 0.0) c *= 0.35;
+    float cross = min(sdBox(q - vec2(0.0, 0.32), vec2(0.04, 0.16)), sdBox(q - vec2(0.0, 0.26), vec2(0.12, 0.035)));
+    if (cross < 0.0) c *= 0.45;
+    if (mound < 0.0 && mound < stone) c = uColor2 * (0.6 + 0.5 * hash(floor(q * 30.0)));
+  } else if (uStyle == S_CAULDRONS) {
+    float pot = max(length(q - vec2(0.0, 0.18)) - 0.7, -0.22 - q.y);
+    float rim = sdBox(q - vec2(0.0, -0.24), vec2(0.72, 0.08)) - 0.05;
+    vec2 pl = vec2(abs(q.x), q.y);
+    float legs = sdSegment(pl, vec2(0.42, 0.72), vec2(0.52, 0.94)) - 0.07;
+    // Bubbles rising from the brew.
+    float bubbles = 1e9;
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i);
+      float t = fract(vPhase * 0.25 + fi * 0.33);
+      vec2 bc = vec2((fi - 1.0) * 0.32 + 0.06 * sin(vPhase + fi), -0.32 - t * 0.6);
+      bubbles = min(bubbles, length(q - bc) - 0.11 * (1.0 - t * 0.6));
+    }
+    float brew = sdEl(q - vec2(0.0, -0.3), vec2(0.62, 0.1));
+    sd = min(min(min(pot, rim), legs), min(bubbles, brew));
+    c = vec3(0.13, 0.12, 0.15) * (1.0 + 0.6 * exp(-dot2(q - vec2(-0.3, 0.0)) * 6.0));
+    if (rim < 0.0) c = vec3(0.25, 0.24, 0.28);
+    if (brew < 0.0 || bubbles < 0.0) c = uColor * (1.1 + 0.4 * sin(vPhase * 2.0 + q.x * 6.0));
+    ec = uColor;
+    ea = 0.7 * exp(-max(min(brew, bubbles), 0.0) * 7.0) * step(q.y, -0.2);
+    // The fire glows under it.
+    float fire = sdEl(q - vec2(0.0, 0.9), vec2(0.45, 0.12 + 0.05 * sin(vPhase * 7.0)));
+    if (fire < sd) {
+      sd = fire;
+      c = uColor2 * 1.4;
+    }
+  } else if (uStyle == S_WITCH_HATS) {
+    vec2 p = q;
+    p.x += 0.18 * smoothstep(-0.2, -0.95, q.y) * (q.y + 0.2);
+    float cone = sdTri(p, vec2(-0.42, 0.42), vec2(0.42, 0.42), vec2(0.18, -0.95)) - 0.04;
+    float brim = sdEl(q - vec2(0.0, 0.5), vec2(0.95, 0.16));
+    sd = min(cone, brim);
+    c = uColor * (0.8 + 0.4 * (0.5 - q.x * 0.5));
+    if (abs(q.y - 0.3) < 0.08 && cone < 0.0) c = uColor2;
+    if (sdBox(q - vec2(0.0, 0.3), vec2(0.1, 0.1)) < 0.0 && abs(q.x) > 0.05) c = vec3(1.0, 0.85, 0.3);
+  } else if (uStyle == S_ACORNS) {
+    float nut = sdEl(q - vec2(0.0, 0.2), vec2(0.5, 0.62));
+    float cap = max(sdEl(q - vec2(0.0, -0.22), vec2(0.66, 0.36)), q.y + 0.02 - 0.0);
+    float stem = sdSegment(q, vec2(0.0, -0.56), vec2(0.12, -0.84)) - 0.07;
+    sd = min(min(nut, cap), stem);
+    c = uColor * (0.75 + 0.35 * (0.5 - q.x * 0.6)) + 0.3 * exp(-dot2(q - vec2(-0.2, 0.15)) * 20.0);
+    if (min(cap, stem) < nut || q.y < -0.04) c = uColor2 * (0.7 + 0.4 * hash(floor(q * 18.0) + vSeed));
+  } else if (uStyle == S_PIES) {
+    float dish = sdEl(q - vec2(0.0, 0.25), vec2(0.92, 0.42));
+    float top = sdEl(q - vec2(0.0, 0.1), vec2(0.86, 0.36));
+    float steam = 1e9;
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i) - 1.0;
+      float yy = -0.35 - 0.5 * fract(vPhase * 0.2 + fi * 0.3);
+      steam = min(steam, abs(q.x - fi * 0.3 - 0.07 * sin(q.y * 9.0 + vPhase * 2.0)) - 0.04 + step(q.y, yy - 0.25) + step(yy, q.y));
+    }
+    sd = min(dish, steam);
+    c = uColor2 * (0.75 + 0.3 * hash(floor(q * 20.0)));
+    if (top < 0.0) c = uColor * (0.85 + 0.2 * (0.5 - q.y));
+    if (abs(top) < 0.06) c = uColor2 * 1.1;
+    if (length(q - vec2(0.0, 0.05)) < 0.18) c = vec3(1.0, 0.98, 0.92);
+    if (steam < dish) c = vec3(0.9);
+    own = steam < dish ? 0.5 : 1.0;
+  } else if (uStyle == S_PARTY_HATS) {
+    float cone = sdTri(q, vec2(-0.55, 0.72), vec2(0.55, 0.72), vec2(0.0, -0.72)) - 0.04;
+    float pom = length(q - vec2(0.0, -0.78)) - 0.16;
+    sd = min(cone, pom);
+    float stripes = step(0.5, fract((q.y - q.x * 0.5) * 3.0));
+    c = mix(uColor, uColor2, stripes) * (0.8 + 0.3 * (0.4 - q.x * 0.5));
+    if (length(vec2(fract(q.x * 4.0 + 0.5) - 0.5, fract(q.y * 4.0) - 0.5)) < 0.12 && cone < 0.0) c = vec3(1.0, 0.9, 0.3);
+    if (pom < cone) c = vec3(1.0, 0.95, 0.6);
+    if (abs(q.y - 0.68) < 0.05 && cone < 0.0) c = vec3(1.0, 0.85, 0.2);
+  } else if (uStyle == S_CHAMPAGNE) {
+    vec2 p = vec2(abs(q.x), q.y);
+    float bowl = max(sdEl(q - vec2(0.0, -0.62), vec2(0.44, 0.58)), -(q.y + 0.62));
+    float stem = sdBox(q - vec2(0.0, 0.34), vec2(0.04, 0.32));
+    float base = sdEl(q - vec2(0.0, 0.7), vec2(0.36, 0.08));
+    sd = min(min(bowl, stem), base);
+    c = vec3(0.85, 0.92, 1.0) * 0.6;
+    if (bowl < 0.0 && q.y > -0.5) c = uColor * (0.9 + 0.3 * (0.5 - q.y));
+    // Bubbles rising in it.
+    vec2 bq = vec2(q.x * 6.0, q.y * 6.0 + vPhase * 2.0);
+    if (bowl < 0.0 && length(fract(bq) - 0.5) < 0.16 && hash(floor(bq)) > 0.6) c = vec3(1.0);
+    if (abs(p.x - 0.3) < 0.035 && bowl < 0.0 && q.y < -0.5) c = vec3(1.0);
+  } else if (uStyle == S_FLAGS) {
+    // A waving flag on a pole: stripes and a starry corner.
+    float wave = 0.08 * sin(q.x * 4.0 - vPhase * 4.0);
+    vec2 p = vec2(q.x, q.y - wave * (q.x + 0.75));
+    float cloth = sdBox(p - vec2(0.12, -0.25), vec2(0.72, 0.48));
+    float pole = sdBox(q - vec2(-0.66, 0.1), vec2(0.04, 0.9));
+    sd = min(cloth, pole);
+    float stripe = step(0.5, fract((p.y + 0.73) * 6.5));
+    c = mix(uColor, vec3(1.0), stripe);
+    if (p.x < 0.1 && p.y < -0.23) {
+      c = uColor2;
+      vec2 st = fract(vec2(p.x, p.y) * 9.0) - 0.5;
+      if (length(st) < 0.18) c = vec3(1.0);
+    }
+    c *= 0.8 + 0.35 * (0.5 + 0.5 * sin(q.x * 4.0 - vPhase * 4.0 + 1.0));
+    if (pole < cloth) c = vec3(0.85, 0.75, 0.4);
+  } else if (uStyle == S_CUPCAKES) {
+    float cup = sdTri(q, vec2(-0.55, 0.05), vec2(0.55, 0.05), vec2(0.0, 1.4));
+    cup = max(cup, q.y - 0.85);
+    float frosting = min(sdEl(q - vec2(0.0, -0.08), vec2(0.62, 0.2)), min(sdEl(q - vec2(0.0, -0.28), vec2(0.45, 0.17)), sdEl(q - vec2(0.0, -0.45), vec2(0.26, 0.13))));
+    float cherry = length(q - vec2(0.0, -0.62)) - 0.12;
+    float flame = sdEl(q - vec2(0.18, -0.92 - 0.03 * sin(vPhase * 9.0)), vec2(0.06, 0.11));
+    float candle = sdBox(q - vec2(0.18, -0.68), vec2(0.035, 0.16));
+    sd = min(min(min(cup, frosting), cherry), min(flame, candle));
+    c = uColor2 * (0.7 + 0.3 * step(0.5, fract(q.x * 7.0)));
+    if (frosting < cup) c = uColor * (0.9 + 0.3 * (0.4 - q.y));
+    if (frosting < 0.0 && hash(floor(q * 22.0) + vSeed) > 0.85) c = candy(hash(floor(q * 22.0)));
+    if (cherry < 0.0) c = vec3(0.9, 0.1, 0.15) + 0.4 * exp(-dot2(q - vec2(-0.04, -0.66)) * 200.0);
+    if (candle < 0.0) c = vec3(1.0, 0.95, 0.9);
+    if (flame < 0.0) c = flameColour(length(q - vec2(0.18, -0.95)), 0.1);
+    ec = vec3(1.0, 0.7, 0.3);
+    ea = 0.6 * exp(-max(flame, 0.0) * 12.0);
+  } else if (uStyle == S_CHICKS) {
+    float body = length(q - vec2(0.0, 0.25)) - 0.55;
+    float head = length(q - vec2(0.18, -0.38)) - 0.36;
+    float beak = sdTri(q, vec2(0.48, -0.42), vec2(0.48, -0.28), vec2(0.72, -0.35));
+    float shell = max(sdEl(q - vec2(0.0, 0.55), vec2(0.66, 0.42)), -q.y + 0.36 + 0.08 * step(0.5, fract(q.x * 3.5)));
+    sd = min(min(body, head), min(beak, shell));
+    c = uColor * (0.85 + 0.3 * (0.4 - q.y * 0.4));
+    if (beak < 0.0) c = vec3(1.0, 0.55, 0.1);
+    if (length(q - vec2(0.28, -0.44)) < 0.06) c = vec3(0.05);
+    if (shell < min(body, head)) c = uColor2 * (0.85 + 0.2 * (0.5 - q.x));
+    float wing = sdEl(rot2(0.6 + 0.3 * sin(vPhase * 5.0)) * (q - vec2(-0.3, 0.2)), vec2(0.28, 0.14));
+    if (wing < 0.0 && shell > 0.0) c *= 0.8;
+  } else if (uStyle == S_POTS_OF_GOLD) {
+    float pot = max(length(q - vec2(0.0, 0.3)) - 0.6, -0.08 - q.y);
+    float rim = sdBox(q - vec2(0.0, -0.08), vec2(0.62, 0.08)) - 0.04;
+    float coins = 1e9;
+    for (int i = 0; i < 6; i++) {
+      float fi = float(i);
+      vec2 cc = vec2((fi - 2.5) * 0.2, -0.22 - 0.12 * sin(fi * 2.3) - 0.1 * step(1.5, fi) * step(fi, 3.5));
+      coins = min(coins, length(q - cc) - 0.15);
+    }
+    sd = min(min(pot, rim), coins);
+    c = vec3(0.1, 0.1, 0.11) * (1.0 + 0.8 * exp(-dot2(q - vec2(-0.25, 0.2)) * 8.0));
+    if (rim < 0.0) c = vec3(0.2);
+    if (coins < min(pot, rim)) {
+      c = uColor * (0.9 + 0.4 * hash(floor(q * 12.0)));
+      ec = uColor;
+    }
+    ea = 0.5 * exp(-max(coins, 0.0) * 8.0) * step(q.y, 0.0);
+    if (abs(q.y - 0.3) < 0.06 && pot < 0.0) c = uColor2;
+  } else if (uStyle == S_RAINBOWS) {
+    float r = length(q - vec2(0.0, 0.55));
+    float arc = max(abs(r - 0.68) - 0.3, q.y - 0.55);
+    float cloudL = min(length(q - vec2(-0.72, 0.52)) - 0.22, length(q - vec2(-0.5, 0.58)) - 0.18);
+    float cloudR = min(length(q - vec2(0.72, 0.52)) - 0.22, length(q - vec2(0.5, 0.58)) - 0.18);
+    sd = min(arc, min(cloudL, cloudR));
+    float band = clamp(floor((r - 0.38) / 0.6 * 6.0), 0.0, 5.0);
+    c = band < 1.0 ? vec3(0.55, 0.3, 0.95) : band < 2.0 ? vec3(0.2, 0.45, 1.0) : band < 3.0 ? vec3(0.2, 0.8, 0.35)
+      : band < 4.0 ? vec3(1.0, 0.85, 0.15) : band < 5.0 ? vec3(1.0, 0.55, 0.1) : vec3(0.95, 0.15, 0.2);
+    if (min(cloudL, cloudR) < arc) c = vec3(1.0);
   }
 
   c = mix(c, uColor2, vTint * 0.85) * vBright;

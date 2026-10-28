@@ -6,8 +6,11 @@ import type {
   CapabilityManifest,
   CommandLogRow,
   ConnectionTest,
+  FanReading,
   Projector,
   Telemetry,
+  TemperatureReading,
+  TemperatureSensor,
 } from '@/api/types'
 import { useFleetContext, useOps, latestCommand, phaseIsActive, type TrackedCommand } from '@/live/LiveProvider'
 import { useDrivers } from '@/live/useCatalog'
@@ -25,6 +28,7 @@ import {
   Banner,
   Chip,
   EmptyState,
+  InfoTip,
   Panel,
   Spinner,
   Tabs,
@@ -61,7 +65,6 @@ import {
   RemoteIcon,
   ShutterIcon,
   TemperatureIcon,
-  TestPatternIcon,
   type LucideIcon,
 } from '@/components/icons'
 import {
@@ -98,27 +101,33 @@ interface Gate {
   reason: (name: string) => string | null
   /** Enabled only because the operator opted into unverified commands. */
   unverified: (name: string) => boolean
+  /** The technical why behind a reason, for a tooltip. */
+  detail: (name: string) => string | undefined
 }
 
 function makeGate(manifest: CapabilityManifest | null): Gate {
   const capability = (name: string) => manifest?.capabilities.find((item) => item.name === name)
   const reason = (name: string): string | null => {
     const cap = capability(name)
-    if (!manifest) return 'Loading capabilities…'
-    if (!cap) return 'This driver does not implement it for this model.'
+    if (!manifest) return 'Loading what this projector can do…'
+    if (!cap) return 'This projector model does not offer it here.'
     const retracted = manifest.retracted[name]
     if (retracted) return retracted
     if (cap.requires_opt_in && !manifest.allow_unverified_commands) {
-      const why = cap.caveat ?? 'Documented only for a sibling model.'
-      return `${why.replace(/\.?$/, '.')} Off until an administrator turns on “Allow unverified commands” for this projector (Edit).`
+      return 'Not yet confirmed on this exact model, so it is off. To try it, an administrator turns on “Allow unverified commands” under Edit.'
     }
     return null
+  }
+  const detail = (name: string) => {
+    const cap = capability(name)
+    return cap?.requires_opt_in ? cap.caveat ?? 'Documented only for a sibling model.' : undefined
   }
   return {
     capability,
     reason,
     usable: (name) => reason(name) === null,
     unverified: (name) => Boolean(capability(name)?.requires_opt_in && manifest?.allow_unverified_commands),
+    detail,
   }
 }
 
@@ -157,6 +166,27 @@ function ControlBlock({
       {children}
       {footer}
     </div>
+  )
+}
+
+/**
+ * Controls this projector cannot use, named on one line instead of a box
+ * each, with the reasons a tap or hover away.
+ */
+function NotAvailable({ items, className }: { items: Array<{ label: string; reason: string; detail?: string }>; className?: string }) {
+  if (items.length === 0) return null
+  return (
+    <p className={classNames('flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-500', className)}>
+      <span>Not available on this projector: {items.map((item) => item.label).join(', ')}.</span>
+      <InfoTip label="Why are these not available?" text="Why?">
+        {items.map((item) => (
+          <span key={item.label} className="mb-1 block last:mb-0">
+            <b>{item.label}</b>: {item.reason}
+            {item.detail && <span className="block text-slate-400">({item.detail})</span>}
+          </span>
+        ))}
+      </InfoTip>
+    </p>
   )
 }
 
@@ -201,7 +231,7 @@ function StateSwitch<T extends string>({
 
 /** For settings the projector cannot report: what was last sent from here. */
 function LastSent({ command, history, capability }: { command?: TrackedCommand; history: CommandLogRow[]; capability: string }) {
-  if (command && command.phase !== 'failed' && command.phase !== 'unavailable') {
+  if (command && command.phase !== 'failed' && command.phase !== 'unavailable' && command.phase !== 'notnow') {
     const value = command.params?.state ?? command.params?.value
     return (
       <p className="text-2xs text-slate-500">
@@ -369,10 +399,13 @@ export default function ProjectorDetail({ session }: { session: Session }) {
     }
   }
 
-  const powerBlocked = blocked('power.set') ?? (transitioning
+  const powerBlocked = blocked('power.set')
+  // Not a block: the server holds a power command the projector refuses
+  // while it changes state, and sends it as soon as it is taken.
+  const powerNote = powerBlocked ?? (transitioning
     ? state.power === 'warming'
-      ? 'The lamp is striking. Power commands are refused until start-up finishes.'
-      : 'Cooling. The projector will not accept power-on until cooling completes.'
+      ? 'Starting up. If you press Standby now, it turns off by itself once start-up finishes.'
+      : 'Cooling down, usually 1 to 2 minutes. If you press On now, it turns on by itself once cooling finishes.'
     : null)
   const shutterBlocked = blocked('shutter.set') ?? (state.power !== 'on' ? 'Shutter control needs the projector powered on.' : null)
   const inputBlocked = blocked('input.set')
@@ -391,7 +424,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
   return (
     <div className="space-y-4">
       {/* Target bar: always says which projector receives the commands. */}
-      <div className="z-30 -mx-3 border-b md:sticky md:top-12 border-white/[0.06] bg-panel-950/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+      <div className="z-30 -mx-3 border-b md:sticky md:top-[var(--shell-top,3rem)] border-white/[0.06] bg-panel-950/95 px-3 pb-3 pt-1 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
         <Link to="/projectors" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300">
           <BackIcon size={12} aria-hidden /> Projectors
         </Link>
@@ -415,10 +448,10 @@ export default function ProjectorDetail({ session }: { session: Session }) {
             <Freshness projector={projector} className="ml-1 text-xs" />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <button className="btn-default btn-sm" disabled={checking !== null || !projector.enabled} onClick={() => void pollNow()} title="Read every value from the projector now">
-              {checking === 'poll' ? <Spinner size="sm" label={null} /> : <RefreshIcon size={13} aria-hidden />} Poll now
+            <button className="btn-default btn-sm" disabled={checking !== null || !projector.enabled} onClick={() => void pollNow()} title="Ask the projector for every reading now, instead of waiting for the next regular check">
+              {checking === 'poll' ? <Spinner size="sm" label={null} /> : <RefreshIcon size={13} aria-hidden />} Check now
             </button>
-            <button className="btn-default btn-sm" disabled={checking !== null} onClick={() => void testConnection()} title="Open a connection and authenticate, without changing anything">
+            <button className="btn-default btn-sm" disabled={checking !== null} onClick={() => void testConnection()} title="Connect and sign in to the projector to prove the address and password work. Changes nothing.">
               {checking === 'test' ? <Spinner size="sm" label={null} /> : <LiveIcon size={13} aria-hidden />} Test connection
             </button>
             {isAdmin && (
@@ -472,7 +505,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
           {/* -- Primary controls ------------------------------------- */}
-          <Panel icon={PowerIcon} title="Primary controls" description="Highlighted states are read back from the projector, not assumed from the command.">
+          <Panel icon={PowerIcon} title="Power, shutter and input" description="The lit button is what the projector itself reports right now, not just the last one pressed.">
             <div className="grid gap-3 md:grid-cols-2">
               <ControlBlock
                 icon={PowerIcon}
@@ -491,7 +524,7 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                   title={powerBlocked ?? undefined}
                   onSelect={(value) => ask(powerRequest([projector], value))}
                 />
-                {powerBlocked && live && <p className="text-2xs text-slate-500">{powerBlocked}</p>}
+                {powerNote && live && <p className="text-2xs text-slate-500">{powerNote}</p>}
               </ControlBlock>
 
               <ControlBlock
@@ -562,27 +595,42 @@ export default function ProjectorDetail({ session }: { session: Session }) {
                 </ControlBlock>
               </div>
 
-              <OnOffBlock
-                icon={FreezeIcon}
-                title="Freeze"
-                capability="image.freeze"
-                gate={gate}
-                blocked={blocked('image.freeze')}
-                command={command('image.freeze')}
-                history={history}
-                onSend={(value) => send('image.freeze', value === 'on' ? 'Freeze on' : 'Freeze off', { state: value })}
-              />
-              <OnOffBlock
-                icon={OsdIcon}
-                title="On-screen display"
-                capability="osd.set"
-                gate={gate}
-                blocked={blocked('osd.set')}
-                command={command('osd.set')}
-                history={history}
-                onSend={(value) => send('osd.set', value === 'on' ? 'OSD on' : 'OSD off', { state: value })}
-              />
+              {gate.usable('image.freeze') && (
+                <OnOffBlock
+                  icon={FreezeIcon}
+                  title="Freeze"
+                  capability="image.freeze"
+                  gate={gate}
+                  blocked={blocked('image.freeze')}
+                  command={command('image.freeze')}
+                  history={history}
+                  onSend={(value) => send('image.freeze', value === 'on' ? 'Freeze on' : 'Freeze off', { state: value })}
+                />
+              )}
+              {gate.usable('osd.set') && (
+                <OnOffBlock
+                  icon={OsdIcon}
+                  title="On-screen display"
+                  capability="osd.set"
+                  gate={gate}
+                  blocked={blocked('osd.set')}
+                  command={command('osd.set')}
+                  history={history}
+                  onSend={(value) => send('osd.set', value === 'on' ? 'OSD on' : 'OSD off', { state: value })}
+                />
+              )}
             </div>
+            {manifest && (
+              <NotAvailable
+                className="mt-3"
+                items={[
+                  { label: 'Freeze', capability: 'image.freeze' },
+                  { label: 'On-screen display', capability: 'osd.set' },
+                ]
+                  .filter((item) => !gate.usable(item.capability))
+                  .map((item) => ({ label: item.label, reason: gate.reason(item.capability) ?? 'Unavailable', detail: gate.detail(item.capability) }))}
+              />
+            )}
           </Panel>
 
           {/* -- Secondary controls ----------------------------------- */}
@@ -716,18 +764,13 @@ function PictureControls({
   const sharedGate = reasons.length > 1 && reasons[0] && reasons.every((r) => r === reasons[0]) ? reasons[0] : null
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500">
-        Picture settings cannot be read back from the projector, so each slider starts from the last value sent
-        (from this browser or the command log). Nothing is sent until you press Apply.
-      </p>
-      {declared.length === 0 ? (
-        <UnavailableNote reason="This driver offers no picture adjustments for this model." />
-      ) : sharedGate ? (
-        // One reason for every slider: say it once instead of five times.
-        <ControlBlock icon={PictureIcon} title={declared.map((item) => item.label).join(', ')}>
-          <UnavailableNote reason={sharedGate} />
-        </ControlBlock>
-      ) : (
+      {declared.length > 0 && !sharedGate && (
+        <p className="text-xs text-slate-500">
+          The projector does not report these settings, so each slider starts from the last value sent. Nothing is
+          sent until you press Apply.
+        </p>
+      )}
+      {declared.length === 0 || sharedGate ? null : (
         <div className="grid gap-3 md:grid-cols-2">
           {declared.map((item) => (
             <PictureSlider
@@ -744,28 +787,33 @@ function PictureControls({
           ))}
         </div>
       )}
-      <div className="grid gap-3 md:grid-cols-2">
-        <ControlBlock icon={PictureIcon} title="Picture mode">
-          {pictureMode ? (
-            <UnavailableNote reason={gate.reason('image.picture_mode') ?? 'Picture mode is declared but has no control here yet.'} />
-          ) : (
-            <UnavailableNote reason="Not offered: no picture-mode command has been confirmed for this projector's control protocol, so the platform does not send one." />
-          )}
-        </ControlBlock>
-        <ControlBlock icon={TestPatternIcon} title="Test patterns">
-          {testPattern ? (
-            <UnavailableNote reason={gate.reason('image.test_pattern') ?? 'Test patterns are declared but have no control here yet.'} />
-          ) : (
-            <UnavailableNote reason="Not offered: no test-pattern command has been confirmed for this projector's control protocol. Use the projector's own menu (Remote tab) or the Mapping calibration patterns." />
-          )}
-        </ControlBlock>
-      </div>
+      <NotAvailable
+        items={[
+          ...(declared.length === 0
+            ? [{ label: 'Brightness, contrast, colour, tint and sharpness', reason: 'This projector model offers no picture adjustments here.' }]
+            : sharedGate
+              ? [{ label: declared.map((item) => item.label).join(', '), reason: sharedGate, detail: gate.detail(declared[0].capability) }]
+              : []),
+          {
+            label: 'Picture mode',
+            reason: pictureMode
+              ? gate.reason('image.picture_mode') ?? 'Picture mode has no control here yet.'
+              : 'No picture-mode command has been confirmed for this projector, so none is sent. Use the projector’s own menu.',
+          },
+          {
+            label: 'Test patterns',
+            reason: testPattern
+              ? gate.reason('image.test_pattern') ?? 'Test patterns have no control here yet.'
+              : 'No test-pattern command has been confirmed for this projector. Use the projector’s own menu (Remote & lens tab), or the test patterns in Mapping → Set up → Your projectors.',
+          },
+        ]}
+      />
     </div>
   )
 }
 
 function lastSentValue(capability: string, commands: TrackedCommand[], history: CommandLogRow[]): { value: number; at: string } | null {
-  const mine = commands.find((c) => c.capability === capability && c.phase !== 'failed' && c.phase !== 'unavailable')
+  const mine = commands.find((c) => c.capability === capability && !['failed', 'unavailable', 'notnow'].includes(c.phase))
   if (mine && typeof mine.params?.value === 'number') {
     return { value: mine.params.value, at: new Date(mine.startedAt).toISOString() }
   }
@@ -991,7 +1039,8 @@ function LensControls({ gate, blocked, onSend }: { gate: Gate; blocked: (capabil
         </button>
       </div>
       <p className="text-2xs text-slate-500">
-        Lens memory is not offered: no lens-memory command could be confirmed for this model.
+        {gate.capability('lens.memory')?.caveat ??
+          'Lens memory is not offered: no lens-memory command could be confirmed for this model.'}
       </p>
     </ControlBlock>
   )
@@ -1075,12 +1124,14 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 const SUBSYSTEMS: Array<{ key: string; label: string; icon: LucideIcon; equipment?: 'temperature' | 'fan' | 'filter_usage' }> = [
   { key: 'temperature', label: 'Temperature', icon: TemperatureIcon, equipment: 'temperature' },
-  { key: 'fan', label: 'Fan', icon: FanIcon, equipment: 'fan' },
+  { key: 'fan', label: 'Fans', icon: FanIcon, equipment: 'fan' },
   { key: 'lamp', label: 'Lamp', icon: LampIcon },
   { key: 'filter', label: 'Filter', icon: FilterIcon, equipment: 'filter_usage' },
   { key: 'cover', label: 'Cover', icon: CoverIcon },
   { key: 'other', label: 'Other', icon: FaultIcon },
 ]
+
+const CONDITION_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', error: 'Fault' }
 
 function severityTone(severity: string | undefined): Tone {
   if (severity === 'error') return 'fault'
@@ -1089,16 +1140,47 @@ function severityTone(severity: string | undefined): Tone {
   return 'unknown'
 }
 
+function ConditionChip({ severity }: { severity: string | undefined }) {
+  return (
+    <Chip tone={severityTone(severity)}>
+      {severity ? (CONDITION_LABEL[severity] ?? severity) : 'not reported'}
+    </Chip>
+  )
+}
+
+/** Sensor readings, when the driver reads them (Panasonic QTM). */
+function temperatureReading(field: Telemetry<unknown> | undefined): TemperatureReading | null {
+  if (field?.availability !== 'available' || !field.value || typeof field.value !== 'object') return null
+  const value = field.value as TemperatureReading
+  return Array.isArray(value.sensors) && value.sensors.length > 0 ? value : null
+}
+
+function fanReading(field: Telemetry<unknown> | undefined): FanReading | null {
+  if (field?.availability !== 'available' || !field.value || typeof field.value !== 'object') return null
+  const value = field.value as FanReading
+  return typeof value.condition === 'string' ? value : null
+}
+
+function degrees(sensor: TemperatureSensor): { text: string; muted: boolean; title?: string } {
+  if (sensor.celsius == null) {
+    return { text: `not understood: ${sensor.raw}`, muted: true, title: 'The projector sent a reply this app could not read as degrees.' }
+  }
+  const fahrenheit = sensor.fahrenheit == null ? '' : ` · ${sensor.fahrenheit} °F`
+  return { text: `${sensor.celsius} °C${fahrenheit}`, muted: false }
+}
+
 function EquipmentStatus({ projector, driverName }: { projector: Projector; driverName: string }) {
   const { state } = projector
   const equipment = state.equipment ?? {}
-  const notRead = 'Not read yet: identity and condition are read on the slower diagnostics poll. Press Poll now to read them.'
+  const notRead = 'Not read yet: these are read every few minutes. Press Check now to read them at once.'
   const serial = telemetryRow(equipment.serial_number, notRead)
   const firmware = telemetryRow(equipment.firmware, notRead)
   const reportedModel = equipment.model?.availability === 'available' ? String(equipment.model.value) : null
   const lamps = lampReadings(projector)
   const lampStatus = renderTelemetry(state.lamp_status, (value) => value.state ?? `raw: ${value.raw}`)
   const erst = state.error_status?.availability === 'available' ? (state.error_status.value ?? {}) : null
+  const temperatures = temperatureReading(equipment.temperature)
+  const fan = fanReading(equipment.fan)
 
   return (
     <>
@@ -1160,47 +1242,59 @@ function EquipmentStatus({ projector, driverName }: { projector: Projector; driv
       <Panel
         icon={TemperatureIcon}
         title="Condition"
-        description={erst ? 'Reported by the projector (PJLink error status).' : undefined}
+        description={
+          temperatures && erst
+            ? 'Temperatures from the projector’s sensors. OK, warning or fault from the projector’s own checks (PJLink).'
+            : temperatures
+              ? 'Temperatures from the projector’s sensors.'
+              : erst
+                ? 'Reported by the projector (PJLink error status).'
+                : undefined
+        }
         bodyClassName="px-4 py-2"
       >
-        {erst ? (
-          <ul className="divide-y divide-white/5">
-            {SUBSYSTEMS.map((sub) => {
-              const severity = erst[sub.key]
-              const tone = severityTone(severity)
-              return (
-                <li key={sub.key} className="flex items-center justify-between gap-3 py-1.5">
+        <ul className="divide-y divide-white/5">
+          {SUBSYSTEMS.filter((sub) => erst || sub.equipment).map((sub) => {
+            const field = sub.equipment ? equipment[sub.equipment] : undefined
+            const fallback = telemetryRow(field, notRead)
+            const showNote = sub.key === 'temperature' ? !temperatures : sub.key === 'fan' && Boolean(fan)
+            return (
+              <li key={sub.key} className="py-1.5">
+                <div className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2 text-sm text-slate-300">
-                    <sub.icon size={14} className={TONE_TEXT[tone]} aria-hidden /> {sub.label}
+                    <sub.icon size={14} className={erst ? TONE_TEXT[severityTone(erst[sub.key])] : 'text-slate-500'} aria-hidden /> {sub.label}
                   </span>
-                  <Chip tone={tone}>{severity ?? 'not reported'}</Chip>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <>
-            <ul className="divide-y divide-white/5">
-              {SUBSYSTEMS.filter((sub) => sub.equipment).map((sub) => {
-                const reading = telemetryRow(sub.equipment ? equipment[sub.equipment] : undefined, notRead)
-                return (
-                  <li key={sub.key} className="flex items-center justify-between gap-3 py-1.5">
-                    <span className="flex items-center gap-2 text-sm text-slate-300">
-                      <sub.icon size={14} className="text-slate-500" aria-hidden /> {sub.label}
-                    </span>
-                    <Value {...reading} className="text-sm" />
-                  </li>
-                )
-              })}
-            </ul>
-            <UnavailableNote
-              className="my-2"
-              reason={
-                state.error_status?.note ??
-                'No per-subsystem error query is available on this transport. Fan, temperature, cover and filter faults are reported only by projectors that answer PJLink error status.'
-              }
-            />
-          </>
+                  {erst ? (
+                    <ConditionChip severity={erst[sub.key]} />
+                  ) : sub.key === 'temperature' && temperatures ? null : (
+                    <Value {...fallback} className="text-sm" />
+                  )}
+                </div>
+                {sub.key === 'temperature' && temperatures && (
+                  <dl className="mt-1 space-y-0.5 pl-6">
+                    {temperatures.sensors.map((sensor) => (
+                      <div key={sensor.key} className="flex items-baseline justify-between gap-3">
+                        <dt className="text-xs text-slate-500">{sensor.label}</dt>
+                        <dd className="text-sm"><Value {...degrees(sensor)} /></dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {showNote && field?.note && (
+                  <p className="mt-0.5 pl-6 text-2xs text-slate-500">{field.note}</p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        {!erst && (
+          <UnavailableNote
+            className="my-2"
+            reason={
+              state.error_status?.note ??
+              'This projector is not reporting fan, filter or cover checks. Projectors that answer PJLink report them: turn PJLink on in the projector’s network menu and fill in the PJLink password under Edit.'
+            }
+          />
         )}
       </Panel>
 

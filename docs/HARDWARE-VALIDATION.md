@@ -16,7 +16,9 @@ the cameras and the phone remote.
 
 ## Before you start
 
-- A PT-DZ13K (or DS12K / DW11K / DZ10K) on a network the server can reach.
+- A PT-DZ13K (or DS12K / DW11K / DZ10K), or a PT-DZ770 / DW740 / DX810 /
+  DX810ULK (see [the DZ770 family section](#pt-dz770-family-incl-pt-dx810ulk)),
+  on a network the server can reach.
 - The projector's own **Operating Instructions** and the **Control Commands**
   PDF for your model. Panasonic publishes both; the command PDF is the
   authority for everything below.
@@ -195,25 +197,34 @@ documents that someone checked.
 
 ---
 
-## Stage 7 — PJLink (optional but recommended)
+## Stage 7 — Temperatures and fan condition
 
-The Panasonic LAN protocol has no confirmed per-subsystem error query. PJLink
-does: `%1ERST` reports fan, lamp, temperature, cover, filter and "other" as
-ok/warning/error. That is the backbone of useful health monitoring.
+The Panasonic driver reads temperatures with `QTM` and fan, lamp,
+temperature, cover and filter condition with PJLink `%1ERST` on port 4352
+(see PROTOCOL-RESEARCH.md §2.7). Neither has been checked on a real unit yet.
 
-1. Enable PJLink on the projector.
-2. Register the **same physical projector a second time**, with driver
-   `pjlink` and port 4352, named e.g. "House Left (PJLink)".
-3. Poll it and confirm the subsystem chips appear on the detail page.
-
-Run both entries side by side. The Panasonic driver gives you the richer
-control surface; the PJLink entry gives you health reporting neither has
-alone.
-
-> Numeric intake/exhaust temperatures are **not** exposed by either path, and
-> the platform does not invent them. The UI marks temperature as
-> `n/a — not supported by this model`. If you want real numbers, put a sensor
-> in the enclosure and feed it in through the enclosure API.
+1. Make sure PJLink is on in the projector's NETWORK menu.
+2. Open the projector's page in the app, press **Poll now**, and look at
+   **Condition**.
+3. Compare each temperature with the projector's own status page (web
+   control → Projector status, or the on-screen STATUS menu). They should
+   match to the degree.
+4. If a sensor says "not understood", note the raw reply it shows: the
+   reply format needs adjusting in `parse_temperature`.
+5. If Fans shows a note instead of OK, read it: PJLink is off, or the
+   projector has its own PJLink password (fill in **PJLink password** under
+   Edit).
+6. Leave the projector on for a few minutes, then open **Health →
+   Monitoring**: **Projector temperatures** should show one line per sensor
+   for that projector. Every diagnostics poll (once a minute) stores one
+   sample per sensor as `temp_<sensor>` telemetry rows, kept for
+   `TEMPERATURE_RETENTION_DAYS` (30). The intake air limit is
+   `TEMPERATURE_INTAKE_LIMIT_C` (45 °C, the operating temperature on the
+   PT-DZ13K and PT-DZ770 spec sheets; set 40 if the projector runs in high
+   altitude mode) and the page warns from
+   `TEMPERATURE_WARN_MARGIN_C` (5 °C) below it. Exhaust air and the optics
+   module have no published limit; the projector's own PJLink temperature
+   condition covers those.
 
 ---
 
@@ -285,9 +296,12 @@ release; do not try it on the show server.
 
 On each Windows mini PC, with the projector as its only or main display:
 
-1. **Install and pair** (minipc/README.md). Expected: the projector shows a
-   six-letter code, the code appears on Mapping → **Players**, and
-   **Approve** with an output makes the projector show that output. If no
+1. **Install and pair** (minipc/README.md: the PowerShell line). Expected:
+   the line either installs the app or explains that Smart App Control is on
+   (turn it off and run it again; record which mini PCs had it on). Then the
+   projector shows a six-letter code, the code appears on Mapping →
+   **Players**, and **Approve** with an output makes the projector show that
+   output. If no
    code ever appears on the Players tab, the mini PC did not find the
    server: check that Windows did not block the Mini PC app in its firewall,
    or give it the address with `--server http://<mac>:8765`.
@@ -319,8 +333,16 @@ On each Windows mini PC, with the projector as its only or main display:
 2. **Edge blend.** Set blends on the overlaps with a white pattern. Expected:
    no brighter band where two projectors overlap. Record the blend widths.
 3. **Masks.** Mask a window. Expected: it stays black, with feathered edges.
-4. **Blackout.** Press blackout on Mapping → Remote and on the phone remote.
+4. **Blackout.** Press blackout on Mapping → Run the show and on the phone remote.
    Expected: every output goes black at once.
+5. **Emergency stop.** With the show playing and every projector on, hold the
+   red Emergency stop button in the top bar for a second. Expected: every
+   output goes black at once, each projector's shutter closes and it turns
+   off, and the window lists every projector with what it did. Press Clear in
+   the red bar, turn the projectors back on and press GO. Repeat from the
+   phone remote, and once while a projector is still warming up (expected:
+   "Turning off when ready", then off by itself). Record how long each
+   projector took to go dark.
 
 ---
 
@@ -333,7 +355,11 @@ On each Windows mini PC, with the projector as its only or main display:
 2. **Calibration** (camera-agent/README.md, Calibrating), at night: each
    projector shows its patterns for about half a minute. Expected: after
    **Correct**, the canvas grid lands straight on the building. Record how
-   far off it is before and after **Map by hand**.
+   far off it is before and after **Map by hand**. Then press **Remove
+   calibration** (top right of the Camera page). Expected: every projector
+   goes back to exactly the shape it had before calibrating, and the Camera
+   page opens on its first step. Also try it while the patterns are still
+   running: the patterns stop within a few seconds and the show comes back.
 3. **People.** Walk in front of the building with a *Spotlight* cue live.
    Expected: the light follows you, nothing lights where nobody is, and two
    people get two lights. Then **Re-learn empty scene** with the area clear.
@@ -348,7 +374,7 @@ On each Windows mini PC, with the projector as its only or main display:
 
 ## Stage 12 — The phone remote
 
-1. **On the venue Wi-Fi.** Open **Phone remote** in the dashboard, scan the QR
+1. **On the venue Wi-Fi.** Open **Settings → Phone** in the dashboard, scan the QR
    code, **Share → Add to Home Screen**, open it from the Home Screen and
    sign in. Expected: it opens full screen with its own icon.
 2. **The buttons.** GO, pause, stop and blackout act on the show within a
@@ -359,6 +385,53 @@ On each Windows mini PC, with the projector as its only or main display:
 4. **Wake-up.** Lock the phone for a few minutes, change the cue from the
    dashboard, unlock. Expected: the remote shows the new cue at once, or says
    it cannot reach the server; never the old state as if it were live.
+
+---
+
+## PT-DZ770 family (incl. PT-DX810ULK)
+
+The PT-DZ770, PT-DW740, PT-DX810 and PT-DX810ULK (the US DX810 sold without
+a lens) share one Panasonic command list and one driver. Work through stages
+1–7 as above, with these differences.
+
+**Adding it.** Projectors → Add projector → Driver **Panasonic DZ770 /
+DW740 / DX810** → Model **PT-DX810ULK** (or yours). Port 1024.
+Control username `admin1`, Control password = the projector's web login
+password, same as the other Panasonic units.
+
+**Stage 2.** Two lamps: `Q$L:1` and `Q$L:2`.
+
+**Stage 5.** No SDI. The inputs are:
+
+| Input | Code |
+|---|---|
+| RGB 1 (5 BNC) | `RG1` |
+| RGB 2 (D-sub) | `RG2` |
+| DVI-D | `DVI` |
+| HDMI | `HD1` |
+| Video | `VID` |
+| S-Video | `SVD` |
+
+The PT-DX810 command list's table for the DVI and HDMI codes did not survive
+text extraction cleanly; `DVI` and `HD1` are Panasonic's standard codes. If
+either answers `ER402`, note the raw response in the results table.
+
+**Lamp select and lamp power.** `LPM` (0 dual, 1 single, 2 lamp 1, 3 lamp 2)
+and `OLP` (0 normal, 1 eco) are confirmed by the PT-DX810 command list, so
+they are on without "Allow unverified commands". Projector page → **Lamp mode**
+tab. Try **Eco** then **Normal**, then **Lamp 1 only** then **Dual**. The
+projector refuses a second lamp select (`ER401`) while it is still changing
+lamps; the app shows that as "Not right now" with "still switching lamps".
+The projector does not report either setting back, so confirm on its own
+menu.
+
+**Lens.** No lens memory on this family; the **Remote & lens** tab says so.
+Lens jogs are still gated (stage 6) and need a motorised Panasonic lens
+fitted. The ULK ships without a lens.
+
+**Mapping output.** The PT-DX810 is XGA, 1024 × 768. Set the mini PC that
+drives it to 1024 × 768 in Windows display settings (stage 9) so one
+picture pixel is one projector pixel.
 
 ---
 
@@ -384,6 +457,7 @@ Fill this in and keep it with the installation notes.
 | 5 | each `IIS:` | | | which boards fitted |
 | 6 | `VXX:LNSI1` (home) | | | |
 | 6 | `VXX:LNSI2` (shift H) | | | stopped on its own? |
+| 6 | `LPM:0`–`LPM:3`, `OLP:0`/`1` (DZ770 family) | | | lamp change seen on the projector menu? |
 | 7 | `%1ERST` | | | |
 | 8 | Service loaded, start at boot | | | time to dashboard: ___ |
 | 8 | Restart after stop, awake, power cut | | | |

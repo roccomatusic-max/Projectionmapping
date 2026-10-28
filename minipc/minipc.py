@@ -9,7 +9,18 @@ signs in after that, it:
 - runs the camera when one is plugged in, for calibration and people: a
   depth camera (Intel RealSense, Orbbec, Luxonis OAK) or any webcam, found
   by itself,
-- keeps the screen and the computer awake.
+- keeps the computer on day and night: no sleep, no hibernate, no screen
+  turning off, no lock, ever, also after a show ends (stayawake.py),
+- does what the Players page asks of it: restart the output window,
+  restart or shut down the computer,
+- updates itself from the main server when no show is on, without
+  restarting the computer or closing the output (selfupdate.py),
+- shows the status screen (the show, its projector, a picture of its
+  output) on a monitor plugged in beside the projector, when there is one
+  (screens.py),
+- reads a USB temperature sensor plugged into it (an Adafruit Trinkey)
+  and sends it to the main server, for the heater in the projector's box
+  (usbsensor.py).
 
 The first time, the projector shows a pairing code. Approving it on the
 Mapping page, Players tab, pairs this computer and its camera together.
@@ -17,6 +28,7 @@ Mapping page, Players tab, pairs this computer and its camera together.
     MiniPC.exe                              # normal start
     MiniPC.exe --server http://10.0.0.5:8765   # skip looking for the server
     MiniPC.exe --camera off                 # never use a camera
+    MiniPC.exe --second-screen off          # no status screen on a second monitor
 """
 
 from __future__ import annotations
@@ -29,6 +41,7 @@ import os
 import secrets
 import signal
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -41,8 +54,15 @@ from urllib.parse import urlencode
 HERE = Path(__file__).resolve().parent
 sys.path.insert(1, str(HERE.parent / "camera-agent"))
 
+import psutil  # noqa: E402
+import requests  # noqa: E402
+
 import discovery  # noqa: E402
+import screens  # noqa: E402
+import stayawake  # noqa: E402
+import usbsensor  # noqa: E402
 from kiosk import Kiosk, find_browser, write_atomically  # noqa: E402
+from selfupdate import VERSION, SelfUpdate, collect_log  # noqa: E402
 
 log = logging.getLogger("minipc")
 
@@ -258,6 +278,37 @@ class CameraRunner(threading.Thread):
             self.app.stopping.wait(TICK_SECONDS)
 
 
+# -- the Players page's controls ------------------------------------------------------------
+
+
+def network_card(address: str | None) -> str | None:
+    """The hardware address of the network card holding ``address``, as
+    aa:bb:cc:dd:ee:ff: what the server needs to wake this computer."""
+    if not address:
+        return None
+    for addresses in psutil.net_if_addrs().values():
+        if any(a.family == socket.AF_INET and a.address == address for a in addresses):
+            for a in addresses:
+                if a.family == psutil.AF_LINK:
+                    mac = a.address.replace("-", ":").lower()
+                    if len(mac) == 17 and mac != "00:00:00:00:00:00":
+                        return mac
+    return None
+
+
+def power(action: str) -> None:
+    """Restart ("reboot") or shut down this computer, now (Windows)."""
+    if sys.platform != "win32":
+        log.warning("asked to %s, which only the Windows app does", action)
+        return
+    log.warning("the Players page asked this computer to %s",
+                "restart" if action == "reboot" else "shut down")
+    # /f: the output window would otherwise hold the restart up. The window
+    # is told to skip "restore pages" at every start, so nothing shows later.
+    subprocess.run(["shutdown", "/r" if action == "reboot" else "/s", "/t", "0", "/f"],
+                   check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
 # -- the program --------------------------------------------------------------------------
 
 
@@ -287,7 +338,23 @@ class MiniPC:
         self._lost_since: float | None = None
         self.stopping = threading.Event()
         self.restart_requested = threading.Event()
+        #: The local status page's port, which the update script waits on.
+        self.status_port = STATUS_PORT
+        #: When the main loop last went round (time.monotonic()).
+        self.ticked = time.monotonic()
+        #: What keeps this computer from staying on 24/7, in words; None
+        #: until checked (stayawake.refresh).
+        self.awake: list[str] | None = None
         self.on_change = lambda: None
+        #: Ends the program (the tray stops its icon).
+        self.on_quit = lambda: None
+        self.updater = SelfUpdate(folder)
+        #: Quitting to install an update: leave the output window open.
+        self.handing_over = False
+        #: The status screen on a second monitor (Windows), once running.
+        self.second: screens.SecondScreen | None = None
+        #: A USB temperature sensor for the heater in the projector's box.
+        self.sensor = usbsensor.UsbSensor(self.stopping)
 
     # -- what the window and the tray show ----------------------------------
 
@@ -300,7 +367,9 @@ class MiniPC:
         return f"{self.server}/player#{urlencode(self.config.identity())}"
 
     def status(self) -> dict:
-        return {"name": self.config["name"], "message": self.message, "player": self.player_url()}
+        return {"name": self.config["name"], "message": self.message, "player": self.player_url(),
+                # For the watchdog: this copy, and whether its main loop still turns.
+                "pid": os.getpid(), "tick_age": round(time.monotonic() - self.ticked, 1)}
 
     def summary(self) -> str:
         where = f"connected to {self.server}" if self.server else self.message.lower()
@@ -362,14 +431,121 @@ class MiniPC:
         self._lost_since = None
         return True
 
+    # -- the Players page ---------------------------------------------------------------
+
+    def check_in(self) -> list[str]:
+        """Say this app is here; returns what the Players page asked of it.
+
+        Answered only once this computer is paired; an older server without
+        the controls answers 404, and nothing is asked.
+        """
+        if self.server is None or self._lost_since is not None:
+            return []
+        identity = self.config.identity()
+        body = {"device_id": identity["device_id"], "secret": identity["secret"],
+                "power": sys.platform == "win32", "computer": socket.gethostname() or None,
+                "mac": network_card(discovery.local_address()),
+                "version": self.updater.version, "update": self.updater.report(),
+                "awake": self.awake, "screens": self.second.report() if self.second else None,
+                "watchdog": sys.platform == "win32"}
+        reading = self.sensor.report()
+        if reading:
+            body["sensor"] = reading
+        try:
+            reply = requests.post(f"{self.server}/api/mapping/players/app", json=body, timeout=3)
+            if reply.status_code != 200:
+                return []
+            answer = reply.json()
+            commands = answer.get("commands", [])
+            update = answer.get("update")
+        except (requests.RequestException, ValueError, AttributeError) as exc:
+            log.debug("check-in failed: %s", exc)
+            return []
+        commands = [c for c in commands if isinstance(c, str)]
+        if self.updater.log_due:
+            self.updater.log_due = False
+            commands.append("send_log:update")
+        if isinstance(update, dict) and self.updater.offered(update, self.server):
+            commands.append("install_update")
+        return commands
+
+    def send_log(self, reason: str = "asked") -> bool:
+        """Send the log to the server, for Get the log on the Players page."""
+        if self.server is None:
+            return False
+        identity = self.config.identity()
+        body = {"device_id": identity["device_id"], "secret": identity["secret"],
+                "reason": reason, "text": collect_log(self.folder)}
+        try:
+            reply = requests.post(f"{self.server}/api/mapping/players/app/log", json=body, timeout=30)
+        except requests.RequestException as exc:
+            log.warning("could not send the log: %s", exc)
+            return False
+        if reply.status_code != 204:
+            log.warning("the server did not take the log: %s", reply.status_code)
+            return False
+        log.info("sent the log to the server (%s)", reason)
+        return True
+
+    def obey(self, commands: list[str]) -> None:
+        for command in commands:
+            if command == "restart_output":
+                log.info("the Players page asked to restart the output")
+                self.restart_requested.set()
+            elif command in ("reboot", "shutdown"):
+                power(command)
+            elif command == "swap_screens" and self.second:
+                log.info("the Players page asked to swap the screens")
+                self.second.swap()
+            elif command == "extend_screens" and self.second:
+                log.info("the Players page asked to use the second screen")
+                self.second.extend()
+            elif command.startswith("send_log"):
+                reason = command.partition(":")[2] or "asked"
+                threading.Thread(target=self.send_log, args=(reason,), name="send-log", daemon=True).start()
+            elif command == "install_update":
+                if self.updater.hand_over(self.server, self.status_port):
+                    self.handing_over = True
+                    self.stopping.set()
+                    self.on_quit()
+            else:
+                log.info("ignoring %r, which this app does not know", command)
+
     # -- main loop ----------------------------------------------------------------------
 
+    def stay_on(self) -> None:
+        """Windows' power and lock settings, put right now and every hour."""
+        while not self.stopping.is_set():
+            try:
+                problems = stayawake.refresh()
+            except Exception:  # noqa: BLE001 - never worth stopping the app over
+                log.exception("could not check the power settings")
+                problems = None
+            if problems is not None and problems != self.awake:
+                for problem in problems:
+                    log.warning("staying on 24/7: %s", problem)
+                if not problems:
+                    log.info("this computer stays on 24/7: no sleep, screen off or lock")
+                self.awake = problems
+            self.stopping.wait(stayawake.CHECK_SECONDS)
+
     def run(self, page: StatusPage) -> None:
+        self.status_port = getattr(page, "port", STATUS_PORT)
         keep_awake()
+        threading.Thread(target=self.stay_on, name="stay-on", daemon=True).start()
+        self.sensor.start()
         browser = self.browser or find_browser()
         kiosk = None
         if browser:
             kiosk = Kiosk(browser, page.url, self.folder / "browser", self.browser_args)
+            kept = self.updater.take_window()
+            if not kiosk.adopt_leftover() and kept is not None:
+                kiosk.adopt(kept)
+            system = screens.system_screens()
+            if system is not None:
+                status = Kiosk(browser, page.url, self.folder / "screen-browser", self.browser_args)
+                self.second = screens.SecondScreen(self.config, status, system, self.config.identity(),
+                                                   base_args=self.browser_args)
         else:
             log.error("no Chrome or Edge on this computer: install Google Chrome")
             self._say("No Chrome or Edge found on this computer")
@@ -380,6 +556,7 @@ class MiniPC:
             while not self.stopping.is_set():
                 try:
                     reopen = self.follow_server()
+                    self.obey(self.check_in())
                     if kiosk:
                         if self.server and kiosk.secure_origin != self.server:
                             # Opened before the server was known: reopen it so the
@@ -390,11 +567,16 @@ class MiniPC:
                             self.restart_requested.clear()
                             kiosk.restart()
                         kiosk.ensure()
+                        if self.second:
+                            self.second.tick(kiosk, self.server)
                 except Exception:  # noqa: BLE001 - leaving the loop would close the output for good
                     log.exception("unexpected error; carrying on")
+                self.ticked = time.monotonic()
                 self.stopping.wait(TICK_SECONDS)
         finally:
-            if kiosk:
+            if self.second:
+                self.second.close()
+            if kiosk and not self.handing_over:
                 kiosk.stop()
 
 
@@ -426,6 +608,8 @@ def run_tray(app: MiniPC) -> None:
         os.startfile(app.folder / "logs")  # noqa: S606 - Windows only
 
     def quit_(icon, _item=None) -> None:
+        with contextlib.suppress(OSError):
+            (app.folder / QUIT_MARK).write_text("Quit in the tray menu", encoding="utf-8")
         app.stopping.set()
         icon.stop()
 
@@ -442,6 +626,7 @@ def run_tray(app: MiniPC) -> None:
             icon.update_menu()
 
     app.on_change = refresh
+    app.on_quit = icon.stop
     icon.run(setup=lambda i: (setattr(i, "visible", True), refresh()))
 
 
@@ -466,6 +651,7 @@ def self_check() -> int:
     import cv2  # noqa: F401
     import numpy  # noqa: F401
     import requests  # noqa: F401
+    import serial.tools.list_ports  # noqa: F401
     import websocket  # noqa: F401
 
     import agent  # noqa: F401
@@ -483,9 +669,73 @@ def self_check() -> int:
         if broken:
             log.error("depth camera support missing: %s", broken)
             return 1
+        # It can set the power plan to never sleep and read it back.
+        log.info("staying on 24/7: %s", stayawake.refresh() or "all set")
+        plan = stayawake.timeouts()
+        if any(value != (0, 0) for value in plan.values()):
+            log.error("the power plan still sleeps or turns something off: %s", plan)
+            return 1
+        # It can read the screens and find a window on one.
+        system = screens.WindowsScreens()
+        found = system.screens()
+        log.info("screens: %s; mirrored: %s; this window's screen: %s",
+                 [f"{s.source} {s.describe()}{' main' if s.primary else ''}" for s in found] or "none",
+                 system.mirrored(), system.window_screen({os.getpid()}))
     log.info("depth camera support: %s", sources.sdk_status())
     icon_image()
-    log.info("self-check passed; browser: %s", find_browser())
+    log.info("self-check passed; version %s; browser: %s", VERSION, find_browser())
+    return 0
+
+
+#: Left by Quit in the tray menu: the watchdog leaves the app off until it
+#: is started again (at the next sign-in, or from the Start menu).
+QUIT_MARK = "quit-by-hand"
+#: The main loop has not gone round for this long: that copy is stuck.
+STUCK_SECONDS = 120.0
+
+
+def running_copy(port: int) -> dict | None:
+    """The status of the copy of this app already running here, if any."""
+    try:
+        reply = requests.get(f"http://127.0.0.1:{port}/status", timeout=3)
+        status = reply.json() if reply.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        return None
+    return status if isinstance(status, dict) and "name" in status else None
+
+
+def start_detached(command: list[str]) -> None:
+    """Start the app on its own, outside whatever started this (Task Scheduler)."""
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+               "stderr": subprocess.DEVNULL, "close_fds": True}
+    if sys.platform != "win32":
+        subprocess.Popen(command, start_new_session=True, **options)  # noqa: S603
+        return
+    try:
+        subprocess.Popen(command, creationflags=flags | 0x01000000, **options)  # noqa: S603 - breakaway
+    except OSError:
+        subprocess.Popen(command, creationflags=flags, **options)  # noqa: S603
+
+
+def watchdog(folder: Path, port: int) -> int:
+    """Run by Windows every few minutes (installer.iss): start the app if it
+    is not running, or restart it if it is stuck.
+
+    The output window is kept either way (Kiosk.adopt_leftover), so the
+    projector does not blink. Nothing happens while the app is being
+    updated, or after someone chose Quit in the tray menu.
+    """
+    if (folder / QUIT_MARK).exists() or SelfUpdate(folder, read_result=False).installing():
+        return 0
+    status = running_copy(port)
+    if status is not None:
+        if float(status.get("tick_age") or 0) < STUCK_SECONDS:
+            return 0
+        with contextlib.suppress(psutil.Error, TypeError, ValueError):
+            psutil.Process(int(status["pid"])).kill()
+            time.sleep(2)
+    start_detached([sys.executable] + ([] if getattr(sys, "frozen", False) else [str(Path(__file__).resolve())]))
     return 0
 
 
@@ -496,6 +746,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name", help="how this computer is listed on the Players tab, kept from now on")
     parser.add_argument("--camera",
                         help="auto, off, realsense, orbbec, oak, webcam, webcam:N or sim, kept from now on")
+    parser.add_argument("--second-screen", choices=["auto", "off"],
+                        help="the status screen on a monitor beside the projector, kept from now on")
     parser.add_argument("--data-dir", help="where the settings and logs are kept")
     parser.add_argument("--discovery-port", type=int, default=discovery.DEFAULT_PORT, help=argparse.SUPPRESS)
     parser.add_argument("--status-port", type=int, default=STATUS_PORT, help=argparse.SUPPRESS)
@@ -503,6 +755,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--browser-arg", action="append", default=[], help=argparse.SUPPRESS)
     parser.add_argument("--no-tray", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--watchdog", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--write-icon", metavar="PATH", help=argparse.SUPPRESS)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -511,6 +764,8 @@ def main(argv: list[str] | None = None) -> int:
         icon_image(256).save(args.write_icon, sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
         return 0
     folder = Path(args.data_dir).expanduser() if args.data_dir else data_dir()
+    if args.watchdog:
+        return watchdog(folder, args.status_port)
     configure_logging(folder, args.verbose)
     if args.check:
         # A failure goes to the log, which CI prints. Uncaught, the windowed
@@ -528,6 +783,8 @@ def main(argv: list[str] | None = None) -> int:
         config["name"] = args.name
     if args.camera:
         config["camera"] = args.camera
+    if args.second_screen:
+        config["second_screen"] = args.second_screen
 
     try:
         page_port = args.status_port
@@ -538,7 +795,9 @@ def main(argv: list[str] | None = None) -> int:
         log.info("the Mini PC program is already running")
         return 0
     page.start()
-    log.info("Mini PC %s started (data in %s)", config["name"], folder)
+    with contextlib.suppress(OSError):
+        (folder / QUIT_MARK).unlink(missing_ok=True)
+    log.info("Mini PC %s version %s started (data in %s)", config["name"], VERSION, folder)
     # Stopped by the system: close the output window on the way out.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
