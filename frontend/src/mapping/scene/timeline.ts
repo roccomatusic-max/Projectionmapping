@@ -11,7 +11,7 @@
  * ../timelineMedia.ts.
  */
 
-import type { ClipEntrance, ClipKey, ClipPin, MappingScene, MediaAsset, ObjectPin, SceneLayer, Timeline, TimelineClip } from '../types'
+import type { ClipEntrance, ClipKey, ClipPin, MappingScene, MediaAsset, ObjectPin, SceneLayer, SourceRect, Timeline, TimelineClip } from '../types'
 import type { ItemMedia, SceneItem } from './engine'
 
 export const ENTRANCES: Array<{ id: ClipEntrance; into: string; out: string }> = [
@@ -50,14 +50,21 @@ export function mediaAspect(asset: MediaAsset | undefined): number {
   return asset?.width && asset?.height ? asset.width / asset.height : 16 / 9
 }
 
-/** A picture's place covering the whole canvas (cropping what does not fit). */
-export function fillPin(canvasAspect: number, aspect: number): ClipPin {
-  return { x: 0.5, y: 0.5, size: Math.max(1, canvasAspect / aspect), rotation: 0 }
+const WHOLE: SourceRect = { x: 0, y: 0, w: 1, h: 1 }
+
+/**
+ * A picture's place covering the whole canvas, or one projector's ``box`` of
+ * it (cropping what does not fit). A pin's size is its height in canvas heights.
+ */
+export function fillPin(canvasAspect: number, aspect: number, box: SourceRect = WHOLE): ClipPin {
+  const size = Math.max(box.h, (box.w * canvasAspect) / aspect)
+  return { x: box.x + box.w / 2, y: box.y + box.h / 2, size, rotation: 0 }
 }
 
-/** A picture's place showing all of it, as big as fits on the canvas. */
-export function fitPin(canvasAspect: number, aspect: number): ClipPin {
-  return { x: 0.5, y: 0.5, size: Math.min(1, canvasAspect / aspect), rotation: 0 }
+/** A picture's place showing all of it, as big as fits on the canvas (or in ``box``). */
+export function fitPin(canvasAspect: number, aspect: number, box: SourceRect = WHOLE): ClipPin {
+  const size = Math.min(box.h, (box.w * canvasAspect) / aspect)
+  return { x: box.x + box.w / 2, y: box.y + box.h / 2, size, rotation: 0 }
 }
 
 /** Where a clip sits before any moves: its own place, or for an element its objects. */
@@ -205,6 +212,11 @@ export type ClipSource = (clip: TimelineClip, local: number) => Pick<ItemMedia, 
  * ``scope`` tells timelines apart (one per cue) so each clip keeps its own
  * state in the engine; ``weight`` is the cue's share during a crossfade.
  */
+/** ``clip`` shows on projector ``outputId`` (null: a preview of the whole house, where all do). */
+export function showsOn(clip: TimelineClip, outputId: number | null): boolean {
+  return outputId == null || outputId < 0 || !clip.outputs?.length || clip.outputs.includes(outputId)
+}
+
 export function timelineItems({
   timeline,
   scope,
@@ -214,6 +226,7 @@ export function timelineItems({
   canvasAspect,
   media,
   source,
+  outputId = null,
 }: {
   timeline: Timeline
   scope: string
@@ -223,10 +236,12 @@ export function timelineItems({
   canvasAspect: number
   media: Map<number, MediaAsset>
   source?: ClipSource
+  /** The projector drawn; null draws every clip (a preview of the whole house). */
+  outputId?: number | null
 }): SceneItem[] {
   const items: SceneItem[] = []
   const clips = timeline.clips
-    .filter((clip) => clip.kind !== 'sound' && clipOn(clip, t))
+    .filter((clip) => clip.kind !== 'sound' && clipOn(clip, t) && showsOn(clip, outputId))
     .sort((a, b) => a.track - b.track || a.start - b.start)
   for (const clip of clips) {
     const asset = clip.media_id != null ? media.get(clip.media_id) : undefined

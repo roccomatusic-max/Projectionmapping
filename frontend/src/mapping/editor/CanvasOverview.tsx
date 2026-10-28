@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
 import { dragRect, type RectHandle } from '../geometry'
+import { keepShape, shapeRatio, warpUntouched } from '../projectorShape'
 import type { ServerClock } from '../live'
 import { OutputView } from '../OutputView'
 import type { Playback } from '../playback'
@@ -112,7 +113,13 @@ export function CanvasOverview({
     // Alt drags freely, without snapping.
     const snapX = event.altKey ? 0 : (SNAP_PX / box.width) * 1.04
     const snapY = event.altKey ? 0 : (SNAP_PX / box.height) * 1.04
-    const next = dragRect(drag.start, drag.handle, x - drag.pointer[0], y - drag.pointer[1], drag.others, snapX, snapY)
+    let next = dragRect(drag.start, drag.handle, x - drag.pointer[0], y - drag.pointer[1], drag.others, snapX, snapY)
+    // Resizing keeps the projector's shape, so what it shows is not
+    // stretched; Shift resizes freely. One lined up on the house by hand or
+    // by the camera keeps the shape it was lined up with.
+    if (!event.shiftKey && warpUntouched(output) && !output.calibration) {
+      next = keepShape(next, drag.start, drag.handle, shapeRatio(output, W, H))
+    }
     const s = output.source
     if (next.x !== s.x || next.y !== s.y || next.w !== s.w || next.h !== s.h) onChange(output, next)
   }

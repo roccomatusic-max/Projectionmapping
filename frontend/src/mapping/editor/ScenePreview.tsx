@@ -9,7 +9,7 @@ import { Playback, type TimelinePreview } from '../playback'
 import type { TextureSource } from '../renderer'
 import { MAX_PINS } from '../scene/engine'
 import { SimulatedCrowd } from '../scene/simulate'
-import type { MappingScene, MediaAsset, ObjectPin, Output, Point, Show, Surface, SurfaceKind } from '../types'
+import type { MappingScene, MediaAsset, ObjectPin, Output, Point, Show, SourceRect, Surface, SurfaceKind } from '../types'
 
 /** Reports a camera would send, per second; the trackers expect about this. */
 const REPORT_MS = 66
@@ -263,6 +263,7 @@ export function ScenePreview({
   overlay,
   picker,
   timeline = null,
+  view = null,
 }: {
   show: Show
   scene: MappingScene | null
@@ -299,6 +300,12 @@ export function ScenePreview({
   picker?: React.ReactNode
   /** A cue's timeline drawn over the scene at the designer's playhead (the Show designer). */
   timeline?: TimelinePreview | null
+  /**
+   * Show only one projector's box of the picture, in that projector's shape,
+   * as it shows it (stretched, if its box is the wrong shape). Placing and
+   * dragging work as on the whole picture.
+   */
+  view?: { source: SourceRect; aspect: number } | null
 }) {
   const playback = useMemo(() => new Playback(), [])
   const aspect = show.canvas_width / show.canvas_height
@@ -687,18 +694,31 @@ export function ScenePreview({
     if (d?.kind === 'point') onSurfacesDone()
   }
 
+  // One projector's view is the whole picture blown up behind a window the
+  // shape of that projector, so pointer positions (read from the picture's
+  // own on-screen box) stay in canvas fractions.
+  const shape = view ? view.aspect : show.canvas_width / show.canvas_height
+  const inner: React.CSSProperties = view
+    ? {
+        position: 'absolute',
+        width: `${100 / view.source.w}%`,
+        height: `${100 / view.source.h}%`,
+        left: `${(-100 * view.source.x) / view.source.w}%`,
+        top: `${(-100 * view.source.y) / view.source.h}%`,
+      }
+    : { position: 'absolute', inset: 0 }
   return (
+    <div
+      className="relative mx-auto overflow-hidden rounded-md bg-black ring-1 ring-white/10"
+      // As wide as there is room for, but short enough to leave its controls in view.
+      style={{ aspectRatio: `${shape}`, width: `min(100%, calc(52vh * ${shape}))` }}
+    >
     <div
       ref={boxRef}
       className={classNames(
-        'relative mx-auto overflow-hidden rounded-md bg-black ring-1 ring-white/10',
         drawing || placing ? 'cursor-crosshair' : peopleSource === 'simulated' || showSurfaces ? 'cursor-pointer' : '',
       )}
-      // As wide as there is room for, but short enough to leave its controls in view.
-      style={{
-        aspectRatio: `${show.canvas_width} / ${show.canvas_height}`,
-        width: `min(100%, calc(52vh * ${show.canvas_width / show.canvas_height}))`,
-      }}
+      style={inner}
     >
       <OutputView
         output={output}
@@ -719,6 +739,7 @@ export function ScenePreview({
       />
       {overlay && <div className="pointer-events-none absolute inset-0">{overlay}</div>}
       {picker}
+    </div>
     </div>
   )
 }

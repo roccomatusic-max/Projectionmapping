@@ -16,6 +16,7 @@ import {
   fitPin,
   mediaAspect,
   placeAt,
+  showsOn,
   timelineTime,
 } from '../scene/timeline'
 import type {
@@ -39,6 +40,7 @@ import { MediaDrop, mediaKindLabel, outputColor } from './panels'
 import { type Backdrop, type Placing, ScenePreview } from './ScenePreview'
 import { PLACEABLE, placingFor, SINGLE } from './ScenesPanel'
 import { clockText, playheadLeft, TimelineTracks } from './TimelineTracks'
+import { YourProjectors } from './YourProjectors'
 
 /** Changes are saved this long after the last one. */
 const SAVE_DELAY_MS = 500
@@ -130,6 +132,9 @@ export function ShowDesigner({
   const [sound, setSound] = useState(true)
   const [follow, setFollow] = useState(false)
   const [backdropChoice, setBackdropChoice] = useState<'media' | 'camera' | 'none'>('media')
+  /** The projector the preview shows, as that projector shows it; null is the whole house. */
+  const [viewId, setViewId] = useState<number | null>(null)
+  const viewed = outputs.find((o) => o.id === viewId) ?? null
   const tracker = useState(() => new PeopleTracker(show.id))[0]
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media])
   const canvasAspect = show.canvas_width / show.canvas_height
@@ -311,14 +316,24 @@ export function ShowDesigner({
     }
     const aspect = mediaAspect(asset)
     const video = asset.kind === 'video'
-    // Videos cover the house; pictures start a good size in the middle.
-    const pin = video ? fillPin(canvasAspect, aspect) : { ...fitPin(canvasAspect, aspect), size: Math.min(0.6, fitPin(canvasAspect, aspect).size) }
-    add({ ...clipBase('media', name, video && asset.duration ? asset.duration : 5), media_id: asset.id, pin })
+    // Videos cover the house (or the projector being looked at); pictures
+    // start a good size in the middle.
+    const box = viewed?.source
+    const fit = fitPin(canvasAspect, aspect, box)
+    const pin = video ? fillPin(canvasAspect, aspect, box) : { ...fit, size: Math.min(0.6 * (box?.h ?? 1), fit.size) }
+    add({ ...clipBase('media', name, video && asset.duration ? asset.duration : 5), media_id: asset.id, pin, outputs: onViewed })
   }
 
   const addElement = (layer: SceneLayer) => {
-    add({ ...clipBase('element', layerLabel(layer), 10), layer })
+    // Looking at one projector, its objects start inside that projector's box.
+    const box = viewed?.source
+    const placed = box && layer.pins
+      ? { ...layer, pins: layer.pins.map((p) => ({ ...p, x: box.x + p.x * box.w, y: box.y + p.y * box.h })) }
+      : layer
+    add({ ...clipBase('element', layerLabel(layer), 10), layer: placed, outputs: onViewed })
   }
+  /** Something added while looking at one projector goes on that projector only. */
+  const onViewed = viewed ? [viewed.id] : null
 
   // -- placing on the picture at the playhead --------------------------------------
   const local = selected ? shownTime - selected.start : 0
@@ -375,7 +390,10 @@ export function ShowDesigner({
   }
 
   // -- what the preview draws ------------------------------------------------------
-  const scene = cue?.scene_id != null ? scenes.find((s) => s.id === cue.scene_id) ?? null : null
+  // A projector with a scene of its own in this cue shows that one instead.
+  const ownScene = viewed && cue && String(viewed.id) in (cue.output_scenes ?? {})
+  const sceneId = ownScene ? cue!.output_scenes[String(viewed!.id)] : cue?.scene_id ?? null
+  const scene = sceneId != null ? scenes.find((s) => s.id === sceneId) ?? null : null
   const cueLayers = cue?.elements ?? NO_LAYERS
   const everyLayers = show.every_cue_elements ?? NO_LAYERS
   const context = useMemo<MappingScene | null>(() => {
@@ -383,9 +401,13 @@ export function ShowDesigner({
     const layers = [...(scene?.layers ?? []), ...cueLayers, ...everyLayers]
     return layers.length ? { id: -4, name: '', description: '', layers, created_at: '', updated_at: '' } : null
   }, [withScene, scene, cueLayers, everyLayers])
+  const shown = useMemo(
+    () => (timeline && viewed ? { ...timeline, clips: timeline.clips.filter((c) => c.kind === 'sound' || showsOn(c, viewed.id)) } : timeline),
+    [timeline, viewed],
+  )
   const preview = useMemo<TimelinePreview | null>(
-    () => (timeline ? { timeline, time: () => timeRef.current, playing: () => playingRef.current || latest.current.follow, sound } : null),
-    [timeline, sound],
+    () => (shown ? { timeline: shown, time: () => timeRef.current, playing: () => playingRef.current || latest.current.follow, sound } : null),
+    [shown, sound],
   )
   const hasMedia = cue?.media_id != null && mediaById.get(cue.media_id)?.kind !== 'audio' && mediaById.has(cue.media_id)
   const backdrop: Backdrop =
@@ -540,6 +562,9 @@ export function ShowDesigner({
         </label>
       </div>
 
+      <YourProjectors show={show} outputs={outputs} viewId={viewed?.id ?? null} onView={setViewId}
+        canEdit={canEdit} onChanged={onShowChanged} onError={onError} />
+
       <ScenePreview
         show={show}
         scene={context}
@@ -561,7 +586,14 @@ export function ShowDesigner({
         onPinsChange={onPins}
         timeline={preview}
         overlay={<ProjectorBoxes show={show} outputs={outputs} />}
+        view={viewed ? { source: viewed.source, aspect: viewed.width / viewed.height } : null}
       />
+      {viewed && cue.output_media && String(viewed.id) in cue.output_media && (
+        <p className="text-xs text-amber-200">
+          In this cue {viewed.name} plays a picture of its own instead of its part of the cue’s picture
+          (Editor → Elements → Pictures on each projector); this preview shows the cue’s picture.
+        </p>
+      )}
       {hint && <p className="text-xs text-slate-500">{hint}</p>}
 
       <div className="flex flex-wrap items-end gap-2">
@@ -685,6 +717,7 @@ export function ShowDesigner({
               asset={selectedAsset}
               show={show}
               outputs={outputs}
+              viewed={viewed}
               canEdit={canEdit}
               local={local}
               onNow={onNow}

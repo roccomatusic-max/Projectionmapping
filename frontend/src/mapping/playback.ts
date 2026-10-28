@@ -33,7 +33,7 @@ import type { PeopleTracker, PersonSpot } from './people'
 import type { TextureSource } from './renderer'
 import { cueElementsScene } from './scene/cueElements'
 import type { SceneItem } from './scene/engine'
-import { timelineItems, timelineTime } from './scene/timeline'
+import { showsOn, timelineItems, timelineTime } from './scene/timeline'
 import { type MediaWant, TimelineMedia } from './timelineMedia'
 import type { Cue, MappingScene, MediaAsset, Surface, Timeline, TransportCue, TransportState } from './types'
 
@@ -293,7 +293,7 @@ export class Playback {
       if (!run) continue
       items.push(...timelineItems({
         timeline: run.timeline, scope: `cue${cue.id}`, t: run.t, weight: Math.min(1, weight), clock: now,
-        canvasAspect: this.canvasAspect, media: this.media,
+        canvasAspect: this.canvasAspect, media: this.media, outputId,
         source: (clip, local) => this.timelineMedia.source(`${run.key}:${clip.id}`, clip, local),
       }))
     }
@@ -343,6 +343,8 @@ export class Playback {
         const playing = state.status === 'playing'
         for (const clip of run.timeline.clips) {
           if (clip.kind === 'element') continue
+          // A video only on other projectors is not loaded here at all.
+          if (clip.kind === 'media' && this.only && !this.only.some((id) => showsOn(clip, id))) continue
           const to = clip.output_id ?? this.firstOutput
           const audible = this.sound && cue === state.current && to != null && (this.only?.includes(to) ?? false)
           wants.push({ key: `${run.key}:${clip.id}`, clip, t: run.t, playing, audible })

@@ -521,7 +521,7 @@ export default function Mapping({ session }: { session: Session }) {
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                     <Panel
                       title="Where each projector lands on the picture"
-                      description={`The whole picture is ${show.canvas_width} × ${show.canvas_height}. Each numbered box is the part one projector shows; after the camera calibration they sit where each projector's light really lands.${canEdit ? ' Drag a box to move it, or pull its edges to resize it.' : ''}`}
+                      description={`The whole picture of the house. Each numbered box is the part one projector shows, at that projector's own resolution; after the camera calibration they sit where each projector's light really lands.${canEdit ? " Drag a box to move it, or pull its edges to resize it: it keeps its projector's shape (hold Shift to change the shape)." : ''}`}
                       action={
                         canEdit ? (
                           <div className="flex gap-2">

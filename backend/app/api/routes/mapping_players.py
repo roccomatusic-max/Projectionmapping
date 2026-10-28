@@ -1070,6 +1070,39 @@ async def picture(player_id: int, session: SessionDep, user: RequireViewer) -> R
     })
 
 
+#: Smallest and largest screen a mini PC's report is taken as its projector's size.
+REAL_SIZE_MIN = (320, 200)
+REAL_SIZE_MAX = 16384
+
+
+async def _real_size(session, player: MappingPlayer, before: dict,
+                     payload: PlayerReport) -> MappingOutput | None:
+    """Give a projector the resolution its mini PC really shows.
+
+    The Mini PC app runs the output page full screen on the projector, so
+    the page's size is the projector's picture. It is taken once two
+    heartbeats in a row agree (not mid-way through a change of display
+    mode), and only from a mini PC run by the app: a browser window opened
+    by hand may be any size. Everything else about the output is kept in
+    fractions of its picture, so nothing else moves. Returns the output when
+    its size changed, unsaved.
+    """
+    width, height = payload.width, payload.height
+    if (player.kind or "player") != "player" or player.output_id is None or not before.get("app"):
+        return None
+    if width is None or height is None:
+        return None
+    if not (REAL_SIZE_MIN[0] <= width <= REAL_SIZE_MAX and REAL_SIZE_MIN[1] <= height <= REAL_SIZE_MAX):
+        return None
+    if (before.get("width"), before.get("height")) != (width, height):
+        return None
+    output = await session.get(MappingOutput, player.output_id)
+    if output is None or (output.width, output.height) == (width, height):
+        return None
+    output.width, output.height = width, height
+    return output
+
+
 @router.post("/me", response_model=PlayerAssignment)
 async def report(payload: PlayerReport, request: Request, session: SessionDep,
                  user: CurrentUser) -> PlayerAssignment:
@@ -1082,14 +1115,20 @@ async def report(payload: PlayerReport, request: Request, session: SessionDep,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="This account is not a player")
     player.last_seen_at = utcnow()
-    kept = {k: v for k, v in (player.report or {}).items() if k in KEPT_REPORT}
+    before = player.report or {}
+    kept = {k: v for k, v in before.items() if k in KEPT_REPORT}
     address = request.client.host if request.client else None
     fresh = payload.model_dump(exclude_none=True)
+    sized = await _real_size(session, player, before, payload)
     check = _clock_check(player.id, received, fresh.pop("clock_now", None))
     player.report = {**fresh, **kept,
                      **({"clock_check_ms": check} if check is not None else {}),
                      **({"address": address} if address else {})}
     await session.commit()
+    if sized is not None:
+        await session.refresh(sized)
+        out_row = _output_out(sized)
+        _touch(sized.show_id, kind="mapping_output", payload={"output": out_row.model_dump(mode="json")})
     out = await _player_out(session, player)
     close = _watched_closely(player.id)
     commands = _take(player.id, "page") if player.kind != "camera" else []

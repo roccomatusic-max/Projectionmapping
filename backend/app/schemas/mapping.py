@@ -1122,6 +1122,8 @@ class TimelineClip(BaseModel):
     output_id: int | None = None
     #: Where a video or picture may show: all of it, or only the walls, the windows...
     target: LayerTarget = "everywhere"
+    #: The projectors (output ids) it shows on; None or empty is every projector.
+    outputs: list[int] | None = Field(default=None, max_length=32)
     #: The element, for an element clip, placed as it is when it has no moves.
     layer: SceneLayer | None = None
     #: Moves over time: where it is at each key, in order of time.
