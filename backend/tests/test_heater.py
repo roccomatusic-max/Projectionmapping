@@ -338,3 +338,20 @@ async def test_projector_intake_and_a_plug_that_stops_answering(api, shelly, out
 
     assert (await api.delete(f"/api/heaters/{heater_id}", headers=headers)).status_code == 204
     assert (await api.get("/api/heaters", headers=headers)).json()["heaters"] == []
+
+
+async def test_a_sensor_plugged_in_after_the_heater_was_added_is_used(api, shelly, outside_temp):
+    """Added with "No sensor" chosen; the only sensor that turns up is used anyway."""
+    headers = await login(api)
+    await paired(api, headers)
+    made = await api.post("/api/heaters", headers=headers, json=BODY)
+    assert made.status_code == 201, made.text
+    assert made.json()["sensor_player_id"] is None
+    assert made.json()["inside"] is None
+
+    await app_checkin(api, sensor={"name": "SHT41 Trinkey", "celsius": f_to_c(35)})
+    await heaters.service.tick()
+    box = (await api.get("/api/heaters", headers=headers)).json()["heaters"][0]
+    assert box["inside"]["source"] == "sensor"
+    assert round(box["inside"]["celsius"], 1) == round(f_to_c(35), 1)
+    assert box["is_on"] is True and shelly.on

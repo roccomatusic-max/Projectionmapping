@@ -52,6 +52,8 @@ from app.db.models import (
     Event,
     Heater,
     HeaterReading,
+    MappingOutput,
+    MappingPlayer,
     ProjectorState,
     Severity,
     Telemetry,
@@ -114,11 +116,34 @@ class Inside:
     at: datetime
 
 
-async def inside_reading(session, heater: Heater, now: datetime) -> Inside | None:
+async def sensor_for(session, heater: Heater, now: datetime) -> SensorReading | None:
+    """The fresh USB sensor reading this heater goes by, or None.
+
+    The sensor chosen in its settings; with none chosen (it was added before
+    the sensor was plugged in, say), the sensor on the mini PC that plays its
+    projector, or else the only sensor there is.
+    """
+    fresh = {pid: r for pid, r in usb_sensors.items() if now - r.at <= SENSOR_FRESH}
     if heater.sensor_player_id is not None:
-        reading = usb_sensors.get(heater.sensor_player_id)
-        if reading is not None and now - reading.at <= SENSOR_FRESH:
-            return Inside(reading.celsius, "sensor", reading.at)
+        return fresh.get(heater.sensor_player_id)
+    if heater.projector_id is not None and fresh:
+        players = (await session.execute(
+            select(MappingPlayer.id)
+            .join(MappingOutput, MappingOutput.id == MappingPlayer.output_id)
+            .where(MappingOutput.projector_id == heater.projector_id)
+        )).scalars().all()
+        for player_id in players:
+            if player_id in fresh:
+                return fresh[player_id]
+    if len(usb_sensors) == 1 and fresh:
+        return next(iter(fresh.values()))
+    return None
+
+
+async def inside_reading(session, heater: Heater, now: datetime) -> Inside | None:
+    reading = await sensor_for(session, heater, now)
+    if reading is not None:
+        return Inside(reading.celsius, "sensor", reading.at)
     if heater.projector_id is not None:
         row = (await session.execute(
             select(Telemetry)
