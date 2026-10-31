@@ -96,16 +96,26 @@ class UsbSensor(threading.Thread):
         except ImportError:
             log.info("no serial support in this build; USB sensors are not read")
             return
+        said_none = False
         while not self.stopping.is_set():
             port = find_port()
             if port is None:
+                if not said_none:
+                    # Once, so "Get the log" shows what this computer can see.
+                    log.info("no USB temperature sensor plugged in; serial ports seen: %s",
+                             describe_ports() or "none")
+                    said_none = True
                 self.stopping.wait(LOOK_SECONDS)
                 continue
+            said_none = False
             self.name_seen = (port.product or port.description or "USB sensor").strip()
             log.info("reading the temperature from %s on %s", self.name_seen, port.device)
             readings = 0
+            ignored = 0
             try:
                 with serial.Serial(port.device, 115200, timeout=2) as link:
+                    # The sensor waits for this before it prints anything.
+                    link.dtr = True
                     while not self.stopping.is_set():
                         raw = link.readline()
                         if not raw:
@@ -115,9 +125,29 @@ class UsbSensor(threading.Thread):
                             readings += 1
                             if readings == 1:
                                 log.info("first reading from %s: %s", self.name_seen, line.strip())
+                        else:
+                            ignored += 1
+                            if ignored in (1, 20):
+                                log.info("%s sent a line that is not a temperature: %r",
+                                         self.name_seen, line.strip()[:80])
                         # Several lines a second: one every few seconds is plenty.
                         self.stopping.wait(2)
                         link.reset_input_buffer()
+                        # What is left is the end of a line cut in half; never read that as a number.
+                        link.readline()
             except (OSError, serial.SerialException) as exc:
                 log.warning("lost the USB sensor on %s: %s", port.device, exc)
             self.stopping.wait(5)
+
+
+def describe_ports() -> str:
+    """Every serial port with its USB ids, for the log."""
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return "no serial support in this build"
+    found = []
+    for port in sorted(list_ports.comports(), key=lambda p: p.device):
+        ids = f"{port.vid:04X}:{port.pid:04X}" if port.vid is not None and port.pid is not None else "no USB id"
+        found.append(f"{port.device} ({port.description or 'unnamed'}, {ids})")
+    return ", ".join(found)

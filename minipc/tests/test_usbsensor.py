@@ -28,3 +28,16 @@ def test_report_is_only_sent_while_fresh(monkeypatch):
     clock = usbsensor.time.monotonic() + usbsensor.FRESH_SECONDS + 1
     monkeypatch.setattr(usbsensor.time, "monotonic", lambda: clock)
     assert sensor.report() is None
+
+
+def test_the_log_names_the_ports_it_can_see(monkeypatch):
+    from types import SimpleNamespace
+
+    from serial.tools import list_ports
+
+    ports = [SimpleNamespace(device="COM4", description="USB Serial Device", vid=0x239A, pid=0x8139),
+             SimpleNamespace(device="COM1", description="Communications Port", vid=None, pid=None)]
+    monkeypatch.setattr(list_ports, "comports", lambda: ports)
+    text = usbsensor.describe_ports()
+    assert text.startswith("COM1 (Communications Port, no USB id)")
+    assert "COM4 (USB Serial Device, 239A:8139)" in text
