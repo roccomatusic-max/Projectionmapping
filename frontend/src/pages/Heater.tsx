@@ -524,7 +524,7 @@ function HeaterForm({
                 value={form.sensor_player_id ?? ''}
                 onChange={(e) => set('sensor_player_id', e.target.value ? Number(e.target.value) : null)}
               >
-                <option value="">No sensor</option>
+                <option value="">Find it by itself</option>
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -532,7 +532,9 @@ function HeaterForm({
                 ))}
               </select>
               <p className="mt-1 text-2xs text-slate-500">
-                {reading ? `Reading ${fahrenheit(reading.celsius)} now.` : 'The mini PC the Trinkey is plugged into.'}
+                {reading
+                  ? `Reading ${fahrenheit(reading.celsius)} now.`
+                  : 'The mini PC the Trinkey is plugged into. "Find it by itself" uses the one on this projector’s mini PC, or the only one there is.'}
               </p>
             </div>
           </div>
