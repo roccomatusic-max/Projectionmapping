@@ -108,7 +108,7 @@ async def _checked(session, payload: EntryIn) -> dict:
 
 async def _title(session, entry: ShowCalendarEntry) -> str:
     planner = await Planner.load(session, await service.load_plan(session))
-    return entry_title(entry, planner.group_names, planner.playlist_names)
+    return entry_title(entry, planner.group_names, planner.playlist_names, planner.show_names)
 
 
 def _when(entry: ShowCalendarEntry) -> str:
