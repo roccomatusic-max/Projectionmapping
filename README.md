@@ -10,6 +10,11 @@ expensive, hard to reach, and the show starts whether or not they came up.
 
 ---
 
+> **Looking for the auditorium side-wall projection app?** The standalone
+> Electron **Planner + Show Player** for the Matilda JR. production lives in
+> [`auditorium/`](auditorium/README.md). It is separate from the fleet-control
+> server documented below.
+
 ## What it does
 
 - **Dashboard** — live fleet state: online, powered, standby, warnings, faults
