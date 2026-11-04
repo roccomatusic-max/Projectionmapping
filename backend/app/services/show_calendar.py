@@ -103,23 +103,26 @@ def _rank(entry: ShowCalendarEntry) -> tuple[int, int]:
 
 
 def entry_title(entry: ShowCalendarEntry, group_names: dict[int, str],
-                playlist_names: dict[int, str] | None = None) -> str:
+                playlist_names: dict[int, str] | None = None,
+                show_names: dict[int, str] | None = None) -> str:
     if entry.title:
         return entry.title
     if entry.kind == "off":
         return "No show"
     if entry.playlist_id and playlist_names and entry.playlist_id in playlist_names:
         return playlist_names[entry.playlist_id]
-    return group_names.get(entry.group_id or 0) or "Show"
+    return (group_names.get(entry.group_id or 0)
+            or (show_names or {}).get(entry.show_id or 0) or "Show")
 
 
 def resolve_night(entries: list[ShowCalendarEntry], night: date, tz,
                   group_names: dict[int, str],
-                  playlist_names: dict[int, str] | None = None) -> Night:
+                  playlist_names: dict[int, str] | None = None,
+                  show_names: dict[int, str] | None = None) -> Night:
     out = Night(night)
     here = sorted((e for e in entries if applies(e, night)), key=_rank)
     for entry in here:
-        title = entry_title(entry, group_names, playlist_names)
+        title = entry_title(entry, group_names, playlist_names, show_names)
         if out.cancelled_by is not None:
             off = entry_title(out.cancelled_by, group_names)
             out.skipped.append((entry.id, title,
@@ -148,17 +151,20 @@ class Planner:
 
     def __init__(self, plan: ShowPlan, entries: list[ShowCalendarEntry],
                  group_names: dict[int, str],
-                 playlists: dict[int, tuple[str, list]] | None = None) -> None:
+                 playlists: dict[int, tuple[str, list]] | None = None,
+                 show_names: dict[int, str] | None = None) -> None:
         self.plan = plan
         self.entries = entries
         self.group_names = group_names
         #: {playlist id: (name, steps)}.
         self.playlists = playlists or {}
         self.playlist_names = {pid: name for pid, (name, _) in self.playlists.items()}
+        #: {show id: name}: a night with no scenes chosen is called by its show.
+        self.show_names = show_names or {}
 
     @classmethod
     async def load(cls, session, plan: ShowPlan) -> Planner:
-        from app.db.models import MappingPlaylist, MappingSceneGroup
+        from app.db.models import MappingPlaylist, MappingSceneGroup, MappingShow
 
         entries = list((await session.execute(
             select(ShowCalendarEntry).order_by(ShowCalendarEntry.id))).scalars().all())
@@ -166,10 +172,12 @@ class Planner:
             select(MappingSceneGroup.id, MappingSceneGroup.name))).all())
         playlists = {pid: (name, list(steps or [])) for pid, name, steps in (await session.execute(
             select(MappingPlaylist.id, MappingPlaylist.name, MappingPlaylist.steps))).all()}
-        return cls(plan, entries, names, playlists)
+        shows = dict((await session.execute(select(MappingShow.id, MappingShow.name))).all())
+        return cls(plan, entries, names, playlists, shows)
 
     def night(self, night: date, tz) -> Night:
-        return resolve_night(self.entries, night, tz, self.group_names, self.playlist_names)
+        return resolve_night(self.entries, night, tz, self.group_names, self.playlist_names,
+                             self.show_names)
 
     def steps(self, slot: Slot) -> list[TimedStep]:
         """The playlist steps of a show time, placed on its night; [] without one."""
