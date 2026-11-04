@@ -170,7 +170,7 @@ export function EntryEditor({
     if (playlist && playlist.show_id !== id) setPlaylistId(null)
     if (group && group.show_id !== id) setGroupId(null)
   }
-  const placeholder = kind === 'off' ? 'No show' : playlist?.name ?? group?.name ?? (showId != null ? showName(showId) : '') || 'Show'
+  const placeholder = kind === 'off' ? 'No show' : playlist?.name ?? group?.name ?? ((showId != null ? showName(showId) : '') || 'Show')
 
   const body = useMemo((): EntryBody => {
     const endDate = repeat === 'once' ? first : last
