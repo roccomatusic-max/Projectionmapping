@@ -31,6 +31,7 @@ import TonightTab from './TonightTab'
 import CalendarTab from './CalendarTab'
 import MessageBoards from './MessageBoards'
 import WalkTheYard, { WalkCard } from './WalkTheYard'
+import TemperaturesCard, { TemperatureGlance, useBoxes } from './TemperaturesCard'
 
 /**
  * Show Remote: run the show and switch the projectors from a phone.
@@ -564,6 +565,8 @@ function ProjectorsTab({ session, walk }: { session: Session; walk?: ReactNode }
   const [pending, setPending] = useState<Pending | null>(null)
   const enabled = projectors.filter((p) => p.enabled)
   const online = enabled.filter((p) => p.state.online && !p.state.stale).length
+  const boxes = useBoxes()
+  const temperatures = useRef<HTMLDivElement>(null)
 
   /** Run a command, then read the projectors it went to straight away
    *  rather than waiting for the next poll, so the list shows what they did. */
@@ -605,6 +608,9 @@ function ProjectorsTab({ session, walk }: { session: Session; walk?: ReactNode }
           {note ?? error}
         </button>
       )}
+
+      <TemperatureGlance projectors={projectors} data={boxes}
+        onOpen={() => temperatures.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
 
       {walk}
 
@@ -668,6 +674,10 @@ function ProjectorsTab({ session, walk }: { session: Session; walk?: ReactNode }
           <li className="px-4 py-4 text-[15px] text-slate-500">No projectors yet. Add them in the Projector Control dashboard.</li>
         )}
       </ul>
+
+      <div ref={temperatures} className="scroll-mt-3">
+        <TemperaturesCard projectors={projectors} data={boxes} />
+      </div>
 
       <ConfirmDialog
         open={pending != null}
