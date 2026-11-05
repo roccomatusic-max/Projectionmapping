@@ -32,6 +32,32 @@ jobs:
           alembic downgrade base
           alembic upgrade head
 
+  homeassistant:
+    name: Home Assistant integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements*.txt
+            ha-tests/requirements.txt
+      # Two environments: Home Assistant pins its own versions of shared
+      # libraries, so the server runs in its own (ha-tests/conftest.py).
+      - name: The server, in its own environment
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/pip install -q -r backend/requirements-dev.txt
+      - name: Home Assistant and its test harness
+        run: pip install -q -r ha-tests/requirements.txt
+      - name: Lint
+        run: backend/.venv/bin/ruff check --config backend/ruff.toml custom_components ha-tests
+      - name: The integration inside Home Assistant, against the server and simulators
+        working-directory: ha-tests
+        run: python -m pytest -q -p no:cacheprovider
+
   frontend:
     name: Frontend typecheck and build
     runs-on: ubuntu-latest

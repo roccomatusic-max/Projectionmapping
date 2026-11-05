@@ -20,9 +20,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.events import bus
-from app.db.models import MappingCue, MappingShow, MediaAsset
+from app.db.models import MappingCue, MappingScene, MappingShow, MediaAsset
 from app.db.session import session_scope
-from app.schemas.mapping import TransportCue, TransportState
+from app.schemas.mapping import EmergencyState, TransportCue, TransportState
 
 log = logging.getLogger(__name__)
 
@@ -31,8 +31,55 @@ class TransportError(Exception):
     """A transport request that cannot be carried out as asked."""
 
 
+EMERGENCY_HELD = ("The emergency stop is on. Clear it first (the red bar at the top of "
+                  "the page), then press GO.")
+
+
+#: Ids of the scenes fading out when a playlist moves on count down from
+#: here, well clear of saved cues and of scenes played alone (-scene id).
+FADING_ID = -1_000_000_000
+
+
+class ShowClock:
+    """The clock every transport time is told in, in ms since 1970.
+
+    It starts at the computer's time but then runs on the high-resolution
+    monotonic counter, so a clock adjustment (Windows or macOS setting the
+    time from the internet) never makes it jump: a jump would reach each
+    mini PC at a different moment and put them out of step with each other.
+    Any difference from the computer's time is taken up slowly, at most
+    ``SLEW`` (0.01 %), which every mini PC follows without noticing. Only a
+    large difference (the computer's time set by hand) is taken in one
+    step, and only while no show is playing.
+    """
+
+    SLEW = 1e-4
+    STEP_MS = 60_000.0
+
+    def __init__(self) -> None:
+        self._base = time.time() * 1000.0 - time.perf_counter() * 1000.0
+        self._checked = time.perf_counter()
+        self.may_step = lambda: True
+
+    def now(self) -> float:
+        counter = time.perf_counter()
+        elapsed = counter - self._checked
+        if elapsed >= 1.0:
+            self._checked = counter
+            behind = time.time() * 1000.0 - (self._base + counter * 1000.0)
+            if abs(behind) > self.STEP_MS and self.may_step():
+                self._base += behind
+            else:
+                limit = elapsed * 1000.0 * self.SLEW
+                self._base += max(-limit, min(limit, behind))
+        return self._base + counter * 1000.0
+
+
+show_clock = ShowClock()
+
+
 def now_ms() -> float:
-    return time.time() * 1000.0
+    return show_clock.now()
 
 
 class MappingTransport:
@@ -40,8 +87,12 @@ class MappingTransport:
         self._state = TransportState()
         self._lock = asyncio.Lock()
         self._follow_task: asyncio.Task | None = None
+        self._follow_revision = -1
 
     # -- reading -----------------------------------------------------------
+
+    def snapshot_status(self) -> str:
+        return self._state.status
 
     def snapshot(self) -> TransportState:
         state = self._state.model_copy(deep=True)
@@ -51,8 +102,11 @@ class MappingTransport:
     # -- commands ----------------------------------------------------------
 
     async def command(self, action: str, *, show_id: int | None = None,
-                      cue: int | None = None) -> TransportState:
+                      cue: int | None = None, scene_id: int | None = None,
+                      fade_seconds: float = 0.0) -> TransportState:
         async with self._lock:
+            if self._state.emergency is not None and action in ("go", "goto", "resume", "scene"):
+                raise TransportError(EMERGENCY_HELD)
             match action:
                 case "go":
                     await self._go(show_id, None)
@@ -60,6 +114,10 @@ class MappingTransport:
                     if cue is None:
                         raise TransportError("goto needs a cue position")
                     await self._go(show_id, cue)
+                case "scene":
+                    if scene_id is None:
+                        raise TransportError("scene needs a scene_id")
+                    await self._scene(scene_id, fade_seconds)
                 case "pause":
                     self._pause()
                 case "resume":
@@ -70,6 +128,52 @@ class MappingTransport:
                     self._reset(status="blackout")
                 case _:
                     raise TransportError(f"unknown transport action {action!r}")
+            return self._publish()
+
+    async def fade_scenes(self, *, show_id: int, scene_id: int | None,
+                          output_scenes: dict, fade_seconds: float) -> bool:
+        """Crossfade the live cue's scenes from what it showed before.
+
+        Call it after the cue's saved scenes have changed (a playlist moving
+        on) and before the outputs hear of that change: the scenes the cue
+        had, given here, go out as the one fading out. Its id is one no
+        saved cue has, so outputs draw the scenes it carries; it has no
+        media, so videos keep playing untouched. Returns False when nothing
+        of this show's cues is playing.
+        """
+        async with self._lock:
+            state = self._state
+            current = state.current
+            if (state.emergency is not None or state.status != "playing" or current is None
+                    or state.show_id != show_id or current.position < 0):
+                return False
+            fade = max(0.0, min(float(fade_seconds), 30.0))
+            if fade <= 0:
+                return False
+            state.previous = current.model_copy(update={
+                "id": FADING_ID - state.revision, "scene_id": scene_id,
+                "output_scenes": dict(output_scenes or {}), "media_id": None,
+                "output_media": {},
+            })
+            state.current = current.model_copy(update={"fade_seconds": fade})
+            state.fade_started_at_ms = now_ms()
+            following = self._state.revision == self._follow_revision
+            self._publish()
+            if following:
+                self._follow_revision = self._state.revision  # the cue still moves on
+            return True
+
+    async def emergency_stop(self, *, by: str | None, at_ms: float | None = None) -> TransportState:
+        """Black on every output at once, and hold the show until cleared."""
+        async with self._lock:
+            self._reset(status="blackout")
+            self._state.emergency = EmergencyState(at_ms=at_ms or now_ms(), by=by)
+            return self._publish()
+
+    async def clear_emergency(self) -> TransportState:
+        """Lift the hold. The outputs stay black until someone presses GO."""
+        async with self._lock:
+            self._state.emergency = None
             return self._publish()
 
     async def show_deleted(self, show_id: int) -> None:
@@ -121,11 +225,44 @@ class MappingTransport:
         )
         self._state.previous = self._state.current if crossfade else None
         self._state.fade_started_at_ms = start if crossfade else None
+        self._start_run(start)
         self._state.current = _cue_out(cue, position, start)
         self._state.show_id = show.id
         self._state.status = "playing"
         self._state.paused_position = None
         self._schedule_follow(cue, position, duration, len(cues))
+
+    async def _scene(self, scene_id: int, fade_seconds: float) -> None:
+        """Play one scene on every projector, outside any show's cues.
+
+        It goes out as a cue of its own at position -1 with an id no saved
+        cue has (-scene id), so outputs draw its ``scene_id`` on the whole
+        canvas, and the next GO starts the loaded show from its first cue.
+        """
+        async with session_scope() as session:
+            scene = await session.get(MappingScene, scene_id)
+            if scene is None:
+                raise TransportError("That scene no longer exists. Pick another one.")
+            name = scene.name
+        start = now_ms()
+        fade = max(0.0, min(float(fade_seconds), 30.0))
+        crossfade = (self._state.status == "playing" and self._state.current is not None
+                     and fade > 0)
+        self._cancel_follow()
+        self._state.previous = self._state.current if crossfade else None
+        self._state.fade_started_at_ms = start if crossfade else None
+        self._state.current = TransportCue(
+            id=-scene_id, position=-1, name=name, media_id=None, fit="fill", loop=True,
+            fade_seconds=fade, scene_id=scene_id, started_at_ms=start,
+        )
+        self._start_run(start)
+        self._state.status = "playing"
+        self._state.paused_position = None
+
+    def _start_run(self, start: float) -> None:
+        """Note when playing began, unless it is already playing or paused."""
+        if self._state.status not in ("playing", "paused") or self._state.run_started_at_ms is None:
+            self._state.run_started_at_ms = start
 
     def _pause(self) -> None:
         if self._state.status != "playing" or self._state.current is None:
@@ -146,9 +283,9 @@ class MappingTransport:
 
     def _reset(self, *, status: str) -> None:
         self._cancel_follow()
-        show_id = self._state.show_id
-        revision = self._state.revision
-        self._state = TransportState(show_id=show_id, status=status, revision=revision)
+        self._state = TransportState(show_id=self._state.show_id, status=status,
+                                     revision=self._state.revision,
+                                     emergency=self._state.emergency)
 
     def _publish(self) -> TransportState:
         self._state.revision += 1
@@ -165,13 +302,19 @@ class MappingTransport:
         hold = cue.follow_seconds
         if hold is None and not cue.loop and duration:
             hold = duration
+        timeline = cue.timeline or {}
+        if cue.follow_seconds is None and timeline.get("end") == "next" and timeline.get("length"):
+            # A timeline set to go on to the next cue does so as it ends.
+            hold = float(timeline["length"])
         if hold is None or position + 1 >= cue_count:
             return
-        revision = self._state.revision + 1  # the revision _publish is about to set
+        # The revision _publish is about to set; any other change cancels it.
+        self._follow_revision = self._state.revision + 1
 
         async def follow() -> None:
             await asyncio.sleep(hold)
-            if self._state.revision != revision or self._state.status != "playing":
+            if (self._state.revision != self._follow_revision
+                    or self._state.status != "playing"):
                 return
             try:
                 await self.command("go")
@@ -186,6 +329,16 @@ class MappingTransport:
             task.cancel()
 
 
+def describe_live(state: TransportState) -> str:
+    """What is on, for the log: " cue 3" or " scene 'Haunted house'"."""
+    current = state.current
+    if current is None:
+        return ""
+    if current.position < 0:
+        return f" scene {current.name!r}"
+    return f" cue {current.position + 1}"
+
+
 def _cue_out(cue: MappingCue, position: int, started_at_ms: float) -> TransportCue:
     return TransportCue(
         id=cue.id, position=position, name=cue.name, media_id=cue.media_id,
@@ -198,3 +351,5 @@ def _cue_out(cue: MappingCue, position: int, started_at_ms: float) -> TransportC
 
 
 transport = MappingTransport()
+# A large clock change is taken in one step only while nothing plays.
+show_clock.may_step = lambda: transport.snapshot_status() == "stopped"

@@ -26,8 +26,11 @@ from sqlalchemy.exc import IntegrityError
 from app.api.routes import (
     auth,
     automation,
+    backups,
+    emergency,
     enclosure,
     groups,
+    heaters,
     integration,
     mapping,
     mapping_camera,
@@ -35,9 +38,14 @@ from app.api.routes import (
     mapping_players,
     mapping_scenes,
     monitoring,
+    phone_alerts,
     projectors,
+    show_calendar,
+    show_history,
     system,
+    tonight,
     updates,
+    walkthrough,
     ws,
 )
 from app.config import settings
@@ -46,14 +54,21 @@ from app.db.migrate import upgrade_to_head
 from app.db.models import Role, User
 from app.db.session import create_all, engine, session_scope
 from app.paths import static_dir
+from app.services import backups as backup_service
+from app.services import minipc_updates
 from app.services.alerts import alerting
 from app.services.automation import engine as automation_engine
 from app.services.device_manager import manager
 from app.services.discovery import discovery
+from app.services.emergency import emergency as emergency_stop
+from app.services.heater import service as heater_service
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
+from app.services.show_history import recorder as history_recorder
+from app.services.tonight import scheduler as tonight_scheduler
 from app.services.updates import start_auto_updates
+from app.services.walkthrough import walkthrough as walk_the_yard
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -134,29 +149,48 @@ async def lifespan(_: FastAPI):
             "(python -c \"import secrets; print(secrets.token_urlsafe(48))\").",
             len(settings.secret_key),
         )
+    if not settings.is_memory_sqlite:
+        # A backup restored from Settings → Backup, when the desktop launcher
+        # (which normally does this) did not start this server.
+        restored = await asyncio.to_thread(backup_service.apply_at_start)
+        if restored:
+            log.warning("restore: %s", restored["message"])
     await prepare_database()
     await bootstrap_admin()
     await load_projectors()
+    await emergency_stop.restore()
+    await walk_the_yard.restore()
     await monitor.start()
     await alerting.start()
     await automation_engine.start()
+    await history_recorder.start()
+    await tonight_scheduler.start()
+    await heater_service.start()
     await mqtt_publisher.start()
+    await walk_the_yard.start_service()
     if settings.advertise_port:
         await discovery.start(port=settings.discovery_port, http_port=settings.advertise_port)
     auto_updates = start_auto_updates()
+    minipc_update_task = minipc_updates.start()
+    nightly_backups = backup_service.start()
     log.info("startup complete")
     try:
         yield
     finally:
         log.info("shutting down")
-        if auto_updates:
-            auto_updates.cancel()
-            # gather keeps the task's own cancellation, not one aimed at us.
-            await asyncio.gather(auto_updates, return_exceptions=True)
+        for task in (auto_updates, minipc_update_task, nightly_backups):
+            if task:
+                task.cancel()
+                # gather keeps the task's own cancellation, not one aimed at us.
+                await asyncio.gather(task, return_exceptions=True)
         # Order matters: stop producing work, then stop the device workers,
         # so nothing is enqueued against a projector we are disconnecting.
         await discovery.stop()
         await automation_engine.stop()
+        await tonight_scheduler.stop()
+        await walk_the_yard.stop_service()
+        await heater_service.stop()
+        await history_recorder.stop()
         await mapping_transport.stop_service()
         await monitor.stop()
         await alerting.stop()
@@ -235,7 +269,8 @@ for router in (
     system.router, auth.router, projectors.router, groups.router,
     monitoring.router, automation.router, enclosure.router, integration.router,
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
-    mapping_maps.router, updates.router,
+    mapping_maps.router, tonight.router, show_calendar.router, updates.router, emergency.router,
+    phone_alerts.router, heaters.router, backups.router, walkthrough.router, show_history.router,
     ws.router,
 ):
     app.include_router(router, prefix="/api")

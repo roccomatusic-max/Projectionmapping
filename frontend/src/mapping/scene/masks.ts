@@ -19,13 +19,17 @@ export interface MaskCanvas {
   used: boolean
 }
 
-const KINDS: Record<Exclude<LayerTarget, 'everywhere' | 'outside'>, SurfaceKind[]> = {
+export const KINDS: Record<Exclude<LayerTarget, 'everywhere' | 'outside'>, SurfaceKind[]> = {
   building: ['wall', 'roof', 'window', 'door', 'other'],
   walls: ['wall', 'other'],
   roof: ['roof'],
   windows: ['window'],
   doors: ['door'],
+  ground: ['ground'],
 }
+
+/** Building parts: what "Around the building" stays off (the driveway is around it). */
+const BUILDING = KINDS.building
 
 /** Things cut out of walls, so a wall texture does not cover its windows. */
 const HOLES: SurfaceKind[] = ['window', 'door']
@@ -71,6 +75,17 @@ function hash(n: number) {
   return x - Math.floor(x)
 }
 
+/** The box around a target's traced parts in canvas fractions; the whole canvas when none are traced. */
+export function targetBox(target: LayerTarget, surfaces: Surface[]): SourceRect {
+  const chosen = target === 'everywhere' || target === 'outside' ? [] : pick(surfaces, target)
+  if (!chosen.length) return { x: 0, y: 0, w: 1, h: 1 }
+  const xs = chosen.flatMap((s) => s.points.map((p) => p[0]))
+  const ys = chosen.flatMap((s) => s.points.map((p) => p[1]))
+  const x = Math.max(0, Math.min(...xs))
+  const y = Math.max(0, Math.min(...ys))
+  return { x, y, w: Math.min(1, Math.max(...xs)) - x, h: Math.min(1, Math.max(...ys)) - y }
+}
+
 export function rasteriseLayerMask(
   layer: SceneLayer,
   surfaces: Surface[],
@@ -107,7 +122,7 @@ export function rasteriseLayerMask(
     ctx.globalCompositeOperation = 'destination-out'
     ctx.fillStyle = '#000'
     ctx.beginPath()
-    surfaces.forEach((s) => trace(ctx, s, map))
+    surfaces.filter((s) => BUILDING.includes(s.kind)).forEach((s) => trace(ctx, s, map))
     ctx.fill('nonzero')
     // destination-out cleared alpha; put the opaque black back underneath.
     ctx.globalCompositeOperation = 'destination-over'

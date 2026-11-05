@@ -157,6 +157,7 @@ export function Freshness({ projector, className }: { projector: Projector; clas
 const PHASE_ICON = {
   confirmed: CheckIcon,
   unverified: WarningIcon,
+  notnow: WarningIcon,
   failed: FaultIcon,
   unavailable: UnavailableIcon,
 } as const
@@ -164,7 +165,7 @@ const PHASE_ICON = {
 /** Where a command is between the click and the projector's read-back. */
 export function PhaseBadge({ command, showLabel = true }: { command: TrackedCommand; showLabel?: boolean }) {
   const tone = PHASE_TONE[command.phase]
-  const active = command.phase === 'pending' || command.phase === 'accepted'
+  const active = command.phase === 'pending' || command.phase === 'accepted' || command.phase === 'waiting'
   const Icon = (PHASE_ICON as Record<string, typeof CheckIcon>)[command.phase]
   return (
     <Chip tone={tone} title={command.detail}>
@@ -186,6 +187,9 @@ export function CommandLine({ command, className }: { command: TrackedCommand; c
       <span className="min-w-0 truncate text-slate-300">{command.label}</span>
       {command.phase === 'accepted' && (
         <span className={classNames('hidden truncate sm:inline', TONE_TEXT.busy)}>waiting for the projector to report it</span>
+      )}
+      {command.phase === 'waiting' && (
+        <span className={classNames('hidden truncate sm:inline', TONE_TEXT.busy)}>sends by itself when ready</span>
       )}
     </div>
   )

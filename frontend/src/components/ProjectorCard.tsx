@@ -30,15 +30,18 @@ export function CommandStrip({ command, className }: { command?: TrackedCommand;
   useTicker(3000)
   if (!command) return null
   const age = Date.now() - command.updatedAt
-  const sticky = command.phase === 'failed' || command.phase === 'unverified' || command.phase === 'unavailable'
-  if (!phaseIsActive(command.phase) && !(sticky && age < 120_000) && age > 12_000) return null
+  const sticky = command.phase === 'failed' || command.phase === 'unverified' ||
+    command.phase === 'unavailable' || command.phase === 'notnow'
+  const held = command.phase === 'waiting'
+  if (!phaseIsActive(command.phase) && !held && !(sticky && age < 120_000) && age > 12_000) return null
   return <CommandLine command={command} className={className} />
 }
 
 /**
  * Quick controls the card offers, worked out from confirmed state. A
- * projector that is offline, warming, cooling or already has a command in
- * flight offers nothing to press.
+ * projector that is offline or already has a command in flight offers
+ * nothing to press. Power stays pressable while warming or cooling: the
+ * server holds the command and sends it when the projector takes it.
  */
 export function quickControls(projector: Projector, command: TrackedCommand | undefined, canControl: boolean) {
   const live = isLive(projector)
@@ -48,10 +51,14 @@ export function quickControls(projector: Projector, command: TrackedCommand | un
   const base = !canControl ? 'Your role is view-only' : !live ? 'Projector is not responding' : busy ? 'A command is still in progress' : null
   return {
     power: {
-      next: (power === 'on' ? 'off' : 'on') as 'on' | 'off',
-      label: power === 'on' ? 'Power off' : 'Power on',
-      disabled: Boolean(base) || transitioning || power === 'unknown',
-      reason: base ?? (transitioning ? 'Wait for the projector to finish warming up or cooling down' : undefined),
+      next: (power === 'on' || power === 'warming' ? 'off' : 'on') as 'on' | 'off',
+      label: power === 'on' || power === 'warming' ? 'Power off' : 'Power on',
+      disabled: Boolean(base) || power === 'unknown',
+      reason: base ?? (transitioning
+        ? power === 'cooling'
+          ? 'Cooling down. Power on now and it turns on by itself when cooling finishes'
+          : 'Starting up. Power off now and it turns off by itself when start-up finishes'
+        : undefined),
     },
     shutter: {
       next: (shutter === 'closed' ? 'open' : 'closed') as 'open' | 'closed',

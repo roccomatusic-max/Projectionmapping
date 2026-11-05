@@ -18,8 +18,10 @@ services:
     command: >
       python -m simulator.panasonic_sim
       --host 0.0.0.0 --port 1024 --warmup 25 --cooldown 35
+      --pjlink-port 4352
     expose:
       - "1024"
+      - "4352"
     restart: unless-stopped
 
   sim-right:
@@ -29,9 +31,10 @@ services:
     command: >
       python -m simulator.panasonic_sim
       --host 0.0.0.0 --port 1024 --warmup 30 --cooldown 40
-      --password panasonic --with-sdi
+      --password panasonic --with-sdi --pjlink-port 4352
     expose:
       - "1024"
+      - "4352"
     restart: unless-stopped
 
   sim-pjlink:

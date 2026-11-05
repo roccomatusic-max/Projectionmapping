@@ -46,7 +46,8 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   ok: 'OK',
   timeout: 'Timed out',
   rejected: 'Rejected',
-  busy: 'Busy',
+  busy: 'Not right now',
+  queued: 'Waiting for the projector',
   unsupported: 'Not supported',
   auth_failed: 'Auth failed',
   connection_error: 'No connection',
@@ -65,6 +66,9 @@ export const OUTCOME_HELP: Record<Outcome, string> = {
     'the next status poll will resolve it. Not retried automatically.',
   rejected: 'The projector understood the command and refused it.',
   busy: 'The projector is busy or the command is not valid right now. Retrying may work.',
+  queued:
+    'The projector cannot take this right now (it is cooling down or starting up). ' +
+    'It will be sent by itself as soon as the projector accepts it.',
   unsupported:
     'This command was not sent. The model does not support it, or it is gated ' +
     'pending verification for this device.',
@@ -83,6 +87,8 @@ export function outcomeTone(outcome: Outcome): 'ok' | 'warn' | 'fault' | 'idle' 
     case 'busy':
     case 'rejected':
       return 'warn'
+    case 'queued':
+      return 'idle'
     case 'unsupported':
       return 'idle'
     default:

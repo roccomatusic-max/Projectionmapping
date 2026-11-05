@@ -30,6 +30,20 @@ def static_dir() -> Path:
     return resource_root() / "static"
 
 
+def homeassistant_integration_dir() -> Path | None:
+    """The Home Assistant integration's folder, or None if this copy lacks it.
+
+    Bundled as ``homeassistant/projector_control`` in the desktop builds and
+    the Docker image; in a source checkout it is the repository's
+    ``custom_components/projector_control``, where HACS also looks for it.
+    """
+    for folder in (resource_root() / "homeassistant" / "projector_control",
+                   resource_root().parent / "custom_components" / "projector_control"):
+        if (folder / "manifest.json").is_file():
+            return folder
+    return None
+
+
 def app_version() -> str:
     """The build number stamped by the release workflow, or ``dev`` for a checkout."""
     try:

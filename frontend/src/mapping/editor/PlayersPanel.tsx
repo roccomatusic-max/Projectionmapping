@@ -1,10 +1,27 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { request } from '@/api/client'
+import {
+  BlackoutIcon,
+  CopyIcon,
+  InfoIcon,
+  LogsIcon,
+  OsdIcon,
+  PowerIcon,
+  RefreshIcon,
+  ShowIcon,
+  TargetIcon,
+  TestPatternIcon,
+} from '@/components/icons'
+import { ConfirmDialog } from '@/components/ui'
 import { classNames } from '@/lib/format'
+import type { TestPattern } from '../types'
 import { formatBytes } from './controls'
 
 /** Where the Windows installer for the computers beside the projectors is published. */
 export const MINIPC_DOWNLOAD = 'https://github.com/roccomatusic-max/Projectionmapping/releases/tag/minipc-latest'
+/** The one line pasted into PowerShell on a mini PC (minipc/README.md, Install). */
+export const MINIPC_INSTALL_LINE =
+  "[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://github.com/roccomatusic-max/Projectionmapping/releases/download/minipc-latest/install-minipc.ps1 | iex"
 
 export interface Player {
   id: number
@@ -34,9 +51,106 @@ export interface Player {
     tracking_ms?: number
     /** Player: how old the camera's people reports are when they arrive (ms). */
     people_ms?: number
+    /** Player: half the round trip to the server clock (ms). */
+    clock_ms?: number
+    /** Player: its live link to the server ("open" when it is). */
+    link?: string
+    /** Player: the status overlay is on its projector. */
+    overlay?: boolean
+    /** Player: how far its picture can be from the show clock, by its own measure (ms). */
+    sync_ms?: number
+    /** Player: how far ahead of the show clock its clock is, as the server checks it (ms). */
+    clock_check_ms?: number
+    /** Player: times its clock had to jump into step since its output opened. */
+    clock_steps?: number
+    /** Player: frames it did not draw in the last second. */
+    dropped?: number
+    /** Player: how much later (ms; earlier when negative) it draws, set here. */
+    trim_ms?: number
+    /** The address it reports from on the network. */
+    address?: string
   }
   /** The other half of a mini PC: its camera on a player, its player on a camera. */
   companion_id: number | null
+  /** What its output shows instead of the show ("none": the show itself). */
+  screen?: TestPattern | null
+  /** The Mini PC app on that computer, once it has checked in. */
+  app?: {
+    /** Heard from in the last few seconds. */
+    connected: boolean
+    /** It can restart and shut down its computer. */
+    power: boolean
+    computer: string | null
+    /** Known: it can be turned on over the network. */
+    mac: string | null
+    /** Windows starts the app again by itself if it stops. */
+    watchdog?: boolean
+    /** When the server last got this app's log (Get the log). */
+    log_at?: string | null
+    /** The Mini PC app's version; null for apps too old to update themselves. */
+    version?: string | null
+    update?: 'old_app' | 'up_to_date' | 'waiting' | 'updating' | 'failed'
+    /** The newest Mini PC app the server has. */
+    latest?: string | null
+    update_message?: string
+    /** What keeps its computer from staying on 24/7, in words: empty when
+     *  nothing does, null for apps older than the check. */
+    awake?: string[] | null
+    /** Its screens, when a monitor can be plugged in beside the projector
+     *  for the status screen; null for apps older than that. */
+    screens?: {
+      state: 'one' | 'on' | 'duplicate' | 'waiting' | 'failed' | 'off'
+      count: number
+      projector: string | null
+      second: string | null
+    } | null
+  } | null
+}
+
+type PlayerAction =
+  | 'restart_output'
+  | 'overlay_on'
+  | 'overlay_off'
+  | 'reboot'
+  | 'shutdown'
+  | 'wake'
+  | 'update' | 'send_log'
+  | 'swap_screens'
+  | 'extend_screens'
+
+/** What the projector of a mini PC can be switched to from here. */
+const SCREENS: Array<{ id: TestPattern; label: string; hint: string }> = [
+  { id: 'none', label: 'Show', hint: 'The show, as the Editor and the cues make it' },
+  { id: 'grid', label: 'Grid', hint: 'A test grid, for lining the projector up' },
+  { id: 'white', label: 'White', hint: 'Full white: is it on, and where does its light land?' },
+  { id: 'black', label: 'Black', hint: 'Nothing: this projector only, the others carry on' },
+  { id: 'sync', label: 'Sync test', hint: 'The show clock as big numbers, a bar and a flashing square, to photograph beside another projector' },
+]
+
+/** In step within a frame at 60 Hz; out of step past the server's warning line (alerts.py). */
+const SYNC_GOOD_MS = 17
+const SYNC_WARN_MS = 50
+
+/** How far one mini PC's picture is from the show clock (ms), by the worse of
+ *  its own measure and the server's check on its clock; null before either. */
+export function syncOff(player: Player): number | null {
+  const { sync_ms: own, clock_check_ms: check } = player.report
+  if (!player.online || (own == null && check == null)) return null
+  return Math.max(own ?? 0, Math.abs(check ?? 0))
+}
+
+function syncTone(off: number) {
+  return off <= SYNC_GOOD_MS ? 'text-emerald-300' : off <= SYNC_WARN_MS ? 'text-amber-200' : 'text-red-300'
+}
+
+const SCREEN_LABEL: Partial<Record<TestPattern, string>> = {
+  grid: 'Test grid',
+  white: 'White',
+  black: 'Black',
+  sync: 'The sync test',
+  red: 'Red',
+  green: 'Green',
+  blue: 'Blue',
 }
 
 interface NetworkInfo {
@@ -113,11 +227,6 @@ export function PlayersPanel({
     }
   }
 
-  const identify = (player: Player) =>
-    request(`/mapping/players/${player.id}/identify`, { method: 'POST' }).catch((err) =>
-      onError(err instanceof Error ? err.message : 'Identify failed'),
-    )
-
   const byId = new Map(players.map((p) => [p.id, p]))
   // A mini PC's camera is approved with the mini PC, so it is not asked about.
   const pending = players.filter((p) => !p.approved && !(p.kind === 'camera' && p.companion_id != null))
@@ -144,6 +253,14 @@ export function PlayersPanel({
             </a>{' '}
             on each Windows computer beside a projector. It finds this server by itself, fills the projector, and
             shows a pairing code there to approve here. A camera plugged into it comes along.
+          </p>
+          <p>To install it, open PowerShell on the mini PC, paste this line and press Enter:</p>
+          <p className="select-all break-all rounded bg-black/30 px-2 py-1 font-mono text-xs text-slate-100">
+            {MINIPC_INSTALL_LINE}
+          </p>
+          <p className="text-xs text-slate-500">
+            If it says Smart App Control blocks the app, turn that off in Windows Security → App &amp; browser
+            control → Smart App Control settings, then paste the line again.
           </p>
           <p className="text-xs text-slate-500">
             Any other computer can open{' '}
@@ -182,6 +299,8 @@ export function PlayersPanel({
           </p>
         </div>
       ))}
+
+      <SyncSummary players={paired} canEdit={canEdit} onError={onError} reload={load} />
 
       {paired.map((player) => (
         <div key={player.id} className="rounded-md bg-panel-850 p-3 ring-1 ring-white/5">
@@ -228,44 +347,547 @@ export function PlayersPanel({
               )}
             </div>
           ) : (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select
-                className="input w-auto flex-1 py-1 text-xs"
-                value={player.output_id ?? ''}
-                disabled={!canEdit}
-                onChange={(event) => patch(player, { output_id: event.target.value ? Number(event.target.value) : null })}
-              >
-                <option value="">No output</option>
-                {player.output_id != null && !outputs.some((o) => o.id === player.output_id) && (
-                  <option value={player.output_id}>An output in another show</option>
-                )}
-                {outputs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <button className="btn-ghost px-2 py-1 text-xs" disabled={!canEdit || !player.online}
-                onClick={() => identify(player)} title="Show this player's name on its projector">
-                Identify
-              </button>
-              <button className="btn-ghost px-2 py-1 text-xs text-red-300" disabled={!canEdit} onClick={() => remove(player)}>
-                Remove
-              </button>
-            </div>
-          )}
-          {player.online && player.kind !== 'camera' && (
-            <p className="tnum mt-2 text-xs text-slate-500">
-              {player.report.fps != null ? `${player.report.fps.toFixed(0)} fps` : '— fps'}
-              {player.report.drift_ms != null ? ` · drift ${player.report.drift_ms} ms` : ''}
-              {player.report.people_ms != null ? ` · camera to here ${player.report.people_ms} ms` : ''}
-              {player.report.width ? ` · ${player.report.width}×${player.report.height}` : ''}
-              {` · cache ${player.report.cache ?? 'off'}`}
-              {player.report.cached_bytes ? ` (${formatBytes(player.report.cached_bytes)})` : ''}
-            </p>
+            <PlayerControls player={player} outputs={outputs} canEdit={canEdit} onPatch={patch}
+              onRemove={remove} onError={onError} reload={load} />
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Are all the projectors in step? The worst of them, in words, and the sync
+ * test on every projector at once, to photograph.
+ */
+function SyncSummary({
+  players,
+  canEdit,
+  onError,
+  reload,
+}: {
+  players: Player[]
+  canEdit: boolean
+  onError: (message: string) => void
+  reload: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const playing = players.filter((p) => p.kind === 'player' && p.output_id != null)
+  if (playing.length === 0) return null
+  const measured = playing
+    .map((p) => ({ player: p, off: syncOff(p) }))
+    .filter((m): m is { player: Player; off: number } => m.off != null)
+  const worst = measured.reduce<{ player: Player; off: number } | null>((w, m) => (!w || m.off > w.off ? m : w), null)
+  const testing = playing.some((p) => p.screen === 'sync')
+
+  const setTest = async (on: boolean) => {
+    setBusy(true)
+    try {
+      await request('/mapping/players/sync-test', { method: 'POST', body: { on } })
+      await reload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'That did not reach the mini PCs')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const words = !worst
+    ? 'Checking how closely the projectors keep time…'
+    : worst.off <= SYNC_GOOD_MS
+      ? measured.length > 1
+        ? `In step: all ${measured.length} projectors within ${Math.max(1, Math.round(worst.off))} ms of the show clock, under one frame.`
+        : `In step: within ${Math.max(1, Math.round(worst.off))} ms of the show clock, under one frame.`
+      : worst.off <= SYNC_WARN_MS
+        ? `Nearly in step: ${worst.player.name} is up to ${Math.round(worst.off)} ms from the show clock (2 to 3 frames).`
+        : `Out of step: ${worst.player.name} is ${Math.round(worst.off)} ms from the show clock. See its card below.`
+
+  return (
+    <div className="space-y-2 rounded-md bg-panel-850 p-3 ring-1 ring-white/5">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className={classNames('min-w-0 flex-1 text-sm', worst ? syncTone(worst.off) : 'text-slate-400')}>{words}</p>
+        <button className={testing ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'} disabled={!canEdit || busy}
+          onClick={() => setTest(!testing)}
+          title={testing ? 'Every projector showing the sync test goes back to the show'
+            : 'Every mini PC’s projector shows the sync test until you take it off'}>
+          <TargetIcon size={12} aria-hidden /> {testing ? 'Back to the show' : 'Sync test on every projector'}
+        </button>
+      </div>
+      {testing && (
+        <p className="text-xs text-slate-400">
+          Take one photo with two projectors in it: the big numbers and the yellow bars should match, and the white
+          squares flash together. A line sweeps across the whole house through each projector in turn; in step, it
+          crosses from one to the next without a jump. If one is always a little behind, shift it below.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Everything one mini PC can be asked from here: which output it plays,
+ * what its projector shows, the status overlay, restarting its output or
+ * the whole computer, shutting it down and turning it back on.
+ */
+function PlayerControls({
+  player,
+  outputs,
+  canEdit,
+  onPatch,
+  onRemove,
+  onError,
+  reload,
+}: {
+  player: Player
+  outputs: OutputChoice[]
+  canEdit: boolean
+  onPatch: (player: Player, body: Partial<Player>) => Promise<void>
+  onRemove: (player: Player) => Promise<void>
+  onError: (message: string) => void
+  reload: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<'reboot' | 'shutdown' | null>(null)
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(null), 12000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  const { report, app } = player
+  const appHere = !!app?.connected
+  const reachable = player.online || appHere
+  const canPower = appHere && !!app?.power
+  const screen = player.screen ?? 'none'
+  const overlay = !!report.overlay
+
+  const run = async (key: string, work: () => Promise<string | null>) => {
+    setBusy(key)
+    try {
+      const message = await work()
+      if (message) setNotice(message)
+      await reload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'That did not reach the mini PC')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const send = (action: PlayerAction) =>
+    run(action, async () => {
+      const reply = await request<{ message: string }>(`/mapping/players/${player.id}/command`, {
+        method: 'POST',
+        body: { action },
+      })
+      return reply.message
+    })
+
+  const show = (pattern: TestPattern) =>
+    run(`screen:${pattern}`, async () => {
+      await request(`/mapping/players/${player.id}/screen`, { method: 'POST', body: { pattern } })
+      return null
+    })
+
+  const fetchLog = () =>
+    request<{ text: string; reason: string; received_at: string }>(`/mapping/players/${player.id}/log`)
+
+  const copyLog = () =>
+    run('copy-log', async () => {
+      const { text } = await fetchLog()
+      await copyText(text)
+      return 'The log is copied. Paste it wherever you need it.'
+    })
+
+  const downloadLog = () =>
+    run('download-log', async () => {
+      const { text, received_at } = await fetchLog()
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+      link.download = `${player.name.replace(/[^\w-]+/g, '-')}-log-${received_at.slice(0, 16).replace(/[:T]/g, '-')}.txt`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 10000)
+      return null
+    })
+
+  const identify = () =>
+    run('identify', async () => {
+      await request(`/mapping/players/${player.id}/identify`, { method: 'POST' })
+      return `${player.name} shows its name on its projector for a few seconds.`
+    })
+
+  // What it is doing, in words.
+  const doing = !player.online
+    ? appHere
+      ? 'The mini PC is on, but its output is not answering. Try Restart output.'
+      : 'Not heard from recently. Check it is on and plugged into the network.'
+    : player.output_id == null
+      ? 'Paired. Pick an output below to give it a picture.'
+      : screen !== 'none'
+        ? `${SCREEN_LABEL[screen] ?? 'A test picture'} on its projector instead of the show.`
+        : report.cue
+          ? `Playing cue ${report.cue}.`
+          : 'Showing its output. Nothing is playing.'
+
+  const facts = player.online
+    ? [
+        report.width ? `${report.width}×${report.height}` : null,
+        report.fps != null ? `${report.fps.toFixed(0)} fps` : null,
+        report.link && report.link !== 'open' ? 'live link down' : null,
+        report.people_ms != null ? `camera to here ${report.people_ms} ms` : null,
+        report.cache === 'on'
+          ? `media saved here${report.cached_bytes ? ` (${formatBytes(report.cached_bytes)})` : ''}`
+          : `media ${report.cache === 'syncing' ? 'downloading' : 'streamed'}`,
+      ].filter(Boolean)
+    : []
+  const where = [app?.computer ? `computer ${app.computer}` : null, report.address ?? null].filter(Boolean)
+
+  const off = !canEdit || !reachable
+  const needsApp = reachable && !canPower
+  // Heard from a Mini PC app that updates itself before, but not now: it
+  // has stopped (the output window it left keeps the picture), not old.
+  const appStopped = !appHere && !!app?.version
+  const powerReason = !reachable
+    ? 'It is offline.'
+    : appStopped
+      ? app?.watchdog
+        ? 'The Mini PC app on it is not answering right now. Windows starts it again by itself within 5 minutes; the projector keeps its picture.'
+        : 'The Mini PC app on it has stopped; the projector keeps its picture. Paste the install line into PowerShell on it once to start it again (after that, Windows restarts it by itself if it ever stops).'
+      : !appHere
+        ? 'This mini PC runs an older Mini PC app. Paste the install line into PowerShell on it once to update it.'
+        : 'Only the Windows Mini PC app can restart or shut down its computer.'
+
+  return (
+    <div className="mt-2 space-y-2.5">
+      <div className="space-y-0.5 text-xs">
+        <p className={player.online && screen === 'none' ? 'text-slate-300' : 'text-amber-200'}>{doing}</p>
+        {facts.length > 0 && <p className="tnum text-slate-500">{facts.join(' · ')}</p>}
+        {where.length > 0 && <p className="text-slate-600">{where.join(' · ')}</p>}
+      </div>
+
+      <label className="flex flex-wrap items-center gap-2">
+        <span className="w-20 shrink-0 text-xs text-slate-400">Plays</span>
+        <select
+          className="input w-auto min-w-0 flex-1 py-1 text-xs"
+          value={player.output_id ?? ''}
+          disabled={!canEdit}
+          onChange={(event) => onPatch(player, { output_id: event.target.value ? Number(event.target.value) : null })}
+        >
+          <option value="">No output</option>
+          {player.output_id != null && !outputs.some((o) => o.id === player.output_id) && (
+            <option value={player.output_id}>An output in another show</option>
+          )}
+          {outputs.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="w-20 shrink-0 text-xs text-slate-400">Projector</span>
+        <div className="seg flex-1" role="group" aria-label={`What ${player.name}'s projector shows`}>
+          {SCREENS.map((option) => (
+            <button
+              key={option.id}
+              className={classNames('seg-item px-2 py-1 text-xs', screen === option.id && 'seg-item-active')}
+              disabled={!canEdit || player.output_id == null || busy != null || screen === option.id}
+              title={player.output_id == null ? 'Pick an output first' : option.hint}
+              aria-pressed={screen === option.id}
+              onClick={() => show(option.id)}
+            >
+              {option.id === 'none' ? <ShowIcon size={12} aria-hidden /> : option.id === 'grid' ? <TestPatternIcon size={12} aria-hidden /> : option.id === 'black' ? <BlackoutIcon size={12} aria-hidden /> : option.id === 'sync' ? <TargetIcon size={12} aria-hidden /> : null}
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {player.online && player.output_id != null && (
+        <SyncRow player={player} canEdit={canEdit} onError={onError} reload={reload} />
+      )}
+
+      {appHere && app?.update && (
+        <div className="flex flex-wrap items-start gap-2">
+          <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">App</span>
+          <div className="min-w-0 flex-1 space-y-1.5 text-xs">
+            <p className={classNames(
+              app.update === 'failed' || app.update === 'old_app' ? 'text-amber-200'
+                : app.update === 'updating' ? 'text-sky-200' : 'text-slate-300')}>
+              <span className="tnum text-slate-200">{app.version ? `Version ${app.version}` : 'Older version'}</span>
+              {' · '}
+              {app.update_message}
+            </p>
+            {app.update === 'old_app' && canEdit && (
+              <p className="select-all break-all rounded bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-200">
+                {MINIPC_INSTALL_LINE}
+              </p>
+            )}
+          </div>
+          {(app.update === 'waiting' || app.update === 'failed') && (
+            <button className="btn-primary btn-sm" disabled={!canEdit || busy != null} onClick={() => send('update')}
+              title="Install the newest Mini PC app now. The computer does not restart and the projector keeps its picture.">
+              <RefreshIcon size={12} aria-hidden /> Update now
+            </button>
+          )}
+        </div>
+      )}
+
+      {appHere && app?.power && (
+        <div className="flex flex-wrap items-start gap-2">
+          <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">Stays on</span>
+          <div className="min-w-0 flex-1 space-y-1 text-xs">
+            {app.awake == null ? (
+              <p className="text-slate-400">
+                {app.version ? 'Checking…' : 'The next Mini PC app update keeps this computer on day and night.'}
+              </p>
+            ) : app.awake.length === 0 ? (
+              <p className="text-emerald-300">Day and night: it never sleeps, turns its screen off or locks, also after a show.</p>
+            ) : (
+              app.awake.map((problem) => <p key={problem} className="text-amber-200">{problem}</p>)
+            )}
+          </div>
+        </div>
+      )}
+
+      {appHere && app?.screens && (
+        <div className="flex flex-wrap items-start gap-2">
+          <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">Monitor</span>
+          <div className="min-w-0 flex-1 space-y-1 text-xs">
+            {app.screens.state === 'on' ? (
+              <>
+                <p className="text-emerald-300">
+                  The monitor ({app.screens.second}) shows the show, the projector and the output.
+                </p>
+                <p className="text-slate-500">Projector: {app.screens.projector}</p>
+              </>
+            ) : app.screens.state === 'duplicate' ? (
+              <p className="text-amber-200">
+                Windows shows the same picture on the monitor and the projector. Press Use as second screen.
+              </p>
+            ) : app.screens.state === 'failed' ? (
+              <p className="text-amber-200">
+                The status screen would not stay on the monitor. Try Swap screens, or Restart computer.
+              </p>
+            ) : app.screens.state === 'waiting' ? (
+              <p className="text-slate-400">Opening the status screen on the monitor…</p>
+            ) : app.screens.state === 'off' ? (
+              <p className="text-slate-400">Turned off on this mini PC.</p>
+            ) : (
+              <p className="text-slate-400">
+                None. Plug a monitor into this mini PC to see the show, its projector and the output beside it.
+              </p>
+            )}
+          </div>
+          {app.screens.count >= 2 && app.screens.state !== 'off' && (
+            <button className="btn-default btn-sm" disabled={!canEdit || busy != null} onClick={() => send('swap_screens')}
+              title="The output is on the wrong screen? Put it on the other one, and the status screen here.">
+              <RefreshIcon size={12} aria-hidden /> Swap screens
+            </button>
+          )}
+          {app.screens.state === 'duplicate' && (
+            <button className="btn-primary btn-sm" disabled={!canEdit || busy != null} onClick={() => send('extend_screens')}
+              title="Show the output on the projector and the status screen on the monitor (Windows: Extend)">
+              Use as second screen
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button className="btn-default btn-sm" disabled={!canEdit || !player.online || busy != null}
+          onClick={identify} title="Show this mini PC's name on its projector for a few seconds">
+          <TargetIcon size={12} aria-hidden /> Identify
+        </button>
+        <button
+          className={classNames('btn-default btn-sm', overlay && 'ring-1 ring-sky-400/50')}
+          disabled={!canEdit || !player.online || busy != null}
+          aria-pressed={overlay}
+          onClick={() => send(overlay ? 'overlay_off' : 'overlay_on')}
+          title="Show what it is playing, its resolution and timing on top of the picture, on the projector itself"
+        >
+          <OsdIcon size={12} aria-hidden /> {overlay ? 'Hide info on screen' : 'Info on screen'}
+        </button>
+        <button className="btn-default btn-sm" disabled={off || busy != null} onClick={() => send('restart_output')}
+          title="Close and reopen the full-screen output on this mini PC. Use it when the picture is stuck.">
+          <RefreshIcon size={12} aria-hidden /> Restart output
+        </button>
+        <button className="btn-default btn-sm" disabled={!canEdit || !appHere || !app?.version || busy != null}
+          onClick={() => send('send_log')}
+          title={appHere && app?.version ? "Have the Mini PC app send its log here, to copy or download" : 'Needs the newest Mini PC app, running'}>
+          <LogsIcon size={12} aria-hidden /> Get the log
+        </button>
+        <button className="btn-default btn-sm" disabled={off || !canPower || busy != null}
+          onClick={() => setConfirm('reboot')} title={canPower ? 'Restart the whole mini PC' : powerReason}>
+          <RefreshIcon size={12} aria-hidden /> Restart computer
+        </button>
+        <button className="btn-danger-outline btn-sm" disabled={off || !canPower || busy != null}
+          onClick={() => setConfirm('shutdown')} title={canPower ? 'Turn the mini PC off' : powerReason}>
+          <PowerIcon size={12} aria-hidden /> Shut down
+        </button>
+        {!reachable && app?.mac && (
+          <button className="btn-primary btn-sm" disabled={!canEdit || busy != null} onClick={() => send('wake')}
+            title="Send the turn-on signal over the network (Wake-on-LAN)">
+            <PowerIcon size={12} aria-hidden /> Turn on
+          </button>
+        )}
+        <button className="btn-ghost btn-sm ml-auto text-red-300" disabled={!canEdit} onClick={() => onRemove(player)}>
+          Remove
+        </button>
+      </div>
+
+      {needsApp && canEdit && (
+        <div className="flex items-start gap-2 rounded-md border border-white/[0.06] bg-panel-900 px-3 py-2 text-xs text-slate-400">
+          <InfoIcon size={13} className="mt-px shrink-0 text-slate-500" aria-hidden />
+          <div className="min-w-0 space-y-1.5">
+            <p>Restart computer and Shut down need: {powerReason}</p>
+            {!appHere && !(appStopped && app?.watchdog) && (
+              <p className="select-all break-all rounded bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-200">
+                {MINIPC_INSTALL_LINE}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {app?.log_at && canEdit && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="w-20 shrink-0 text-slate-400">Log</span>
+          <span className="text-slate-300">
+            Sent {new Date(app.log_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </span>
+          <button className="btn-default btn-sm" disabled={busy != null} onClick={copyLog}>
+            <CopyIcon size={12} aria-hidden /> Copy
+          </button>
+          <button className="btn-default btn-sm" disabled={busy != null} onClick={downloadLog}>
+            Download
+          </button>
+        </div>
+      )}
+
+      {notice && (
+        <p role="status" className="rounded-md bg-sky-500/10 px-3 py-2 text-xs text-sky-100 ring-1 ring-sky-500/25">
+          {notice}
+        </p>
+      )}
+
+      <ConfirmDialog
+        open={confirm != null}
+        danger
+        title={confirm === 'reboot' ? `Restart ${player.name}?` : `Shut down ${player.name}?`}
+        target={<span className="text-slate-200">{player.name}{app?.computer ? ` (${app.computer})` : ''}</span>}
+        body={
+          confirm === 'reboot'
+            ? 'Its projector shows nothing for a minute or two while the mini PC restarts. It comes back by itself and picks the show up again.'
+            : `Its projector goes dark until the mini PC is turned on again${app?.mac ? ' with Turn on here (if its BIOS allows Wake-on-LAN) or' : ' with'} its power button.`
+        }
+        confirmLabel={confirm === 'reboot' ? 'Restart it' : 'Shut it down'}
+        onConfirm={() => {
+          const action = confirm
+          setConfirm(null)
+          if (action) void send(action)
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+    </div>
+  )
+}
+
+/** Copy to the clipboard, also on a plain-HTTP address where the Clipboard API is missing. */
+async function copyText(text: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.appendChild(area)
+  area.select()
+  const ok = document.execCommand('copy')
+  area.remove()
+  if (!ok) throw new Error('This browser would not copy it. Use Download instead.')
+}
+
+/** Steps of the time shift a press of − or + makes (ms). */
+const TRIM_STEP = 5
+
+/**
+ * How closely one mini PC keeps time, and a shift for its projector: some
+ * projectors take a frame or two longer than others to show a picture, which
+ * no clock can see. The sync test photo shows it; shifting the quicker one
+ * later evens them out.
+ */
+function SyncRow({
+  player,
+  canEdit,
+  onError,
+  reload,
+}: {
+  player: Player
+  canEdit: boolean
+  onError: (message: string) => void
+  reload: () => Promise<void>
+}) {
+  const saved = player.report.trim_ms ?? 0
+  const [trim, setTrim] = useState(saved)
+  const timer = useRef<number>()
+  useEffect(() => setTrim(saved), [saved])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const change = (to: number) => {
+    const next = Math.max(-500, Math.min(500, to))
+    setTrim(next)
+    // One request for a run of presses.
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(async () => {
+      try {
+        await request(`/mapping/players/${player.id}/trim`, { method: 'POST', body: { trim_ms: next } })
+        await reload()
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'That did not reach the mini PC')
+      }
+    }, 600)
+  }
+
+  const { report } = player
+  const off = syncOff(player)
+  const parts = [
+    report.clock_ms != null ? `clock ±${Math.max(1, Math.round(report.clock_ms))} ms` : null,
+    report.drift_ms != null ? `video ${report.drift_ms > 0 ? '+' : ''}${report.drift_ms} ms` : null,
+    report.clock_check_ms != null ? `server check ${report.clock_check_ms > 0 ? '+' : ''}${report.clock_check_ms} ms` : null,
+    report.dropped ? `${report.dropped} frames dropped last second` : null,
+    report.clock_steps ? `clock jumped ${report.clock_steps}×` : null,
+  ].filter(Boolean)
+
+  return (
+    <div className="flex flex-wrap items-start gap-2">
+      <span className="w-20 shrink-0 pt-0.5 text-xs text-slate-400">Sync</span>
+      <div className="min-w-0 flex-1 space-y-1 text-xs">
+        <p className={off == null ? 'text-slate-400' : syncTone(off)}>
+          {off == null
+            ? 'Checking… (a mini PC on an older page shows this after its next restart)'
+            : off <= SYNC_GOOD_MS
+              ? `In step: within ${Math.max(1, Math.round(off))} ms of the show clock.`
+              : `${Math.round(off)} ms from the show clock.`}
+        </p>
+        {parts.length > 0 && <p className="tnum text-slate-500">{parts.join(' · ')}</p>}
+      </div>
+      <div className="flex items-center gap-1" title="Draw this projector's picture later (+) or earlier (−), to match a projector that is slower or quicker to show it">
+        <span className="text-xs text-slate-400">Shift</span>
+        <button className="btn-ghost px-1.5 py-0.5 text-xs" disabled={!canEdit || trim <= -500}
+          aria-label="Earlier" onClick={() => change(trim - TRIM_STEP)}>−</button>
+        <span className="tnum w-14 text-center text-xs text-slate-200">{trim > 0 ? '+' : ''}{trim} ms</span>
+        <button className="btn-ghost px-1.5 py-0.5 text-xs" disabled={!canEdit || trim >= 500}
+          aria-label="Later" onClick={() => change(trim + TRIM_STEP)}>+</button>
+      </div>
     </div>
   )
 }

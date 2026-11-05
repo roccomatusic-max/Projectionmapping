@@ -247,6 +247,9 @@ async def test_input_board_rejection_retracts_only_that_input(worker, sim_state)
     otherwise one unfitted board disables switching to every other source.
     """
     assert "SD1" not in sim_state.fitted_inputs
+    worker.driver.WARMUP_SECONDS = 0.0
+    assert (await worker.execute("power.set", {"state": "on"})).ok
+    await asyncio.sleep(0.5)  # simulated warm-up is 0.3 s
     result = await worker.execute("input.set", {"input": "SD1"})
     assert result.outcome is CommandOutcome.UNSUPPORTED
     caps = worker.driver.capabilities
@@ -402,3 +405,112 @@ async def test_mqtt_command_routes_through_the_device_manager(panasonic_sim, sim
     finally:
         await manager.remove(61)
         mqtt_publisher._slugs.pop("house_left", None)
+
+
+# -- power held during cool-down ----------------------------------------------
+
+
+@pytest.fixture
+def fast_power_queue(monkeypatch):
+    # The settings object the worker reads: other suites reload app.config.
+    from app.services import device_manager
+
+    settings = device_manager.settings
+    monkeypatch.setattr(settings, "power_queue_interval", 0.1)
+    monkeypatch.setattr(settings, "power_queue_seconds", 10.0)
+
+
+async def _power_on_and_wait(worker, sim_state) -> None:
+    worker.driver.WARMUP_SECONDS = 0.0
+    assert (await worker.execute("power.set", {"state": "on"})).ok
+    for _ in range(40):
+        if sim_state.is_on:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("simulated projector never came on")
+
+
+async def test_power_on_during_cool_down_is_sent_by_itself(
+    worker, sim_state, fast_power_queue
+):
+    """Rocco's case: power off, then power on straight away."""
+    from app.core.events import bus
+
+    sim_state.cooldown_seconds = 1.0
+    await _power_on_and_wait(worker, sim_state)
+    assert (await worker.execute("power.set", {"state": "off"})).ok
+
+    queue = await bus.subscribe()
+    try:
+        held = await worker.execute("power.set", {"state": "on"})
+        assert held.outcome is CommandOutcome.QUEUED
+        assert "cooling down" in (held.error or "")
+        assert "by itself" in (held.error or "")
+        # Power commands are never retracted by a cool-down refusal.
+        assert worker.driver.supports("power.set")
+
+        for _ in range(60):
+            if sim_state.is_on:
+                break
+            await asyncio.sleep(0.1)
+        assert sim_state.is_on, "the held power-on was never sent"
+
+        verified = []
+        for _ in range(40):
+            while not queue.empty():
+                message = queue.get_nowait()
+                if message.type == "command_verified" and message.payload["capability"] == "power.set":
+                    verified.append(message)
+            if verified:
+                break
+            await asyncio.sleep(0.1)
+        assert verified, "the operator was never told the power-on happened"
+    finally:
+        await bus.unsubscribe(queue)
+
+
+async def test_a_newer_power_command_replaces_the_held_one(
+    worker, sim_state, fast_power_queue
+):
+    sim_state.cooldown_seconds = 2.0
+    await _power_on_and_wait(worker, sim_state)
+    assert (await worker.execute("power.set", {"state": "off"})).ok
+    assert (await worker.execute("power.set", {"state": "on"})).outcome is CommandOutcome.QUEUED
+
+    # Changed their mind: off again. The held power-on must not fire later.
+    await worker.execute("power.set", {"state": "off"})
+    await asyncio.sleep(2.5)
+    assert not sim_state.is_on
+    assert worker._power_queue is None
+
+
+async def test_standby_refusals_leave_every_control_in_place(worker, sim_state):
+    sim_state.standby_refuses_controls = True
+    for code in ("HD1", "DVI", "SD1"):
+        result = await worker.execute("input.set", {"input": code})
+        assert result.outcome is CommandOutcome.BUSY
+        assert "standby" in (result.error or "")
+    shutter = await worker.execute("shutter.set", {"state": "closed"})
+    assert shutter.outcome is CommandOutcome.BUSY
+    caps = worker.driver.capabilities
+    assert not caps.retracted and not caps.retracted_params
+
+
+async def test_pjlink_power_on_during_cool_down_is_held_too(pjlink_sim, sim_state, fast_power_queue):
+    """PJLink answers ERR3 while cooling; the same hold applies."""
+    sim_state.cooldown_seconds = 1.0
+    w = DeviceWorker(make_record(52, pjlink_sim.actual_port, driver="pjlink"))
+    await w.start()
+    try:
+        sim_state.power_on()
+        await asyncio.sleep(0.4)
+        sim_state.power_off()
+        held = await w.execute("power.set", {"state": "on"})
+        assert held.outcome is CommandOutcome.QUEUED
+        for _ in range(40):
+            if sim_state.is_on:
+                break
+            await asyncio.sleep(0.1)
+        assert sim_state.is_on
+    finally:
+        await w.stop()

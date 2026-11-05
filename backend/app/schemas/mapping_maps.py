@@ -35,6 +35,9 @@ class SavedCalibration(CalibrationResult):
     camera_id: int
     captured_at: datetime
     coverage: float = Field(ge=0, le=1)
+    #: The output's slice, warp and camera placement from before it was
+    #: calibrated, so removing the calibration can put them back.
+    before: dict | None = None
 
 
 class MapOutput(OutputBase):

@@ -1,0 +1,290 @@
+"""The element library's new flying and walking characters, objects and live
+info boards, and that "Describe a scene" knows every style the Editor offers."""
+
+# The api fixture is shared with test_api; tests take it as a parameter.
+# ruff: noqa: F811
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+from app.services import scene_ai
+from tests.test_api import api, login  # noqa: F401 - fixture
+
+CATALOG_TS = Path(__file__).resolve().parents[2] / "frontend" / "src" / "mapping" / "scene" / "catalog.ts"
+
+
+def _frontend_styles(layer_type: str) -> list[str]:
+    """The style ids the Editor lists for a layer type, in order."""
+    text = CATALOG_TS.read_text(encoding="utf-8")
+    start = text.index(f"type: '{layer_type}',")
+    block = text[text.index("styles: [", start):]
+    block = block[:block.index("\n    ],")]
+    return re.findall(r"\{ id: '([a-z0-9-]+)'", block)
+
+
+@pytest.mark.skipif(not CATALOG_TS.exists(), reason="needs the frontend sources")
+@pytest.mark.parametrize("layer_type", ["shapes", "movers", "info", "countdown"])
+def test_describe_a_scene_knows_every_style_the_editor_offers(layer_type):
+    assert scene_ai.CATALOG[layer_type]["styles"] == _frontend_styles(layer_type)
+
+
+def test_new_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "witch", "near": "light"},
+        {"type": "movers", "style": "ufo", "near": "follow"},
+        {"type": "movers", "style": "rockets", "blend": "add"},
+        {"type": "shapes", "style": "cauldrons"},
+        {"type": "info", "style": "moon"},
+        {"type": "info", "style": "new-year"},
+    ])
+    assert [(layer.type, layer.style) for layer in layers] == [
+        ("movers", "witch"), ("movers", "ufo"), ("movers", "rockets"), ("shapes", "cauldrons"),
+        ("info", "moon"), ("info", "new-year")]
+    assert layers[1].near == "follow"
+
+
+async def test_a_scene_of_new_elements_saves(api):
+    headers = await login(api)
+    scene = {
+        "name": "Witching hour",
+        "layers": [
+            {"type": "movers", "style": "witch", "pins": []},
+            {"type": "movers", "style": "black-cats", "pins": [{"x": 0.1, "y": 0.9}, {"x": 0.9, "y": 0.9}]},
+            {"type": "shapes", "style": "cauldrons", "pins": [{"x": 0.5, "y": 0.8, "size": 2}]},
+            {"type": "info", "style": "moon", "pins": [{"x": 0.8, "y": 0.2}]},
+            {"type": "info", "style": "holiday", "pins": [{"x": 0.2, "y": 0.2}]},
+        ],
+    }
+    created = await api.post("/api/mapping/scenes", headers=headers, json=scene)
+    assert created.status_code == 201, created.text
+    assert [layer["style"] for layer in created.json()["layers"]] == [
+        "witch", "black-cats", "cauldrons", "moon", "holiday"]
+
+
+def test_batch_two_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "hanging-spiders", "near": "follow"},
+        {"type": "movers", "style": "dragon"},
+        {"type": "movers", "style": "ducklings"},
+        {"type": "movers", "style": "snowfall", "near": "flee"},
+        {"type": "info", "style": "menorah"},
+        {"type": "info", "style": "showtimes"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "hanging-spiders", "dragon", "ducklings", "snowfall", "menorah", "showtimes"]
+
+
+def test_batch_three_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "zombie-hands", "near": "follow"},
+        {"type": "movers", "style": "hatching-eggs"},
+        {"type": "movers", "style": "beach-balls", "near": "flee"},
+        {"type": "movers", "style": "dolphins", "near": "jump"},
+        {"type": "movers", "style": "kites"},
+        {"type": "movers", "style": "lion-dance", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "zombie-hands", "hatching-eggs", "beach-balls", "dolphins", "kites", "lion-dance"]
+
+
+def test_batch_four_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "crows", "near": "flee"},
+        {"type": "movers", "style": "sledders", "near": "jump"},
+        {"type": "movers", "style": "jingle-bells", "near": "dance"},
+        {"type": "movers", "style": "parachute-presents", "near": "follow"},
+        {"type": "movers", "style": "hens"},
+        {"type": "movers", "style": "koi", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "crows", "sledders", "jingle-bells", "parachute-presents", "hens", "koi"]
+
+
+def test_batch_five_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "peeking-ghosts", "near": "follow"},
+        {"type": "movers", "style": "window-eyes"},
+        {"type": "movers", "style": "snowball-kids", "near": "follow"},
+        {"type": "movers", "style": "birthday-cakes", "near": "hide"},
+        {"type": "movers", "style": "skunks", "near": "hide"},
+        {"type": "movers", "style": "moths", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "peeking-ghosts", "window-eyes", "snowball-kids", "birthday-cakes", "skunks", "moths"]
+
+
+def test_batch_six_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "wolves", "near": "light"},
+        {"type": "movers", "style": "moon"},
+        {"type": "movers", "style": "pinatas", "near": "dance"},
+        {"type": "movers", "style": "cuckoo-clock", "near": "jump"},
+        {"type": "movers", "style": "gnomes", "near": "hide"},
+        {"type": "movers", "style": "diyas", "near": "light"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "wolves", "moon", "pinatas", "cuckoo-clock", "gnomes", "diyas"]
+
+
+def test_batch_seven_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "santa-chimney", "near": "jump"},
+        {"type": "movers", "style": "ball-drop", "near": "jump"},
+        {"type": "movers", "style": "rain-clouds", "near": "follow"},
+        {"type": "movers", "style": "school-bus", "near": "light"},
+        {"type": "movers", "style": "kinara", "near": "light"},
+        {"type": "movers", "style": "cows", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "santa-chimney", "ball-drop", "rain-clouds", "school-bus", "kinara", "cows"]
+
+
+def test_every_holiday_countdown_survives_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "countdown", "style": "stars-stripes"},
+        {"type": "countdown", "style": "dreidel"},
+        {"type": "countdown", "style": "big-day"},
+        {"type": "countdown", "style": "no-such-look"},
+    ])
+    assert [layer.style for layer in layers] == ["stars-stripes", "dreidel", "big-day", "gold"]
+
+
+async def test_a_birthday_countdown_keeps_its_name_and_date(api):
+    headers = await login(api)
+    scene = {
+        "name": "Emma's birthday",
+        "layers": [{"type": "countdown", "style": "birthday", "text": "Emma", "date": "2026-11-14",
+                    "pins": [{"x": 0.5, "y": 0.4}]}],
+    }
+    created = await api.post("/api/mapping/scenes", headers=headers, json=scene)
+    assert created.status_code == 201, created.text
+    layer = created.json()["layers"][0]
+    assert (layer["style"], layer["text"], layer["date"]) == ("birthday", "Emma", "2026-11-14")
+
+
+def test_holiday_batch_two_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "headless-horseman", "near": "dance"},
+        {"type": "movers", "style": "tesla-coil", "near": "follow"},
+        {"type": "movers", "style": "ofrenda", "near": "follow"},
+        {"type": "movers", "style": "honor-guard", "near": "light"},
+        {"type": "movers", "style": "fighter-jets", "near": "dance"},
+        {"type": "movers", "style": "rangoli", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "headless-horseman", "tesla-coil", "ofrenda", "honor-guard", "fighter-jets", "rangoli"]
+
+
+def test_christmas_and_thanksgiving_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "nutcracker", "near": "follow"},
+        {"type": "movers", "style": "melting-snowman", "near": "follow"},
+        {"type": "movers", "style": "cookies-for-santa", "near": "follow"},
+        {"type": "movers", "style": "singing-wreath", "near": "follow"},
+        {"type": "movers", "style": "geese", "near": "follow"},
+        {"type": "movers", "style": "turkey-trot", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "nutcracker", "melting-snowman", "cookies-for-santa", "singing-wreath", "geese", "turkey-trot"]
+
+
+def test_winter_holiday_and_new_year_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "window-menorah", "near": "light"},
+        {"type": "movers", "style": "habari-gani", "near": "follow"},
+        {"type": "movers", "style": "father-time", "near": "follow"},
+        {"type": "movers", "style": "zodiac-animal", "near": "light"},
+        {"type": "movers", "style": "nian-beast", "near": "flee"},
+        {"type": "movers", "style": "conga-line", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "window-menorah", "habari-gani", "father-time", "zodiac-animal", "nian-beast", "conga-line"]
+
+
+def test_late_winter_and_spring_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "groundhog", "near": "follow"},
+        {"type": "movers", "style": "rushmore", "near": "follow"},
+        {"type": "movers", "style": "brass-band", "near": "dance"},
+        {"type": "movers", "style": "leprechaun-trap", "near": "follow"},
+        {"type": "movers", "style": "lambs", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "groundhog", "rushmore", "brass-band", "leprechaun-trap", "lambs"]
+
+
+def test_spring_and_summer_holiday_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "rain-barrel", "near": "follow"},
+        {"type": "movers", "style": "memorial-flag", "near": "light"},
+        {"type": "movers", "style": "lemonade-stand", "near": "follow"},
+        {"type": "movers", "style": "picnic-ants", "near": "flee"},
+        {"type": "movers", "style": "juneteenth-flag", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "rain-barrel", "memorial-flag", "lemonade-stand", "picnic-ants", "juneteenth-flag"]
+
+
+def test_more_halloween_and_christmas_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "lawn-chair-skeleton", "near": "follow"},
+        {"type": "movers", "style": "haunted-portrait", "near": "follow"},
+        {"type": "movers", "style": "elf-on-shelf", "near": "follow"},
+        {"type": "movers", "style": "advent-calendar", "near": "light"},
+        {"type": "movers", "style": "present-tower", "near": "dance"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "lawn-chair-skeleton", "haunted-portrait", "elf-on-shelf", "advent-calendar", "present-tower"]
+
+
+def test_celebration_school_and_game_day_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "class-of", "near": "follow"},
+        {"type": "movers", "style": "chalkboard-teacher", "near": "follow"},
+        {"type": "movers", "style": "limbo", "near": "follow"},
+        {"type": "movers", "style": "grad-parade", "near": "dance"},
+        {"type": "movers", "style": "stadium-wave", "near": "follow"},
+        {"type": "movers", "style": "snake-can", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "class-of", "chalkboard-teacher", "limbo", "grad-parade", "stadium-wave", "snake-can"]
+
+
+def test_faith_and_family_holiday_styles_and_countdowns_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "moon-sighting", "near": "follow"},
+        {"type": "movers", "style": "seder-table", "near": "follow"},
+        {"type": "movers", "style": "sea-parting", "near": "follow"},
+        {"type": "movers", "style": "canoe-paddlers", "near": "dance"},
+        {"type": "movers", "style": "knitting-grandma", "near": "follow"},
+        {"type": "countdown", "style": "seder"},
+        {"type": "countdown", "style": "crescent"},
+        {"type": "countdown", "style": "grandparents"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "moon-sighting", "seder-table", "sea-parting", "canoe-paddlers", "knitting-grandma",
+        "seder", "crescent", "grandparents"]
+
+
+def test_autumn_and_winter_styles_survive_describe_a_scene():
+    layers = scene_ai.to_layers([
+        {"type": "movers", "style": "kite-flyer", "near": "follow"},
+        {"type": "movers", "style": "snow-shoveler", "near": "follow"},
+        {"type": "movers", "style": "giant-pumpkin", "near": "follow"},
+        {"type": "movers", "style": "hayride", "near": "dance"},
+        {"type": "movers", "style": "turkey-disguise", "near": "follow"},
+        {"type": "movers", "style": "proposal", "near": "follow"},
+    ])
+    assert [layer.style for layer in layers] == [
+        "kite-flyer", "snow-shoveler", "giant-pumpkin", "hayride", "turkey-disguise", "proposal"]
+
+
+def test_heritage_and_observance_styles_survive_describe_a_scene():
+    styles = ["diya-lighter", "holi-colors", "alebrije", "step-team", "dragon-dance", "mardi-gras-float",
+              "rainbow-leprechaun", "lincoln-hat", "tree-trimmer", "paul-revere", "flag-raiser"]
+    layers = scene_ai.to_layers([{"type": "movers", "style": s, "near": "follow"} for s in styles])
+    assert [layer.style for layer in layers] == styles

@@ -23,6 +23,10 @@ import {
   Spinner,
 } from '@/components/ui'
 import { Glyph, type Tone } from '@/components/graphics'
+import TemperatureHistory from '@/components/monitoring/TemperatureHistory'
+import { ChartTooltip } from '@/components/monitoring/ChartTooltip'
+import { HeaterChart } from '@/components/heater/HeaterChart'
+import { HeaterStatus, useHeaters } from '@/components/heater/HeaterStatus'
 import { classNames, formatDateTime, relativeTime } from '@/lib/format'
 import {
   CoverIcon,
@@ -53,6 +57,7 @@ export default function Monitoring({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { notify: push } = useOps()
+  const heaters = useHeaters(60000)
 
 
   const load = async () => {
@@ -96,9 +101,9 @@ export default function Monitoring({ session }: { session: Session }) {
     // A slower reply for the previously chosen projector must not land last.
     let current = true
     void api
-      .telemetry(selectedProjector, undefined, 30)
+      .telemetry(selectedProjector, undefined, 30, 'lamp')
       .then((result) => {
-        if (current) setLampSeries(result.points.filter((point) => point.metric.startsWith('lamp')))
+        if (current) setLampSeries(result.points)
       })
       .catch(() => undefined)
     return () => {
@@ -137,7 +142,7 @@ export default function Monitoring({ session }: { session: Session }) {
       <PageHeader
         icon={MonitoringIcon}
         title="Monitoring"
-        subtitle={`${alerts.filter((a) => a.state === 'open').length} open alert(s) · ${enclosures.length} enclosure(s)`}
+        subtitle={`Projector temperatures, lamp hours, hours switched on, enclosures and upkeep · ${alerts.filter((a) => a.state === 'open').length} open alert${alerts.filter((a) => a.state === 'open').length === 1 ? '' : 's'}`}
         actions={
           <label className="flex items-center gap-2 text-xs text-slate-400">
             Charts for
@@ -177,10 +182,20 @@ export default function Monitoring({ session }: { session: Session }) {
         <span className="text-xs text-slate-400">Open Alerts →</span>
       </Link>
 
+      <TemperatureHistory
+        projectorId={selectedProjector}
+        projectorName={projectors.length > 1 ? projectors.find((p) => p.id === selectedProjector)?.name : undefined}
+      />
+
+      <HeaterStatus session={session} />
+      {(heaters.data?.heaters ?? []).map((heater) => (
+        <HeaterChart key={heater.id} heater={heater} />
+      ))}
+
       <Panel
         icon={TemperatureIcon}
         title="Enclosures"
-        description="Latest reading per sensor, each with its own age. A stale reading is shown as stale, never as current. Monitoring software is not a safety device."
+        description="The newest reading from each sensor and how old it is. Old readings are marked as old. This is not a safety system."
       >
         {enclosures.length === 0 ? (
           <EmptyState title="No enclosures configured" icon={CoverIcon}>
@@ -202,12 +217,12 @@ export default function Monitoring({ session }: { session: Session }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel
           icon={MonitoringIcon}
-          title="Estimated daily operating hours"
+          title="Hours switched on, per day (estimated)"
           description={usage?.note}
         >
           {usageByDay.length === 0 ? (
             <EmptyState title="No usage data yet">
-              Operating hours accumulate as the monitor polls.
+              Hours build up as the projectors are checked while switched on.
             </EmptyState>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
@@ -246,12 +261,14 @@ export default function Monitoring({ session }: { session: Session }) {
                 <XAxis dataKey="day" {...CHART_AXIS} tickLine={false} />
                 <YAxis {...CHART_AXIS} tickLine={false} axisLine={false} unit="h" />
                 <Tooltip
-                  contentStyle={{
-                    background: '#141820',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
+                  content={
+                    <ChartTooltip
+                      format={(value, key) => [
+                        `${value.toLocaleString()} h`,
+                        key.replace(/^lamp(\d+)_hours$/, 'Lamp $1'),
+                      ]}
+                    />
+                  }
                 />
                 {lampMetrics.map((metric, index) => (
                   <Line

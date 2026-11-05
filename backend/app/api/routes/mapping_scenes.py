@@ -3,7 +3,8 @@
 A scene is a list of layers (see ``SceneLayer``); the output windows draw
 it. This module stores scenes, lets the scene builder send made-up people
 to the projectors, turns a sentence into a scene when an Anthropic key is
-set (services/scene_ai.py), and repaints a picture of the building when an
+set (services/scene_ai.py), traces the house's parts on a photo with the
+same key (services/house_photo.py), and repaints a picture of the building when an
 OpenAI key is set (services/house_paint.py, Beta).
 """
 
@@ -13,18 +14,27 @@ import base64
 import binascii
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.api.deps import RequireAdmin, RequireViewer, SessionDep, write_rate_limit
 from app.api.routes.mapping import _load_show, media_root
 from app.core.events import bus
-from app.db.models import Event, MappingCue, MappingScene, MediaAsset, Severity
+from app.db.models import (
+    Event,
+    MappingCue,
+    MappingScene,
+    MappingSceneGroup,
+    MediaAsset,
+    Severity,
+)
 from app.schemas.mapping import (
     MAX_LAYERS,
     AiKey,
     AiStatus,
+    CountdownColors,
     DescribeScene,
+    HousePhoto,
     MediaOut,
     ObjectPin,
     PaintHouse,
@@ -32,8 +42,11 @@ from app.schemas.mapping import (
     SceneOut,
     SceneUpdate,
     SimulatedPeople,
+    TracedHouse,
+    TraceHousePhoto,
+    WeatherNow,
 )
-from app.services import house_paint, scene_ai
+from app.services import house_paint, house_photo, scene_ai, weather_board
 from app.services.mapping import now_ms
 
 router = APIRouter(prefix="/mapping", tags=["mapping"])
@@ -122,10 +135,11 @@ async def delete_scene(scene_id: int, session: SessionDep, admin: RequireAdmin) 
                       message=f"{admin.username} deleted scene {scene.name}"))
     # Projectors that played it play no scene, as cues that used it do.
     cues = (await session.execute(select(MappingCue))).scalars().all()
-    for cue in cues:
-        if scene_id in (cue.output_scenes or {}).values():
-            cue.output_scenes = {output: (None if used == scene_id else used)
-                                 for output, used in cue.output_scenes.items()}
+    groups = (await session.execute(select(MappingSceneGroup))).scalars().all()
+    for item in [*cues, *groups]:
+        if scene_id in (item.output_scenes or {}).values():
+            item.output_scenes = {output: (None if used == scene_id else used)
+                                  for output, used in item.output_scenes.items()}
     await session.delete(scene)
     await session.commit()
     _changed(scene_id, deleted=True)
@@ -181,17 +195,24 @@ async def delete_ai_key(admin: RequireAdmin, session: SessionDep) -> AiStatus:
     return await ai_status(admin)
 
 
-def _keep_placed(layers: list, placed: list[tuple[str, str, list]]) -> None:
-    """Give things placed by hand back to the changed scene: first to a layer
-    of the same type and style, then to the remaining layers of that type in
-    order (objects to objects, a countdown to a countdown)."""
+def _keep_placed(layers: list, placed: list[tuple[str, str, list | None, dict | None]]) -> None:
+    """Give things placed by hand, and a countdown's own part colours, back
+    to the changed scene: first to a layer of the same type and style, then
+    to the remaining layers of that type in order (objects to objects, a
+    countdown to a countdown)."""
+    taken: set[int] = set()
     for match_style in (True, False):
-        for kind, style, pins in list(placed):
-            target = next((layer for layer in layers if layer.type == kind and layer.pins is None
+        for item in list(placed):
+            kind, style, pins, colors = item
+            target = next((layer for layer in layers if layer.type == kind and id(layer) not in taken
                            and (layer.style == style or not match_style)), None)
             if target is not None:
-                target.pins = [ObjectPin.model_validate(pin) for pin in pins]
-                placed.remove((kind, style, pins))
+                taken.add(id(target))
+                if pins is not None:
+                    target.pins = [ObjectPin.model_validate(pin) for pin in pins]
+                if colors:
+                    target.colors = CountdownColors.model_validate(colors)
+                placed.remove(item)
 
 
 @router.post("/scenes/describe", response_model=SceneOut,
@@ -205,7 +226,7 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
     current = None
     scene = None
     pictures: list[dict] = []
-    placed: list[tuple[str, str, list]] = []
+    placed: list[tuple[str, str, list | None, dict | None]] = []
     if payload.scene_id is not None:
         scene = await _load_scene(session, payload.scene_id)
         current = SceneOut.model_validate(scene).model_dump(
@@ -213,12 +234,14 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
         # Claude cannot make pictures; they stay at the bottom, untouched.
         pictures = [layer for layer in current["layers"] if layer["type"] == "picture"]
         current["layers"] = [layer for layer in current["layers"] if layer["type"] != "picture"]
-        # Claude does not see where objects were placed by hand; they are
-        # put back on the new layers afterwards.
+        # Claude does not see where objects were placed by hand, nor a
+        # countdown's own part colours; they are put back on the new layers
+        # afterwards.
         for layer in current["layers"]:
             pins = layer.pop("pins", None)
-            if pins is not None:
-                placed.append((layer["type"], layer["style"], pins))
+            colors = layer.pop("colors", None)
+            if pins is not None or colors:
+                placed.append((layer["type"], layer["style"], pins, colors))
     try:
         result = await scene_ai.describe(payload.prompt, surfaces=surfaces, current=current)
     except scene_ai.SceneAiError as exc:
@@ -239,6 +262,19 @@ async def describe_scene(payload: DescribeScene, session: SessionDep,
     await session.refresh(scene)
     _changed(scene.id)
     return scene
+
+
+# -- live info boards ------------------------------------------------------------------
+
+
+@router.get("/weather", response_model=WeatherNow)
+async def weather(_: RequireViewer, place: str = Query("", max_length=80)) -> dict:
+    """The weather right now for a scene's "Weather" board; the outputs ask
+    the server so only it needs the internet."""
+    try:
+        return await weather_board.weather_now(place)
+    except weather_board.WeatherError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
 
 
 # -- painting the house (Beta) -------------------------------------------------------
@@ -303,3 +339,66 @@ async def paint_house(payload: PaintHouse, session: SessionDep, admin: RequireAd
     await session.commit()
     await session.refresh(asset)
     return asset
+
+
+# -- the house's parts from a photo ---------------------------------------------------
+
+
+@router.post("/house-photo/trace", response_model=TracedHouse,
+             dependencies=[Depends(write_rate_limit)])
+async def trace_house_photo(payload: TraceHousePhoto, admin: RequireAdmin,
+                            session: SessionDep) -> dict:
+    """Claude's outline of each wall, roof, window and door on the photo, in
+    fractions of the photo. Nothing is saved: the browser lines the photo up
+    with the canvas and saves the parts as the show's house parts."""
+    data = payload.image.split(",", 1)[1] if payload.image.startswith("data:") else payload.image
+    try:
+        image = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The photo could not be read") from None
+    try:
+        result = await house_photo.trace(image, payload.width, payload.height)
+    except scene_ai.SceneAiError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+    session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="house_traced",
+                      message=f"{admin.username} had Claude trace {len(result['parts'])} "
+                              "house parts on a photo"))
+    await session.commit()
+    return result
+
+
+@router.get("/shows/{show_id}/house-photo", response_model=HousePhoto | None)
+async def get_house_photo(show_id: int, session: SessionDep, _: RequireViewer) -> dict | None:
+    await _load_show(session, show_id)
+    saved = house_photo.load(show_id)
+    if not saved:
+        return None
+    try:
+        photo = HousePhoto.model_validate(saved)
+    except ValueError:
+        return None
+    # The photo was deleted from the media library: start again.
+    if await session.get(MediaAsset, photo.media_id) is None:
+        return None
+    return photo.model_dump()
+
+
+# Dragging a corner saves continuously, like dragging a corner pin.
+@router.put("/shows/{show_id}/house-photo", response_model=HousePhoto)
+async def set_house_photo(show_id: int, payload: HousePhoto, session: SessionDep,
+                          _: RequireAdmin) -> dict:
+    await _load_show(session, show_id)
+    asset = await session.get(MediaAsset, payload.media_id)
+    if asset is None or asset.kind != "image":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The photo is not a picture in the media library")
+    house_photo.save(show_id, payload.model_dump())
+    return payload.model_dump()
+
+
+@router.delete("/shows/{show_id}/house-photo", status_code=status.HTTP_204_NO_CONTENT,
+               response_model=None)
+async def delete_house_photo(show_id: int, session: SessionDep, _: RequireAdmin) -> None:
+    await _load_show(session, show_id)
+    house_photo.forget(show_id)

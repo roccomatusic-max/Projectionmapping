@@ -1,0 +1,13 @@
+{
+  "domain": "projector_control",
+  "name": "Projector Control",
+  "codeowners": ["@roccomatusic-max"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/roccomatusic-max/Projectionmapping/blob/claude/projector-management-platform-i8dsv2/docs/HOME-ASSISTANT.md",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/roccomatusic-max/Projectionmapping/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

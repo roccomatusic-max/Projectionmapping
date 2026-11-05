@@ -17,7 +17,10 @@ import type { PersonSpot } from '../people'
 import type { LayerBlend, MappingScene, ReactsTo, SceneLayer, SourceRect, Surface } from '../types'
 import { CHANGES, changeOf, KIND, MOTIONS, motionOf, NEARS, nearOf } from './catalog'
 import { CountdownDrawer } from './countdown'
+import { CHECKER_FRAGMENT, CHECKER_VERTEX, flatParts, flatTesting, glMat3, MAX_FLAT, rasteriseFlatIndex, type FlatPart } from './flat'
+import { InfoDrawer } from './info'
 import { maskKey, rasteriseLayerMask } from './masks'
+import { MoverDrawer } from './movers'
 import {
   LAYER_VERTEX,
   layerFragment,
@@ -28,6 +31,7 @@ import {
   REVEAL_UPDATE,
   TRAILS_UPDATE,
 } from './shaders'
+import { SnowcapDrawer } from './snowcap'
 
 export const MAX_PEOPLE = 16
 /** The largest scene buffer side; beyond this soft effects gain nothing visible. */
@@ -63,8 +67,30 @@ export interface SceneItem {
   /** Seconds since the scene's cue started, on the server's clock, so
    *  every output draws the same moment. */
   time: number
-  /** Now on the server's clock, epoch milliseconds (the Christmas countdown). */
+  /** Now on the server's clock, epoch milliseconds (the countdowns). */
   clock?: number
+  /**
+   * A video or picture from a timeline (scene/timeline.ts), drawn by the
+   * item's one "picture" layer in a box of its own instead of over the
+   * whole canvas.
+   */
+  media?: ItemMedia
+}
+
+/** A timeline's video or picture, where it is at this moment. */
+export interface ItemMedia {
+  mediaId: number
+  /** Width over height of the picture. */
+  aspect: number
+  /** Its middle (canvas fractions), height (canvas heights) and turn (degrees clockwise). */
+  x: number
+  y: number
+  size: number
+  rotation: number
+  /** A playing video, or a moving picture's frame; none draws the still from the library. */
+  source?: TexImageSource | null
+  /** Changes when ``source`` shows a new picture; null uploads it every frame (a video). */
+  frame?: number | null
 }
 
 export interface DistortParams {
@@ -87,6 +113,8 @@ export interface SceneFrame {
   people: PersonSpot[]
   /** Any steady clock, seconds; used for how long each frame took. */
   time: number
+  /** Now on the server's clock, epoch ms: whether a part's checkerboard is still wanted. */
+  now?: number
 }
 
 interface Target {
@@ -141,11 +169,23 @@ export class SceneEngine {
   private moveData = new Float32Array(MAX_PEOPLE * 4)
   private surfacesKey = ''
   private surfacesRef: Surface[] | null = null
+  /** Straightened house parts (flat.ts) and the image saying which part each spot is on. */
+  private flat: FlatPart[] = []
+  private flatKey = ''
+  private flatTex: WebGLTexture | null = null
+  private flatCanvas: HTMLCanvasElement | null = null
+  private flatTo = new Float32Array(MAX_FLAT * 9)
+  private flatFrom = new Float32Array(MAX_FLAT * 9)
   /** Pictures for "picture" layers, by media id; drawn once loaded. */
   private pictures = new Map<number, { tex: WebGLTexture; ready: boolean }>()
   /** Failed loads per picture, for backing off its retries. */
   private pictureFailures = new Map<number, number>()
+  /** Videos and moving pictures of timeline clips, by layer key, with the frame last uploaded. */
+  private live = new Map<string, { tex: WebGLTexture; frame: number | null | undefined; seenAt: number }>()
   private countdown: CountdownDrawer | null = null
+  private movers: MoverDrawer | null = null
+  private info: InfoDrawer | null = null
+  private snowcap: SnowcapDrawer | null = null
   /** Index into SCENE_SCALES. */
   quality = 0
   /** The distortion the output shader should apply to the media, if any. */
@@ -244,6 +284,37 @@ export class SceneEngine {
     if (mode === 'normal') gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     else if (mode === 'screen') gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ZERO, gl.ONE)
     else gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE)
+  }
+
+  /** The texture of a timeline clip's video or moving picture, brought up to date. */
+  private liveTexture(key: string, media: ItemMedia): WebGLTexture | null {
+    if (!media.source) return media.mediaId != null ? this.picture(media.mediaId) : null
+    const gl = this.gl
+    let entry = this.live.get(key)
+    if (!entry) {
+      const tex = gl.createTexture()!
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      entry = { tex, frame: undefined, seenAt: 0 }
+      this.live.set(key, entry)
+    }
+    entry.seenAt = performance.now()
+    const frame = media.frame ?? null
+    // A video seeking has no frame to give; its last one stays up meanwhile.
+    const waiting = media.source instanceof HTMLVideoElement && media.source.readyState < 2
+    if (!waiting && (frame === null || frame !== entry.frame)) {
+      gl.bindTexture(gl.TEXTURE_2D, entry.tex)
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.source)
+        entry.frame = frame
+      } catch {
+        // A video between frames (or a frame already closed): keep the last one.
+      }
+    }
+    return entry.frame === undefined ? null : entry.tex
   }
 
   private picture(mediaId: number): WebGLTexture | null {
@@ -354,7 +425,8 @@ export class SceneEngine {
     this.distortStrength = 0
 
     const drawable = frame.items.filter((item) => item.weight > 0.001 && item.scene.layers.some((l) => l.enabled))
-    if (drawable.length === 0) {
+    const testing = frame.now != null ? frame.surfaces.filter((s) => flatTesting(s, frame.now!)) : []
+    if (drawable.length === 0 && testing.length === 0) {
       this.forgetUnused(new Set())
       return null
     }
@@ -376,6 +448,7 @@ export class SceneEngine {
       this.surfacesRef = frame.surfaces
       this.surfacesKey = JSON.stringify(frame.surfaces)
     }
+    this.updateFlat(frame.surfaces, aspect)
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.target.fbo)
     gl.viewport(0, 0, w, h)
@@ -407,11 +480,45 @@ export class SceneEngine {
         if (strength <= 0.001) continue
         const key = `${item.scene.id}:${layer.id}`
         used.add(key)
+        if (item.media && layer.type === 'picture') {
+          const state = this.state(key)
+          this.updateMask(state, layer, frame, frame.rect, w, h)
+          this.drawLayer(layer, state, { strength, count, frame, w, h, dt, pxPerHeight, time: item.time, key, media: item.media })
+          continue
+        }
         if (layer.type === 'countdown') {
           this.countdown ??= new CountdownDrawer(gl)
           this.countdown.draw(key, {
             layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, w, surfaces: frame.surfaces,
             people: frame.people, strength, time: item.time, clockMs: item.clock ?? Date.now(), detail: this.scale, dt,
+            blend: (mode) => this.blend(mode),
+          })
+          continue
+        }
+        if (layer.type === 'movers') {
+          this.movers ??= new MoverDrawer(gl)
+          this.movers.draw(key, {
+            layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, h, surfaces: frame.surfaces,
+            surfacesKey: this.surfacesKey, people: frame.people, strength, time: item.time, clockMs: item.clock ?? Date.now(), dt,
+            detail: this.scale,
+            blend: (mode) => this.blend(mode),
+          })
+          continue
+        }
+        if (layer.type === 'info') {
+          this.info ??= new InfoDrawer(gl)
+          this.info.draw(key, {
+            layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, w, surfaces: frame.surfaces,
+            people: frame.people, strength, time: item.time, clockMs: item.clock ?? Date.now(), detail: this.scale, dt,
+            blend: (mode) => this.blend(mode),
+          })
+          continue
+        }
+        if (layer.type === 'snowcap') {
+          this.snowcap ??= new SnowcapDrawer(gl)
+          this.snowcap.draw(key, {
+            layer, rect, canvasWidth: frame.canvasWidth, canvasHeight: frame.canvasHeight, surfaces: frame.surfaces,
+            surfacesKey: this.surfacesKey, people: frame.people, strength, time: item.time, pxPerHeight,
             blend: (mode) => this.blend(mode),
           })
           continue
@@ -425,15 +532,65 @@ export class SceneEngine {
         } else {
           this.updateMask(state, layer, frame, frame.rect, w, h)
         }
-        this.drawLayer(layer, state, { strength, count, frame, w, h, dt, pxPerHeight, time: item.time })
+        this.drawLayer(layer, state, { strength, count, frame, w, h, dt, pxPerHeight, time: item.time, key })
       }
     }
+
+    if (testing.length) this.drawCheckers(testing, frame, aspect, w, h)
 
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     this.forgetUnused(used)
     return this.target.tex
+  }
+
+  /** Keep the straightened parts and their image in step with the house parts. */
+  private updateFlat(surfaces: Surface[], aspect: number) {
+    const key = `${this.surfacesKey}|${aspect.toFixed(5)}`
+    if (key === this.flatKey) return
+    this.flatKey = key
+    this.flat = flatParts(surfaces, aspect)
+    this.flatTo.fill(0)
+    this.flatFrom.fill(0)
+    this.flat.forEach((part, i) => {
+      this.flatTo.set(glMat3(part.toCanvas), i * 9)
+      this.flatFrom.set(glMat3(part.toFlat), i * 9)
+    })
+    if (!this.flat.length) return
+    const gl = this.gl
+    const ph = Math.max(64, Math.round(PLACEMENT_WIDTH / aspect))
+    this.flatCanvas = rasteriseFlatIndex(this.flat, PLACEMENT_WIDTH, ph, this.flatCanvas ?? undefined)
+    if (!this.flatTex) {
+      this.flatTex = gl.createTexture()!
+      gl.bindTexture(gl.TEXTURE_2D, this.flatTex)
+      // Part numbers: never blended between neighbours.
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.flatTex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.flatCanvas)
+  }
+
+  /** The checkerboard square of each part whose corners are being set. */
+  private drawCheckers(testing: Surface[], frame: SceneFrame, aspect: number, w: number, h: number) {
+    const gl = this.gl
+    const p = this.program('flat:checker', CHECKER_VERTEX, () => CHECKER_FRAGMENT)
+    gl.useProgram(p.program)
+    gl.viewport(0, 0, w, h)
+    const r = frame.rect
+    gl.uniform4f(this.u(p, 'uRect'), r.x, r.y, r.w, r.h)
+    gl.uniform1f(this.u(p, 'uAspect'), aspect)
+    this.blend('normal')
+    for (const surface of testing) {
+      const part = flatParts([surface], aspect)[0]
+      if (!part) continue
+      gl.uniformMatrix3fv(this.u(p, 'uTo'), false, glMat3(part.toCanvas))
+      gl.uniform1f(this.u(p, 'uSide'), part.side)
+      gl.drawArrays(gl.TRIANGLES, 0, 6)
+    }
   }
 
   private state(key: string): LayerState {
@@ -449,7 +606,16 @@ export class SceneEngine {
   /** Layers not drawn for a while (scene changed, layer deleted) give their memory back. */
   private forgetUnused(used: Set<string>) {
     this.countdown?.forget(used)
+    this.movers?.forget(used)
+    this.info?.forget(used)
+    this.snowcap?.forget(used)
     const now = performance.now()
+    for (const [key, entry] of this.live) {
+      if (!used.has(key) && now - entry.seenAt > 2000) {
+        this.gl.deleteTexture(entry.tex)
+        this.live.delete(key)
+      }
+    }
     for (const [key, state] of this.states) {
       if (!used.has(key) && now - state.seenAt > 5000) {
         this.dropState(state)
@@ -530,6 +696,8 @@ export class SceneEngine {
       dt: number
       pxPerHeight: number
       time: number
+      key: string
+      media?: ItemMedia
     },
   ) {
     const gl = this.gl
@@ -575,6 +743,14 @@ export class SceneEngine {
       gl.bindTexture(gl.TEXTURE_2D, state.maskUsed ? state.maskTex : this.empty)
       gl.uniform1i(this.u(p, 'uPlace'), 3)
       gl.uniform1i(this.u(p, 'uPlaceOn'), state.maskUsed ? 1 : 0)
+      gl.activeTexture(gl.TEXTURE4)
+      gl.bindTexture(gl.TEXTURE_2D, this.flat.length ? this.flatTex : this.empty)
+      gl.uniform1i(this.u(p, 'uFlatIdx'), 4)
+      gl.uniform1i(this.u(p, 'uFlatOn'), this.flat.length ? 1 : 0)
+      if (this.flat.length) {
+        gl.uniformMatrix3fv(this.u(p, 'uFlatTo'), false, this.flatTo)
+        gl.uniformMatrix3fv(this.u(p, 'uFlatFrom'), false, this.flatFrom)
+      }
       gl.activeTexture(gl.TEXTURE0)
       gl.uniform1i(this.u(p, 'uMotion'), Math.max(0, MOTIONS.findIndex((m) => m.id === motionOf(layer))))
       // Placed by hand (a list, even an empty one) or spread over an area.
@@ -609,8 +785,9 @@ export class SceneEngine {
     }
 
     let picture: WebGLTexture | null = null
+    const media = ctx.media
     if (layer.type === 'picture') {
-      picture = layer.media_id != null ? this.picture(layer.media_id) : null
+      picture = media ? this.liveTexture(ctx.key, media) : layer.media_id != null ? this.picture(layer.media_id) : null
       if (!picture) return
     }
     const p = this.program(layer.type, LAYER_VERTEX, () => layerFragment(layer.type))
@@ -622,6 +799,12 @@ export class SceneEngine {
       gl.bindTexture(gl.TEXTURE_2D, picture)
       gl.uniform1i(this.u(p, 'uPicture'), 2)
       gl.activeTexture(gl.TEXTURE0)
+      gl.uniform1i(this.u(p, 'uBoxOn'), media ? 1 : 0)
+      if (media) {
+        const half = Math.max(0.0005, media.size / 2)
+        gl.uniform4f(this.u(p, 'uBox'), media.x, media.y, half * media.aspect, half)
+        gl.uniform1f(this.u(p, 'uTurn'), (media.rotation * Math.PI) / 180)
+      }
     }
     this.blend(layer.blend)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
@@ -644,10 +827,20 @@ export class SceneEngine {
     this.states.clear()
     this.dropTarget(this.target)
     this.target = null
+    if (this.flatTex) gl.deleteTexture(this.flatTex)
+    this.flatTex = null
     for (const { tex } of this.pictures.values()) gl.deleteTexture(tex)
     this.pictures.clear()
+    for (const { tex } of this.live.values()) gl.deleteTexture(tex)
+    this.live.clear()
     this.countdown?.dispose()
     this.countdown = null
+    this.movers?.dispose()
+    this.movers = null
+    this.info?.dispose()
+    this.info = null
+    this.snowcap?.dispose()
+    this.snowcap = null
     for (const { program } of this.programs.values()) gl.deleteProgram(program)
     this.programs.clear()
     gl.deleteVertexArray(this.vao)

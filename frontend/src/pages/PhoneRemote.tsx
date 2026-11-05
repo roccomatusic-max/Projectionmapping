@@ -9,9 +9,13 @@ interface NetworkInfo {
   local_only: boolean
   address: string | null
   tailscale_address: string | null
+  /** The server's own system: 'mac', 'windows' or 'linux'. */
+  server_os?: string
 }
 
 const TAILSCALE_MAC = 'https://tailscale.com/download/mac'
+const TAILSCALE_WINDOWS = 'https://tailscale.com/download/windows'
+const TAILSCALE_ANY = 'https://tailscale.com/download'
 const TAILSCALE_IPHONE = 'https://tailscale.com/download/ios'
 
 /**
@@ -22,7 +26,7 @@ const TAILSCALE_IPHONE = 'https://tailscale.com/download/ios'
  * connection, privately. Without it, the code points at this computer's
  * address on the local network.
  */
-export default function PhoneRemote() {
+export default function PhoneRemote({ embedded = false }: { embedded?: boolean }) {
   const [network, setNetwork] = useState<NetworkInfo | null>(null)
 
   // Tailscale may be switched on while this page is open; follow it.
@@ -44,12 +48,15 @@ export default function PhoneRemote() {
   const anywhere = network?.tailscale_address ?? null
   const base = anywhere ?? network?.address ?? null
   const link = base && !network?.local_only ? `${base}/remote` : null
-  const onMac = navigator.userAgent.includes('Mac')
+  // The server's own system when it says (the Windows server build), else this browser's.
+  const onMac = network?.server_os ? network.server_os === 'mac' : navigator.userAgent.includes('Mac')
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={PhoneIcon} title="Phone remote"
-        subtitle="GO, pause, stop, blackout, the cue list and projector power, from your phone." />
+      {!embedded && (
+        <PageHeader icon={PhoneIcon} title="Phone remote"
+          subtitle="GO, pause, stop, blackout, the cue list and projector power, from your phone." />
+      )}
 
       {network?.local_only && (
         <div className="space-y-2 rounded-xl bg-amber-500/10 p-4 text-sm text-amber-100 ring-1 ring-amber-500/30">
@@ -82,7 +89,7 @@ export default function PhoneRemote() {
                 <Steps
                   items={[
                     <>
-                      <a className="text-sky-300 underline" href={TAILSCALE_MAC} target="_blank" rel="noreferrer">
+                      <a className="text-sky-300 underline" href={onMac ? TAILSCALE_MAC : network?.server_os === 'windows' ? TAILSCALE_WINDOWS : TAILSCALE_ANY} target="_blank" rel="noreferrer">
                         Install Tailscale on this {onMac ? 'Mac' : 'computer'}
                       </a>{' '}
                       and sign in. A Google or Apple account works.

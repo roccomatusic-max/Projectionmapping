@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 
 from app.schemas.mapping import MAX_LAYERS, SceneLayer
 from app.services.api_keys import KeyStore
@@ -51,8 +52,9 @@ CATALOG: dict[str, dict] = {
     },
     "trails": {
         "about": "people paint light as they walk; it fades over time",
-        "styles": ["paint", "smoke", "neon"],
+        "styles": ["paint", "smoke", "neon", "footprints"],
         "dials": "size: brush size; amount: brightness; fade: how long trails last; speed: smoke drift",
+        "notes": "footprints leaves glowing footsteps where people walk; for the ground",
     },
     "particles": {
         "about": "many small glowing particles reacting to people",
@@ -89,14 +91,26 @@ CATALOG: dict[str, dict] = {
                    "presents", "trees", "bells", "candles", "shamrocks", "eggs", "flowers",
                    "butterflies", "bunnies", "balloons", "lanterns", "diyas",
                    "star-of-david", "fireworks", "fish", "bubbles", "leaves", "moons",
-                   "notes", "snowmen", "coins"],
+                   "notes", "snowmen", "coins", "footprints", "welcome-mat",
+                   "runway-arrows", "crawling-spiders", "gingerbread", "stockings", "wreaths",
+                   "santa-hats", "reindeer", "poinsettias", "holly", "mittens", "turkeys",
+                   "candy-corn", "skulls", "tombstones", "cauldrons", "witch-hats", "acorns",
+                   "pies", "party-hats", "champagne", "flags", "cupcakes", "chicks",
+                   "pots-of-gold", "rainbows"],
         "dials": "size: object size (bigger means fewer fit); amount: how many; speed: "
                  "how fast they move and change",
         "notes": "pumpkins are carved jack-o'-lanterns; eyes always watch the nearest "
                  "person; fireworks keep bursting by themselves; colours: most use color, "
                  "with color2 for details (stems, ribbons, spots, flames); stars, hearts, "
                  "eggs and notes alternate color and color2; gumdrops, ornaments, "
-                 "presents and balloons are multicoloured; use blend normal",
+                 "presents and balloons are multicoloured; footprints, welcome-mat, "
+                 "runway-arrows and crawling-spiders are drawn flat for the ground (a "
+                 "driveway; spiders hang from a thread, crawling-spiders do not): welcome-mat "
+                 "reads WELCOME, runway-arrows point up the canvas like a landing strip; "
+                 "skulls' eyes glow in color2; cauldrons bubble a brew in color over a fire "
+                 "in color2; flags are the stars and stripes waving (color the stripes, "
+                 "color2 the corner); cupcakes have a lit candle; rainbows and pots-of-gold "
+                 "are for St Patrick's Day; use blend normal",
         "motions": MOTIONS,
         "changes": CHANGES,
         "nears": NEARS,
@@ -130,15 +144,447 @@ CATALOG: dict[str, dict] = {
         "nears": _AREA_NEARS,
     },
     "countdown": {
-        "about": "a big 'days until Christmas' countdown with a ribbon and a ticking "
-                 "clock, centred on the target area; it says Merry Christmas on the day",
-        "styles": ["gold", "frost", "candy", "marquee"],
+        "about": "a big 'days until' countdown with a ribbon and a ticking clock, "
+                 "centred on the target area; it greets on the day. The style picks "
+                 "the holiday: gold, frost, candy and marquee count to Christmas; "
+                 "pumpkin (ribbon #3b0764, glow #ff7a18) and ghostly (ribbon #111827, "
+                 "glow #84cc16) to Halloween; fireworks (ribbon #0f172a, glow #fbbf24) "
+                 "and champagne (ribbon #111827, glow #f5d77a) to New Year; dream to "
+                 "MLK Day; lantern to Lunar New Year; groundhog to Groundhog Day; "
+                 "sweetheart to Valentine's; presidential to Presidents' Day; mardi-gras; "
+                 "shamrock to St. Patrick's; easter-egg to Easter; earth to Earth Day; "
+                 "fiesta to Cinco de Mayo; roses to Mother's Day; poppy to Memorial "
+                 "Day; dad to Father's Day; juneteenth; stars-stripes to the Fourth of "
+                 "July; labor to Labor Day; salute to Veterans Day; harvest to "
+                 "Thanksgiving; diya to Diwali; dreidel to Hanukkah; kinara to Kwanzaa; "
+                 "game-day to the Super Bowl; jester to April Fools'; seder to "
+                 "Passover; apples-honey to Rosh Hashanah; crescent to Eid al-Fitr; "
+                 "three-sisters to Indigenous Peoples' Day; grandparents to "
+                 "Grandparents Day; birthday and big-day count to a date the person picks in its settings",
+        "styles": ["gold", "frost", "candy", "marquee", "pumpkin", "ghostly",
+                   "fireworks", "champagne", "dream", "lantern", "groundhog", "sweetheart",
+                   "presidential", "mardi-gras", "shamrock", "easter-egg", "earth", "fiesta",
+                   "roses", "poppy", "dad", "juneteenth", "stars-stripes", "labor", "salute",
+                   "harvest", "diya", "dreidel", "kinara", "birthday", "big-day",
+                   "game-day", "jester", "seder", "apples-honey", "crescent",
+                   "three-sisters", "grandparents"],
         "dials": "size: how much of the area it fills; fade: height (1 is the top); "
                  "speed: how fast light sweeps across it; amount: how much it sparkles",
         "nears": ["none", "light", "grow", "jump"],
         "notes": "color is the ribbon, color2 the glow; use blend normal and reacts_to "
                  "always so it stays readable; only add it when the person asks for a "
-                 "countdown",
+                 "countdown, in the look of the holiday they name",
+    },
+    "movers": {
+        "about": "things that travel across the building on a path of their own: "
+                 "sleigh is Santa's sleigh and reindeer flying over the roofline; train "
+                 "is a toy train of presents along the bottom; birds and bats are "
+                 "flocks that scatter from people; elves and penguins walk along the "
+                 "bottom; shooting-stars streak across the sky; ghosts float around; "
+                 "witch flies over the roof on her broom and cackles at people; ufo hovers "
+                 "and beams light down on whoever is under it (near follow); skeletons, "
+                 "zombies, black-cats, turkeys, leprechauns and bunnies (hopping) walk "
+                 "along the bottom, skeletons and leprechauns dance near people, zombies "
+                 "and turkeys call out; cupid and eagles fly over the roof; butterflies "
+                 "and fish are flocks; rockets are fireworks that go up from the bottom "
+                 "of the house and burst in color and color2 (blend add); balloons float "
+                 "up and away; snowfall (big snowflakes), leaves, petals (cherry "
+                 "blossom), confetti, falling-hearts and clovers (shamrocks) fall down the "
+                 "house and part round people (near flee); hanging-spiders hang from the "
+                 "roofline on threads and drop down to people (near follow); lanterns "
+                 "(sky lanterns), jellyfish, rising-bubbles (pop near people: near hide) "
+                 "and hot-air-balloons float up; fireflies drift and blink and gather "
+                 "round people (near follow, blend add); bees are a flock that follows "
+                 "people; dragon flies over the roof and breathes fire at people; owls "
+                 "(hoot), angels, sharks and sea-turtles fly or swim over the roof; "
+                 "mummies, gingerbread-men (run away), toy-soldiers (salute near people), "
+                 "dinosaurs (roar) and ducklings (a duck and her ducklings in a line) walk "
+                 "along the bottom; trick-or-treaters, werewolves (howl), vampires, "
+                 "frankensteins, rats, polar-bears, reindeer (Rudolph noses light up near "
+                 "people: near dance), carolers (sing), squirrels and frogs (hop), crabs, "
+                 "robots (wave: near dance), dogs (bark), dreidels (spin) and lion-dance "
+                 "(rears up: near dance) walk along the bottom; grim-reaper floats over the "
+                 "roof and drifts towards people (near follow); zombie-hands claw up out "
+                 "of the ground and hatching-eggs hatch chicks beside people (near "
+                 "follow); falling-presents and red-envelopes fall; lovebirds, whales "
+                 "(spout near people), octopus, paper-planes, rocket-ship and astronauts "
+                 "fly over the roof; dragonflies and hummingbirds are flocks; dolphins "
+                 "leap out along the bottom (higher near people: near jump); beach-balls "
+                 "bounce along and people kick them (near flee); kites fly on strings "
+                 "and loop over people (near jump); crows, doves and cardinals sit on "
+                 "the roofline and fly off when people come near (near flee); "
+                 "hanging-bats hang under the roof edge and fly off (near flee); "
+                 "sledders and sliding-penguins slide down the roof from its peak "
+                 "(near jump); jingle-bells and stockings hang on ribbons under the "
+                 "roof edge and swing when people dance by (near dance); candy-canes, "
+                 "gold-coins, falling-candy and parachute-presents fall (presents drift "
+                 "to people: near follow); sparklers stand along the bottom and light "
+                 "up beside people (near light); floating-candles drift over the house; "
+                 "rolling-pumpkins roll along and people kick them (near flee); "
+                 "snowmen, santa-walking, hens (a hen and her chicks in a line), "
+                 "ice-cream-truck, fire-truck, race-cars, drummers and scarecrows walk "
+                 "or drive along the bottom; love-letters (fly to people: near follow), "
+                 "seahorses, mermaids, submarines and origami-cranes fly over the roof; "
+                 "pufferfish (puff up: near grow) and koi (gather round people: near "
+                 "follow) are flocks; peeking-ghosts, peeking-elves and window-cats "
+                 "peek over the window sills and come up to watch people (near "
+                 "follow), window-eyes open in the windows and follow people with "
+                 "their pupils; perched-owls on the roof turn their heads to watch "
+                 "people, seagulls squawk and fly off (near flee); snowball-kids and "
+                 "water-balloon-kids throw at the house and at people (near follow); "
+                 "jack-in-the-box, coffins and grave-ghosts come out for people (near "
+                 "jump); moles duck into their holes (near hide); party-poppers go "
+                 "off for people (near jump); birthday-cakes have their candles blown "
+                 "out by people (near hide); skiers slide down the roof (near jump); "
+                 "ice-skaters twirl for people (near dance); snails, tortoises, "
+                 "hedgehogs and skunks hide from people (near hide); uncle-sam on "
+                 "stilts and football-players walk along the bottom; storks, "
+                 "flying-pigs, unicorns, magic-carpet and superheroes fly over the "
+                 "roof; fairies flit about (near follow); ladybugs (near flee) and "
+                 "moths (near follow) are flocks; wolves sit on the roof, watch "
+                 "people and howl (near light); moon is tonight's real moon crossing "
+                 "the sky (near light); pinatas hang from the gutter and burst into "
+                 "candy when people dance under them (near dance); ornaments and "
+                 "icicles hang from the gutter, icicles dripping when it is really "
+                 "above freezing (near follow); flags ripple with the real wind; "
+                 "gift-boxes open for people (near jump); cauldrons bubble (near "
+                 "dance); glowing-pumpkins shout boo (near jump); burrow-bunnies duck "
+                 "into their burrows (near hide); helicopter turns its searchlight "
+                 "onto people (near follow); sprinklers spray people (near follow); "
+                 "snow-globes are shaken by people (near dance); manta-rays, "
+                 "anglerfish (near light) and rudolph (near light) fly over the roof; "
+                 "clownfish are a flock (near flee); starfish, surfers (near jump), "
+                 "sailboats, snowplow, pirate-ship (near follow, fires its cannon), "
+                 "gnomes (near hide: they freeze), peacocks (near dance: fan their "
+                 "tails) and teddy-bears (near follow) go along the bottom; fountains "
+                 "spray higher for people (near grow); web-spiders drop from their "
+                 "webs (near follow); leaf-piles burst and puddles splash (near "
+                 "jump); cuckoo-clock tells the real time and calls the hours (near "
+                 "jump); robins sing on the roof (near flee); pot-of-gold makes a "
+                 "rainbow for people (near jump); easter-eggs light up when found "
+                 "(near jump); diyas glow brighter for people (near light); "
+                 "santa-chimney is Santa climbing out of a chimney at the roof peak "
+                 "(near jump); roof-reindeer stand on the roof and watch people; "
+                 "window-candles sit on every window sill (near light); disco-ball "
+                 "hangs from the gutter throwing spots of light onto people (near "
+                 "dance); searchlights cross over people (near follow); ball-drop "
+                 "comes down on the hour by the real clock and at midnight on New "
+                 "Year's Eve (near jump); champagne pops its corks (near jump); "
+                 "firecrackers hang from the gutter and go off (near jump); "
+                 "graduation-caps are tossed up (near jump); school-bus stops with "
+                 "its stop sign out (near light); deer stop and edge away (near "
+                 "flee); tractors, foxes, bigfoot, skeleton-dogs (near follow), "
+                 "bagpipers, pilgrims and cows (near follow: look up and moo) go "
+                 "along the bottom; raccoons climb out of trash cans (near jump); "
+                 "witch-crash splats against the wall over people (near follow); "
+                 "rain-clouds rain when it is really raining (near follow: rain on "
+                 "people); hockey-players pass pucks to people (near follow); "
+                 "lighthouse shines its beam on people (near follow); tumbleweeds "
+                 "roll with the real wind (near flee); sunflowers face people (near "
+                 "follow); tulips open for people (near light); bird-feeder birds "
+                 "fly off from people (near flee); beehive bees swarm at people "
+                 "(near follow); wind-chimes swing with the real wind (near dance); "
+                 "campfire sparks fly up (near grow); kinara lights the real night of "
+                 "Kwanzaa (near light); fanous are Ramadan lanterns hanging from the "
+                 "gutter (near light); hula-dancers and mariachi play faster for "
+                 "people (near dance); cornucopia spills fruit for people (near "
+                 "jump); christmas-tree lights up for people (near light); "
+                 "headless-horseman gallops by and rears up holding his pumpkin high "
+                 "(near dance); haunted-tree wakes and reaches for people (near follow); "
+                 "candy-bowl has a monster hand grab out at people (near follow); "
+                 "skeleton-band plays guitar, drums and trumpet, faster for people (near "
+                 "dance); tesla-coil throws lightning at people (near follow); "
+                 "window-hands press on the window glass and window-figures are "
+                 "silhouettes watching from the windows (near follow); rocking-chair "
+                 "rocks with a ghost in it for people (near follow); swamp-monster rises "
+                 "out of the muck (near jump); gargoyles on the roof turn to watch and "
+                 "fly off (near flee); monster-mailbox bites at people (near follow); "
+                 "hanging-skeletons dangle from the gutter and dance a jig (near dance); "
+                 "bush-eyes watch people from the hedge (near follow); wall-spiders "
+                 "crawl over the wall to people (near follow); snakes slither and rear up "
+                 "(near follow); tentacles rise out of the ground (near jump); "
+                 "fortune-teller's crystal ball glows (near follow); dancing-zombies dance "
+                 "in step for people (near dance); creaky-gate swings open (near follow); "
+                 "pumpkin-tower jack-o'-lanterns watch and laugh (near follow); catrinas "
+                 "dance for the Day of the Dead (near dance); sugar-skulls light up "
+                 "(near light); ofrenda lights its candles for people (near follow); "
+                 "honor-guard marches with the flag and halts to salute (near light); "
+                 "buglers play taps (near follow); fighter-jets fly over trailing red, "
+                 "white and blue smoke and dip their wings (near dance); perched-eagles "
+                 "watch from the roof (near light); rangoli is drawn on the ground for "
+                 "people (near follow); star-lanterns hang from the gutter (near light); "
+                 "elephants raise their trunks (near dance); nutcracker cracks a walnut "
+                 "(near follow); singing-wreath sings under the gutter (near follow); "
+                 "mistletoe sends up hearts for whoever is under it (near follow); "
+                 "gingerbread-house lights up and the door opens (near follow); "
+                 "workshop-elves hammer toys (near follow); melting-snowman melts when it "
+                 "is really warm and waves (near follow); window-santa peeks out (near "
+                 "follow); stuck-santa kicks in a chimney on the roof (near follow); krampus "
+                 "stops to stare (near follow); snow-angels (near follow); yeti roars (near "
+                 "dance); north-pole-mailbox sends letters off (near follow); bell-ringer "
+                 "(near follow); cookies-for-santa are eaten on Christmas morning (near "
+                 "follow); moose with antler lights (near follow); sugar-plum-fairies fly "
+                 "(near follow); nativity star blazes (near follow); ice-fishing-penguins "
+                 "catch a fish (near follow); lawn-reindeer turn their heads (near follow); "
+                 "blow-up-santa inflates (near follow); lights-elf lights the lights (near "
+                 "follow); horse-sleigh riders wave (near dance); parade-balloons float "
+                 "over (near follow); tuba-players march and play (near dance); mayflower "
+                 "sails by (near follow); wishbone snaps (near follow); geese fly south in "
+                 "a V and honk (near follow); strutting-tom fans his tail (near follow); "
+                 "sign-turkey holds up a sign (near follow); turkey-trot runners cheer "
+                 "(near dance); latke-chef flips a latke (near follow); dreidel-game "
+                 "(near follow); window-menorah lit for tonight's night of Hanukkah (near "
+                 "light); klezmer-band (near follow); sufganiyot jelly doughnuts (near "
+                 "follow); djembe-drummer (near follow); kwanzaa-dancers (near follow); "
+                 "habari-gani shows today's Kwanzaa principle (near follow); unity-cup "
+                 "(near follow); harvest-basket carried by (near dance); baby-new-year "
+                 "(near follow); father-time's hourglass runs out over the year (near "
+                 "follow); noisemaker-kids blow party horns (near follow); midnight-toast "
+                 "clink glasses (near follow); conga-line (near dance); polar-plunge "
+                 "(near follow); rose-float (near dance); mummers strut (near dance); "
+                 "sleepy-reveler wakes up (near follow); zodiac-animal of this lunar year "
+                 "(near light); god-of-fortune bows (near follow); festival-drum (near "
+                 "follow); dumplings steam (near follow); gong-xi-kids bow (near follow); "
+                 "nian-beast runs from people (near flee); lucky-cat waves (near follow); "
+                 "lantern-kid carries a rabbit lantern (near dance); dreamers-march "
+                 "for MLK Day (near dance); unity-circle holding hands (near follow); "
+                 "dove-release (near follow); tree-planters' tree grows for people (near "
+                 "follow); groundhog pops up and sees his shadow by the real weather "
+                 "(near follow); serenade (near follow); candy-heart (near follow); "
+                 "waltzing-couple (near follow); pebble-penguins (near follow); "
+                 "heart-balloon (near dance); rushmore faces watch people (near follow); "
+                 "liberty-bell rings (near follow); cherry-tree (near follow); "
+                 "fife-and-drum (near dance); bead-balcony throws beads (near follow); "
+                 "brass-band (near dance); jester juggles (near follow); king-cake (near "
+                 "follow); carnival-mask watches (near follow); crawfish (near dance); "
+                 "irish-dancers (near follow); leprechaun-trap snaps shut (near follow); "
+                 "harpist (near follow); egg-hunt (near follow); bunny-painter (near "
+                 "follow); lambs spring (near dance); egg-roll (near dance); "
+                 "easter-bonnet (near dance); litter-pickers (near dance); recycle-bins "
+                 "(near follow); rain-barrel fills when it really rains (near follow); "
+                 "folklorico (near follow); pinata-party (near follow); flowers-for-mom "
+                 "(near follow); breakfast-tray (near dance); mom-garden blooms for people "
+                 "(near follow); saluting-soldier (near follow); memorial-flag at "
+                 "half-staff on Memorial Day morning (near light); grill-dad (near "
+                 "follow); fishing-dock (near follow); lawn-mower (near dance); "
+                 "order-reader for Juneteenth (near follow); juneteenth-flag (near "
+                 "dance); double-dutch (near follow); statue-of-liberty's torch (near "
+                 "light); hot-dog-contest (near follow); drum-major (near dance); "
+                 "picnic-ants run from people (near flee); sparkler-writers (near "
+                 "follow); bike-parade (near dance); ironworkers wave (near follow); "
+                 "cannonball (near follow); lemonade-stand turns to hot cocoa when it's "
+                 "cold (near follow); sandcastle grows for people (near follow); "
+                 "cornhole (near follow); pumpkin-carver (near follow); mad-scientist "
+                 "(near follow); singing-pumpkins (near follow); haunted-portrait eyes "
+                 "follow people (near follow); sarcophagus opens for people (near "
+                 "follow); apple-bobbing (near follow); grave-digger (near follow); "
+                 "phantom-organist (near follow); werewolf-change as people come (near "
+                 "follow); lawn-chair-skeleton dressed for the real temperature (near "
+                 "follow); skeleton-photographer (near follow); ghost-tea-party (near "
+                 "follow); witch-spell (near follow); scaredy-ghost hides (near follow); "
+                 "elf-on-shelf moves only when nobody is near (near follow); "
+                 "advent-calendar opened to today (near light); nice-list (near follow); "
+                 "snowman-builders (near follow); star-topper (near follow); "
+                 "light-tangle (near follow); ugly-sweater (near follow); present-puppy "
+                 "(near follow); reindeer-food (near follow); present-tower (near dance); "
+                 "sweater-dog (near dance); stair-peekers (near follow); cookie-baker "
+                 "(near follow); "
+                 "bounce-house (near follow); magician (near follow); balloon-twister "
+                 "(near follow); party-horns (near follow); musical-chairs scramble "
+                 "for people (near follow); pin-the-tail (near follow); limbo bar "
+                 "lowers for people (near follow); sack-race (near dance); "
+                 "face-painter (near follow); karaoke (near follow); dj-booth (near "
+                 "follow); diploma-walk (near follow); class-of sign shows this year's "
+                 "class (near follow); grad-parade (near dance); valedictorian (near "
+                 "follow); crossing-guard (near follow); backpack-kid (near dance); "
+                 "chalkboard-teacher writes today's day (near follow); spelling-bee "
+                 "(near follow); science-volcano (near follow); referee (near follow); "
+                 "cheerleaders (near follow); stadium-wave (near follow); field-goal "
+                 "(near follow); team-mascot (near follow); snake-can (near follow); "
+                 "squirting-flower (near follow); seder-table (near follow); "
+                 "afikomen-hunt (near follow); elijahs-door opens for people (near "
+                 "follow); sea-parting parts for people (near follow); shofar-blower "
+                 "(near follow); apples-and-honey (near follow); tashlich (near "
+                 "follow); sukkah (near follow); moon-sighting shows tonight's real "
+                 "moon (near follow); iftar (near follow); eid-gifts (near follow); "
+                 "fanous-kid (near dance); three-sisters-garden grows for people (near "
+                 "follow); canoe-paddlers (near dance); story-time (near follow); "
+                 "knitting-grandma's scarf grows for people (near follow); porch-swing "
+                 "(near follow); whoopee-cushion (near follow); touchdown-dance (near "
+                 "follow); pie-thief (near follow); turkey-carver (near follow); "
+                 "thanks-table (near follow); leaf-jumper (near follow); "
+                 "apple-picker (near follow); hayride (near dance); cider-press "
+                 "(near follow); giant-pumpkin (near follow); turkey-disguise (near "
+                 "follow); candy-chute (near follow); trunk-or-treat (near follow); "
+                 "costume-parade (near dance); parade-watchers (near follow); "
+                 "kite-flyer flies on the real wind (near follow); snow-shoveler "
+                 "shovels when it really snows (near follow); igloo-builder (near "
+                 "follow); snowflake-catcher (near follow); ice-sculptor (near "
+                 "follow); snowshoe-hiker (near dance); ski-lift (near follow); "
+                 "sled-dogs (near dance); chestnut-roaster (near follow); tree-lot "
+                 "(near follow); proposal (near follow); valentine-mailbox (near "
+                 "follow); egg-dyeing (near follow); maple-tapping (near follow); diya-lighter (near follow); mithai-box (near follow); "
+                 "holi-colors (near follow); alebrije (near dance); papel-picado "
+                 "(near follow); step-team (near follow); zawadi (near follow); "
+                 "dragon-dance (near dance); tangerine-tree (near follow); "
+                 "mardi-gras-float (near dance); rainbow-leprechaun (near follow); "
+                 "pi-day-pie (near follow); birdhouse-builder (near follow); "
+                 "thank-you-letter (near follow); lincoln-hat (near follow); "
+                 "resolution-list (near follow); tamale-maker (near follow); "
+                 "haunted-doorbell (near follow); candy-trader (near follow); "
+                 "tree-trimmer (near follow); secret-admirer (near follow); "
+                 "egg-spoon-race (near follow); seed-spitters (near follow); "
+                 "paul-revere (near dance); hammock-napper (near follow); "
+                 "flag-raiser (near follow)",
+        "styles": ["sleigh", "train", "birds", "bats", "elves", "penguins",
+                   "shooting-stars", "ghosts", "witch", "ufo", "skeletons", "zombies",
+                   "black-cats", "turkeys", "cupid", "leprechauns", "bunnies", "eagles",
+                   "rockets", "balloons", "butterflies", "fish", "snowfall", "leaves",
+                   "petals", "confetti", "falling-hearts", "clovers", "hanging-spiders",
+                   "lanterns", "jellyfish", "rising-bubbles", "hot-air-balloons",
+                   "fireflies", "bees", "dragon", "owls", "angels", "sharks",
+                   "sea-turtles", "mummies", "gingerbread-men", "toy-soldiers",
+                   "dinosaurs", "ducklings", "trick-or-treaters", "werewolves",
+                   "vampires", "frankensteins", "grim-reaper", "zombie-hands", "rats",
+                   "falling-presents", "polar-bears", "reindeer", "carolers", "squirrels",
+                   "lovebirds", "hatching-eggs", "frogs", "dragonflies", "hummingbirds",
+                   "dolphins", "whales", "crabs", "octopus", "beach-balls", "paper-planes",
+                   "kites", "rocket-ship", "astronauts", "robots", "dogs", "dreidels",
+                   "lion-dance", "red-envelopes", "crows", "doves", "cardinals",
+                   "hanging-bats", "sledders", "sliding-penguins", "jingle-bells",
+                   "stockings", "candy-canes", "gold-coins", "falling-candy",
+                   "parachute-presents", "sparklers", "floating-candles",
+                   "rolling-pumpkins", "snowmen", "santa-walking", "hens",
+                   "ice-cream-truck", "fire-truck", "race-cars", "drummers", "scarecrows",
+                   "love-letters", "seahorses", "mermaids", "submarines", "origami-cranes",
+                   "pufferfish", "koi", "peeking-ghosts", "peeking-elves",
+                   "window-cats", "window-eyes", "perched-owls", "seagulls",
+                   "snowball-kids", "water-balloon-kids", "jack-in-the-box", "moles",
+                   "coffins", "grave-ghosts", "party-poppers", "birthday-cakes",
+                   "skiers", "ice-skaters", "snails", "tortoises", "hedgehogs",
+                   "skunks", "uncle-sam", "football-players", "storks", "flying-pigs",
+                   "unicorns", "magic-carpet", "fairies", "superheroes", "ladybugs",
+                   "moths", "wolves", "moon", "pinatas", "ornaments", "icicles",
+                   "flags", "gift-boxes", "cauldrons", "glowing-pumpkins",
+                   "burrow-bunnies", "helicopter", "sprinklers", "snow-globes",
+                   "manta-rays", "clownfish", "anglerfish", "starfish", "surfers",
+                   "sailboats", "snowplow", "pirate-ship", "rudolph", "fountains",
+                   "web-spiders", "leaf-piles", "puddles", "gnomes", "cuckoo-clock",
+                   "robins", "peacocks", "pot-of-gold", "easter-eggs", "teddy-bears",
+                   "diyas", "santa-chimney", "roof-reindeer", "window-candles",
+                   "disco-ball", "searchlights", "ball-drop", "champagne",
+                   "firecrackers", "graduation-caps", "school-bus", "tractors", "deer",
+                   "foxes", "raccoons", "witch-crash", "rain-clouds", "hockey-players",
+                   "lighthouse", "tumbleweeds", "bigfoot", "skeleton-dogs",
+                   "sunflowers", "tulips", "bird-feeder", "beehive", "wind-chimes",
+                   "campfire", "kinara", "fanous", "hula-dancers", "mariachi",
+                   "bagpipers", "pilgrims", "cornucopia", "christmas-tree", "cows",
+                   "headless-horseman", "haunted-tree", "candy-bowl", "skeleton-band",
+                   "tesla-coil", "window-hands", "window-figures", "rocking-chair",
+                   "swamp-monster", "gargoyles", "monster-mailbox", "hanging-skeletons",
+                   "bush-eyes", "wall-spiders", "snakes", "tentacles", "fortune-teller",
+                   "dancing-zombies", "creaky-gate", "pumpkin-tower", "catrinas",
+                   "sugar-skulls", "ofrenda", "honor-guard", "buglers", "fighter-jets",
+                   "perched-eagles", "rangoli", "star-lanterns", "elephants",
+                   "nutcracker", "singing-wreath", "mistletoe", "gingerbread-house",
+                   "workshop-elves", "melting-snowman", "window-santa", "stuck-santa",
+                   "krampus", "snow-angels", "yeti", "north-pole-mailbox", "bell-ringer",
+                   "cookies-for-santa", "moose", "sugar-plum-fairies", "nativity",
+                   "ice-fishing-penguins", "lawn-reindeer", "blow-up-santa", "lights-elf",
+                   "horse-sleigh", "parade-balloons", "tuba-players", "mayflower",
+                   "wishbone", "geese", "strutting-tom", "sign-turkey", "turkey-trot",
+                   "latke-chef", "dreidel-game", "window-menorah", "klezmer-band",
+                   "sufganiyot", "djembe-drummer", "kwanzaa-dancers", "habari-gani",
+                   "unity-cup", "harvest-basket", "baby-new-year", "father-time",
+                   "noisemaker-kids", "midnight-toast", "conga-line", "polar-plunge",
+                   "rose-float", "mummers", "sleepy-reveler", "zodiac-animal",
+                   "god-of-fortune", "festival-drum", "dumplings", "gong-xi-kids",
+                   "nian-beast", "lucky-cat", "lantern-kid", "dreamers-march",
+                   "unity-circle", "dove-release", "tree-planters", "groundhog",
+                   "serenade", "candy-heart", "waltzing-couple", "pebble-penguins",
+                   "heart-balloon", "rushmore", "liberty-bell", "cherry-tree",
+                   "fife-and-drum", "bead-balcony", "brass-band", "jester", "king-cake",
+                   "carnival-mask", "crawfish", "irish-dancers", "leprechaun-trap",
+                   "harpist", "egg-hunt", "bunny-painter", "lambs", "egg-roll",
+                   "easter-bonnet", "litter-pickers", "recycle-bins", "rain-barrel",
+                   "folklorico", "pinata-party", "flowers-for-mom", "breakfast-tray",
+                   "mom-garden", "saluting-soldier", "memorial-flag", "grill-dad",
+                   "fishing-dock", "lawn-mower", "order-reader", "juneteenth-flag",
+                   "double-dutch", "statue-of-liberty", "hot-dog-contest", "drum-major",
+                   "picnic-ants", "sparkler-writers", "bike-parade", "ironworkers",
+                   "cannonball", "lemonade-stand", "sandcastle", "cornhole",
+                   "pumpkin-carver", "mad-scientist", "singing-pumpkins",
+                   "haunted-portrait", "sarcophagus", "apple-bobbing", "grave-digger",
+                   "phantom-organist", "werewolf-change", "lawn-chair-skeleton",
+                   "skeleton-photographer", "ghost-tea-party", "witch-spell",
+                   "scaredy-ghost", "elf-on-shelf", "advent-calendar", "nice-list",
+                   "snowman-builders", "star-topper", "light-tangle", "ugly-sweater",
+                   "present-puppy", "reindeer-food", "present-tower", "sweater-dog",
+                   "stair-peekers", "cookie-baker", "bounce-house", "magician",
+                   "balloon-twister", "party-horns", "musical-chairs", "pin-the-tail",
+                   "limbo", "sack-race", "face-painter", "karaoke", "dj-booth",
+                   "diploma-walk", "class-of", "grad-parade", "valedictorian",
+                   "crossing-guard", "backpack-kid", "chalkboard-teacher",
+                   "spelling-bee", "science-volcano", "referee", "cheerleaders",
+                   "stadium-wave", "field-goal", "team-mascot", "snake-can",
+                   "squirting-flower", "seder-table", "afikomen-hunt", "elijahs-door",
+                   "sea-parting", "shofar-blower", "apples-and-honey", "tashlich", "sukkah",
+                   "moon-sighting", "iftar", "eid-gifts", "fanous-kid",
+                   "three-sisters-garden", "canoe-paddlers", "story-time",
+                   "knitting-grandma", "porch-swing", "whoopee-cushion",
+                   "touchdown-dance",
+                   "pie-thief", "turkey-carver", "thanks-table", "leaf-jumper",
+                   "apple-picker", "hayride", "cider-press", "giant-pumpkin",
+                   "turkey-disguise", "candy-chute", "trunk-or-treat",
+                   "costume-parade", "parade-watchers", "kite-flyer", "snow-shoveler",
+                   "igloo-builder", "snowflake-catcher", "ice-sculptor",
+                   "snowshoe-hiker", "ski-lift", "sled-dogs", "chestnut-roaster",
+                   "tree-lot", "proposal", "valentine-mailbox", "egg-dyeing",
+                   "maple-tapping",
+                   "diya-lighter", "mithai-box", "holi-colors", "alebrije",
+                   "papel-picado", "step-team", "zawadi", "dragon-dance",
+                   "tangerine-tree", "mardi-gras-float", "rainbow-leprechaun",
+                   "pi-day-pie", "birdhouse-builder", "thank-you-letter",
+                   "lincoln-hat", "resolution-list", "tamale-maker",
+                   "haunted-doorbell", "candy-trader", "tree-trimmer",
+                   "secret-admirer", "egg-spoon-race", "seed-spitters", "paul-revere",
+                   "hammock-napper", "flag-raiser"],
+        "dials": "size: how big; speed: how fast; amount: how many (flocks, walkers); "
+                 "fade: sparkle trail and steam",
+        "nears": ["none", "light", "grow", "flee", "follow", "jump", "dance", "hide",
+                  "appear"],
+        "notes": "color is the main colour (the sleigh, the engine), color2 the trim; "
+                 "use blend normal and reacts_to always",
+    },
+    "snowcap": {
+        "about": "snow settling on the level edges of the target surfaces (window "
+                 "sills, frames, the roof) over the first minute and staying; it melts "
+                 "where people stand",
+        "styles": ["soft"],
+        "dials": "size and amount: how deep it piles; speed: how fast it settles",
+        "nears": ["none", "hide", "light", "colour"],
+        "notes": "target windows or roof; color is the snow (#ffffff), color2 its "
+                 "shadow (#9fb4d8); use blend normal and reacts_to always",
+    },
+    "info": {
+        "about": "a live info board: santa is a Santa tracker (a world map with "
+                 "Santa's sleigh, his next stop and presents delivered on Christmas "
+                 "Eve, a countdown to takeoff before); weather is the current weather; "
+                 "days counts the days until a date; message is a scrolling light-up "
+                 "message board; clock is the time now; moon is tonight's moon phase; "
+                 "holiday counts the days to the next holiday by itself; new-year counts "
+                 "down to New Year (to the second on New Year's Eve); menorah lights "
+                 "tonight's Hanukkah candles; advent is an Advent calendar; "
+                 "lunar-new-year counts down to Lunar New Year; showtimes tells people "
+                 "when tonight's show starts and ends",
+        "styles": ["santa", "weather", "days", "message", "clock", "moon", "holiday",
+                   "new-year", "menorah", "advent", "lunar-new-year", "showtimes"],
+        "dials": "size: how big; speed: how fast light sweeps (message: scroll speed); "
+                 "amount: sparkle",
+        "nears": ["none", "light", "grow", "jump"],
+        "notes": "text is the message (message), what is counted to (days) or the "
+                 "town (weather); date is YYYY-MM-DD for days; use blend normal and "
+                 "reacts_to always; only add one when the person asks for it",
     },
     # -- backdrops: only when the person asks for a material or background ---------
     "texture": {
@@ -176,7 +622,8 @@ add), "normal" (paints over what is below, needed for materials, shadows and \
 reveal);
 - color and color2 as #rrggbb;
 - target: where it is drawn: "everywhere", "building" (all traced parts), \
-"walls", "roof", "windows", "doors", or "outside" (around the building);
+"walls", "roof", "windows", "doors", "outside" (around the building), or \
+"ground" (a driveway or path traced as a ground part, seen from above);
 - reacts_to: what makes the whole layer stronger: "presence" (someone is \
 there), "movement" (people moving), "count" (more people), "closeness" \
 (people near), or "always"; reaction 0-1 is how much that matters (0 = \
@@ -228,7 +675,7 @@ _LAYER_SCHEMA = {
         "amount": {"type": "number"},
         "fade": {"type": "number"},
         "target": {"type": "string", "enum": ["everywhere", "building", "walls", "roof",
-                                              "windows", "doors", "outside"]},
+                                              "windows", "doors", "outside", "ground"]},
         "reacts_to": {"type": "string",
                       "enum": ["presence", "movement", "count", "closeness", "always"]},
         "reaction": {"type": "number"},
@@ -236,6 +683,9 @@ _LAYER_SCHEMA = {
         "change": {"type": "string", "enum": CHANGES},
         "near": {"type": "string", "enum": NEARS},
         "reach": {"type": "number"},
+        # Only info boards read these.
+        "text": {"type": "string"},
+        "date": {"type": "string"},
     },
     "required": ["type", "name", "style", "opacity", "blend", "color", "color2", "size",
                  "speed", "amount", "fade", "target", "reacts_to", "reaction", "motion",
@@ -358,7 +808,11 @@ def surfaces_text(surfaces: list[dict]) -> str:
     for surface in surfaces:
         counts[surface.get("kind", "other")] = counts.get(surface.get("kind", "other"), 0) + 1
     parts = ", ".join(f"{n} {kind}{'s' if n > 1 else ''}" for kind, n in counts.items())
-    return f"The building has these traced parts: {parts}."
+    names = [str(s.get("name") or "").strip() for s in surfaces]
+    named = ", ".join(f"{name} ({s.get('kind', 'other')})" for name, s in zip(names, surfaces, strict=True)
+                      if name)
+    text = f"The building has these traced parts: {parts}."
+    return text + (f" They are called: {named}." if named else "")
 
 
 def _clamp(value, low=0.0, high=1.0, default=0.5) -> float:
@@ -389,6 +843,18 @@ def _choice(entry: dict, field: str, value) -> str | None:
     return value if value in allowed else "none"
 
 
+def _text(value) -> str | None:
+    """An info board's words, on one line."""
+    text = " ".join(str(value or "").split())[:200]
+    return text or None
+
+
+def _date(value) -> str | None:
+    """A YYYY-MM-DD date, or None."""
+    text = str(value or "").strip()
+    return text if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else None
+
+
 def to_layers(raw: list) -> list[SceneLayer]:
     """Claude's layers, made valid: unknown styles get the default, dials clamped."""
     layers: list[SceneLayer] = []
@@ -411,7 +877,7 @@ def to_layers(raw: list) -> list[SceneLayer]:
             amount=_clamp(item.get("amount")),
             fade=_clamp(item.get("fade")),
             target=item.get("target") if item.get("target") in (
-                "everywhere", "building", "walls", "roof", "windows", "doors", "outside"
+                "everywhere", "building", "walls", "roof", "windows", "doors", "outside", "ground"
             ) else "everywhere",
             reacts_to=item.get("reacts_to") if item.get("reacts_to") in (
                 "presence", "movement", "count", "closeness", "always"
@@ -421,6 +887,8 @@ def to_layers(raw: list) -> list[SceneLayer]:
             change=_choice(CATALOG[kind], "changes", item.get("change")),
             near=_choice(CATALOG[kind], "nears", item.get("near")),
             reach=_clamp(item.get("reach"), default=0.5),
+            text=_text(item.get("text")) if kind == "info" else None,
+            date=_date(item.get("date")) if kind == "info" else None,
         ))
     return layers
 

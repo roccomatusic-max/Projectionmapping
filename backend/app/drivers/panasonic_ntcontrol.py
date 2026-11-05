@@ -21,7 +21,7 @@ import re
 import time
 
 from .base import CommandOutcome, CommandResult, ConnectionConfig, ProjectorDriver
-from .transport import LineTransport, TransportError, TransportTimeout
+from .transport import AuthenticationError, LineTransport, TransportError, TransportTimeout
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def panasonic_digest(username: str, password: str, random_seed: str) -> str:
     with no username and no separators. Getting these two confused produces an
     ``ERRA`` that looks like a wrong password.
     """
-    return hashlib.md5(f"{username}:{password}:{random_seed}".encode("ascii")).hexdigest()
+    return hashlib.md5(f"{username}:{password}:{random_seed}".encode()).hexdigest()
 
 
 class NTControlTransport:
@@ -94,7 +94,9 @@ class NTControlTransport:
 
     def _parse_greeting(self, greeting: str) -> None:
         text = greeting.strip()
-        match = re.match(r"^NTCONTROL\s+([01])(?:\s+([0-9A-Fa-f]{8}))?", text)
+        # The seed is documented as 8 random characters and real units send
+        # hex, but it is hashed exactly as received, so accept any token.
+        match = re.match(r"^NTCONTROL\s+([01])(?:\s+(\S+))?", text)
         if not match:
             raise TransportError(f"unexpected NTCONTROL greeting: {greeting!r}")
         mode, seed = match.group(1), match.group(2)
@@ -103,8 +105,10 @@ class NTControlTransport:
                 raise TransportError("projector requested authentication but sent no random seed")
             username = self.config.username or "admin1"
             if not self.config.password:
-                raise TransportError(
-                    "projector is in protect mode but no password is configured for this device"
+                raise AuthenticationError(
+                    "The projector is in protect mode and asks for a password, but none is "
+                    "saved for it. Press Edit, enter the projector's web login as Control "
+                    "username (usually admin1) and Control password, then Test connection."
                 )
             self._digest = panasonic_digest(username, self.config.password, seed)
             self.protected = True
@@ -259,9 +263,10 @@ class PanasonicNTControlDriver(ProjectorDriver):
         """
         result = await self.raw_command("power.get", "QPW")
         if result.outcome is CommandOutcome.AUTH_FAILED:
-            raise TransportError(
-                "Panasonic LAN authentication rejected (ERRA). Check the web-control "
-                "administrator username and password configured for this device."
+            raise AuthenticationError(
+                "The projector rejected the username or password (ERRA). Press Edit and "
+                "check Control username (usually admin1) and Control password: they are "
+                "the projector's web login."
             )
         if result.outcome in (CommandOutcome.TIMEOUT, CommandOutcome.CONNECTION_ERROR):
             # A projector that accepts TCP but never answers is not usable.

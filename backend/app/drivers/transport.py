@@ -22,6 +22,14 @@ class TransportTimeout(TransportError):
     """No response within the deadline. Device state is unknown."""
 
 
+class AuthenticationError(TransportError):
+    """The projector answered but wants a password we lack or rejected ours.
+
+    Kept apart from plain transport errors so the operator is told to fix the
+    password, not to chase the network.
+    """
+
+
 class LineTransport:
     """A carriage-return delimited TCP session.
 

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { request } from '@/api/client'
 import type { BusMessage } from '@/api/types'
+import { ConfirmDialog } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import { mappingApi, snapshotUrl } from '../api'
-import { applyHomography, squareToQuad } from '../geometry'
+import { type Grid, gridCorners, gridFromView, gridPoint } from '../cameraView'
 import type {
   ApplyResult,
   CalibrationGrid,
@@ -18,12 +19,6 @@ import type {
 import { MINIPC_DOWNLOAD, type Player } from './PlayersPanel'
 import { outputColor } from './panels'
 
-const DEFAULT_CORNERS: Point[] = [
-  [0.15, 0.15],
-  [0.85, 0.15],
-  [0.85, 0.85],
-  [0.15, 0.85],
-]
 const CORNER_LABELS = ['TL', 'TR', 'BR', 'BL']
 /** How long one Live view request keeps the photos coming. */
 const LIVE_SECONDS = 120
@@ -41,11 +36,6 @@ const STEPS: Array<{ key: StepKey; title: string; hint: string }> = [
 ]
 
 /** A hand grid: the canvas points at even steps, as placed on the photo. */
-interface Grid {
-  cols: number
-  rows: number
-  points: Point[]
-}
 
 /** Where one projector's light falls on the photo. */
 interface Footprint {
@@ -97,6 +87,8 @@ export function CameraPanel({
   const [liveUntil, setLiveUntil] = useState(0)
   const [footprints, setFootprints] = useState<Footprint[]>([])
   const [step, setStep] = useState<StepKey | null>(null)
+  /** Asking before removing the calibration: the whole show's, or one output's. */
+  const [removing, setRemoving] = useState<'all' | Output | null>(null)
   const peopleTimer = useRef<number>()
   const heardAt = useRef(0)
 
@@ -133,7 +125,13 @@ export function CameraPanel({
       } else if (message.type === 'mapping_calib_pattern') {
         const step = payload as unknown as CalibrationStepMessage
         heardAt.current = Date.now()
-        setProgress((current) => new Map(current).set(step.output_id, step))
+        setProgress((current) => {
+          const next = new Map(current)
+          // Removed: nothing to report, the row is back to how it was.
+          if (step.removed) next.delete(step.output_id)
+          else next.set(step.output_id, step)
+          return next
+        })
       } else if (message.type === 'mapping_people') {
         setPeople((payload as unknown as PeopleMessage).people)
         window.clearTimeout(peopleTimer.current)
@@ -284,6 +282,27 @@ export function CameraPanel({
       else onShowChanged()
     })
 
+  // Back to the start: a run still going stops, and the projectors go back to
+  // how they were before the camera changed them.
+  const removeCalibration = (target: 'all' | Output) =>
+    guard(async () => {
+      setBatch(null)
+      setResults(null)
+      if (target === 'all') {
+        await mappingApi.removeCalibration(show.id)
+        setProgress(new Map())
+        setStep('camera')
+      } else {
+        await mappingApi.clearCalibration(target.id)
+        setProgress((current) => {
+          const next = new Map(current)
+          next.delete(target.id)
+          return next
+        })
+      }
+      onShowChanged()
+    })
+
   const toggleLive = () =>
     guard(async () => {
       if (cameraId == null) return
@@ -326,6 +345,7 @@ export function CameraPanel({
   const active = step ?? 'camera'
   const photoMode = active === 'hand' ? 'grid' : active === 'correct' ? 'outline' : 'none'
   const canAct = canEdit && !!camera?.online && !busy
+  const anyCalibrated = outputs.some((o) => o.calibration != null)
 
   return (
     <div className="space-y-4">
@@ -349,6 +369,12 @@ export function CameraPanel({
           </span>
         )}
         {live && <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-300">Live</span>}
+        {canEdit && (anyCalibrated || calibrating || placed) && (
+          <button className="btn-default ml-auto text-xs" disabled={busy} onClick={() => setRemoving('all')}
+            title="Stop a calibration that is running and put every projector back the way it was before">
+            {calibrating ? 'Stop and remove calibration' : 'Remove calibration'}
+          </button>
+        )}
       </div>
 
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Calibration steps">
@@ -377,205 +403,236 @@ export function CameraPanel({
         ))}
       </ol>
 
-      <CameraPhoto
-        src={cameraId != null && hasPhoto ? snapshotUrl(cameraId, photo) : null}
-        onMissing={() => setHasPhoto(false)}
-        footprints={active === 'camera' ? [] : footprints}
-        people={people}
-        mode={photoMode}
-        grid={grid}
-        editable={canEdit && active === 'hand'}
-        onChange={setGrid}
-        onCommit={(next) => void saveGrid(next)}
-      />
-
-      {active === 'camera' && (
-        <section className="space-y-3">
-          <p className="text-sm text-slate-300">
-            {camera?.report.depth
-              ? 'A depth camera: it lines up the projectors and lets cues react to people.'
-              : 'A webcam: enough to line up the projectors. People effects need a depth camera.'}
-          </p>
-          <p className="text-xs text-slate-400">
-            Point it at the building so it sees every projector's picture, then fix it in place. If it moves later,
-            run the patterns again.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button className="btn-default text-xs" disabled={!canAct || calibrating}
-              onClick={() => guard(() => mappingApi.cameraCommand(cameraId!, 'snapshot'))}>
-              Take photo
-            </button>
-            <button className="btn-ghost text-xs" disabled={!canAct || calibrating} onClick={() => void toggleLive()}
-              title="A new photo about every second, for aiming the camera">
-              {live ? 'Stop live view' : 'Live view'}
-            </button>
-            {camera?.report.depth && (
-              <button className="btn-ghost text-xs" disabled={!canAct}
-                title="Re-learn the empty scene, so only people count. Clear the area first."
-                onClick={() => guard(() => mappingApi.cameraCommand(cameraId!, 'background'))}>
-                Re-learn empty scene
-              </button>
-            )}
-            <button className="btn-primary ml-auto text-xs" onClick={() => setStep('patterns')}>Next: patterns</button>
-          </div>
-          {camera?.report.depth && (
-            <p className="text-xs text-slate-500">
-              {people.length ? `Tracking ${people.length} ${people.length === 1 ? 'person' : 'people'}. ` : 'Nobody in view. '}
-              Pick an effect per cue under Cues → People.
-            </p>
-          )}
-        </section>
-      )}
-
-      {active === 'patterns' && (
-        <section className="space-y-3">
-          <p className="text-xs text-slate-400">
-            Each projector in turn shows black, white and stripe patterns for about half a minute while the camera
-            watches; the others go dark. Keep the camera still and the projectors' shutters open. When the last one is
-            done, the picture is fitted to the light and the projectors corrected by themselves.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="btn-primary text-xs" disabled={!canAct || calibrating || combined.length === 0}
-              onClick={() => void calibrate(combined)}>
-              Calibrate all projectors
-            </button>
-            {outputs.length === 0 && <span className="text-xs text-amber-300">Add an output on the Show tab first.</span>}
-          </div>
-          <div className="space-y-2">
-            {outputs.map((output, index) => {
-              const state = progress.get(output.id)
-              const running = state?.status === 'running'
-              return (
-                <div key={output.id} className="flex flex-wrap items-center gap-3 rounded-md bg-panel-850 px-3 py-2 ring-1 ring-white/5">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: outputColor(index) }} />
-                  <span className="text-sm text-slate-200">{output.name}</span>
-                  <span className="text-xs text-slate-500">
-                    {output.blend.auto === false
-                      ? 'shows a picture apart from the others, so it is left out (Editor → Blend)'
-                      : output.calibration?.camera_id === cameraId
-                        ? `calibrated ${new Date(output.calibration!.captured_at).toLocaleString()} · ${Math.round(output.calibration!.coverage * 100)}% of the photo`
-                        : 'not calibrated'}
-                  </span>
-                  {state && (
-                    <span className={classNames('text-xs', state.status === 'failed' ? 'text-red-300' : running ? 'text-sky-300' : 'text-emerald-300')}>
-                      {running && state.steps ? `${state.step + 1} / ${state.steps}` : ''} {state.message}
-                    </span>
-                  )}
-                  {running && state.steps > 0 && (
-                    <div className="h-1 w-24 overflow-hidden rounded bg-panel-700">
-                      <div className="h-full bg-sky-400" style={{ width: `${((state.step + 1) / state.steps) * 100}%` }} />
-                    </div>
-                  )}
-                  <button className="btn-default ml-auto px-3 py-1 text-xs" disabled={!canAct || calibrating}
-                    onClick={() => void calibrate([output])}>
-                    {output.calibration?.camera_id === cameraId ? 'Again' : 'Calibrate'}
+      {/* The photo beside the step's controls on a wide screen, so both are in view at once. */}
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="min-w-0">
+          <CameraPhoto
+            src={cameraId != null && hasPhoto ? snapshotUrl(cameraId, photo) : null}
+            onMissing={() => setHasPhoto(false)}
+            footprints={active === 'camera' ? [] : footprints}
+            people={people}
+            mode={photoMode}
+            grid={grid}
+            editable={canEdit && active === 'hand'}
+            onChange={setGrid}
+            onCommit={(next) => void saveGrid(next)}
+          />
+        </div>
+        <div className="min-w-0 space-y-4">
+          {active === 'camera' && (
+            <section className="space-y-3">
+              <p className="text-sm text-slate-300">
+                {camera?.report.depth
+                  ? 'A depth camera: it lines up the projectors and lets cues react to people.'
+                  : 'A webcam: enough to line up the projectors. People effects need a depth camera.'}
+              </p>
+              <p className="text-xs text-slate-400">
+                Point it at the building so it sees every projector's picture, then fix it in place. If it moves later,
+                run the patterns again.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn-default text-xs" disabled={!canAct || calibrating}
+                  onClick={() => guard(() => mappingApi.cameraCommand(cameraId!, 'snapshot'))}>
+                  Take photo
+                </button>
+                <button className="btn-ghost text-xs" disabled={!canAct || calibrating} onClick={() => void toggleLive()}
+                  title="A new photo about every second, for aiming the camera">
+                  {live ? 'Stop live view' : 'Live view'}
+                </button>
+                {camera?.report.depth && (
+                  <button className="btn-ghost text-xs" disabled={!canAct}
+                    title="Re-learn the empty scene, so only people count. Clear the area first."
+                    onClick={() => guard(() => mappingApi.cameraCommand(cameraId!, 'background'))}>
+                    Re-learn empty scene
                   </button>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
+                )}
+                <button className="btn-primary ml-auto text-xs" onClick={() => setStep('patterns')}>Next: patterns</button>
+              </div>
+              {camera?.report.depth && (
+                <p className="text-xs text-slate-500">
+                  {people.length ? `Tracking ${people.length} ${people.length === 1 ? 'person' : 'people'}. ` : 'Nobody in view. '}
+                  Pick an effect per cue on the Cues page → People.
+                </p>
+              )}
+            </section>
+          )}
 
-      {active === 'correct' && (
-        <section className="space-y-3">
-          <p className="text-xs text-slate-400">
-            The coloured areas are where the camera saw each projector's light. Fitting places the picture in the
-            largest area they light, keeping its shape, and gives each projector the part of the picture its light
-            covers. Correcting then sets every projector's corner pin and mesh so the picture lands there, straight.
-          </p>
-          <label className="flex items-center gap-2 text-xs text-slate-300">
-            <input type="checkbox" checked={slices} onChange={(event) => setSlices(event.target.checked)} />
-            Give each projector the part of the picture its light covers
-          </label>
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="btn-primary text-xs" disabled={!canEdit || busy || calibrating || calibrated.length === 0}
-              onClick={() => void fitAndCorrect()}>
-              Fit to the light and correct
-            </button>
-            <button className="btn-default text-xs" disabled={!canEdit || busy || calibrating || !placed || calibrated.length === 0}
-              onClick={() => guard(correct)}>
-              Correct again
-            </button>
-            <label className="ml-auto flex items-center gap-2 text-xs text-slate-400"
-              title="Control points per side of each projector's warp. More follows a curved or uneven wall more closely.">
-              Detail
-              <select className="input w-auto py-1 text-xs" value={mesh} onChange={(event) => setMesh(Number(event.target.value))}>
-                <option value={2}>Corners only</option>
-                <option value={5}>5 × 5</option>
-                <option value={9}>9 × 9</option>
-                <option value={17}>17 × 17</option>
-              </select>
-            </label>
-          </div>
-          {calibrated.length === 0 && (
-            <p className="text-xs text-amber-300">No projector is calibrated with this camera yet: run the patterns first.</p>
+          {active === 'patterns' && (
+            <section className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Each projector in turn shows black, white and stripe patterns for about half a minute while the camera
+                watches; the others go dark. Keep the camera still and the projectors' shutters open. When the last one is
+                done, the picture is fitted to the light and the projectors corrected by themselves.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn-primary text-xs" disabled={!canAct || calibrating || combined.length === 0}
+                  onClick={() => void calibrate(combined)}>
+                  Calibrate all projectors
+                </button>
+                {outputs.length === 0 && <span className="text-xs text-amber-300">Add a projector in Set up → Your projectors first.</span>}
+              </div>
+              <div className="space-y-2">
+                {outputs.map((output, index) => {
+                  const state = progress.get(output.id)
+                  const running = state?.status === 'running'
+                  return (
+                    <div key={output.id} className="flex flex-wrap items-center gap-3 rounded-md bg-panel-850 px-3 py-2 ring-1 ring-white/5">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: outputColor(index) }} />
+                      <span className="text-sm text-slate-200">{output.name}</span>
+                      <span className="text-xs text-slate-500">
+                        {output.blend.auto === false
+                          ? 'shows a picture apart from the others, so it is left out (Set up → Your projectors → Blend)'
+                          : output.calibration?.camera_id === cameraId
+                            ? `calibrated ${new Date(output.calibration!.captured_at).toLocaleString()} · ${Math.round(output.calibration!.coverage * 100)}% of the photo`
+                            : 'not calibrated'}
+                      </span>
+                      {state && (
+                        <span className={classNames('text-xs', state.status === 'failed' ? 'text-red-300' : running ? 'text-sky-300' : 'text-emerald-300')}>
+                          {running && state.steps ? `${state.step + 1} / ${state.steps}` : ''} {state.message}
+                        </span>
+                      )}
+                      {running && state.steps > 0 && (
+                        <div className="h-1 w-24 overflow-hidden rounded bg-panel-700">
+                          <div className="h-full bg-sky-400" style={{ width: `${((state.step + 1) / state.steps) * 100}%` }} />
+                        </div>
+                      )}
+                      <span className="ml-auto flex gap-2">
+                        {canEdit && (output.calibration != null || running) && (
+                          <button className="btn-ghost px-3 py-1 text-xs" disabled={busy}
+                            title="Put this projector back the way it was before it was calibrated"
+                            onClick={() => setRemoving(output)}>
+                            {running ? 'Stop' : 'Remove'}
+                          </button>
+                        )}
+                        <button className="btn-default px-3 py-1 text-xs" disabled={!canAct || calibrating}
+                          onClick={() => void calibrate([output])}>
+                          {output.calibration?.camera_id === cameraId ? 'Again' : 'Calibrate'}
+                        </button>
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
           )}
-          <ResultList results={results} />
-          {placed && (
-            <button className="btn-primary text-xs" onClick={() => setStep('hand')}>Next: map by hand</button>
-          )}
-        </section>
-      )}
 
-      {active === 'hand' && (
-        <section className="space-y-3">
-          <p className="text-xs text-slate-400">
-            Drag the points onto the building: the corners to where the picture's corners belong, the points in
-            between onto the features the picture should follow (window lines, ledges). Each time you let go, the
-            projectors follow. Live view and the grid on the projectors show the result on the building.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-400">
-              Points
-              <select className="input w-auto py-1 text-xs" value={grid.cols}
-                disabled={!canEdit || busy}
-                onChange={(event) => {
-                  const n = Number(event.target.value)
-                  const next = resampleGrid(grid, n, n)
-                  setGrid(next)
-                  void saveGrid(next)
-                }}>
-                <option value={2}>Corners only</option>
-                <option value={3}>3 × 3</option>
-                <option value={5}>5 × 5</option>
-                <option value={7}>7 × 7</option>
-              </select>
-            </label>
-            <button className="btn-default text-xs" disabled={!canAct || calibrating} onClick={() => void toggleLive()}>
-              {live ? 'Stop live view' : 'Live view'}
-            </button>
-            <button className="btn-default text-xs" disabled={!canEdit || busy || outputs.length === 0} onClick={() => void toggleGrid()}
-              title="Every projector shows a grid drawn on the picture, so you can see how it lines up">
-              {gridOn ? 'Hide grid on projectors' : 'Show grid on projectors'}
-            </button>
-            <button className="btn-ghost text-xs" disabled={!canEdit || busy || calibrated.length === 0}
-              onClick={() => void fitAndCorrect()} title="Throw away the hand placement and fit to the light again">
-              Start again from the light
-            </button>
-            <label className="ml-auto flex items-center gap-2 text-xs text-slate-300">
-              <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
-              Projectors follow as I drag
-            </label>
-          </div>
-          {!placed && canEdit && (
-            <p className="text-xs text-amber-300">The picture is not placed on this camera's photo yet: drag a point to place it.</p>
+          {active === 'correct' && (
+            <section className="space-y-3">
+              <p className="text-xs text-slate-400">
+                The coloured areas are where the camera saw each projector's light. Fitting places the picture in the
+                largest area they light, keeping its shape, and gives each projector the part of the picture its light
+                covers. Correcting then sets every projector's corner pin and mesh so the picture lands there, straight.
+              </p>
+              <label className="flex items-center gap-2 text-xs text-slate-300">
+                <input type="checkbox" checked={slices} onChange={(event) => setSlices(event.target.checked)} />
+                Give each projector the part of the picture its light covers
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn-primary text-xs" disabled={!canEdit || busy || calibrating || calibrated.length === 0}
+                  onClick={() => void fitAndCorrect()}>
+                  Fit to the light and correct
+                </button>
+                <button className="btn-default text-xs" disabled={!canEdit || busy || calibrating || !placed || calibrated.length === 0}
+                  onClick={() => guard(correct)}>
+                  Correct again
+                </button>
+                <label className="ml-auto flex items-center gap-2 text-xs text-slate-400"
+                  title="Control points per side of each projector's warp. More follows a curved or uneven wall more closely.">
+                  Detail
+                  <select className="input w-auto py-1 text-xs" value={mesh} onChange={(event) => setMesh(Number(event.target.value))}>
+                    <option value={2}>Corners only</option>
+                    <option value={5}>5 × 5</option>
+                    <option value={9}>9 × 9</option>
+                    <option value={17}>17 × 17</option>
+                  </select>
+                </label>
+              </div>
+              {calibrated.length === 0 && (
+                <p className="text-xs text-amber-300">No projector is calibrated with this camera yet: run the patterns first.</p>
+              )}
+              <ResultList results={results} />
+              {placed && (
+                <button className="btn-primary text-xs" onClick={() => setStep('hand')}>Next: map by hand</button>
+              )}
+            </section>
           )}
-          {calibrated.length < combined.length && (
-            <p className="text-xs text-slate-500">
-              Projectors the camera has not calibrated ({combined.filter((o) => !calibrated.includes(o)).map((o) => o.name).join(', ')})
-              do not follow; run their patterns, or adjust them by hand on the Show tab.
-            </p>
+
+          {active === 'hand' && (
+            <section className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Drag the points onto the building: the corners to where the picture's corners belong, the points in
+                between onto the features the picture should follow (window lines, ledges). Each time you let go, the
+                projectors follow. Live view and the grid on the projectors show the result on the building.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-slate-400">
+                  Points
+                  <select className="input w-auto py-1 text-xs" value={grid.cols}
+                    disabled={!canEdit || busy}
+                    onChange={(event) => {
+                      const n = Number(event.target.value)
+                      const next = resampleGrid(grid, n, n)
+                      setGrid(next)
+                      void saveGrid(next)
+                    }}>
+                    <option value={2}>Corners only</option>
+                    <option value={3}>3 × 3</option>
+                    <option value={5}>5 × 5</option>
+                    <option value={7}>7 × 7</option>
+                  </select>
+                </label>
+                <button className="btn-default text-xs" disabled={!canAct || calibrating} onClick={() => void toggleLive()}>
+                  {live ? 'Stop live view' : 'Live view'}
+                </button>
+                <button className="btn-default text-xs" disabled={!canEdit || busy || outputs.length === 0} onClick={() => void toggleGrid()}
+                  title="Every projector shows a grid drawn on the picture, so you can see how it lines up">
+                  {gridOn ? 'Hide grid on projectors' : 'Show grid on projectors'}
+                </button>
+                <button className="btn-ghost text-xs" disabled={!canEdit || busy || calibrated.length === 0}
+                  onClick={() => void fitAndCorrect()} title="Throw away the hand placement and fit to the light again">
+                  Start again from the light
+                </button>
+                <label className="ml-auto flex items-center gap-2 text-xs text-slate-300">
+                  <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
+                  Projectors follow as I drag
+                </label>
+              </div>
+              {!placed && canEdit && (
+                <p className="text-xs text-amber-300">The picture is not placed on this camera's photo yet: drag a point to place it.</p>
+              )}
+              {calibrated.length < combined.length && (
+                <p className="text-xs text-slate-500">
+                  Projectors the camera has not calibrated ({combined.filter((o) => !calibrated.includes(o)).map((o) => o.name).join(', ')})
+                  do not follow; run their patterns, or adjust them by hand in Set up → Your projectors.
+                </p>
+              )}
+              {combined.length < outputs.length && (
+                <p className="text-xs text-slate-500">
+                  Left out because they show a picture apart from the others ({outputs.filter((o) => !combined.includes(o)).map((o) => o.name).join(', ')}):
+                  line them up by hand in Set up → Your projectors.
+                </p>
+              )}
+              <ResultList results={results} />
+            </section>
           )}
-          {combined.length < outputs.length && (
-            <p className="text-xs text-slate-500">
-              Left out because they show a picture apart from the others ({outputs.filter((o) => !combined.includes(o)).map((o) => o.name).join(', ')}):
-              line them up by hand on the Show tab.
-            </p>
-          )}
-          <ResultList results={results} />
-        </section>
-      )}
+        </div>
+      </div>
+      <ConfirmDialog
+        open={removing != null}
+        title={removing === 'all' ? 'Remove the camera calibration?' : `Remove the calibration of ${removing?.name ?? ''}?`}
+        body={
+          removing === 'all'
+            ? 'Every calibrated projector goes back to the shape and part of the picture it had before the camera calibrated it, and the picture is no longer placed on the camera photo. A calibration that is running stops. Changes made by hand since the calibration go too. Projectors that were never calibrated are not touched.'
+            : 'This projector goes back to the shape and part of the picture it had before the camera calibrated it. Changes made by hand since then go too. If it is being calibrated right now, that stops.'
+        }
+        confirmLabel={removing === 'all' ? 'Remove calibration' : 'Remove'}
+        danger
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) void removeCalibration(removing)
+          setRemoving(null)
+        }}
+      />
     </div>
   )
 }
@@ -597,45 +654,6 @@ function ResultList({ results }: { results: ApplyResult[] | null }) {
 }
 
 // -- the hand grid ------------------------------------------------------------------
-
-function gridFromView(view: CameraView | null | undefined): Grid {
-  if (view?.mesh) return { cols: view.mesh.cols, rows: view.mesh.rows, points: view.mesh.points }
-  const [tl, tr, br, bl] = view?.corners ?? DEFAULT_CORNERS
-  return { cols: 2, rows: 2, points: [tl, tr, bl, br] }
-}
-
-function gridCorners(grid: Grid): Point[] {
-  const { cols, rows, points } = grid
-  return [points[0], points[cols - 1], points[cols * rows - 1], points[cols * (rows - 1)]]
-}
-
-/** Where canvas point (u, v) is on the photo: the corners' homography plus the hand offsets. */
-function gridPoint(grid: Grid, u: number, v: number): Point {
-  const flat = squareToQuad(gridCorners(grid))
-  const [x, y] = applyHomography(flat, u, v)
-  if (grid.cols === 2 && grid.rows === 2) return [x, y]
-  const gx = Math.min(Math.max(u, 0), 1) * (grid.cols - 1)
-  const gy = Math.min(Math.max(v, 0), 1) * (grid.rows - 1)
-  const c = Math.min(Math.floor(gx), grid.cols - 2)
-  const r = Math.min(Math.floor(gy), grid.rows - 2)
-  const tx = gx - c
-  const ty = gy - r
-  let ox = 0
-  let oy = 0
-  for (const [dc, dr, w] of [
-    [0, 0, (1 - tx) * (1 - ty)],
-    [1, 0, tx * (1 - ty)],
-    [0, 1, (1 - tx) * ty],
-    [1, 1, tx * ty],
-  ]) {
-    const index = (r + dr) * grid.cols + c + dc
-    const [px, py] = grid.points[index]
-    const [fx, fy] = applyHomography(flat, (c + dc) / (grid.cols - 1), (r + dr) / (grid.rows - 1))
-    ox += w * (px - fx)
-    oy += w * (py - fy)
-  }
-  return [x + ox, y + oy]
-}
 
 /** The same placement with more or fewer points. */
 function resampleGrid(grid: Grid, cols: number, rows: number): Grid {

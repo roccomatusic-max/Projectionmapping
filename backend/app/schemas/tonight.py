@@ -1,0 +1,172 @@
+"""Scene groups and tonight's show, as the home page reads and sets them."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+#: "HH:MM", 24-hour.
+TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
+class SceneGroupBase(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    #: The scene for every projector not listed in ``output_scenes``.
+    scene_id: int | None = None
+    #: {output id: scene id, or None for no scene there}.
+    output_scenes: dict[int, int | None] = Field(default_factory=dict)
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Give the group a name")
+        return value
+
+
+class SceneGroupCreate(SceneGroupBase):
+    show_id: int
+
+
+class SceneGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    scene_id: int | None = None
+    output_scenes: dict[int, int | None] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Give the group a name")
+        return value
+
+
+class SceneGroupOut(SceneGroupBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    show_id: int
+    position: int
+    updated_at: datetime
+
+
+class PlaylistStep(BaseModel):
+    """From ``at`` (local "HH:MM"), play ``group_id``, fading in over ``fade_seconds``."""
+
+    at: str = Field(pattern=TIME_PATTERN)
+    group_id: int
+    fade_seconds: float = Field(default=5.0, ge=0, le=30)
+
+
+class PlaylistIn(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    show_id: int | None = None
+    steps: list[PlaylistStep] = Field(min_length=1, max_length=24)
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Give the playlist a name")
+        return value
+
+
+class PlaylistOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    show_id: int
+    name: str
+    position: int
+    steps: list[PlaylistStep]
+    updated_at: datetime
+
+
+class PlaylistStepOut(BaseModel):
+    """One step of tonight's playlist, placed on the night."""
+
+    group_id: int | None
+    group_name: str | None
+    starts_at: datetime
+    fade_seconds: float
+    #: done: played already. now: on the projectors. later: still to come.
+    #: never: its time falls after the show time ends.
+    state: Literal["done", "now", "later", "never"]
+
+
+class PlanUpdate(BaseModel):
+    """The show Start now plays when nothing is planned. Show times live on the calendar."""
+
+    show_id: int | None = None
+
+
+#: off: nothing planned on the calendar from today on. later: starts later
+#: today. running: inside tonight's show time. done: finished for tonight.
+#: not_tonight: nothing planned tonight, but on a later night.
+PlanState = Literal["off", "later", "running", "done", "not_tonight"]
+
+
+class SlotOut(BaseModel):
+    """One show time on one night."""
+
+    key: str
+    source: Literal["weekly", "calendar"]
+    entry_id: int | None
+    title: str
+    show_id: int | None
+    group_id: int | None
+    group_name: str | None
+    starts_at: datetime
+    ends_at: datetime
+    power: bool
+    #: A playlist plays instead of the group when set.
+    playlist_id: int | None = None
+    playlist_name: str | None = None
+
+
+class TonightOut(BaseModel):
+    show_id: int | None
+    show_name: str | None
+    group_id: int | None
+    group_name: str | None
+    power: bool
+    state: PlanState
+    #: Tonight's show time (the one running, or today's), when there is one.
+    starts_at: datetime | None
+    ends_at: datetime | None
+    #: The next start still to come, which may be a later night.
+    next_starts_at: datetime | None
+    #: Where the show time shown comes from: "calendar", or None ("weekly"
+    #: was the old weekly show time).
+    source: Literal["weekly", "calendar"] | None = None
+    #: Its name, and the calendar entry it comes from.
+    title: str | None = None
+    entry_id: int | None = None
+    #: Every show time today, from the calendar.
+    tonight_slots: list[SlotOut] = Field(default_factory=list)
+    #: The name of the calendar's "no show" entry keeping tonight dark.
+    cancelled_by: str | None = None
+    #: The name of the next show to start.
+    next_title: str | None = None
+    #: The playlist the show time shown plays (group_id is then its step
+    #: playing now, or its first one), and its steps tonight.
+    playlist_id: int | None = None
+    playlist_name: str | None = None
+    playlist_steps: list[PlaylistStepOut] = Field(default_factory=list)
+    #: The group or playlist picked last: what Start now plays with nothing planned.
+    plan_group_id: int | None = None
+    plan_playlist_id: int | None = None
+    last_message: str
+    #: The zone the times are kept in, such as "America/New_York".
+    timezone: str
+
+
+class TonightAction(BaseModel):
+    ok: bool
+    message: str
+    tonight: TonightOut
