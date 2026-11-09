@@ -112,6 +112,11 @@ export default function PlayerPage() {
   const [pictureWanted, setPictureWanted] = useState(false)
   const [picturePace, setPicturePace] = useState({ ms: PICTURE_MS, width: PICTURE_WIDTH })
   const stats = useRef<Record<string, unknown>>({})
+  // For the server's picture watchdog: whether this page is drawing its
+  // output, and when it last drew a frame (Date.now()). A frame that is
+  // long ago while the page still answers means the drawing has stopped.
+  const showing = useRef<'output' | 'waiting'>('waiting')
+  const drawnAt = useRef(Date.now())
   const showClock = useRef<ServerClock | null>(null)
   // The server version this page came from: an older page is reloaded by the
   // server while no show plays, so updates reach mini PCs that never restart.
@@ -168,6 +173,8 @@ export default function PlayerPage() {
           ...stats.current, cache: cache.mode, cached_bytes: cache.bytes,
           clock_now: showClock.current?.synced ? showClock.current.now() : null,
           page_version: pageVersion.current,
+          showing: showing.current,
+          frame_age_ms: showing.current === 'output' ? Math.max(0, Date.now() - drawnAt.current) : null,
         },
       })
       obey(next.commands)
@@ -262,6 +269,14 @@ export default function PlayerPage() {
     [token],
   )
 
+  // A new output starts the count afresh: its first frame is a moment away.
+  const drawing = assignment?.output_id != null && assignment?.show_id != null
+  const outputKey = drawing ? `${assignment.show_id}:${assignment.output_id}` : null
+  useEffect(() => {
+    showing.current = outputKey ? 'output' : 'waiting'
+    drawnAt.current = Date.now()
+  }, [outputKey])
+
   // -- screens ---------------------------------------------------------------
   if (!token) {
     return (
@@ -299,6 +314,7 @@ export default function PlayerPage() {
       onShow={syncMedia}
       trimMs={assignment.trim_ms ?? 0}
       onStats={(s) => {
+        drawnAt.current = Date.now()
         showClock.current = s.clock
         stats.current = {
           fps: Math.round(s.fps * 10) / 10,

@@ -16,6 +16,7 @@ import { ConfirmDialog } from '@/components/ui'
 import { classNames } from '@/lib/format'
 import type { TestPattern } from '../types'
 import { formatBytes } from './controls'
+import { loadOutputCare, OutputCareLine, OutputCarePanel, type OutputCareStatus } from './OutputCare'
 
 /** Where the Windows installer for the computers beside the projectors is published. */
 export const MINIPC_DOWNLOAD = 'https://github.com/roccomatusic-max/Projectionmapping/releases/tag/minipc-latest'
@@ -187,6 +188,7 @@ export function PlayersPanel({
 }) {
   const [players, setPlayers] = useState<Player[]>([])
   const [network, setNetwork] = useState<NetworkInfo | null>(null)
+  const [care, setCare] = useState<OutputCareStatus | null>(null)
 
   useEffect(() => {
     request<NetworkInfo>('/mapping/players/network').then(setNetwork, () => setNetwork(null))
@@ -195,6 +197,8 @@ export function PlayersPanel({
   const load = useCallback(async () => {
     try {
       setPlayers(await request<Player[]>('/mapping/players'))
+      // An older server, or a viewer without it: the panel just stays away.
+      loadOutputCare().then(setCare, () => undefined)
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to load players')
     }
@@ -302,6 +306,10 @@ export function PlayersPanel({
 
       <SyncSummary players={paired} canEdit={canEdit} onError={onError} reload={load} />
 
+      {paired.some((p) => p.kind === 'player') && (
+        <OutputCarePanel status={care} canEdit={canEdit} onSaved={setCare} onError={onError} />
+      )}
+
       {paired.map((player) => (
         <div key={player.id} className="rounded-md bg-panel-850 p-3 ring-1 ring-white/5">
           <div className="flex items-center gap-2">
@@ -347,8 +355,12 @@ export function PlayersPanel({
               )}
             </div>
           ) : (
-            <PlayerControls player={player} outputs={outputs} canEdit={canEdit} onPatch={patch}
-              onRemove={remove} onError={onError} reload={load} />
+            <>
+              <PlayerControls player={player} outputs={outputs} canEdit={canEdit} onPatch={patch}
+                onRemove={remove} onError={onError} reload={load} />
+              <OutputCareLine care={care?.players.find((c) => c.player_id === player.id)}
+                watching={care?.watching != null} />
+            </>
           )}
         </div>
       ))}

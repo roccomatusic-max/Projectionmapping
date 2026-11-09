@@ -636,13 +636,20 @@ class PlayerReport(BaseModel):
     #: Players: the server version the output page was loaded from. A page
     #: older than the server is reloaded while no show plays (mapping_players.report).
     page_version: str | None = Field(default=None, max_length=64)
+    #: Players: "output" while the page draws its output, "waiting" while it
+    #: shows "Waiting for an output" instead. For the picture watchdog.
+    showing: Literal["output", "waiting"] | None = None
+    #: Players: how long ago the output last drew a frame (ms), as this is
+    #: sent. Large when the drawing has stopped (a hung graphics card, a
+    #: hidden window) though the page still answers.
+    frame_age_ms: float | None = None
 
     @model_validator(mode="after")
     def _finite(self) -> PlayerReport:
         # A Python sender writes NaN for "no measurement yet"; stored, it would
         # make the players list unreadable for everyone. Keep the report.
         for name in ("fps", "drift_ms", "tracking_rate", "tracking_ms", "people_ms", "clock_ms",
-                     "clock_now", "sync_ms"):
+                     "clock_now", "sync_ms", "frame_age_ms"):
             value = getattr(self, name)
             if value is not None and not math.isfinite(value):
                 setattr(self, name, None)
