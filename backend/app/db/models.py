@@ -953,3 +953,28 @@ class HistorySettings(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class OutputCare(Base):
+    """Keeping a picture on every projector (Mapping → Players). One row.
+
+    The daily restart closes and reopens the output on every mini PC at
+    ``daily_time`` (the server's local time, "HH:MM"), waiting while a show
+    is on. The watchdog restarts one mini PC's output when a show should be
+    on and that mini PC is not drawing a picture (services/output_care.py).
+    """
+
+    __tablename__ = "output_care"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    daily_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    daily_time: Mapped[str] = mapped_column(String(5), default="07:00")
+    watchdog_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: The local date (YYYY-MM-DD) the daily restart last ran, so it runs once a day.
+    last_daily_on: Mapped[str | None] = mapped_column(String(10))
+    last_daily_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: What it did, in words: "Restarted Left and Right".
+    last_daily_note: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

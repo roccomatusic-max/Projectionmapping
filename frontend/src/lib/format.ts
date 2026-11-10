@@ -116,7 +116,7 @@ export function availabilityTitle(availability: Availability, note: string | nul
 
 /** The server stores UTC; on SQLite it comes back without an offset, which
  *  browsers would read as local time. Treat an offset-less timestamp as UTC. */
-function parseServerTime(iso: string): Date {
+export function parseServerTime(iso: string): Date {
   return new Date(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(iso) ? `${iso}Z` : iso)
 }
 

@@ -234,6 +234,22 @@ def _take(player_id: int, target: str) -> list[str]:
     return [a for a, t in _queued.pop((player_id, target), []) if now - t <= COMMAND_SECONDS]
 
 
+def restart_output(player: MappingPlayer) -> str:
+    """Close and reopen the output on a mini PC: "app" when its Mini PC app
+    does it, "page" when only the output page can be told to reload.
+
+    The app closes and reopens the browser, which also mends a page that
+    has stopped answering altogether. Also used by the daily restart and
+    the picture watchdog (services/output_care.py).
+    """
+    if app_connected(player):
+        _queue(player.id, "app", "restart_output")
+        return "app"
+    _queue(player.id, "page", "reload")
+    _changed(player.id)
+    return "page"
+
+
 def app_connected(player: MappingPlayer) -> bool:
     seen = _app_seen.get(player.id)
     return seen is not None and _now() - seen <= APP_SECONDS
@@ -680,13 +696,8 @@ async def command(player_id: int, payload: PlayerCommand, session: SessionDep,
             "projector. Both screens go dark for a moment.")
 
     if action == "restart_output":
-        if app:
-            # The app closes and reopens the browser: this also mends a page
-            # that has stopped answering altogether.
-            _queue(player.id, "app", "restart_output")
+        if restart_output(player) == "app":
             return PlayerCommandResult(via="app", message=f"Restarting the output on {player.name}.")
-        _queue(player.id, "page", "reload")
-        _changed(player.id)
         return PlayerCommandResult(via="page", message=f"Reloading the output on {player.name}.")
 
     # The status overlay lives in the page.
@@ -956,11 +967,7 @@ async def screen_control(payload: ScreenControl, session: SessionDep,
         return ScreenControlResult(ok=True, message=words[action])
 
     if action == "restart_output":
-        if app_connected(player):
-            _queue(player.id, "app", "restart_output")
-        else:
-            _queue(player.id, "page", "reload")
-            _changed(player.id)
+        restart_output(player)
         return ScreenControlResult(ok=True, message="Restarting the output. The projector goes "
                                                     "dark for a few seconds.")
 

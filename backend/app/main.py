@@ -48,6 +48,7 @@ from app.api.routes import (
     walkthrough,
     ws,
 )
+from app.api.routes import output_care as output_care_routes
 from app.config import settings
 from app.core.security import HideTokens, hash_password
 from app.db.migrate import upgrade_to_head
@@ -65,6 +66,7 @@ from app.services.heater import service as heater_service
 from app.services.integration import mqtt_publisher
 from app.services.mapping import transport as mapping_transport
 from app.services.monitor import load_projectors, monitor
+from app.services.output_care import output_care
 from app.services.show_history import recorder as history_recorder
 from app.services.tonight import scheduler as tonight_scheduler
 from app.services.updates import start_auto_updates
@@ -166,6 +168,7 @@ async def lifespan(_: FastAPI):
     await history_recorder.start()
     await tonight_scheduler.start()
     await heater_service.start()
+    await output_care.start()
     await mqtt_publisher.start()
     await walk_the_yard.start_service()
     if settings.advertise_port:
@@ -190,6 +193,7 @@ async def lifespan(_: FastAPI):
         await tonight_scheduler.stop()
         await walk_the_yard.stop_service()
         await heater_service.stop()
+        await output_care.stop()
         await history_recorder.stop()
         await mapping_transport.stop_service()
         await monitor.stop()
@@ -271,6 +275,7 @@ for router in (
     mapping.router, mapping_players.router, mapping_camera.router, mapping_scenes.router,
     mapping_maps.router, tonight.router, show_calendar.router, updates.router, emergency.router,
     phone_alerts.router, heaters.router, backups.router, walkthrough.router, show_history.router,
+    output_care_routes.router,
     ws.router,
 ):
     app.include_router(router, prefix="/api")
