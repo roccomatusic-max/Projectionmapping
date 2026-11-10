@@ -15,7 +15,10 @@ HERE = ROOT / "minipc"
 AGENT = ROOT / "camera-agent"
 ICON = ROOT / "build" / "minipc.ico"
 
-hiddenimports = ["agent", "sources", "simcam", "vision", "websocket", "psutil"]
+hiddenimports = ["agent", "sources", "simcam", "vision", "websocket", "psutil", "selfupdate", "stayawake", "screens", "usbsensor",
+                 "serial", "serial.tools.list_ports"]
+if (HERE / "_version.py").exists():  # written by build.ps1
+    hiddenimports.append("_version")
 binaries = []
 datas = []
 if sys.platform == "win32":

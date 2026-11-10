@@ -11,6 +11,7 @@ export type Outcome =
   | 'timeout'
   | 'rejected'
   | 'busy'
+  | 'queued'
   | 'unsupported'
   | 'auth_failed'
   | 'connection_error'
@@ -64,6 +65,31 @@ export interface ProjectorState {
   equipment?: Partial<Record<EquipmentField, Telemetry<unknown>>>
 }
 
+/** One Panasonic temperature sensor (QTM), as read on the last deep poll.
+ *  `celsius` is null when the reply was not understood; `raw` then says
+ *  what the projector sent. */
+export interface TemperatureSensor {
+  key: string
+  label: string
+  celsius: number | null
+  fahrenheit: number | null
+  raw: string
+  unparsed: boolean
+}
+
+/** `equipment.temperature.value` on drivers that read sensors. `condition`
+ *  is the projector's own verdict (PJLink error status), when it gave one. */
+export interface TemperatureReading {
+  sensors: TemperatureSensor[]
+  condition?: string
+}
+
+/** `equipment.fan.value`: the projector's own fan check. No projector
+ *  reports fan speed over the network. */
+export interface FanReading {
+  condition: string
+}
+
 export type EquipmentField =
   | 'manufacturer'
   | 'model'
@@ -95,6 +121,8 @@ export interface Projector {
   lamp_critical_hours: number
   pjlink_port: number | null
   has_password: boolean
+  /** A separate PJLink password is saved (else the control password is used). */
+  has_pjlink_password?: boolean
   created_at: string | null
   state: ProjectorState
 }
@@ -234,7 +262,15 @@ export interface AutomationStep {
   interval?: number
   seconds?: number
   enclosure_id?: number
+  /** A projector preset (old "scene"). */
   scene_id?: number
+  /** play_scene: a scene from Mapping → Scenes. */
+  mapping_scene_id?: number
+  fade_seconds?: number
+  /** show: start (at cue_id, or the first cue) or stop. */
+  action?: 'start' | 'stop'
+  show_id?: number
+  cue_id?: number
   message?: string
   [key: string]: unknown
 }
@@ -325,6 +361,48 @@ export interface MaintenanceRecord {
   performed_by: string | null
   next_due_hours: number | null
   next_due_at: string | null
+}
+
+export interface TemperatureSample {
+  celsius: number
+  fahrenheit: number
+  recorded_at: string
+}
+
+/** ok, near (within the warning margin), over (at or above the limit), or
+ *  unknown (no recent reading). A sensor without a published limit is ok
+ *  whenever it has a reading. */
+export type TemperatureState = 'ok' | 'near' | 'over' | 'unknown'
+
+export interface TemperatureSensorHistory {
+  key: string
+  label: string
+  limit_celsius: number | null
+  limit_fahrenheit: number | null
+  warn_celsius: number | null
+  latest: TemperatureSample | null
+  latest_is_current: boolean
+  state: TemperatureState
+  hottest: TemperatureSample | null
+  hottest_state: TemperatureState
+}
+
+/** GET /analytics/temperatures: one projector's sensors over a time range.
+ *  Each point holds the hottest °C per sensor key in its slice, or null. */
+export interface TemperatureHistory {
+  projector_id: number
+  hours: number
+  since: string
+  until: string
+  bucket_seconds: number
+  sample_interval_seconds: number
+  retention_days: number
+  sensors: TemperatureSensorHistory[]
+  hottest: (TemperatureSample & { key: string; label: string }) | null
+  condition: string | null
+  note: string | null
+  warnings: string[]
+  points: Array<{ t: number } & Record<string, number | null>>
 }
 
 export interface TelemetryPoint {

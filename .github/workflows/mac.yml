@@ -1,4 +1,7 @@
-name: Mac app
+# The main server, for Mac and for Windows, built from the same commit with the
+# same version number (1.0.<run number>) and published together, so a change
+# never reaches one without the other. Not the Mini PC app (minipc.yml).
+name: Server apps (Mac and Windows)
 
 on:
   push:
@@ -7,12 +10,14 @@ on:
       - "backend/**"
       - "frontend/**"
       - "desktop/**"
+      - "custom_components/**"
       - ".github/workflows/mac.yml"
   pull_request:
     paths:
       - "backend/**"
       - "frontend/**"
       - "desktop/**"
+      - "custom_components/**"
       - ".github/workflows/mac.yml"
   workflow_dispatch:
 
@@ -64,6 +69,25 @@ jobs:
           tail -5 "$RUNNER_TEMP/pc/logs/projector-control.log"
           # Running it must not have changed the bundle, or macOS would call it damaged.
           codesign --verify --deep --strict "$APP"
+      - name: Back up and restore in the built app (Settings, Backup)
+        run: |
+          APP="dist/Projector Control.app/Contents/MacOS/ProjectorControl"
+          DATA="$RUNNER_TEMP/backup-check"
+          # Stand-in for launchd's KeepAlive, which starts the service again when it ends,
+          # whatever the exit code (a restart ends it by SIGTERM: 143, which `bash -e` would stop on).
+          ( while [ ! -f "$RUNNER_TEMP/backup-check.stop" ]; do
+              PROJECTOR_CONTROL_SERVICE=1 "$APP" --serve --lan --no-browser --port 8766 --data-dir "$DATA" >> "$RUNNER_TEMP/backup-check.log" 2>&1 || true
+              sleep 1
+            done ) > /dev/null 2>&1 &
+          LOOP=$!
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:8766/api/health > /dev/null && break; sleep 1; done
+          PASSWORD=$(sed -n 's/^ *password: *//p' "$DATA/FIRST-RUN-PASSWORD.txt")
+          python desktop/ci/check_backup.py http://127.0.0.1:8766 "$PASSWORD" || { tail -60 "$RUNNER_TEMP/backup-check.log"; exit 1; }
+          ls "$DATA/backups"
+          touch "$RUNNER_TEMP/backup-check.stop"
+          kill "$(cat "$DATA/server.pid")"
+          wait "$LOOP"
+          codesign --verify --deep --strict "dist/Projector Control.app"
       - name: Zip it
         # ditto keeps the bundle's symlinks and signature intact; plain zip breaks them.
         run: ditto -c -k --keepParent "dist/Projector Control.app" "ProjectorControl-Mac-${{ matrix.chip }}.zip"
@@ -73,18 +97,84 @@ jobs:
           path: ProjectorControl-Mac-${{ matrix.chip }}.zip
           if-no-files-found: error
 
+  windows:
+    name: Windows server build
+    runs-on: windows-2022
+    env:
+      APP_VERSION: "1.0.${{ github.run_number }}"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            desktop/requirements-desktop.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the program and its zip
+        shell: pwsh
+        run: ./desktop/build.ps1
+      - name: The built program starts and answers
+        shell: pwsh
+        run: |
+          $exe = "dist\ProjectorControl\ProjectorControl.exe"
+          $version = & $exe --version
+          if ($version -ne $env:APP_VERSION) { throw "version is '$version', expected $env:APP_VERSION" }
+          $data = Join-Path $env:RUNNER_TEMP "pc"
+          & $exe --check --no-browser --data-dir $data
+          if ($LASTEXITCODE) { throw "self-check failed with exit code $LASTEXITCODE" }
+          Get-Content (Join-Path $data "logs\projector-control.log") -Tail 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjectorControl-Windows-Server
+          path: dist/ProjectorControl-Windows-Server.zip
+          if-no-files-found: error
+
+  windows-check:
+    name: Windows server install, update and rollback (${{ matrix.runner }})
+    needs: windows
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows Server 2022 and 2025; Windows 10 and 11 share their service,
+        # firewall and PowerShell 5.1 (docs/WINDOWS-SERVER.md says what was tested).
+        runner: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: What the mini PC uses to find the server
+        run: python -m pip install -q requests
+      - uses: actions/download-artifact@v4
+        with:
+          name: ProjectorControl-Windows-Server
+      - name: Install it as Rocco would, then check everything the Mac app does
+        shell: pwsh
+        run: ./desktop/windows/ci/check-windows-server.ps1 -Zip ProjectorControl-Windows-Server.zip -Version "1.0.${{ github.run_number }}"
+
   release:
-    name: Publish the Mac app
-    # Only what is merged reaches the Mac server.
+    name: Publish the Mac app and the Windows server
+    # Only what is merged reaches the servers, and only when both builds passed,
+    # so the Mac and the Windows server always run the same version.
     if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    needs: build
+    needs: [build, windows-check]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: desktop/windows
       - uses: actions/download-artifact@v4
         with:
-          pattern: ProjectorControl-Mac-*
+          pattern: ProjectorControl-*
           merge-multiple: true
       - name: Replace the mac-latest release
         env:
@@ -96,3 +186,14 @@ jobs:
           gh release create mac-latest ProjectorControl-Mac-*.zip --target "$GITHUB_SHA" \
             --title "Projector Control for Mac $VERSION" \
             --notes "Download the zip for your Mac's chip (Apple menu → About This Mac: Apple M-series = AppleSilicon, Intel = Intel), unzip it and open Projector Control. Built from ${GITHUB_SHA::7}. Setup: docs/MAC-SERVER.md."
+      - name: Replace the windows-server-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: "1.0.${{ github.run_number }}"
+        run: |
+          gh release delete windows-server-latest --cleanup-tag --yes || true
+          gh release create windows-server-latest ProjectorControl-Windows-Server.zip \
+            desktop/windows/install-windows-server.ps1 --target "$GITHUB_SHA" \
+            --title "Projector Control for Windows server $VERSION" \
+            --notes "The main server for a Windows computer (64-bit Windows 10, 11 or Windows Server). Not the Mini PC app: that is MiniPC-Setup.exe in the minipc-latest release. Install: open PowerShell, paste the line from docs/WINDOWS-SERVER.md and press Enter. Built from ${GITHUB_SHA::7}."

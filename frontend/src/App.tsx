@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { clearSession, getSession, type Session } from '@/api/client'
 import { Spinner } from '@/components/ui'
 import { AppShell } from '@/components/shell/AppShell'
+import { PageGroup } from '@/components/shell/PageGroup'
 import { LiveProvider } from '@/live/LiveProvider'
 import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
@@ -14,16 +15,21 @@ import Automation from '@/pages/Automation'
 import Alerts from '@/pages/Alerts'
 import Logs from '@/pages/Logs'
 import Settings from '@/pages/Settings'
-import PhoneRemote from '@/pages/PhoneRemote'
+import Calendar from '@/pages/Calendar'
+import SetupGuide from '@/pages/SetupGuide'
 // Monitoring pulls in the charting library; keep it out of the initial
 // bundle so the dashboard loads fast on a tablet over site wifi.
 const Monitoring = lazy(() => import('@/pages/Monitoring'))
+const ShowHistory = lazy(() => import('@/pages/ShowHistory'))
 // The mapping editor carries the WebGL renderer; output windows and players
 // load only what they draw.
 const Mapping = lazy(() => import('@/pages/Mapping'))
 const OutputPage = lazy(() => import('@/mapping/OutputPage'))
 const PlayerPage = lazy(() => import('@/mapping/PlayerPage'))
+const ScreenPage = lazy(() => import('@/mapping/ScreenPage'))
 const RemotePage = lazy(() => import('@/remote/RemotePage'))
+// The heater page draws charts too.
+const Heater = lazy(() => import('@/pages/Heater'))
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => getSession())
@@ -40,6 +46,15 @@ export default function App() {
     clearSession()
     setSession(null)
   }, [])
+
+  // The status screen on a monitor beside the projector signs in as its mini PC.
+  if (location.pathname === '/player/screen') {
+    return (
+      <Suspense fallback={null}>
+        <ScreenPage />
+      </Suspense>
+    )
+  }
 
   // A player pairs itself and holds its own token; it never sees the login.
   if (location.pathname === '/player') {
@@ -60,6 +75,9 @@ export default function App() {
   }
 
   if (!session) return <Login onSignedIn={setSession} />
+
+  // The setup guide is a sheet of paper: no menu, nothing to print but the guide.
+  if (location.pathname === '/setup-guide') return <SetupGuide />
 
   if (location.pathname.startsWith('/mapping/output/')) {
     return (
@@ -82,30 +100,55 @@ export default function App() {
         <AppShell session={session} onSignOut={signOut}>
           <Routes>
             <Route path="/" element={<Dashboard session={session} />} />
-            <Route path="/projectors" element={<Projectors session={session} />} />
+            <Route path="/projectors" element={<PageGroup id="projectors"><Projectors session={session} /></PageGroup>} />
             <Route path="/projectors/:id" element={<ProjectorDetail session={session} />} />
-            <Route path="/groups" element={<Groups session={session} />} />
-            <Route path="/control" element={<ControlCenter session={session} />} />
-            <Route
-              path="/mapping"
-              element={
-                <Suspense fallback={<Spinner label="Loading mapping…" />}>
-                  <Mapping session={session} />
-                </Suspense>
-              }
-            />
+            <Route path="/groups" element={<PageGroup id="projectors"><Groups session={session} /></PageGroup>} />
+            <Route path="/control" element={<PageGroup id="projectors"><ControlCenter session={session} /></PageGroup>} />
+            {['/mapping', '/mapping/:section'].map((path) => (
+              <Route
+                key={path}
+                path={path}
+                element={
+                  <Suspense fallback={<Spinner label="Loading mapping…" />}>
+                    <Mapping session={session} />
+                  </Suspense>
+                }
+              />
+            ))}
+            <Route path="/calendar" element={<Calendar session={session} />} />
             <Route path="/automation" element={<Automation session={session} />} />
             <Route path="/alerts" element={<Alerts session={session} />} />
             <Route
               path="/monitoring"
               element={
-                <Suspense fallback={<Spinner label="Loading monitoring…" />}>
-                  <Monitoring session={session} />
+                <PageGroup id="monitoring">
+                  <Suspense fallback={<Spinner label="Loading monitoring…" />}>
+                    <Monitoring session={session} />
+                  </Suspense>
+                </PageGroup>
+              }
+            />
+            <Route
+              path="/heater"
+              element={
+                <PageGroup id="monitoring">
+                  <Suspense fallback={<Spinner label="Loading the heaters…" />}>
+                    <Heater session={session} />
+                  </Suspense>
+                </PageGroup>
+              }
+            />
+            <Route
+              path="/history"
+              element={
+                <Suspense fallback={<Spinner label="Loading show history…" />}>
+                  <ShowHistory session={session} />
                 </Suspense>
               }
             />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/phone" element={<PhoneRemote />} />
+            <Route path="/logs" element={<PageGroup id="monitoring"><Logs /></PageGroup>} />
+            {/* The phone remote's setup moved into Settings, beside phone alerts. */}
+            <Route path="/phone" element={<Navigate to="/settings?part=phone" replace />} />
             <Route path="/settings" element={<Settings session={session} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

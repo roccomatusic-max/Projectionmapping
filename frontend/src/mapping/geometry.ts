@@ -82,6 +82,21 @@ export function invertHomography(m: Homography): Homography {
   ]
 }
 
+export type Turn = 'right' | 'left' | 'over' | 'mirror'
+
+/**
+ * The corner pin with the picture turned inside it: a quarter turn either
+ * way, upside down, or mirrored left to right. For a projector that points
+ * down at a driveway, so the picture's top can face whichever way people look.
+ */
+export function turnCorners(corners: Point[], turn: Turn): Point[] {
+  const [tl, tr, br, bl] = corners
+  if (turn === 'right') return [tr, br, bl, tl]
+  if (turn === 'left') return [bl, tl, tr, br]
+  if (turn === 'over') return [br, bl, tl, tr]
+  return [tr, tl, bl, br]
+}
+
 /** A quad is usable when it is convex and not folded over itself. */
 export function isConvex(corners: Point[]): boolean {
   let sign = 0

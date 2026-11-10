@@ -143,6 +143,46 @@ async def test_show_with_outputs_and_geometry(api):
     assert [(o["name"], o["position"]) for o in full["outputs"]] == [("Right", 0)]
 
 
+async def test_live_geometry_reaches_players_without_saving(api):
+    """A corner on the move goes out over the feed at once; only the save sticks."""
+    from app.core.events import bus
+
+    headers = await login(api)
+    show = await make_show(api, headers)
+    output = (await api.post(f"/api/mapping/shows/{show['id']}/outputs", headers=headers,
+                             json={"name": "House"})).json()
+    corners = [[0.05, 0.02], [0.97, 0.0], [1.0, 1.0], [0.0, 0.96]]
+    queue = await bus.subscribe()
+    try:
+        response = await api.post(f"/api/mapping/outputs/{output['id']}/live", headers=headers, json={
+            "name": "Ignored", "warp": {"corners": corners}, "masks": None,
+            "blend": {"left": {"width": 0.2}},
+        })
+        assert response.status_code == 204, response.text
+        sent = []
+        while not queue.empty():
+            message = queue.get_nowait()
+            if message.type == "mapping_output":
+                sent.append(message.payload)
+    finally:
+        await bus.unsubscribe(queue)
+    assert len(sent) == 1
+    assert sent[0]["live"] is True and sent[0]["show_id"] == show["id"]
+    assert sent[0]["output"]["warp"]["corners"] == corners
+    assert sent[0]["output"]["blend"]["left"]["width"] == 0.2
+    # Only geometry moves live; the name and the rest stay as saved.
+    assert sent[0]["output"]["name"] == "House"
+    assert sent[0]["output"]["masks"] == []
+
+    saved = (await api.get(f"/api/mapping/shows/{show['id']}", headers=headers)).json()["outputs"][0]
+    assert saved["warp"]["corners"] == [[0, 0], [1, 0], [1, 1], [0, 1]]
+
+    bad = await api.post(f"/api/mapping/outputs/{output['id']}/live", headers=headers,
+                         json={"warp": {"corners": [[0, 0]]}})
+    assert bad.status_code == 422
+    assert (await api.post("/api/mapping/outputs/9999/live", headers=headers, json={})).status_code == 404
+
+
 async def test_new_outputs_get_their_own_slice(api):
     headers = await login(api)
     show = await make_show(api, headers)
@@ -387,11 +427,15 @@ async def test_player_pairing_flow(api):
     assert claimed["status"] == "approved"
     player_headers = {"Authorization": f"Bearer {claimed['access_token']}"}
 
+    version = (await api.get("/api/health")).json()["version"]
     assignment = await api.post("/api/mapping/players/me", headers=player_headers,
-                                json={"fps": 60, "drift_ms": 4, "cache": "on"})
+                                json={"fps": 60, "drift_ms": 4, "cache": "on",
+                                      "page_version": version})
     assert assignment.status_code == 200, assignment.text
     assert assignment.json() == {"player_id": first["player_id"], "name": "Left mini PC",
-                                 "output_id": output["id"], "show_id": show["id"]}
+                                 "output_id": output["id"], "show_id": show["id"],
+                                 "commands": [], "picture": False, "picture_ms": 3000,
+                                 "picture_width": 480, "trim_ms": 0}
     listed = (await api.get("/api/mapping/players", headers=headers)).json()[0]
     assert listed["online"] is True
     assert listed["report"]["fps"] == 60

@@ -31,6 +31,8 @@ COPY backend/simulator ./simulator
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini ./alembic.ini
 COPY --from=frontend-build /frontend/dist ./static
+# Settings → Home Assistant installs the integration from here.
+COPY custom_components/projector_control ./homeassistant/projector_control
 
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/data \

@@ -1,0 +1,84 @@
+import { useEffect, useState } from 'react'
+import type { SceneLayer } from '../types'
+import { infoStyle } from '../scene/info'
+
+/** Longest message the board scrolls (the server's limit too). */
+export const MESSAGE_MAX = 200
+
+/**
+ * The words a live info board needs: the weather's town, what a "days
+ * until" counts to and its date, or the message board's message. The Santa
+ * tracker needs nothing; it reads the clock.
+ */
+export function InfoFields({ layer, canEdit, onChange }: {
+  layer: SceneLayer
+  canEdit: boolean
+  onChange: (patch: Partial<SceneLayer>) => void
+}) {
+  const style = infoStyle(layer.style)
+  // Typed words are kept here while typing so a slow save does not jump the cursor.
+  const [text, setText] = useState(layer.text ?? '')
+  useEffect(() => setText(layer.text ?? ''), [layer.id, layer.text])
+  const type = (value: string) => {
+    setText(value)
+    onChange({ text: value })
+  }
+
+  if (style === 'santa') {
+    return (
+      <p className="text-xs text-slate-500">
+        Shows where Santa is on Christmas Eve, the next stop, presents delivered and when he reaches your house (your
+        computer&apos;s time zone). Before then it counts down to his takeoff. It works without the internet.
+      </p>
+    )
+  }
+  const about: Partial<Record<typeof style, string>> = {
+    clock: 'Shows the time and date on this computer’s clock, with the colon blinking each second.',
+    moon: 'Shows tonight’s moon as it really is, how much of it is lit and when it is next full. Worked out from the date, so it needs no internet.',
+    holiday: 'Counts the days to the next holiday (New Year’s, MLK Day, Valentine’s, Presidents’ Day, St Patrick’s, Easter, Mother’s Day, Memorial Day, Father’s Day, Juneteenth, the Fourth, Labor Day, Halloween, Veterans Day, Thanksgiving, Diwali, Hanukkah, Christmas, Kwanzaa) and says the greeting on the day. It moves on to the next one by itself.',
+    'new-year': 'Counts the days to New Year, then on New Year’s Eve the hours, minutes and seconds to midnight, and says Happy New Year on the first.',
+    menorah: 'Lights the right number of candles for tonight’s night of Hanukkah, worked out from the Hebrew calendar, with the flames flickering. The rest of the year it counts the days to the first night.',
+    advent: 'Opens one door for each day of December up to Christmas Eve, with today’s door lit up. Before December it counts down to the first door.',
+    'lunar-new-year': 'Counts the days to Lunar New Year and names the year’s animal, then says Happy New Year through the 15 days of the festival.',
+    showtimes: 'Tells people walking by when tonight’s show starts and ends, that it is showing now, or when the next show is. It reads the show times you set on the Dashboard and the Calendar.',
+  }
+  if (about[style]) return <p className="text-xs text-slate-500">{about[style]}</p>
+  if (style === 'weather') {
+    return (
+      <label className="block">
+        <span className="label">Town or ZIP code</span>
+        <input className="input py-1 text-sm" value={text} disabled={!canEdit} maxLength={80}
+          placeholder="Leave empty to use where the server is" onChange={(e) => type(e.target.value)} />
+        <span className="mt-1 block text-xs text-slate-500">
+          For example “Ridgewood, NJ” or “07450”. Checked every 10 minutes; the server needs the internet for this one.
+        </span>
+      </label>
+    )
+  }
+  if (style === 'days') {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="label">Counts down to</span>
+          <input className="input py-1 text-sm" value={text} disabled={!canEdit} maxLength={60}
+            placeholder="Grandma’s visit" onChange={(e) => type(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="label">Date (comes round every year)</span>
+          <input type="date" className="input py-1 text-sm" value={layer.date ?? ''} disabled={!canEdit}
+            onChange={(e) => onChange({ date: e.target.value || null })} />
+        </label>
+      </div>
+    )
+  }
+  return (
+    <label className="block">
+      <span className="label">Message</span>
+      <textarea className="input min-h-[4rem] py-1 text-sm" value={text} disabled={!canEdit} maxLength={MESSAGE_MAX}
+        placeholder="Merry Christmas from our house!" onChange={(e) => type(e.target.value.replace(/\s*\n\s*/g, ' '))} />
+      <span className="mt-1 block text-xs text-slate-500">
+        Short messages sit still in the middle; longer ones scroll across. You can also change it from the phone remote.
+      </span>
+    </label>
+  )
+}

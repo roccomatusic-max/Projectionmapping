@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 
 from app.drivers import CommandOutcome, Provenance, available
 from app.drivers.panasonic_ptdz770 import PanasonicPTDZ770Driver
 from app.drivers.registry import capability_manifest
+from app.drivers.transport import AuthenticationError
 from simulator import PanasonicSimulator, SimulatedProjector
 from tests.conftest import panasonic_config
 
@@ -41,7 +44,11 @@ async def dz770(dz770_sim):
 def test_registered_with_its_models():
     ids = {d.driver_id: d for d in available()}
     assert "panasonic_pt_dz770" in ids
-    assert set(ids["panasonic_pt_dz770"].models) == {"PT-DZ770", "PT-DW740", "PT-DX810"}
+    assert set(ids["panasonic_pt_dz770"].models) == {
+        "PT-DZ770", "PT-DW740", "PT-DX810", "PT-DX810ULK",
+    }
+    # The name in the Add projector driver list says which models it covers.
+    assert "DX810" in ids["panasonic_pt_dz770"].display_name
 
 
 def test_manifest_reflects_the_model_not_the_base():
@@ -50,9 +57,13 @@ def test_manifest_reflects_the_model_not_the_base():
     assert caps["input.set"]["param_labels"]["SVD"] == "S-VIDEO"
     assert "SD1" not in caps["input.set"]["params"]
     assert "Q$L:1..2" in caps["lamp.hours"]["description"]
-    # Dual-lamp commands exist, and are gated until their encoding is checked.
-    assert caps["lamp.select"]["requires_opt_in"] is True
-    assert caps["lamp.power"]["requires_opt_in"] is True
+    # Dual-lamp commands: values are in the PT-DX810 command list, so confirmed.
+    assert caps["lamp.select"]["requires_opt_in"] is False
+    assert caps["lamp.select"]["provenance"] == Provenance.VERIFIED_DOC.value
+    assert caps["lamp.power"]["requires_opt_in"] is False
+    # No lens memory on this family, and the UI is told so plainly.
+    assert caps["lens.memory"]["caveat"] == "This projector has no lens memory."
+    assert "PT-DX810ULK" in caps["lens.shift_h"]["caveat"]
     # The common, verified set is still there.
     assert caps["power.set"]["provenance"] == Provenance.VERIFIED_DOC.value
     assert caps["shutter.set"]["provenance"] == Provenance.VERIFIED_DOC.value
@@ -77,7 +88,7 @@ async def test_svideo_switches_and_sdi_is_refused_before_the_wire(dz770, dz770_s
     refused = await dz770.set_input("SD1")
     assert refused.outcome is CommandOutcome.UNSUPPORTED
     assert refused.raw_response is None
-    assert "PT-DZ770" in (refused.error or "")
+    assert "DZ770" in (refused.error or "")
 
 
 async def test_power_and_shutter_shared_path(dz770, dz770_state):
@@ -86,29 +97,46 @@ async def test_power_and_shutter_shared_path(dz770, dz770_state):
     assert dz770_state.shutter_closed is True
 
 
-async def test_lamp_select_is_gated_until_opted_in(dz770, dz770_sim, dz770_state):
-    gated = await dz770.execute_supported_command("lamp.select", {"mode": "single"})
-    assert gated.outcome is CommandOutcome.UNSUPPORTED
-    assert gated.raw_response is None
+async def test_lamp_select_and_power_need_no_opt_in(dz770, dz770_state):
+    sent = await dz770.execute_supported_command("lamp.select", {"mode": "single"})
+    assert sent.outcome is CommandOutcome.ACCEPTED
+    assert sent.raw_request == "00LPM:1"
+    assert dz770_state.lamp_select == "1"
+    bad = await dz770.execute_supported_command("lamp.select", {"mode": "triple"})
+    assert bad.outcome is CommandOutcome.REJECTED
+    assert bad.raw_request is None
+    eco = await dz770.execute_supported_command("lamp.power", {"mode": "eco"})
+    assert eco.outcome is CommandOutcome.ACCEPTED
+    assert eco.raw_request == "00OLP:1"
+    assert dz770_state.lamp_power == "1"
 
-    opted = PanasonicPTDZ770Driver(panasonic_config(dz770_sim, allow_unverified_commands=True))
-    await opted.connect()
-    try:
-        sent = await opted.execute_supported_command("lamp.select", {"mode": "single"})
-        assert sent.outcome is CommandOutcome.ACCEPTED
-        assert sent.raw_request == "00LPM:1"
-        assert dz770_state.lamp_select == "1"
-        bad = await opted.execute_supported_command("lamp.select", {"mode": "triple"})
-        assert bad.outcome is CommandOutcome.REJECTED
-        eco = await opted.execute_supported_command("lamp.power", {"mode": "eco"})
-        assert eco.raw_request == "00OLP:1"
-    finally:
-        await opted.disconnect()
+
+async def test_lamp_select_while_switching_is_not_right_now(dz770, dz770_state):
+    """ER401 straight after a lamp select means "still switching", not "no LPM"."""
+    assert (await dz770.set_power_state(True)).ok
+    await asyncio.sleep(0.4)
+    assert (await dz770.get_power_state()).ok
+    dz770_state.lamp_switch_seconds = 30.0
+    assert (await dz770.execute_supported_command("lamp.select", {"mode": "lamp1"})).ok
+    again = await dz770.execute_supported_command("lamp.select", {"mode": "dual"})
+    assert again.outcome is CommandOutcome.BUSY
+    assert "switching lamps" in (again.error or "")
+    assert again.raw_response == "00ER401"
+    assert dz770_state.lamp_select == "2"
+    # The capability stays offered: a refusal for now never hides the control.
+    assert dz770.capabilities.get("lamp.select") is not None
+
+
+async def test_lens_memory_says_the_model_has_none(dz770):
+    result = await dz770.execute_supported_command("lens.memory", {})
+    assert result.outcome is CommandOutcome.UNSUPPORTED
+    assert result.raw_request is None
+    assert "This projector has no lens memory." in (result.error or "")
 
 
 async def test_lamp_select_refused_by_a_single_lamp_unit(panasonic_sim):
     """Pointing the DZ770 driver at a unit without LPM gets a clean ER401."""
-    driver = PanasonicPTDZ770Driver(panasonic_config(panasonic_sim, allow_unverified_commands=True))
+    driver = PanasonicPTDZ770Driver(panasonic_config(panasonic_sim))
     await driver.connect()
     try:
         # The DZ13K simulator has four lamps, so LPM is accepted there; force
@@ -118,5 +146,69 @@ async def test_lamp_select_refused_by_a_single_lamp_unit(panasonic_sim):
         result = await driver.execute_supported_command("lamp.select", {"mode": "dual"})
         assert result.outcome is CommandOutcome.UNSUPPORTED
         assert result.raw_response == "00ER401"
+    finally:
+        await driver.disconnect()
+
+
+# -- PT-DX810ULK ------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def dx810_sim():
+    """A PT-DX810ULK in protect mode with the admin1 web login, like Rocco's units."""
+    state = SimulatedProjector.dx810(
+        warmup_seconds=0.3, cooldown_seconds=0.3, password="projector-web-login",
+    )
+    simulator = PanasonicSimulator(state, host="127.0.0.1", port=0)
+    await simulator.start()
+    try:
+        yield simulator
+    finally:
+        await simulator.stop()
+
+
+async def test_dx810ulk_end_to_end(dx810_sim):
+    state = dx810_sim.state
+    driver = PanasonicPTDZ770Driver(
+        panasonic_config(dx810_sim, password="projector-web-login")
+    )
+    await driver.connect()
+    await driver.authenticate()
+    try:
+        assert (await driver.set_power_state(True)).outcome is CommandOutcome.ACCEPTED
+        await asyncio.sleep(0.4)
+        assert state.is_on
+
+        assert (await driver.set_input("HD1")).ok
+        assert state.active_input == "HD1"
+        assert (await driver.get_active_input()).value["code"] == "HD1"
+
+        assert (await driver.set_shutter(closed=True)).ok
+        assert state.shutter_closed is True
+        assert (await driver.set_shutter(closed=False)).ok
+
+        hours = await driver.get_lamp_hours()
+        assert [lamp["hours"] for lamp in hours.value] == [1460, 1433]
+
+        temps = await driver.execute_supported_command("temperature.get")
+        assert temps.ok
+
+        eco = await driver.execute_supported_command("lamp.power", {"mode": "eco"})
+        assert eco.outcome is CommandOutcome.ACCEPTED
+        assert state.lamp_power == "1"
+
+        sdi = await driver.set_input("SD1")
+        assert sdi.outcome is CommandOutcome.UNSUPPORTED
+        assert sdi.raw_response is None
+    finally:
+        await driver.disconnect()
+
+
+async def test_dx810ulk_wrong_password_is_an_auth_failure(dx810_sim):
+    driver = PanasonicPTDZ770Driver(panasonic_config(dx810_sim, password="wrong"))
+    await driver.connect()
+    try:
+        with pytest.raises(AuthenticationError, match="ERRA"):
+            await driver.authenticate()
     finally:
         await driver.disconnect()

@@ -10,7 +10,9 @@ An automation is an ordered list of steps. Each step is a dict:
     {"type": "check_online", "target": {...}}
     {"type": "check_faults", "target": {...}, "block_on": ["error"]}
     {"type": "check_enclosure", "enclosure_id": 1}
-    {"type": "scene",        "scene_id": 3}
+    {"type": "scene",        "scene_id": 3}          (a projector preset)
+    {"type": "play_scene",   "mapping_scene_id": 2, "fade_seconds": 2}
+    {"type": "show",         "action": "start" | "stop", "show_id": 1, "cue_id": 7}
     {"type": "notify",       "message": "...", "severity": "info"}
 
 ``target`` is ``{"type": "all" | "group" | "projector", "id": n}``.
@@ -27,6 +29,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.core.events import bus
@@ -39,6 +42,7 @@ from app.db.models import (
     Event,
     Group,
     GroupMember,
+    MappingShow,
     Projector,
     RunStatus,
     Scene,
@@ -55,6 +59,10 @@ log = logging.getLogger(__name__)
 
 class StepError(Exception):
     """A step failed in a way that should abort the run."""
+
+
+class _Halted(Exception):
+    """The emergency stop ended the run between or during its steps."""
 
 
 async def resolve_target(session, target: dict[str, Any] | None) -> list[int]:
@@ -87,6 +95,9 @@ class AutomationEngine:
         #: Scheduled runs in progress. Held so they are not garbage-collected
         #: mid-run and so shutdown can stop them.
         self._runs: set[asyncio.Task] = set()
+        #: Runs in progress, scheduled or by hand: the emergency stop sets
+        #: the event to stop one between (or in the middle of) its steps.
+        self._halts: dict[int, tuple[asyncio.Event, str]] = {}
 
     async def start(self) -> None:
         if self._running:
@@ -107,6 +118,37 @@ class AutomationEngine:
         for task in list(self._runs):
             task.cancel()
         await asyncio.gather(*self._runs, return_exceptions=True)
+
+    async def halt(self) -> list[str]:
+        """Stop every run in progress where it is (the emergency stop).
+
+        Returns the names of the automations stopped once their records say
+        so: aborted, with the steps they had done.
+        """
+        halting = dict(self._halts)
+        for event, _name in halting.values():
+            event.set()
+        deadline = asyncio.get_running_loop().time() + 10.0
+        while (any(aid in self._halts for aid in halting)
+               and asyncio.get_running_loop().time() < deadline):
+            await asyncio.sleep(0.05)
+        return [name for _event, name in halting.values()]
+
+    @staticmethod
+    async def _step_or_halt(work, halt: asyncio.Event) -> dict[str, Any]:
+        """Run one step, unless the emergency stop comes first."""
+        step = asyncio.create_task(work)
+        stop = asyncio.create_task(halt.wait())
+        try:
+            await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            stop.cancel()
+            if not step.done():
+                step.cancel()
+                await asyncio.gather(step, return_exceptions=True)
+        if step.cancelled():
+            raise _Halted
+        return step.result()
 
     @staticmethod
     async def _close_orphaned_runs() -> None:
@@ -174,6 +216,17 @@ class AutomationEngine:
                         "automation_id": automation.id, "name": automation.name,
                         "message": f"Automation '{automation.name}' missed its scheduled time",
                     })
+                elif verdict and _emergency_on():
+                    # Mark it as having had its turn, so it is neither tried
+                    # again every tick nor run late once the stop is cleared.
+                    automation.last_run_at = datetime.now(UTC)
+                    automation.last_status = "held"
+                    session.add(Event(
+                        projector_id=None, severity=Severity.WARNING.value,
+                        kind="automation_held",
+                        message=(f"Automation '{automation.name}' was due but did not run "
+                                 f"because the emergency stop is on"),
+                    ))
                 elif verdict:
                     due.append(automation)
 
@@ -256,7 +309,11 @@ class AutomationEngine:
         if automation_id in self._in_flight:
             return {"status": RunStatus.ABORTED.value,
                     "error": "this automation is already running"}
+        if _emergency_on():
+            return {"status": RunStatus.ABORTED.value,
+                    "error": "the emergency stop is on; clear it first, then run this again"}
         self._in_flight.add(automation_id)
+        halt = asyncio.Event()
         started = datetime.now(UTC)
         run_id: int | None = None
         try:
@@ -275,6 +332,7 @@ class AutomationEngine:
                 await session.flush()
                 run_id = run.id
                 automation.last_run_at = started
+            self._halts[automation_id] = (halt, name)
 
             bus.publish("automation_started", {
                 "automation_id": automation_id, "run_id": run_id,
@@ -287,7 +345,13 @@ class AutomationEngine:
 
             try:
                 for index, step in enumerate(steps):
-                    result = await self._run_step(index, step, user=user)
+                    try:
+                        result = await self._step_or_halt(
+                            self._run_step(index, step, user=user), halt)
+                    except _Halted:
+                        status = RunStatus.ABORTED
+                        error = f"stopped at step {index + 1} by the emergency stop"
+                        break
                     step_results.append(result)
                     bus.publish("automation_step", {
                         "automation_id": automation_id, "run_id": run_id,
@@ -337,7 +401,7 @@ class AutomationEngine:
 
             payload = {
                 "automation_id": automation_id, "run_id": run_id, "name": name,
-                "status": status.value, "steps": step_results,
+                "status": status.value, "steps": step_results, "error": error,
                 "duration_s": round((finished - started).total_seconds(), 1),
             }
             bus.publish("automation_finished", payload)
@@ -350,6 +414,7 @@ class AutomationEngine:
             return payload
         finally:
             self._in_flight.discard(automation_id)
+            self._halts.pop(automation_id, None)
 
     async def _run_step(self, index: int, step: dict[str, Any],
                         user: str | None = None) -> dict[str, Any]:
@@ -373,6 +438,10 @@ class AutomationEngine:
                     return await self._step_check_enclosure(index, step, label)
                 case "scene":
                     return await self._step_scene(index, step, label, user)
+                case "play_scene":
+                    return await self._step_play_scene(index, step, label)
+                case "show":
+                    return await self._step_show(index, step, label)
                 case "notify":
                     bus.publish("automation_notify", {
                         "message": step.get("message", ""),
@@ -583,10 +652,70 @@ class AutomationEngine:
         return self._ok(index, label, f"scene '{outcome.get('name')}' activated",
                         outcome.get("results"))
 
+    async def _step_play_scene(self, index: int, step: dict[str, Any],
+                               label: str) -> dict[str, Any]:
+        """Play a scene from Mapping → Scenes on every projector."""
+        from app.services.mapping import TransportError, transport
+
+        scene_id = step.get("mapping_scene_id")
+        if scene_id is None:
+            return self._fail(index, label, "no scene chosen")
+        try:
+            state = await transport.command(
+                "scene", scene_id=int(scene_id),
+                fade_seconds=float(step.get("fade_seconds", 2) or 0))
+        except TransportError as exc:
+            return self._fail(index, label, str(exc))
+        name = state.current.name if state.current else scene_id
+        return self._ok(index, label, f"playing scene '{name}' on every projector")
+
+    async def _step_show(self, index: int, step: dict[str, Any],
+                         label: str) -> dict[str, Any]:
+        """Start a show at one of its cues, or stop whatever is playing."""
+        from app.services.mapping import TransportError, transport
+
+        action = step.get("action", "start")
+        try:
+            if action == "stop":
+                await transport.command("stop")
+                return self._ok(index, label, "show stopped")
+            show_id = step.get("show_id")
+            if show_id is None:
+                return self._fail(index, label, "no show chosen")
+            async with session_scope() as session:
+                show = (await session.execute(
+                    select(MappingShow).where(MappingShow.id == int(show_id))
+                    .options(selectinload(MappingShow.cues))
+                )).scalars().first()
+                if show is None:
+                    return self._fail(index, label, "that show no longer exists")
+                show_name = show.name
+                cue_ids = [cue.id for cue in show.cues]
+            cue_id = step.get("cue_id")
+            if cue_id is None:
+                position = 0
+            elif int(cue_id) in cue_ids:
+                position = cue_ids.index(int(cue_id))
+            else:
+                return self._fail(index, label,
+                                  f"the chosen cue is no longer in '{show_name}'")
+            state = await transport.command("goto", show_id=int(show_id), cue=position)
+        except TransportError as exc:
+            return self._fail(index, label, str(exc))
+        cue_name = state.current.name if state.current else ""
+        return self._ok(index, label, f"'{show_name}' started at cue {position + 1}"
+                                      + (f" ({cue_name})" if cue_name else ""))
+
+
+def _emergency_on() -> bool:
+    from app.services.mapping import transport
+
+    return transport.snapshot().emergency is not None
+
 
 def _outcome_ok(outcome: str | None) -> bool:
     return outcome in (CommandOutcome.CONFIRMED.value, CommandOutcome.ACCEPTED.value,
-                       CommandOutcome.OK.value)
+                       CommandOutcome.OK.value, CommandOutcome.QUEUED.value)
 
 
 def _state_matches(value: Any, expect: str) -> bool:

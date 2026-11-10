@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Chip, Panel } from '@/components/ui'
 import { mappingApi, mediaUrl } from '../api'
 import type { AiStatus, MediaAsset, Show } from '../types'
@@ -86,15 +87,15 @@ export function PaintHouse({
       {!status.available ? (
         <p className="text-xs text-slate-400">
           Add an OpenAI API key in{' '}
-          <a className="text-sky-300 hover:underline" href="/settings">
-            Settings
-          </a>{' '}
+          <Link className="text-sky-300 hover:underline" to="/settings?part=ai">
+            Settings → AI keys
+          </Link>{' '}
           to paint pictures of your house.
         </p>
       ) : !source ? (
         <p className="text-xs text-slate-400">
-          This needs a picture of the house lined up with the canvas: take one on the Camera tab, or upload a photo
-          of the house that matches the canvas to the media library.
+          This needs a photo of the house lined up with the show's picture: take one on the Camera tab, or upload a photo
+          of the house the same shape as the show's picture (Saved maps and show) to the media library.
         </p>
       ) : (
         <form

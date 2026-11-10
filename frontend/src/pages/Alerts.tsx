@@ -5,7 +5,7 @@ import type { Alert } from '@/api/types'
 import { useFleetContext, useOps } from '@/live/LiveProvider'
 import { useTicker } from '@/hooks/useLiveData'
 import { Chip, EmptyState, PageHeader, Panel, Spinner, StatusDot, Tabs } from '@/components/ui'
-import { AlertsIcon, CheckIcon, OkIcon } from '@/components/icons'
+import { AlertsIcon, CheckIcon, OkIcon, PhoneIcon } from '@/components/icons'
 import { classNames, formatDateTime, relativeTime } from '@/lib/format'
 
 type View = 'unresolved' | 'resolved'
@@ -173,10 +173,20 @@ export default function Alerts({ session }: { session: Session }) {
 
       <Panel>
         <p className="text-xs text-slate-500">
-          Alerts open when a projector stops answering, reports a fault or warning, passes its lamp thresholds, does
-          not confirm a command or shuts down unexpectedly, when an automation fails, or when an enclosure sensor
-          goes out of range. Each closes by itself once its condition clears.
+          Alerts open when a projector stops answering, runs hot, reports a fault or warning, passes its lamp
+          thresholds, does not confirm a command or shuts down unexpectedly, when a mini PC goes offline, when
+          tonight's show does not start, when an automation fails, or when an enclosure sensor goes out of range.
+          Each closes by itself once its condition clears.
         </p>
+        {session.role === 'admin' && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
+            <PhoneIcon size={13} aria-hidden />
+            Get them on your phone, even with the app closed:{' '}
+            <Link to="/settings?part=phone" className="text-sky-300 hover:underline">
+              Settings → Phone
+            </Link>
+          </p>
+        )}
       </Panel>
     </div>
   )

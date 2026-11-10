@@ -5,6 +5,7 @@ import { withDefaults } from './geometry'
 import { type LinkStatus, ServerClock, useMappingFeed } from './live'
 import { PeopleTracker } from './people'
 import { Playback } from './playback'
+import { everyCueScene } from './scene/cueElements'
 import type { MappingScene, MediaAsset, Output, PeopleMessage, Show, TransportState } from './types'
 
 export function normaliseShow(show: Show): Show {
@@ -42,6 +43,14 @@ export function useShowRuntime(showId: number | null, onOther?: (message: BusMes
   useEffect(() => {
     playback.setCues(show?.cues ?? [])
   }, [playback, show?.cues])
+
+  useEffect(() => {
+    if (show) playback.setCanvas(show.canvas_width, show.canvas_height)
+  }, [playback, show?.canvas_width, show?.canvas_height]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    playback.setEveryCue(show ? everyCueScene(show) : null)
+  }, [playback, show?.id, show?.name, show?.every_cue_elements]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadScenes = useCallback(async () => {
     try {

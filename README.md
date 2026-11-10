@@ -2,7 +2,7 @@
 
 Self-hosted management for a fleet of networked projectors, built around the
 **Panasonic PT-DZ13K** and **PT-DZ770** families (DZ13K/DS12K/DW11K/DZ10K and
-DZ770/DW740/DX810) plus any **PJLink** projector. Runs locally in Docker;
+DZ770/DW740/DX810/DX810ULK) plus any **PJLink** projector. Runs locally in Docker;
 no cloud services.
 
 Built for outdoor architectural projection mapping, where the projectors are
@@ -15,9 +15,9 @@ expensive, hard to reach, and the show starts whether or not they came up.
 - **Dashboard** — live fleet state: online, powered, standby, warnings, faults
 - **Per-projector control** — power, shutter, inputs, lens, on-screen remote,
   full technical status
-- **Control Center** — select any set of projectors or a group and command
+- **Projectors → Control several** — select any set of projectors or a group and command
   them together, with a separate result for each one
-- **Groups** — named sets ("House Projection Mapping", "Front of House") with
+- **Projectors → Groups** — named sets ("House Projection Mapping", "Front of House") with
   their own control surface
 - **Monitoring** — four-tier polling, lamp-hour tracking, alerts with
   deduplication, email/webhook/MQTT notification
@@ -29,8 +29,18 @@ expensive, hard to reach, and the show starts whether or not they came up.
   reach the expected state. Scenes for one-shot actions.
 - **History** — telemetry charts, full command audit log, maintenance records
   with CSV export
-- **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout
-  and projector power, from anywhere through Tailscale (Phone remote page)
+- **Show Remote** — a phone remote for the Home Screen: GO, cues, blackout,
+  projector power, a Tonight tab (tonight's scene group, show time and
+  nights, Start now / Stop) and a Calendar tab, from anywhere through
+  Tailscale (Settings → Phone)
+- **Show calendar** — plan shows ahead on a month, week or list: one night,
+  several nights or every week, each with a scene group and start and end
+  times, or nights with no show; the show starts and stops by itself
+  ([MAPPING.md §6c](docs/MAPPING.md))
+- **Emergency stop** — one press-and-hold button on every page and on the
+  phone remote: stops the show, blacks out every mini PC, stops automations
+  and turns every projector off, reporting each projector on its own
+  ([SAFETY.md](docs/SAFETY.md))
 - **Integrations** — documented REST API, WebSocket live feed, MQTT with Home
   Assistant auto-discovery
 - **Enclosure monitoring** — temperature, humidity, leak and fan sensors, with
@@ -96,7 +106,9 @@ Same code, same schema; you can move between them.
 
 On a Mac server, the [Mac app](docs/MAC-SERVER.md) is the easiest of all:
 download it, open it, and it starts at boot, restarts itself and updates
-from GitHub.
+from GitHub. On a Windows server, the [Windows server](docs/WINDOWS-SERVER.md)
+does exactly the same from one PowerShell line. Both are built from every
+change with the same version number ([docs/SERVER-PARITY.md](docs/SERVER-PARITY.md)).
 
 ## Quick start
 
@@ -177,6 +189,7 @@ frontend/src/
   api/                Typed API client
 deploy/               Dockerfile (builds SPA + API into one image)
 desktop/              PyInstaller spec and build scripts for the desktop app
+desktop/windows/      Windows server: install line, zip, and its end-to-end check
 camera-agent/         Camera program: projector calibration and people tracking
 minipc/               Mini PC app: one Windows install per projector (output, camera, auto-start)
 .github/workflows/    CI: tests, lint, typecheck, image build and smoke test
@@ -196,9 +209,12 @@ docs/                 Protocol research, architecture, deployment, validation,
 | [HARDWARE-VALIDATION.md](docs/HARDWARE-VALIDATION.md) | Stage-by-stage procedure for validating against a real projector |
 | [SAFETY.md](docs/SAFETY.md) | What this software is and is not responsible for |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Reading outcomes, connection problems, missing telemetry |
+| [HOME-ASSISTANT.md](docs/HOME-ASSISTANT.md) | Home Assistant: one line to install, projectors and the show as devices |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | REST, WebSocket, MQTT, Home Assistant, enclosure sensors, service tokens |
 | [DESKTOP.md](docs/DESKTOP.md) | Running it as a desktop application instead of a server |
 | [MAC-SERVER.md](docs/MAC-SERVER.md) | The Mac app: download, open, and it runs as an always-on server that updates itself |
+| [WINDOWS-SERVER.md](docs/WINDOWS-SERVER.md) | The Windows server: one PowerShell line, and it runs as an always-on Windows service that updates itself |
+| [SERVER-PARITY.md](docs/SERVER-PARITY.md) | The Mac and Windows servers side by side, and the rule that keeps them the same |
 | [MAPPING.md](docs/MAPPING.md) | Mapping media: shows, warping, blending, players beside the projectors, camera calibration and people tracking |
 
 ---
@@ -230,6 +246,7 @@ in hardware that works when this software does not. See
 | 5 | Enclosure monitoring, MQTT, Home Assistant | Sensor ingest, alerting and HA discovery implemented; no vendor-specific sensor drivers |
 | 6 | Hardening: tests, auth, deployment, recovery | Implemented; CI builds the image; not yet load-tested at 25 devices |
 | — | Mac server app ([docs/MAC-SERVER.md](docs/MAC-SERVER.md)) | **Tested on a real Mac server** (2026-10-17): download, install, start and dashboard work. Restart-on-boot and update-from-GitHub not yet exercised |
+| — | Windows server ([docs/WINDOWS-SERVER.md](docs/WINDOWS-SERVER.md)) | Install, crash restart, network access, discovery, password reset, update, rollback and uninstall checked on fresh Windows Server 2022 and 2025 machines for every change; not yet on a real rack machine, Windows 10/11, or after a reboot |
 
 Known gaps, stated plainly:
 

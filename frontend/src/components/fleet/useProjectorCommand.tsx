@@ -39,8 +39,8 @@ export function powerRequest(projectors: Projector[], state: 'on' | 'off'): Comm
       state === 'off' ? (
         <>
           <p>
-            {many ? 'Each projector' : 'The projector'} stops projecting and enters its cooling cycle. It
-            cannot be powered back on until cooling finishes, which takes about a minute.
+            {many ? 'Each projector' : 'The projector'} stops projecting and cools down, usually for 1 to 2
+            minutes. Power on during that time is held and sent by itself once cooling finishes.
           </p>
           <p className="mt-2 text-xs text-slate-400">
             The result is confirmed by reading the power state back. A command that times out is not retried.

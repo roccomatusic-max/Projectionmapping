@@ -34,6 +34,33 @@ EQUIPMENT_FIELDS = (
 )
 
 
+#: Temperature history rows are ``temp_<sensor key>`` (``temp_intake``,
+#: ``temp_exhaust``, ``temp_optics``) in degrees Celsius.
+TEMPERATURE_METRIC_PREFIX = "temp_"
+
+
+def temperature_rows(projector_id: int, status: Any, now: datetime) -> list[Telemetry]:
+    """One row per sensor that gave a number this poll.
+
+    A reply that was not understood (``celsius`` None) is not a reading and
+    is left out, as is everything from a projector that reports no numbers
+    (PJLink only gives ok/warning/error).
+    """
+    reading = status.temperature
+    if reading.availability is not Availability.AVAILABLE or not isinstance(reading.value, dict):
+        return []
+    rows = []
+    for sensor in reading.value.get("sensors") or []:
+        celsius = sensor.get("celsius")
+        key = sensor.get("key")
+        if celsius is None or not key:
+            continue
+        rows.append(Telemetry(projector_id=projector_id,
+                              metric=f"{TEMPERATURE_METRIC_PREFIX}{key}",
+                              value_num=float(celsius), recorded_at=now))
+    return rows
+
+
 #: Do not enqueue another poll when this many items are already waiting.
 MAX_QUEUED_POLLS = 3
 
@@ -283,6 +310,8 @@ class MonitoringService:
         if tier == Tier.DIAGNOSTICS and status.health is not HealthSeverity.UNKNOWN:
             rows.append(Telemetry(projector_id=projector_id, metric="health",
                                   value_text=status.health.value, recorded_at=now))
+        if tier == Tier.DIAGNOSTICS:
+            rows.extend(temperature_rows(projector_id, status, now))
         if rows:
             session.add_all(rows)
 
@@ -341,6 +370,10 @@ class MonitoringService:
         async with session_scope() as session:
             await session.execute(delete(Telemetry).where(
                 Telemetry.recorded_at < now - timedelta(days=settings.telemetry_retention_days)
+            ))
+            await session.execute(delete(Telemetry).where(
+                Telemetry.metric.startswith(TEMPERATURE_METRIC_PREFIX, autoescape=True),
+                Telemetry.recorded_at < now - timedelta(days=settings.temperature_retention_days),
             ))
             await session.execute(delete(CommandLog).where(
                 CommandLog.created_at < now - timedelta(days=settings.command_log_retention_days)

@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     #: Seconds to wait after PON/POF before the confirming QPW poll.
     power_verify_delay: float = 2.0
     power_verify_attempts: int = 30
+    #: A power command refused while the projector cools down (or starts
+    #: up) is held and re-sent every ``power_queue_interval`` seconds, for
+    #: at most ``power_queue_seconds``. Panasonic cool-down is 1-2 minutes.
+    power_queue_interval: float = 5.0
+    power_queue_seconds: float = 300.0
 
     # -- alerting ---------------------------------------------------------
     alert_renotify_minutes: int = 60
@@ -119,6 +124,9 @@ class Settings(BaseSettings):
     #: answers mini PCs looking for it (services/discovery.py). The desktop
     #: launcher sets it in --lan mode.
     advertise_port: int | None = None
+    #: Fetch new Mini PC app versions and hand them to the mini PCs, which
+    #: install them by themselves when no show is on (services/minipc_updates.py).
+    minipc_updates: bool = True
     #: UDP port mini PCs broadcast to when looking for the server.
     discovery_port: int = 8765
     #: Only this computer can reach the server (desktop mode without --lan),
@@ -127,8 +135,22 @@ class Settings(BaseSettings):
 
     # -- retention ---------------------------------------------------------
     telemetry_retention_days: int = 365
+    #: Projector temperature samples (one per sensor per diagnostics poll,
+    #: about 4,300 rows a day per projector) are kept this long. The
+    #: Monitoring chart goes back a week at most.
+    temperature_retention_days: int = 30
     command_log_retention_days: int = 180
     event_retention_days: int = 365
+
+    # -- projector temperatures ----------------------------------------------
+    #: Highest room (intake air) temperature the Panasonic projectors are
+    #: rated for: the PT-DZ13K and PT-DZ770 spec sheets list an operating
+    #: temperature of 0-45 °C (0-40 °C in high altitude mode). Exhaust air
+    #: and the optics module have no published limit; for those the
+    #: projector's own temperature warning (PJLink) is what counts.
+    temperature_intake_limit_c: float = 45.0
+    #: Monitoring warns when a sensor is this close to its limit.
+    temperature_warn_margin_c: float = 5.0
 
     @field_validator("cors_origins", "alert_email_to", mode="before")
     @classmethod

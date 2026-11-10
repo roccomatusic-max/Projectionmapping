@@ -58,7 +58,7 @@ export default function Logs() {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={LogsIcon} title="Logs" subtitle="Commands with their wire frames and replies, plus system events." />
+      <PageHeader icon={LogsIcon} title="Logs" subtitle="Every command sent, exactly what went down the wire, and what each projector answered." />
       {error && <ErrorBanner message={error} />}
 
       <Panel
@@ -68,13 +68,13 @@ export default function Logs() {
       >
         {live.length === 0 ? (
           <p className="text-sm text-slate-500">
-            Nothing yet. Activity appears here as commands are dispatched.
+            Nothing yet. Commands show up here the moment they are sent.
           </p>
         ) : (
           <ul className="max-h-64 divide-y divide-white/5 overflow-y-auto text-xs">
             {live.map((message, index) => {
               const outcome = String(message.payload.outcome ?? '')
-              const good = ['confirmed', 'accepted', 'ok'].includes(outcome)
+              const good = ['confirmed', 'accepted', 'ok', 'queued'].includes(outcome)
               return (
                 <li key={`${message.at}-${index}`} className="flex items-center gap-3 py-1.5">
                   <StatusDot tone={message.type === 'alert' ? 'fault' : !outcome ? 'busy' : good ? 'ok' : 'fault'} />
@@ -135,14 +135,15 @@ export default function Logs() {
         ) : events.length === 0 ? (
           <EmptyState title="No events in this range" />
         ) : (
-          <div className="overflow-x-auto">
+          // The list scrolls inside its own box so the filters stay in view.
+          <div className="max-h-[70vh] overflow-auto">
             <table className="table text-xs">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-panel-900">
                 <tr>
                   <th className="pl-3">Time</th>
                   <th>Severity</th>
                   <th>Projector</th>
-                  <th>Kind</th>
+                  <th>What</th>
                   <th>Message</th>
                 </tr>
               </thead>
@@ -177,7 +178,7 @@ export default function Logs() {
                     <td className="py-1.5 pr-4 text-slate-400">
                       {event.projector_id ? names[event.projector_id] ?? event.projector_id : '—'}
                     </td>
-                    <td className="py-1.5 pr-4 font-mono text-slate-500">{event.kind}</td>
+                    <td className="whitespace-nowrap py-1.5 pr-4 text-slate-500">{event.kind.replace(/_/g, ' ')}</td>
                     <td className="py-1.5 text-slate-300">{event.message}</td>
                   </tr>
                 ))}

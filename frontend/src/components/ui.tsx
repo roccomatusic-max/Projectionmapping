@@ -1,7 +1,8 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { classNames } from '@/lib/format'
-import { CloseIcon, FaultIcon, InfoIcon, OkIcon, SearchIcon, WarningIcon, type LucideIcon } from './icons'
+import { CloseIcon, FaultIcon, HelpIcon, InfoIcon, OkIcon, SearchIcon, WarningIcon, type LucideIcon } from './icons'
 import { TONE_BANNER, TONE_CHIP, TONE_DOT, TONE_TEXT, type Tone } from './tone'
+import { usePageGroup } from './shell/PageGroup'
 
 export type { Tone }
 
@@ -80,8 +81,8 @@ export function Panel({
   return (
     <section className={classNames('panel', className)}>
       {(title || action) && (
-        <header className="flex items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-2.5">
-          <div className="flex min-w-0 items-start gap-2">
+        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-white/[0.06] px-4 py-2.5">
+          <div className="flex min-w-[min(14rem,100%)] flex-1 items-start gap-2">
             {Icon && <Icon size={15} strokeWidth={1.75} className="mt-0.5 shrink-0 text-slate-500" aria-hidden />}
             <div className="min-w-0">
               {title && <h2 className="text-sm font-semibold text-slate-100">{title}</h2>}
@@ -113,6 +114,19 @@ export function PageHeader({
   actions?: ReactNode
   children?: ReactNode
 }) {
+  // A tab of a page group: the group's name and tabs are already above, so
+  // only this tab's status line and buttons are left to show.
+  const group = usePageGroup()
+  if (group) {
+    if (!subtitle && !actions && !children) return null
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        {subtitle ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-slate-400">{subtitle}</div> : <span />}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {children}
+      </div>
+    )
+  }
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -505,6 +519,104 @@ export function Tabs<T extends string>({
           {tab.icon && <tab.icon size={14} aria-hidden />}
           {tab.label}
           {tab.badge}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * A small (?) next to a control that says what it does. Hover or focus
+ * shows it on a desk; a tap shows it on a phone or tablet, where there is
+ * no hover. Tapping anywhere else closes it.
+ */
+export function InfoTip({
+  children,
+  label = 'What is this?',
+  text,
+  className,
+}: {
+  children: ReactNode
+  label?: string
+  /** Words beside the (?) for a tip that should be noticed, like "What these do". */
+  text?: string
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [open])
+  return (
+    <span ref={ref} className={classNames('group relative inline-flex align-middle', className)}>
+      <button
+        type="button"
+        className={classNames(
+          'inline-flex items-center justify-center gap-1 rounded-full text-slate-500 hover:text-slate-300 focus-visible:text-slate-200',
+          text ? 'px-1 text-xs' : 'h-4 w-4',
+        )}
+        aria-label={label}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          setOpen((v) => !v)
+        }}
+      >
+        <HelpIcon size={13} aria-hidden />
+        {text}
+      </button>
+      <span
+        role="tooltip"
+        className={classNames(
+          'pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 w-64 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md border border-white/10 bg-panel-800 px-3 py-2 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-slate-200 shadow-overlay',
+          open ? 'block' : 'hidden group-hover:block group-focus-within:block',
+        )}
+      >
+        {children}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * A row of section buttons inside a page: big enough to tap, says where you
+ * are, and keeps long pages short by showing one part at a time.
+ */
+export function SectionBar<T extends string>({
+  sections,
+  value,
+  onChange,
+  className,
+  label,
+}: {
+  sections: Array<{ id: T; label: ReactNode; hint?: string; badge?: ReactNode }>
+  value: T
+  onChange: (id: T) => void
+  className?: string
+  label: string
+}) {
+  return (
+    <div role="tablist" aria-label={label} className={classNames('flex gap-1 overflow-x-auto rounded-lg bg-panel-900 p-1 ring-1 ring-white/[0.06]', className)}>
+      {sections.map((section) => (
+        <button
+          key={section.id}
+          role="tab"
+          aria-selected={value === section.id}
+          title={section.hint}
+          onClick={() => onChange(section.id)}
+          className={classNames(
+            'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors',
+            value === section.id ? 'bg-sky-500/15 font-medium text-sky-100 ring-1 ring-inset ring-sky-400/40' : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200',
+          )}
+        >
+          {section.label}
+          {section.badge}
         </button>
       ))}
     </div>

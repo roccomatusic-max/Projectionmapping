@@ -23,6 +23,15 @@ Calibration of one output:
 5. ``POST /shows/{id}/apply-calibration`` turns the decoded maps and the
    canvas placement into corner pins and mesh warps.
 
+Undoing it: when the camera first uploads a result for an output, the
+output's slice and warp as they were (and the show's camera placement)
+are kept with the calibration under ``before``.
+``POST /shows/{id}/remove-calibration`` puts every calibrated output of the
+show back to that, clears the calibration and the placement, and stops a
+calibration still running: its next step or upload is refused, which ends
+it on the camera, and the output windows go back to the show.
+``DELETE /outputs/{id}/calibration`` does the same for one output.
+
 People tracking: the camera posts the people it sees, in camera-image
 fractions, several times a second (``POST /cameras/me/people``). The server
 maps them onto the live show's canvas through the same ``camera_view`` and
@@ -59,8 +68,10 @@ from app.schemas.mapping import (
     FitResult,
     OutputOut,
     PeopleReport,
+    RemoveResult,
     Warp,
 )
+from app.services import canvas_layout
 from app.services.calibration import (
     CalibrationError,
     apply,
@@ -113,11 +124,26 @@ def _output_changed(output: MappingOutput) -> OutputOut:
 
 # -- calibration -----------------------------------------------------------------
 
+#: Outputs whose calibration was removed while the camera may still be
+#: running it. Their steps and results are refused until they are asked to
+#: calibrate again. In memory: after a restart there is no run to stop.
+_stopped: set[int] = set()
+
+
+def _refuse_if_stopped(output: MappingOutput) -> None:
+    if output.id in _stopped:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=f"The calibration of {output.name} was removed")
+
 
 @router.post("/outputs/{output_id}/calibrate", status_code=status.HTTP_202_ACCEPTED,
              dependencies=[Depends(write_rate_limit)])
 async def request_calibration(output_id: int, payload: CalibrateRequest, session: SessionDep,
                               admin: RequireAdmin) -> dict:
+    if transport.snapshot().emergency is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="The emergency stop is on, so every output is black. "
+                                   "Clear it first, then calibrate.")
     output = await _load_output(session, output_id)
     camera = await _load_camera(session, payload.camera_id)
     if not camera.approved:
@@ -126,6 +152,7 @@ async def request_calibration(output_id: int, payload: CalibrateRequest, session
     if not is_online(camera):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail=f"Camera {camera.name} is offline")
+    _stopped.discard(output.id)
     bus.publish("mapping_calibrate", {
         "camera_id": camera.id, "output_id": output.id, "show_id": output.show_id,
         "name": output.name, "width": output.width, "height": output.height,
@@ -143,6 +170,7 @@ async def calibration_step(payload: CalibrationStep, session: SessionDep,
     """Relay one pattern (or the end of the sequence) to the output windows."""
     camera = await _this_camera(session, user)
     output = await _load_output(session, payload.output_id)
+    _refuse_if_stopped(output)
     bus.publish("mapping_calib_pattern", {
         "camera_id": camera.id, "show_id": output.show_id, "output_id": output.id,
         "pattern": payload.pattern.model_dump() if payload.pattern else None,
@@ -156,11 +184,15 @@ async def store_calibration(output_id: int, payload: CalibrationResult, session:
                             user: CurrentUser) -> OutputOut:
     camera = await _this_camera(session, user)
     output = await _load_output(session, output_id)
+    _refuse_if_stopped(output)
     seen = sum(point is not None for point in payload.points)
     coverage = round(seen / len(payload.points), 4)
+    before = (output.calibration or {}).get("before")
+    if before is None:
+        before = await _before_calibration(session, output)
     output.calibration = {
         "camera_id": camera.id, "captured_at": utcnow().isoformat(), "coverage": coverage,
-        **payload.model_dump(mode="json"),
+        **payload.model_dump(mode="json"), "before": before,
     }
     session.add(Event(projector_id=None, severity=Severity.INFO.value, kind="output_calibrated",
                       message=f"Camera {camera.name} calibrated output {output.name} "
@@ -176,17 +208,109 @@ async def get_calibration(output_id: int, session: SessionDep, _: RequireViewer)
     if not output.calibration:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Output {output.name} has not been calibrated")
-    return output.calibration
+    return {k: v for k, v in output.calibration.items() if k != "before"}
+
+
+async def _before_calibration(session, output: MappingOutput) -> dict:
+    """What calibration may change on this output, as it is now.
+
+    The show's camera placement is taken from another output of the show
+    that was calibrated first, if any: by now the placement may already be
+    the calibration's own.
+    """
+    show = await _load_show(session, output.show_id)
+    camera_view = show.camera_view or {}
+    for other in show.outputs:
+        earlier = (other.calibration or {}).get("before")
+        if other.id != output.id and earlier is not None:
+            camera_view = earlier.get("camera_view") or {}
+            break
+    return {"source": output.source or {}, "warp": output.warp or {},
+            "camera_view": camera_view}
+
+
+def _restore(output: MappingOutput, index: int, count: int) -> None:
+    """Put an output back as it was before its first calibration and forget it.
+
+    Calibrations made before this was kept have nothing to go back to: the
+    output gets a flat corner pin and its place in a side-by-side layout,
+    as a new show lays them out.
+    """
+    before = (output.calibration or {}).get("before")
+    if before is not None:
+        output.source = before.get("source") or {}
+        output.warp = before.get("warp") or {}
+    else:
+        output.source = canvas_layout.even_split(count)[index]
+        output.warp = Warp().model_dump(mode="json")
+    output.calibration = {}
+
+
+def _stop(output: MappingOutput, camera_id: int | None) -> None:
+    """Stop a run of this output still going on the camera, and tell the windows."""
+    _stopped.add(output.id)
+    bus.publish("mapping_calib_pattern", {
+        "camera_id": camera_id, "show_id": output.show_id, "output_id": output.id,
+        "pattern": None, "step": 0, "steps": 0,
+        "status": "failed", "message": "Calibration removed", "removed": True,
+    })
+
+
+async def _remove(session, show: MappingShow, outputs: list[MappingOutput],
+                  admin: User) -> list[MappingOutput]:
+    """Undo the calibration of ``outputs`` (all of ``show``'s, or one)."""
+    ordered = list(show.outputs)
+    restored = []
+    view_before = None
+    for output in outputs:
+        calibration = output.calibration or {}
+        _stop(output, calibration.get("camera_id"))
+        if not calibration:
+            continue
+        before = calibration.get("before")
+        if before is not None and view_before is None:
+            view_before = before.get("camera_view") or {}
+        _restore(output, ordered.index(output), len(ordered))
+        restored.append(output)
+    # The camera placement goes back once no output of the show is calibrated.
+    if restored and not any(o.calibration for o in ordered):
+        show.camera_view = view_before or {}
+    if restored:
+        session.add(Event(projector_id=None, severity=Severity.INFO.value,
+                          kind="calibration_removed",
+                          message=f"{admin.username} removed the camera calibration of "
+                                  f"{', '.join(o.name for o in restored)} in {show.name}"))
+    await session.commit()
+    for output in ordered:
+        await session.refresh(output)
+        _output_changed(output)
+    _touch(show.id)
+    return restored
 
 
 @router.delete("/outputs/{output_id}/calibration", status_code=status.HTTP_204_NO_CONTENT,
                response_model=None, dependencies=[Depends(write_rate_limit)])
-async def clear_calibration(output_id: int, session: SessionDep, _: RequireAdmin) -> None:
+async def clear_calibration(output_id: int, session: SessionDep, admin: RequireAdmin) -> None:
+    """Undo one output's calibration: back to its slice and warp from before."""
     output = await _load_output(session, output_id)
-    output.calibration = {}
-    await session.commit()
-    await session.refresh(output)
-    _output_changed(output)
+    show = await _load_show(session, output.show_id)
+    await _remove(session, show, [output], admin)
+
+
+@router.post("/shows/{show_id}/remove-calibration", response_model=RemoveResult,
+             dependencies=[Depends(write_rate_limit)])
+async def remove_calibration(show_id: int, session: SessionDep,
+                             admin: RequireAdmin) -> RemoveResult:
+    """Undo the camera calibration of a whole show and stop one still running.
+
+    Every calibrated output goes back to the slice and warp it had before
+    it was first calibrated (hand changes made since are dropped with it);
+    the show's camera placement goes back too. Outputs never calibrated are
+    not touched.
+    """
+    show = await _load_show(session, show_id)
+    restored = await _remove(session, show, list(show.outputs), admin)
+    return RemoveResult(restored=[o.id for o in restored])
 
 
 def _apart(output: MappingOutput) -> bool:

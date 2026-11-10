@@ -12,6 +12,10 @@ remote all talk to it. The Mac app sets that up by itself:
 
 There is no Terminal, git or build step on the server.
 
+The same server also runs on a Windows computer: see
+[WINDOWS-SERVER.md](WINDOWS-SERVER.md). Both are built from every change with
+the same version number ([SERVER-PARITY.md](SERVER-PARITY.md)).
+
 **Tested:** installed on a real Mac server on 2026-10-17 by following the
 steps below: the download, the one-line Terminal step, the password prompt,
 the first sign-in and the dashboard all worked. Not yet exercised there:
@@ -64,7 +68,7 @@ It has no Dock or menu bar icon while it runs in the background.
 - **Other computers on the network:** `http://YOUR-MAC.local:8765`, where
   YOUR-MAC is the **Local hostname** shown at the bottom of System Settings →
   General → Sharing on the server Mac.
-- **Phone, from anywhere:** scan the QR code on the **Phone remote** page.
+- **Phone, from anywhere:** scan the QR code on **Settings → Phone**.
 
 ### Settings on the server Mac
 
@@ -79,7 +83,7 @@ In System Settings:
 ### The phone remote from anywhere
 
 Install [Tailscale](https://tailscale.com/download/mac) on the server Mac and
-sign in with the same account as your iPhone. Then open **Phone remote** in
+sign in with the same account as your iPhone. Then open **Settings → Phone** in
 the dashboard and scan the new QR code with the phone to pair it with this
 server once.
 
@@ -124,10 +128,45 @@ installs it over the old one.
 
 ---
 
+## Backups and the setup guide
+
+**Settings → Backup** in the dashboard:
+
+- **Back up and download** saves everything the server is set up with into
+  one zip file and downloads it: projectors, shows, cues, scenes, scene
+  groups, saved maps, the calendar, mini PCs, automations, users and
+  settings. Tick **Also include the pictures and videos** for a copy that
+  works on a new server by itself (it shows how big that is). Keep the file
+  on a USB stick or in your own cloud storage, never posted or sent to
+  anyone: it holds the projector passwords and the server's secret key.
+- The server also makes a backup by itself **every night after 3 AM**, when
+  no show is playing (and one a few minutes after it first starts). It keeps
+  the last 14, in `~/Library/Application Support/ProjectorControl/backups`. These leave the pictures and videos out.
+- **Restore** on any backup in the list, or **Choose a backup file** under
+  *Restore from a file*, shows what is in it and puts it back. Everything on
+  the server is replaced, including the users and passwords; how things were
+  is saved first as a *before a restore* backup. The server restarts and is back in about a minute; launchd starts it again by itself. Stop the show
+  first if one is playing.
+- The projector readings history and the command log stay out of backups.
+  A backup made by a newer version than the server is refused until the
+  server is updated.
+- **Open the setup guide to print** shows one page with the whole system:
+  addresses, versions, every projector and mini PC, the install lines and
+  what to do if something breaks just before the show. Press **Print or save
+  as PDF**. It has no passwords. Every backup has the same list inside, as
+  `SETUP-GUIDE.txt`.
+
+The same works on the Windows server ([WINDOWS-SERVER.md](WINDOWS-SERVER.md)), and a backup from one restores on the other.
+
+---
+
 ## Moving your existing setup to the server
 
-Projectors, shows, media and users live in one folder. To bring them over
-from the Mac you use today, on the **old** Mac quit Projector Control, then
+Easiest: on the old server, **Settings → Backup → Back up and download**
+with the pictures and videos ticked; on the new one, install it, sign in and
+use **Restore from a file**. Or copy the folder by hand. Projectors, shows,
+media and users live in one folder. To bring them over from the Mac you use
+today, on the **old** Mac quit Projector Control, then
 copy the folder `~/Library/Application Support/ProjectorControl` onto the
 server Mac at the same place **before** step 2 above. (In Finder: Go menu →
 Go to Folder… → paste `~/Library/Application Support`.)

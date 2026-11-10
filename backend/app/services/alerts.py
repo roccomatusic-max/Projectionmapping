@@ -21,17 +21,65 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.core.events import bus
-from app.core.lifecycle import stop_task
-from app.db.models import Alert, AlertRule, AlertState, CommandLog, Event, Severity, as_utc
+from app.core.lifecycle import stop_task, wait_or_stop
+from app.db.models import (
+    Alert,
+    AlertRule,
+    AlertState,
+    CommandLog,
+    Event,
+    MappingPlayer,
+    Severity,
+    as_utc,
+)
 from app.db.session import session_scope
+from app.services.phone_alerts import phone
 
 log = logging.getLogger(__name__)
 
 #: The bus messages _handle acts on; the only ones the service subscribes to.
 HANDLED = ("projector_offline", "projector_online", "projector_state", "command_unverified",
-           "command_verified", "power_changed", "automation_failed", "enclosure_reading")
+           "command_verified", "power_changed", "automation_failed", "enclosure_reading",
+           "mapping_transport")
 
 _RANK = {Severity.INFO.value: 0, Severity.WARNING.value: 1, Severity.CRITICAL.value: 2}
+
+#: A mini PC's output page reports every few seconds. This long without a
+#: report, its projector is probably showing nothing: long enough to ride
+#: out a page reload or the Mini PC app restarting after an update.
+MINIPC_SILENT = timedelta(minutes=3)
+#: While its app is updating, or after Restart computer from the Players page.
+MINIPC_SILENT_RESTARTING = timedelta(minutes=10)
+#: How often mini PCs are checked.
+MINIPC_CHECK_SECONDS = 30.0
+#: After the server itself starts (an update restarts it), mini PCs get this
+#: long to come back before any is called offline.
+MINIPC_START_GRACE = timedelta(minutes=3)
+#: Below the warning line by this much before "running hot" ends, so a
+#: reading that wobbles around the line does not send alert after alert.
+HOT_HYSTERESIS_C = 1.0
+#: A mini PC whose picture is further than this from the show clock, on two
+#: checks in a row, is out of step with the others (ms). Two frames at 60 Hz
+#: plus room for the clock's own uncertainty on a wired network.
+MINIPC_SYNC_WARN_MS = 50.0
+
+
+def _when(at: datetime, now: datetime) -> str:
+    """ "at 6:52 PM", or "on Sat at 6:52 PM" for another day, in local time."""
+    local, today = at.astimezone(settings.tz), now.astimezone(settings.tz)
+    clock = f"{local:%I:%M %p}".lstrip("0")
+    return f"at {clock}" if local.date() == today.date() else f"on {local:%a} at {clock}"
+
+
+def _duration(span: timedelta) -> str:
+    """ "3 h 15 min", or "12 min"."""
+    minutes = max(int(span.total_seconds() // 60), 0)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
+def _fahrenheit(celsius: float) -> str:
+    return f"{celsius * 9 / 5 + 32:.0f} °F ({celsius:.0f} °C)"
 
 
 class AlertingService:
@@ -43,6 +91,19 @@ class AlertingService:
         #: resolve_alert() — called on every poll of every healthy projector —
         #: return without a query when there is nothing to resolve.
         self._open_keys: set[str] = set()
+        self._minipc_task: asyncio.Task | None = None
+        self._stop = asyncio.Event()
+        self._started_at = datetime.now(UTC)
+        #: Mini PCs told to restart or shut down from the Players page: by
+        #: player id, until when their silence is expected.
+        self._expected_away: dict[int, datetime] = {}
+        #: Mini PCs found out of step on the last check, by player id.
+        self._out_of_step: set[int] = set()
+        #: The show is playing or paused (as last heard), since when, and who
+        #: last asked for a start or stop through Tonight's show, until when.
+        self._show_running = False
+        self._show_since: datetime | None = None
+        self._show_by: tuple[str, datetime] | None = None
 
     async def start(self) -> None:
         if self._running:
@@ -51,6 +112,9 @@ class AlertingService:
         self._queue = await bus.subscribe(HANDLED)
         await self._load_open_keys()
         self._task = asyncio.create_task(self._run(), name="alerting")
+        self._started_at = datetime.now(UTC)
+        self._stop = asyncio.Event()
+        self._minipc_task = asyncio.create_task(self._watch_minipcs(), name="alerting-minipcs")
         log.info("alerting service started (%d open)", len(self._open_keys))
 
     async def _load_open_keys(self) -> None:
@@ -62,7 +126,10 @@ class AlertingService:
 
     async def stop(self) -> None:
         self._running = False
+        self._stop.set()
         await stop_task(self._task, name="alerting")
+        await stop_task(self._minipc_task, name="alerting mini PCs")
+        self._minipc_task = None
         if self._queue:
             await bus.unsubscribe(self._queue)
         self._task = None
@@ -129,6 +196,8 @@ class AlertingService:
                 )
             case "enclosure_reading":
                 await self._evaluate_enclosure(payload)
+            case "mapping_transport":
+                await self._show_changed(payload)
 
     async def _evaluate_power_change(self, projector_id: int | None, name: str,
                                      payload: dict[str, Any]) -> None:
@@ -158,7 +227,7 @@ class AlertingService:
         # the operator for the shutdown they just requested.
         commanded = any(
             str((row.params or {}).get("state", "")).lower() == "off"
-            and row.outcome in ("accepted", "confirmed", "ok", "pending",
+            and row.outcome in ("accepted", "confirmed", "ok", "pending", "queued",
                                 "timeout", "connection_error")
             for row in recent
         )
@@ -209,6 +278,47 @@ class AlertingService:
         lamp = (payload.get("lamp_hours") or {})
         if lamp.get("availability") == "available":
             await self._evaluate_lamp_hours(projector_id, name, lamp.get("value") or [])
+
+        if payload.get("tier") in ("diagnostics", "maintenance"):
+            await self._evaluate_temperature(projector_id, name, payload.get("temperature") or {})
+
+    async def _evaluate_temperature(self, projector_id: int, name: str,
+                                    reading: dict[str, Any]) -> None:
+        """Room air going into the projector, against its rated limit.
+
+        Only the intake sensor has a published limit (see
+        settings.temperature_intake_limit_c); the projector's own
+        temperature warning arrives through error_status above.
+        """
+        value = reading.get("value")
+        if reading.get("availability") != "available" or not isinstance(value, dict):
+            return
+        intake = next((s.get("celsius") for s in value.get("sensors") or []
+                       if s.get("key") == "intake" and isinstance(s.get("celsius"), int | float)),
+                      None)
+        if intake is None:
+            return
+        limit = settings.temperature_intake_limit_c
+        warn = limit - settings.temperature_warn_margin_c
+        key = f"hot:{projector_id}"
+        if intake >= limit:
+            await self.raise_alert(
+                dedupe_key=key, projector_id=projector_id, kind="too_hot",
+                severity=Severity.CRITICAL,
+                message=f"{name}: the air going into it is {_fahrenheit(intake)}, at or above "
+                        f"its limit of {_fahrenheit(limit)}. It may shut itself down.",
+                details={"intake_celsius": intake, "limit_celsius": limit},
+            )
+        elif intake >= warn:
+            await self.raise_alert(
+                dedupe_key=key, projector_id=projector_id, kind="running_hot",
+                severity=Severity.WARNING,
+                message=f"{name}: the air going into it is {_fahrenheit(intake)}, close to "
+                        f"its limit of {_fahrenheit(limit)}.",
+                details={"intake_celsius": intake, "limit_celsius": limit},
+            )
+        elif intake < warn - HOT_HYSTERESIS_C:
+            await self.resolve_alert(key, f"{name} has cooled down to {_fahrenheit(intake)}")
 
     async def _evaluate_lamp_hours(self, projector_id: int, name: str,
                                    lamps: list[dict[str, Any]]) -> None:
@@ -328,6 +438,7 @@ class AlertingService:
         now = datetime.now(UTC)
         notify = False
         changed = False
+        escalated = False
         state = AlertState.OPEN.value
         async with session_scope() as session:
             existing = (await session.execute(
@@ -394,6 +505,11 @@ class AlertingService:
             })
         if notify:
             await self._notify(channels, webhook, severity, message, details or {})
+            # The phone hears about a condition once, and again only if it
+            # gets worse: never the reminders above.
+            if existing is None or escalated:
+                phone.alert(dedupe_key=dedupe_key, kind=kind, severity=severity.value,
+                            message=message)
 
     async def resolve_alert(self, dedupe_key: str, message: str) -> None:
         if dedupe_key not in self._open_keys:
@@ -420,6 +536,157 @@ class AlertingService:
         self._open_keys.discard(dedupe_key)
         if resolved:
             bus.publish("alert_resolved", {"dedupe_key": dedupe_key, "message": message})
+            phone.all_clear(dedupe_key=dedupe_key, message=message)
+
+    # -- the show starting and stopping ------------------------------------
+
+    def note_show_command(self, by: str) -> None:
+        """Tonight's show is about to start or stop it: say who, on the phone."""
+        self._show_by = (by, datetime.now(UTC) + timedelta(seconds=10))
+
+    async def _show_changed(self, payload: dict[str, Any]) -> None:
+        """Tell the phone when the show starts and when it stops.
+
+        Started means playing or paused after being stopped (or blacked
+        out); moving to the next cue, pausing and resuming are not news.
+        """
+        from app.db.models import MappingShow
+        from app.schemas.mapping import TransportState
+        from app.services.mapping import describe_live
+
+        state = TransportState.model_validate(payload)
+        running = state.status in ("playing", "paused")
+        if running == self._show_running:
+            return
+        self._show_running = running
+        now = datetime.now(UTC)
+        by, self._show_by = self._show_by, None
+        who = f" by {by[0]}" if by and now <= by[1] else ""
+        name = "The show"
+        if state.show_id is not None:
+            async with session_scope() as session:
+                show = await session.get(MappingShow, state.show_id)
+                if show is not None:
+                    name = show.name
+        clock = _when(now, now)
+        if running:
+            self._show_since = now
+            live = describe_live(state).strip()
+            phone.show_event(title="Show started",
+                             message=f"{name} started {clock}{who}"
+                                     + (f", playing {live}." if live else "."),
+                             tag="clapper")
+            return
+        since, self._show_since = self._show_since, None
+        if state.emergency is not None:
+            how = " by the emergency stop"
+        elif state.status == "blackout":
+            how = f" (blackout){who}"
+        else:
+            how = who
+        took = f" after {_duration(now - since)}" if since else ""
+        phone.show_event(title="Show stopped", message=f"{name} stopped {clock}{how}{took}.",
+                         tag="checkered_flag")
+
+    # -- mini PCs ------------------------------------------------------------
+
+    def expect_minipc_away(self, player_id: int, minutes: float | None) -> None:
+        """Restart computer or Shut down was pressed: its silence is no news.
+
+        ``None`` means until it is heard from again (a shutdown).
+        """
+        self._expected_away[player_id] = (
+            datetime.max.replace(tzinfo=UTC) if minutes is None
+            else datetime.now(UTC) + timedelta(minutes=minutes))
+
+    async def _watch_minipcs(self) -> None:
+        while self._running:
+            try:
+                await self.check_minipcs()
+            except asyncio.CancelledError:
+                return
+            except Exception:  # noqa: BLE001 - keep watching
+                log.exception("mini PC check failed")
+            if await wait_or_stop(self._stop, MINIPC_CHECK_SECONDS):
+                return
+
+    async def check_minipcs(self, now: datetime | None = None) -> None:
+        """Open an alert for each mini PC that has gone quiet, and close it
+        when it reports again.
+
+        Only paired mini PCs with a projector output count: one still being
+        set up, or a camera, has nothing on screen to lose.
+        """
+        from app.services import minipc_updates
+
+        now = now or datetime.now(UTC)
+        async with session_scope() as session:
+            players = (await session.execute(
+                select(MappingPlayer.id, MappingPlayer.name, MappingPlayer.last_seen_at,
+                       MappingPlayer.report)
+                .where(MappingPlayer.approved.is_(True),
+                       MappingPlayer.output_id.is_not(None),
+                       MappingPlayer.kind == "player")
+            )).all()
+        updating = set(minipc_updates.get().jobs)
+        watched = set()
+        for player_id, name, last_seen_at, report in players:
+            key = f"minipc:{player_id}"
+            watched.add(key)
+            watched.add(f"minipc_sync:{player_id}")
+            seen = as_utc(last_seen_at)
+            if seen is None:
+                continue  # never connected yet
+            quiet = now - seen
+            if quiet <= MINIPC_SILENT:
+                self._expected_away.pop(player_id, None)
+                await self.resolve_alert(key, f"Mini PC {name} is back online")
+                await self._check_sync(player_id, name, report or {})
+                continue
+            if now - self._started_at < MINIPC_START_GRACE:
+                continue
+            if now < self._expected_away.get(player_id, now):
+                continue
+            if player_id in updating and quiet <= MINIPC_SILENT_RESTARTING:
+                continue
+            # The same words on every check: a changing message would count
+            # as news and make every open page refetch its alerts.
+            await self.raise_alert(
+                dedupe_key=key, projector_id=None, kind="minipc_offline",
+                severity=Severity.CRITICAL,
+                message=(f"Mini PC {name} stopped reporting {_when(seen, now)}. Its "
+                         "projector may be showing nothing. Check it is on and plugged "
+                         "into the network."),
+                details={"player_id": player_id, "last_seen_at": seen.isoformat()},
+            )
+        # A removed mini PC takes its alert with it.
+        for key in [k for k in self._open_keys
+                    if k.startswith(("minipc:", "minipc_sync:")) and k not in watched]:
+            await self.resolve_alert(key, "Mini PC removed")
+
+    async def _check_sync(self, player_id: int, name: str, report: dict) -> None:
+        """Warn when a mini PC's picture has drifted out of step with the show
+        clock, by its own measure or by the server's check on its clock."""
+        key = f"minipc_sync:{player_id}"
+        own = report.get("sync_ms")
+        check = report.get("clock_check_ms")
+        off = max(abs(v) for v in (own, check, 0.0) if isinstance(v, int | float))
+        if off <= MINIPC_SYNC_WARN_MS:
+            self._out_of_step.discard(player_id)
+            await self.resolve_alert(key, f"Mini PC {name} is back in step with the others")
+            return
+        if player_id not in self._out_of_step:
+            # Once could be a hiccup (a seek, the network busy for a moment).
+            self._out_of_step.add(player_id)
+            return
+        await self.raise_alert(
+            dedupe_key=key, projector_id=None, kind="minipc_out_of_sync",
+            severity=Severity.WARNING,
+            message=(f"Mini PC {name} is more than {MINIPC_SYNC_WARN_MS:.0f} ms out of step "
+                     "with the show clock, so its projector may not match the others. "
+                     "See Mapping → Players."),
+            details={"player_id": player_id, "sync_ms": own, "clock_check_ms": check},
+        )
 
     # -- notification channels ---------------------------------------------
 
